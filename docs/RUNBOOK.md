@@ -114,7 +114,7 @@ Credentials are read inside the postgres container; nothing secret is typed on t
 
 ## 8. Contacts (fill in)
 
-Client: — · PayStation support: — · Email provider: Resend (support/contact: —) · Hostinger support: — · Cloudflare: — · Owner (Rasel Mridha): —
+Client: — · PayStation support: — · Email provider: Amazon SES (AWS account / support plan: —) · Hostinger support: — · Cloudflare: — · Owner (Rasel Mridha): —
 
 ## 9. Pre-exam checklist (T-7 → T-0)
 
@@ -124,7 +124,7 @@ Also before launch:
 - [ ] The API connects to Postgres with a **non-superuser runtime role** (OPEN-QUESTIONS #27); the bootstrap superuser is used only for migrations, backup and restore.
 - [ ] PayStation sandbox checklist done (`docs/paystation/SANDBOX-CHECKLIST.md`) and the accepted `trx_status` values confirmed.
 - [ ] Cloudflare real-IP list refreshed (section 10).
-- [ ] Email: `EMAIL_PROVIDER=resend` with the Resend API key in `RESEND_API_KEY`, `EMAIL_FROM` on the verified sending domain (SPF, DKIM, DMARC set up in Resend), and one real test email received. `$DC ps worker` shows it healthy.
+- [ ] Email: SES set up as in section 12 (domain verified with DKIM, MAIL FROM, DMARC, production access granted), `EMAIL_PROVIDER=ses` with the IAM user's keys, `EMAIL_FROM` on the verified domain, one real test email received, and `$DC ps worker` healthy.
 - [ ] The VPS `.env` has its own `JWT_ACCESS_SECRET` (`openssl rand -base64 48`) and no `COOKIE_SECURE=false` (the API refuses it with `NODE_ENV=production`).
 
 ## 10. Cloudflare real-IP list (refresh every few months and before each exam)
@@ -156,3 +156,34 @@ The admin payments screen (look up by invoice / PayStation `trx_id` / phone, re-
 2. Re-check. If `status_code` is `"200"`, `trx_status` is success/successful and amount + invoice match, the re-check marks it paid; nothing else to do.
 3. If the gateway reports success but the amount or invoice does not match, or `2001` keeps coming back: do **not** mark it paid. Contact PayStation support with the invoice number and `trx_id`, and record the case in the audit log.
 4. If a student paid twice for one registration: refund the second payment (steps above).
+
+## 12. Email (Amazon SES)
+
+The `worker` service sends; the API only queues. Locally every email goes to Mailpit (http://127.0.0.1:18025), whatever `.env` says.
+
+**One-time setup** (AWS console, one region close to the users, e.g. `ap-south-1`):
+1. SES → Identities → create a **domain** identity for the sending domain with **Easy DKIM**; add the DKIM CNAMEs in Cloudflare (DNS only, not proxied) and wait for "Verified".
+2. Set a **custom MAIL FROM** subdomain (e.g. `mail.<domain>`) and add its MX and SPF TXT records. Add a **DMARC** TXT record on `_dmarc.<domain>` (start with `p=none; rua=mailto:...`, tighten later).
+3. Request **production access** (new accounts are in the sandbox: verified recipients only, low quota).
+4. IAM → create a user with no console access and only this policy, then an access key for it:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "ses:SendEmail",
+      "Resource": "arn:aws:ses:<region>:<account-id>:identity/<sending-domain>",
+      "Condition": { "StringLike": { "ses:FromAddress": "*@<sending-domain>" } }
+    }
+  ]
+}
+```
+
+   While the account is still in the sandbox, SES may also check the verified recipient's identity: if sends fail with an access error, add that identity's ARN to `Resource` until production access is granted.
+5. In the VPS `.env`: `EMAIL_PROVIDER=ses`, `EMAIL_FROM=Sirat Olympiad <no-reply@<sending-domain>>`, `SES_REGION`, `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY`. Then `$DC up -d worker`. The worker refuses to start with a missing or malformed setting; `$DC logs worker` names the variable, never its value.
+
+**Key rotation:** create a second access key for the IAM user → put it in `.env` → `$DC up -d worker` → check `$DC logs worker` for `email sent` → deactivate, then delete the old key.
+
+**Failed emails:** `$DC logs worker | grep 'email attempt failed'` shows kind, job id, attempt and the SES error name (never the address). Each job is tried 8 times over about 2 hours; failed jobs are kept 3 days. Users can always ask for the email again (resend verification, forgot password).
