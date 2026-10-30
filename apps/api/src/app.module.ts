@@ -1,10 +1,13 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import type Redis from 'ioredis';
 import { LoggerModule } from 'nestjs-pino';
+import { RedisThrottlerStorage } from './common/throttler/redis-throttler.storage';
 import { validateEnv } from './config/env';
 import { PrismaModule } from './prisma/prisma.module';
-import { RedisModule } from './redis/redis.module';
+import { REDIS_CACHE, RedisModule } from './redis/redis.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -28,8 +31,14 @@ import { CertificatesModule } from './modules/certificates/certificates.module';
         redact: ['req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'],
       },
     }),
-    // TODO(claude-code): back the throttler with Redis storage (rulebook sec. 4) + stricter limits on /auth/*.
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
+    // Shared across replicas via the cache Redis (RULEBOOK §4). Stricter per-route limits for /auth/* come with A2.
+    ThrottlerModule.forRootAsync({
+      inject: [REDIS_CACHE],
+      useFactory: (redis: Redis) => ({
+        throttlers: [{ name: 'default', ttl: 60_000, limit: 120 }],
+        storage: new RedisThrottlerStorage(redis),
+      }),
+    }),
     PrismaModule,
     RedisModule,
     HealthModule,
@@ -45,5 +54,7 @@ import { CertificatesModule } from './modules/certificates/certificates.module';
     LeaderboardModule,
     CertificatesModule,
   ],
+  // The scaffold declared the throttler but never applied it; this guard makes it active on every route.
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}
