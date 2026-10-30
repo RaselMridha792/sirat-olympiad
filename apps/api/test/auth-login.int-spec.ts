@@ -74,14 +74,11 @@ function login(email: string, password: string, ip: string, extra: Record<string
 const cookieNames = (res: Response) => res.headers.getSetCookie().map((c) => c.split('=')[0]);
 
 describe('POST /api/auth/login', () => {
-  it('logs in: 200 with the user, both session cookies, no token in the body, audited', async () => {
+  it('logs in: 204 with an empty body and both session cookies; not audited (the sessions row records it)', async () => {
     const user = await student({ name: 'Ayesha' });
     const res = await login(`  ${user.email.toUpperCase()} `, PASSWORD, newIp());
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as Record<string, unknown>;
-    expect(body).toEqual({
-      user: { id: user.id, name: 'Ayesha', email: user.email, role: 'student' },
-    });
+    expect(res.status).toBe(204);
+    expect(await res.text()).toBe('');
     expect(cookieNames(res)).toEqual(expect.arrayContaining([ACCESS_COOKIE, REFRESH_COOKIE]));
     const access = res.headers.getSetCookie().find((c) => c.startsWith(`${ACCESS_COOKIE}=`)) ?? '';
     const me = await fetch(`${base}/api/auth/me`, {
@@ -89,8 +86,9 @@ describe('POST /api/auth/login', () => {
     });
     expect(me.status).toBe(200);
     expect(await prisma.auditLog.count({ where: { action: 'auth.login', actorId: user.id } })).toBe(
-      1,
+      0,
     );
+    expect(await prisma.session.count({ where: { userId: user.id, revokedAt: null } })).toBe(1);
   });
 
   it('answers a wrong password and an unknown email the same way, with the same argon2 work', async () => {
@@ -108,15 +106,10 @@ describe('POST /api/auth/login', () => {
     expect(cookieNames(wrong)).toEqual([]);
     expect(dummy).toHaveBeenCalledTimes(1); // the unknown email still paid for a verify
     dummy.mockRestore();
-    expect(
-      await prisma.auditLog.count({
-        where: {
-          action: 'auth.login_failed',
-          actorId: user.id,
-          meta: { path: ['reason'], equals: 'bad_password' },
-        },
-      }),
-    ).toBe(1);
+    const failed = await prisma.auditLog.findFirstOrThrow({
+      where: { action: 'auth.login_failed', actorId: user.id },
+    });
+    expect(failed.meta).toEqual({ reason: 'bad_password' }); // no email and no email hash in the trail
   });
 
   it('locks the account+IP pair at the limit: 429 + Retry-After even for the right password; other IPs log in', async () => {
@@ -128,10 +121,10 @@ describe('POST /api/auth/login', () => {
     expect(locked.status).toBe(429);
     expect(Number(locked.headers.get('retry-after'))).toBeGreaterThan(50);
     expect(((await locked.json()) as { message: string }).message).toBe(
-      'Too many attempts. Try again in 1 minute',
+      'Too many attempts. Try again in 1 minute, or reset your password',
     );
     expect(cookieNames(locked)).toEqual([]);
-    expect((await login(user.email, PASSWORD, ipB)).status).toBe(200); // nobody locks you out from another IP
+    expect((await login(user.email, PASSWORD, ipB)).status).toBe(204); // nobody locks you out from another IP
     expect(
       await prisma.auditLog.count({ where: { action: 'auth.login_locked', actorId: user.id } }),
     ).toBe(1);
@@ -141,15 +134,31 @@ describe('POST /api/auth/login', () => {
     const user = await student();
     const ip = newIp();
     for (let i = 0; i < 2; i += 1) await login(user.email, 'wrong', ip);
-    expect((await login(user.email, PASSWORD, ip)).status).toBe(200);
+    expect((await login(user.email, PASSWORD, ip)).status).toBe(204);
     for (let i = 0; i < 2; i += 1) expect((await login(user.email, 'wrong', ip)).status).toBe(401);
-    expect((await login(user.email, PASSWORD, ip)).status).toBe(200); // still not locked
+    expect((await login(user.email, PASSWORD, ip)).status).toBe(204); // still not locked
   });
 
-  it('limits one account across IPs (10 per hour here), right password included', async () => {
+  it('at the account limit (10 per hour here) refuses only IPs that failed; the student gets in from a fresh one', async () => {
     const user = await student();
-    for (let i = 0; i < 10; i += 1) await login(user.email, 'wrong', newIp());
-    expect((await login(user.email, PASSWORD, newIp())).status).toBe(429);
+    const failedIps = Array.from({ length: 10 }, () => newIp());
+    for (const ip of failedIps) await login(user.email, 'wrong', ip);
+    expect((await login(user.email, PASSWORD, failedIps[0] as string)).status).toBe(429);
+    expect((await login(user.email, PASSWORD, newIp())).status).toBe(204);
+    const started = await prisma.auditLog.findMany({
+      where: { action: 'auth.login_locked', actorId: user.id },
+    });
+    expect(started.map((r) => r.meta)).toEqual([{ scope: 'account' }]);
+  });
+
+  it('keys limits on the address nginx appended, never on X-Forwarded-For entries a client wrote', async () => {
+    const user = await student();
+    const real = newIp();
+    // A client can prepend anything; nginx appends the address it saw (the API trusts one hop).
+    await login(user.email, 'wrong', `6.6.6.6, ${real}`);
+    await login(user.email, 'wrong', `7.7.7.7, ${real}`);
+    await login(user.email, 'wrong', real);
+    expect((await login(user.email, PASSWORD, `8.8.8.8, ${real}`)).status).toBe(429); // one pair: locked
   });
 
   it('limits failures from one IP across accounts (20 per minute here)', async () => {
@@ -157,7 +166,7 @@ describe('POST /api/auth/login', () => {
     for (let i = 0; i < 20; i += 1) await login(newEmail(), 'wrong', ip);
     const user = await student();
     expect((await login(user.email, PASSWORD, ip)).status).toBe(429);
-    expect((await login(user.email, PASSWORD, newIp())).status).toBe(200);
+    expect((await login(user.email, PASSWORD, newIp())).status).toBe(204);
   });
 
   it('locks an email without an account exactly like a real one (no enumeration)', async () => {
@@ -166,7 +175,7 @@ describe('POST /api/auth/login', () => {
     const res = await login(ghost, 'wrong', ip);
     expect(res.status).toBe(429);
     expect(((await res.json()) as { message: string }).message).toBe(
-      'Too many attempts. Try again in 1 minute',
+      'Too many attempts. Try again in 1 minute, or reset your password',
     );
   });
 
@@ -181,10 +190,10 @@ describe('POST /api/auth/login', () => {
   it('upgrades an older password hash after a successful login', async () => {
     const weak = await hash(PASSWORD, { ...ARGON2_OPTIONS, type: argon2id, timeCost: 1 });
     const user = await student({ passwordHash: weak });
-    expect((await login(user.email, PASSWORD, newIp())).status).toBe(200);
+    expect((await login(user.email, PASSWORD, newIp())).status).toBe(204);
     const stored = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
     expect(passwords.needsRehash(stored.passwordHash)).toBe(false);
-    expect((await login(user.email, PASSWORD, newIp())).status).toBe(200);
+    expect((await login(user.email, PASSWORD, newIp())).status).toBe(204);
   });
 
   it('needs the CSRF header and accepts only email and password', async () => {

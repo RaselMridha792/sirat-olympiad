@@ -79,7 +79,7 @@ const pick = (cookies: string, name: string) =>
 
 async function loginAs(email: string, password = PASSWORD) {
   const res = await post('/api/auth/login', { email, password }, { ip: newIp() });
-  expect(res.status).toBe(200);
+  expect(res.status).toBe(204);
   return cookiesOf(res);
 }
 
@@ -171,7 +171,7 @@ describe('POST /api/auth/change-password', () => {
           { ip: newIp() },
         )
       ).status,
-    ).toBe(200);
+    ).toBe(204);
     const entry = await prisma.auditLog.findFirstOrThrow({
       where: { action: 'auth.password_changed', actorId: user.id },
     });

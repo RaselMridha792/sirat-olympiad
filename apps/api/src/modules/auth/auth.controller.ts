@@ -39,23 +39,21 @@ export class AuthController {
   ) {}
 
   /**
-   * Sets the session cookies and returns the user; no token ever goes into the body. Not counted by the global
+   * Sets the session cookies; 204 with an empty body (no token, no personal data; the web reads /auth/me). Not counted by the global
    * limiter: only failed logins count (owner), in LoginLimiter. 401 for any failure, 429 + Retry-After while a
    * lock or limit applies, 403 for a blocked account (after the right password only).
    */
   @Public()
   @SkipThrottle()
   @Post('login')
-  @HttpCode(200)
+  @HttpCode(204)
   async login(
     @Body() body: LoginDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
-  ): Promise<{ user: SessionUser }> {
+  ): Promise<void> {
     try {
-      const { user, session } = await this.auth.login(body.email, body.password, clientInfo(req));
-      this.cookies.set(res, session);
-      return { user };
+      this.cookies.set(res, await this.auth.login(body.email, body.password, clientInfo(req)));
     } catch (e) {
       if (e instanceof TooManyAttemptsException)
         res.setHeader('Retry-After', String(e.retryAfterSeconds));

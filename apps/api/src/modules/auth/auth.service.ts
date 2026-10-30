@@ -7,31 +7,28 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
-import type { SessionUser } from '@sirat/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from './access-token.service';
-import { LoginLimiter, emailHash } from './login-limiter';
+import { LoginLimiter } from './login-limiter';
 import { PasswordService } from './password.service';
 import { type ClientInfo, type IssuedSession, SessionService } from './session.service';
 
 /** One message for every failed login: it never tells whether the email has an account. */
 export const LOGIN_FAILED_MESSAGE = 'Email or password is incorrect';
 
-/** 429 for a locked pair or a reached limit. Same text whether or not the account exists. */
+/**
+ * 429 for a locked pair or a reached limit. Same text whether or not the account exists, and it names the way out:
+ * a completed password reset lifts the lock (owner).
+ */
 export class TooManyAttemptsException extends HttpException {
   constructor(readonly retryAfterSeconds: number) {
     const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
     super(
-      `Too many attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}`,
+      `Too many attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}, or reset your password`,
       HttpStatus.TOO_MANY_REQUESTS,
     );
   }
-}
-
-export interface LoginResult {
-  user: SessionUser;
-  session: IssuedSession;
 }
 
 /** Login, password and email-token flows (RULEBOOK §5, owner rules of 2026-10-31). */
@@ -49,42 +46,50 @@ export class AuthService {
 
   /**
    * Limits first: during a lock the password is not even checked, so the right one is refused too (owner).
-   * An unknown email costs the same argon2 work as a real one and is counted the same way.
+   * An unknown email costs the same argon2 work as a real one and is counted the same way. Returns the new session
+   * only (the caller sets cookies; the body stays empty and the web reads /auth/me). A successful login is not
+   * audited: the sessions row records it, keeping login at one read and one write (02-SYSTEM-DESIGN §3).
    */
-  async login(email: string, password: string, client: ClientInfo): Promise<LoginResult> {
+  async login(email: string, password: string, client: ClientInfo): Promise<IssuedSession> {
     const verdict = await this.limiter.check(email, client.ip);
     if (!verdict.allowed)
       throw new TooManyAttemptsException(Math.ceil(verdict.retryAfterMs / 1000));
 
     const user = await this.prisma.user.findUnique({
       where: { email },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        isBlocked: true,
-        passwordHash: true,
-      },
+      select: { id: true, role: true, isBlocked: true, passwordHash: true },
     });
     const ok = user
       ? await this.passwords.verify(user.passwordHash, password)
       : await this.passwords.verifyDummy(password);
 
     if (!user || !ok) {
-      const { lockedForMs, lockLevel } = await this.limiter.recordFailure(email, client.ip);
+      // Audit rows carry no email and no email hash (personal data); unknown emails have no actor.
+      const failure = await this.limiter.recordFailure(email, client.ip);
+      const actorId = user?.id ?? null;
       await this.audit.record({
         action: 'auth.login_failed',
-        actorId: user?.id ?? null,
+        actorId,
         ip: client.ip,
-        meta: { reason: user ? 'bad_password' : 'unknown_email', emailHash: emailHash(email) },
+        meta: { reason: user ? 'bad_password' : 'unknown_email' },
       });
-      if (lockedForMs > 0)
+      if (failure.lockedForMs > 0)
         await this.audit.record({
           action: 'auth.login_locked',
-          actorId: user?.id ?? null,
+          actorId,
           ip: client.ip,
-          meta: { emailHash: emailHash(email), level: lockLevel, minutes: lockedForMs / 60_000 },
+          meta: {
+            scope: 'account_ip',
+            level: failure.lockLevel,
+            minutes: failure.lockedForMs / 60_000,
+          },
+        });
+      if (failure.accountLimitStarted)
+        await this.audit.record({
+          action: 'auth.login_locked',
+          actorId,
+          ip: client.ip,
+          meta: { scope: 'account' },
         });
       throw new UnauthorizedException(LOGIN_FAILED_MESSAGE);
     }
@@ -101,12 +106,7 @@ export class AuthService {
     }
     if (this.passwords.needsRehash(user.passwordHash)) await this.rehash(user.id, password);
 
-    const session = await this.sessions.start({ id: user.id, role: user.role }, client);
-    await this.audit.record({ action: 'auth.login', actorId: user.id, ip: client.ip });
-    return {
-      user: { id: user.id, name: user.name, email: user.email, role: user.role },
-      session,
-    };
+    return this.sessions.start({ id: user.id, role: user.role }, client);
   }
 
   /**
