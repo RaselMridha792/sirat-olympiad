@@ -1,4 +1,5 @@
-# CI gates (RULEBOOK §13, §15, §18): no merge with failing checks.
+# CI checks (RULEBOOK §13, §15, §18). ADVISORY on main: a private repo on GitHub Free cannot enforce required
+# checks or branch protection (docs/DECISIONS.md), so deploy only a commit whose CI run is green (RUNBOOK §2).
 name: CI
 
 on:
@@ -11,11 +12,12 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Every main commit gets a finished run (the deploy gate checks the exact commit); PR runs can be superseded.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   checks:
-    name: Typecheck, lint, unit tests, build, audit
+    name: Format, typecheck, lint, unit tests, build, audit
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -26,14 +28,17 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Shell scripts are executable in git (Windows commits drop the bit)
+        run: git ls-files -s -- '*.sh' | awk '$1 != "100755" { print; bad = 1 } END { exit bad }'
+      - run: pnpm format:check
       - run: pnpm --filter @sirat/shared build
       - run: pnpm db:generate
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm build
-      - name: Dependency audit (production deps, high and above)
-        run: pnpm audit --prod --audit-level high
+      - name: Dependency audit (all deps, high and above; the migrate image runs dev dependencies)
+        run: pnpm audit --audit-level high
 
   database:
     name: Migrations, drift check, DB + Redis integration tests
@@ -63,6 +68,9 @@ jobs:
       TEST_DATABASE_URL: postgresql://sirat:ci-only-password@localhost:5432/sirat_test
       SHADOW_DATABASE_URL: postgresql://sirat:ci-only-password@localhost:5432/sirat_shadow
       REDIS_CACHE_URL: redis://localhost:6379
+      # The AppModule wiring test boots the real app, which validates these at startup.
+      REDIS_QUEUE_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: ci-only-jwt-secret-not-used-for-anything-real
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
@@ -83,30 +91,65 @@ jobs:
           --to-schema-datamodel prisma/schema.prisma
           --shadow-database-url "$SHADOW_DATABASE_URL"
           --exit-code
-      - name: Apply migrations to a fresh DB, then constraint/seed/rate-limit tests
+      - name: Apply migrations to a fresh DB, then constraint/seed/rate-limit/app tests
         run: pnpm --filter @sirat/api test:int
 
   docker:
-    name: Docker images and compose config
+    name: Nginx config, full stack smoke test, image contents
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      DCD: docker compose --env-file .env -f infra/docker-compose.yml -f infra/docker-compose.dev.yml
     steps:
       - uses: actions/checkout@v7
-      - name: Compose file is valid (with the example env)
-        run: cp .env.example .env && docker compose --env-file .env -f infra/docker-compose.yml config --quiet
-      - name: Build API runtime image
-        run: docker build -f apps/api/Dockerfile --target runtime -t sirat-api:ci .
-      - name: Build migrate image
-        run: docker build -f apps/api/Dockerfile --target migrate -t sirat-migrate:ci .
-      - name: Build web image
-        run: docker build -f apps/web/Dockerfile -t sirat-web:ci .
-      - name: Images contain no .env files, old project or dev fixtures
-        # Scan as root so every directory is readable: as the image's non-root user, find exits 1 on
-        # permission errors and `bash -e` aborts the step without a result.
+      - name: Compose files are valid (with the example env)
+        run: cp .env.example .env && $DCD config --quiet
+      - name: Nginx config is valid on the pinned image
         run: |
-          for img in sirat-api:ci sirat-migrate:ci sirat-web:ci; do
-            found=$(docker run --rm --user 0 --entrypoint sh "$img" -c \
-              'find / \( -path /proc -o -path /sys -o -path /dev \) -prune -o \( -name ".env" -o -name "zero-olympiad-*" -o -path "*/prisma/fixtures" \) -print')
+          image=$(docker compose --env-file .env -f infra/docker-compose.yml config --images | grep '^nginx:')
+          docker run --rm --network none \
+            -v "$PWD/infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
+            -v "$PWD/infra/nginx/proxy_params_inline:/etc/nginx/proxy_params_inline:ro" \
+            -v "$PWD/infra/nginx/cloudflare-realip.conf:/etc/nginx/cloudflare-realip.conf:ro" \
+            "$image" nginx -t
+      - name: Build and start the whole stack (dev override sizes Postgres for the runner)
+        run: $DCD up -d --build
+      - name: Every long-running service becomes healthy; migrate exits 0 after the seed
+        run: |
+          for _ in $(seq 1 60); do
+            states=$($DCD ps --format '{{.Service}}={{.Health}}' | grep -v '^migrate=' | sort)
+            echo "$states" | grep -q -v '=healthy$' || break
+            sleep 5
+          done
+          echo "$states"
+          if echo "$states" | grep -v '=healthy$'; then echo "::error::services not healthy"; exit 1; fi
+          code=$(docker inspect -f '{{.State.ExitCode}}' "$($DCD ps -a -q migrate)")
+          [ "$code" = 0 ] || { echo "::error::migrate exited $code"; exit 1; }
+          $DCD logs migrate | grep -q 'config seed done' || { echo "::error::config seed did not run"; exit 1; }
+      - name: Through nginx - readiness (DB + both Redis), liveness and the web app
+        run: |
+          curl -fsS http://127.0.0.1:8080/api/ready
+          curl -fsS http://127.0.0.1:8080/api/health
+          curl -fsS -o /dev/null http://127.0.0.1:8080/
+      - name: Images contain no env files, keys, dumps, old project, tests or dev fixtures
+        # Scan the app roots as root (non-root find exits 1 on unreadable dirs and `bash -e` aborts the step).
+        # node_modules is skipped: some packages ship test certificates.
+        run: |
+          for img in sirat-api sirat-migrate sirat-web; do
+            found=$(docker run --rm --user 0 --entrypoint sh "$img" -c '
+              for d in /repo /app; do
+                [ -d "$d" ] || continue
+                find "$d" -path "*/node_modules" -prune -o \( -name ".env" -o -name ".env.*" -o -name ".envrc" \
+                  -o -name "*.pem" -o -name "*.key" -o -name "*.dump" -o -name "zero-olympiad-*" \
+                  -o -path "*/prisma/fixtures" -o -path "*/apps/api/test" -o -path "*/infra" -o -path "*/scripts" \
+                  -o -path "*/backups" -o -path "*/nginx/certs" \) -print
+              done')
             if [ -n "$found" ]; then echo "::error::$img contains forbidden files:"; echo "$found"; exit 1; fi
             echo "$img clean"
           done
+      - name: Logs on failure
+        if: failure()
+        run: $DCD ps -a; $DCD logs --tail=200
+      - name: Tear down
+        if: always()
+        run: $DCD down -v
