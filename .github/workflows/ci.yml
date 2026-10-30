@@ -68,9 +68,9 @@ jobs:
       TEST_DATABASE_URL: postgresql://sirat:ci-only-password@localhost:5432/sirat_test
       SHADOW_DATABASE_URL: postgresql://sirat:ci-only-password@localhost:5432/sirat_shadow
       REDIS_CACHE_URL: redis://localhost:6379
-      # The AppModule wiring test boots the real app, which validates these at startup.
+      # The AppModule wiring tests boot the real app, which validates these at startup.
+      # JWT_ACCESS_SECRET is generated per run (see the first step): the app refuses weak or placeholder secrets.
       REDIS_QUEUE_URL: redis://localhost:6379
-      JWT_ACCESS_SECRET: ci-only-jwt-secret-not-used-for-anything-real
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
@@ -78,6 +78,8 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Random signing secret for this run
+        run: echo "JWT_ACCESS_SECRET=$(openssl rand -base64 48 | tr -d '\n')" >> "$GITHUB_ENV"
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @sirat/shared build
       - run: pnpm db:generate
@@ -102,8 +104,11 @@ jobs:
       DCD: docker compose --env-file .env -f infra/docker-compose.yml -f infra/docker-compose.dev.yml
     steps:
       - uses: actions/checkout@v7
-      - name: Compose files are valid (with the example env)
-        run: cp .env.example .env && $DCD config --quiet
+      - name: Compose files are valid (example env plus a random signing secret)
+        run: |
+          cp .env.example .env
+          sed -i "s|^JWT_ACCESS_SECRET=.*|JWT_ACCESS_SECRET=$(openssl rand -hex 32)|" .env
+          $DCD config --quiet
       - name: Nginx config is valid on the pinned image
         run: |
           image=$(docker compose --env-file .env -f infra/docker-compose.yml config --images | grep '^nginx:')
