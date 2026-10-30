@@ -6,7 +6,9 @@ import { randomUUID } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
+import { AuthTokenType } from '@prisma/client';
 import { ACCESS_COOKIE } from '../src/modules/auth/access-token.service';
+import { EmailTokenService } from '../src/modules/auth/email-tokens.service';
 import { PasswordService } from '../src/modules/auth/password.service';
 import { REFRESH_COOKIE } from '../src/modules/auth/session-cookies';
 import { makeUser, testPrisma } from './helpers';
@@ -84,6 +86,20 @@ async function loginAs(email: string, password = PASSWORD) {
 }
 
 describe('POST /api/auth/change-password', () => {
+  it('cancels outstanding password-reset links in the same transaction', async () => {
+    const user = await student();
+    const cookie = await loginAs(user.email);
+    const tokens = app.get(EmailTokenService);
+    const pending = await tokens.issue(user.id, AuthTokenType.password_reset);
+    const res = await post(
+      '/api/auth/change-password',
+      { currentPassword: PASSWORD, newPassword: NEW_PASSWORD },
+      { cookie, ip: newIp() },
+    );
+    expect(res.status).toBe(204);
+    await expect(tokens.consume(pending.token, AuthTokenType.password_reset)).resolves.toBeNull();
+  });
+
   it('needs a session and the CSRF header', async () => {
     const user = await student();
     const cookie = await loginAs(user.email);

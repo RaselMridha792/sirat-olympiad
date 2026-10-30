@@ -88,9 +88,12 @@ export class SessionService {
     if (session) await this.endFamily(session.familyId);
   }
 
-  /** Logout everywhere (also after a password change or reset). Returns how many sessions were still active. */
-  async endAllForUser(userId: string): Promise<number> {
-    const { count } = await this.prisma.session.updateMany({
+  /**
+   * Logout everywhere (also after a password change or reset). Returns how many sessions were still active.
+   * Pass `tx` to end them in the same transaction as the password change (RULEBOOK §6: one transaction).
+   */
+  async endAllForUser(userId: string, tx: Prisma.TransactionClient = this.prisma): Promise<number> {
+    const { count } = await tx.session.updateMany({
       where: { userId, revokedAt: null },
       data: { revokedAt: new Date() },
     });

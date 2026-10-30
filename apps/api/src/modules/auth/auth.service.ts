@@ -7,6 +7,7 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
+import { AuthTokenType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from './access-token.service';
@@ -143,11 +144,16 @@ export class AuthService {
     if (await this.passwords.verify(user.passwordHash, newPassword))
       throw new BadRequestException('Choose a new password that differs from the current one');
 
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { passwordHash: await this.passwords.hash(newPassword) },
+    const passwordHash = await this.passwords.hash(newPassword); // CPU work outside the transaction
+    const ended = await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id: user.id }, data: { passwordHash } });
+      // An emailed reset link must not set a password over the one just chosen.
+      await tx.authToken.updateMany({
+        where: { userId: user.id, type: AuthTokenType.password_reset, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+      return this.sessions.endAllForUser(user.id, tx);
     });
-    const ended = await this.sessions.endAllForUser(user.id);
     const session = await this.sessions.start({ id: user.id, role: user.role }, client);
     await this.audit.record({
       action: 'auth.password_changed',
