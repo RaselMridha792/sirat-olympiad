@@ -1,0 +1,22 @@
+{
+  "name": "sirat-olympiad",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.34.9",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev:web": "pnpm --filter @sirat/web dev",
+    "dev:api": "pnpm --filter @sirat/api start:dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md,css}\" --ignore-path .gitignore",
+    "db:migrate": "pnpm --filter @sirat/api prisma:migrate",
+    "db:generate": "pnpm --filter @sirat/api prisma:generate"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3"
+  }
+}

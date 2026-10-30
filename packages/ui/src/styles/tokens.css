@@ -1,0 +1,47 @@
+/*
+ * GLOBAL DESIGN TOKENS — single source of truth for colors, fonts, radii.
+ * Brand colors are carried over from Zero Olympiad (Primary #E3621C orange, Secondary #083E5F navy).
+ * Change a color HERE, never hardcode hex in components. See docs/08-DESIGN-TOKENS.md.
+ * Tailwind v4: tokens declared in @theme become utilities (bg-primary, text-ink, ...).
+ */
+@theme {
+  /* Brand */
+  --color-primary: #e3621c;
+  --color-primary-hover: #c95416;
+  --color-primary-soft: #fdeee5;
+  --color-secondary: #083e5f;
+  --color-secondary-hover: #062f48;
+  --color-secondary-soft: #e6eff5;
+
+  /* Neutral / surfaces (admin & dashboard shell used #0f172a sidebar, #f8fafc page) */
+  --color-shell: #0f172a;
+  --color-shell-soft: #1e293b;
+  --color-page: #f8fafc;
+  --color-surface: #ffffff;
+  --color-line: #e2e8f0;
+  --color-ink: #0f172a;
+  --color-ink-muted: #64748b;
+  --color-ink-faint: #94a3b8;
+
+  /* Status */
+  --color-success: #10b981;
+  --color-success-soft: #d1fae5;
+  --color-warning: #f59e0b;
+  --color-warning-soft: #fef3c7;
+  --color-danger: #ef4444;
+  --color-danger-soft: #fee2e2;
+  --color-info: #2563eb;
+  --color-info-soft: #dbeafe;
+
+  /* Rank tiers (ambassador program; real thresholds live in DB config table) */
+  --color-rank-bronze: #b45309;
+  --color-rank-silver: #94a3b8;
+  --color-rank-gold: #f59e0b;
+
+  --font-sans: "Inter Variable", "Noto Sans Bengali Variable", system-ui, sans-serif;
+  --font-bangla: "Noto Sans Bengali Variable", system-ui, sans-serif;
+
+  --radius-card: 1rem;
+  --radius-control: 0.75rem;
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.06), 0 4px 16px rgb(15 23 42 / 0.06);
+}
