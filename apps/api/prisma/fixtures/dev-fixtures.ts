@@ -43,9 +43,7 @@ async function main(): Promise<void> {
       if (await prisma.user.findUnique({ where: { email }, select: { id: true } })) continue;
       const grade = await prisma.gradeLevel.findUnique({ where: { sortOrder: s.gradeSortOrder } });
       if (!grade)
-        throw new Error(
-          'Grade levels missing: run the config seed first (pnpm --filter @sirat/api db:seed).',
-        );
+        throw new Error('Grade levels missing: apply the migrations first (pnpm db:migrate).');
 
       await prisma.$transaction(async (tx) => {
         const now = new Date();
