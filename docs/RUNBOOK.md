@@ -50,15 +50,24 @@ git switch main && git fetch origin
 sha=$(git rev-parse origin/main)   # deploy ONLY a commit whose CI run is green (CI is advisory, OPEN-QUESTIONS #25):
 # gh run list --workflow CI --commit "$sha" --json conclusion --jq '.[0].conclusion'   -> must print success
 git merge --ff-only "$sha"
-$DC up -d --build                  # VERIFIED locally: builds, runs `migrate` (migrate deploy + config seed), then starts api
-$DC logs migrate                   # must end with "config seed done"; the api will not start if migrate failed
+$DC build                          # new images; nothing restarts yet
+$DC run --rm migrate               # migrate deploy + config seed with the NEW image while the OLD API keeps serving.
+                                   # Its own output must end with "config seed done". If it fails, STOP: the old API is
+                                   # still up; follow "Migration failed" below. (`$DC logs migrate` shows an older run.)
+$DC up -d                          # recreates web/api with the new images; migrate runs again (no-op)
 scripts/healthcheck.sh https://<domain>   # if this fails -> rollback
 # Re-run migrations + seed by hand (safe to repeat):
 $DC run --rm migrate
 # Rollback: git checkout --detach <deploy-tag|sha> && $DC up -d --build   (next deploy starts with `git switch main`)
-# A rollback does NOT undo migrations; migrations must stay backward-compatible.
+# A rollback does NOT undo migrations, and it fails with P3009 while a failed migration is unresolved (see below).
 ```
-Migrations must stay backward-compatible (old code keeps running while the new one starts). TODO: `scripts/deploy.sh` = build → migrate → start → health-check → auto-rollback on failure. **No deploys during a live exam window** except a critical fix agreed with the owner.
+Migrations must stay backward-compatible: the old API keeps serving between `run migrate` and `up -d`, and a rollback runs old code on the new schema. `up -d` stops every API replica before the new ones start (about 10–20 s of 502s even when the deploy succeeds); zero-downtime deploys are the TODO in `scripts/deploy.sh` (build → migrate → start → health-check → auto-rollback).
+
+**Migration failed** (the `run` output names it, e.g. P3018). Do this before any other `$DC up`:
+1. Leave the old API running; do not run `$DC up`.
+2. Confirm the failed migration left no changes. Prisma runs each migration file as one transaction on Postgres, unless the file has its own `BEGIN`/`COMMIT` or statements that cannot run in a transaction; check those by hand.
+3. Mark it rolled back: `$DC run --rm migrate node_modules/.bin/prisma migrate resolve --rolled-back <migration_name>` (works with the new or the old image).
+4. Fix forward (a corrected migration in a new commit, then deploy again) or roll back the code (`git checkout --detach <deploy-tag>`, `$DC build`, `$DC up -d`). **No deploys during a live exam window** except a critical fix agreed with the owner.
 
 ## 3. Scale API replicas
 
@@ -114,6 +123,10 @@ Also before launch:
 ```bash
 scripts/refresh-cloudflare-ips.sh     # VERIFIED: validates both lists, nginx -t on the pinned image, then rewrites the file in place
 $DC exec nginx nginx -t && $DC exec nginx nginx -s reload
+```
+Then confirm the running nginx sees the new list (a deploy that replaced the file through git gives it a new inode, which an nginx container created earlier does not see):
+```bash
+[ "$($DC exec -T nginx grep -c '^set_real_ip_from' /etc/nginx/cloudflare-realip.conf)" = "$(grep -c '^set_real_ip_from' infra/nginx/cloudflare-realip.conf)" ] || $DC up -d --force-recreate nginx   # recreate: never during an exam
 ```
 The script refuses (exit non-zero, live file untouched) when a download fails, returns anything that is not a CIDR, or has fewer than 10 IPv4 / 5 IPv6 ranges. Never edit `infra/nginx/cloudflare-realip.conf` by hand and never paste the old one-liner: it wrote an empty list when the download failed, which made every student behind a Cloudflare edge share one rate-limit bucket.
 After go-live, confirm in the nginx access log that client addresses are real users, not Cloudflare edges. If Cloudflare reaches the origin over IPv6 while the compose network has none, Docker replaces the source address and real-IP restore cannot work: keep the origin A-record-only.
