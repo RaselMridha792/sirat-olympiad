@@ -1,4 +1,5 @@
 import {
+  Body,
   ConflictException,
   Controller,
   Get,
@@ -8,29 +9,64 @@ import {
   Res,
   UnauthorizedException,
 } from '@nestjs/common';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import type { SessionUser } from '@sirat/shared';
 import type { Request, Response } from 'express';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from './access-token.service';
 import { CurrentUser, Public } from './auth.decorators';
+import { AuthService, TooManyAttemptsException } from './auth.service';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { EmailOnlyDto } from './dto/email-only.dto';
+import { ResetPasswordDto, VerifyEmailDto } from './dto/email-link.dto';
+import { LoginDto } from './dto/login.dto';
 import { REFRESH_COOKIE, SessionCookies } from './session-cookies';
 import { type ClientInfo, SessionService } from './session.service';
+
+/** Stricter than the 600/min default for the email-link endpoints (per route and client IP; RULEBOOK §4). */
+const STRICT_TIER = { default: { limit: 30, ttl: 60_000 } };
+/** Requests for a link email: per route and client IP, sized for a school sharing one IP. */
+const LINK_REQUEST_TIER = { default: { limit: 60, ttl: 60_000 } };
 
 const clientInfo = (req: Request): ClientInfo => ({
   ip: req.ip ?? null,
   userAgent: req.get('user-agent') ?? null,
 });
 
-/** Session endpoints (06-API). Login, password and email-token endpoints follow. */
+/** Auth endpoints (06-API). Password and email-token endpoints follow. */
 @Controller('auth')
 export class AuthController {
   constructor(
+    private readonly auth: AuthService,
     private readonly sessions: SessionService,
     private readonly cookies: SessionCookies,
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
   ) {}
+
+  /**
+   * Sets the session cookies; 204 with an empty body (no token, no personal data; the web reads /auth/me). Not counted by the global
+   * limiter: only failed logins count (owner), in LoginLimiter. 401 for any failure, 429 + Retry-After while a
+   * lock or limit applies, 403 for a blocked account (after the right password only).
+   */
+  @Public()
+  @SkipThrottle()
+  @Post('login')
+  @HttpCode(204)
+  async login(
+    @Body() body: LoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<void> {
+    try {
+      this.cookies.set(res, await this.auth.login(body.email, body.password, clientInfo(req)));
+    } catch (e) {
+      if (e instanceof TooManyAttemptsException)
+        res.setHeader('Retry-After', String(e.retryAfterSeconds));
+      throw e;
+    }
+  }
 
   /**
    * Rotation. Public, because the access token may already have expired: the refresh cookie is the credential.
@@ -78,6 +114,75 @@ export class AuthController {
       meta: { sessions: ended },
     });
     this.cookies.clear(res);
+  }
+
+  /**
+   * Ends every session on every device; this device gets a fresh one (cookies). 400 for a wrong current password,
+   * 429 + Retry-After under the login limits.
+   */
+  @Post('change-password')
+  @HttpCode(204)
+  async changePassword(
+    @CurrentUser() user: AuthUser,
+    @Body() body: ChangePasswordDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<void> {
+    try {
+      const session = await this.auth.changePassword(
+        user,
+        body.currentPassword,
+        body.newPassword,
+        clientInfo(req),
+      );
+      this.cookies.set(res, session);
+    } catch (e) {
+      if (e instanceof TooManyAttemptsException)
+        res.setHeader('Retry-After', String(e.retryAfterSeconds));
+      throw e;
+    }
+  }
+
+  /**
+   * Sets a new password from an emailed link. 204, or 400 with one message for every bad link; 400 "Validation
+   * failed" for a refused password (the link stays usable). Ends every session; never logs in.
+   */
+  @Public()
+  @Throttle(STRICT_TIER)
+  @Post('reset-password')
+  @HttpCode(204)
+  async resetPassword(@Body() body: ResetPasswordDto, @Req() req: Request): Promise<void> {
+    await this.auth.resetPassword(body.token, body.password, clientInfo(req));
+  }
+
+  /**
+   * Asks for a password-reset email. Always 204 at once, whatever the address: an email follows only for an
+   * existing, unblocked account, and nothing in the answer or its timing tells which.
+   */
+  @Public()
+  @Throttle(LINK_REQUEST_TIER)
+  @Post('forgot-password')
+  @HttpCode(204)
+  forgotPassword(@Body() body: EmailOnlyDto): void {
+    this.auth.requestPasswordReset(body.email);
+  }
+
+  /** Asks for a new verification email. Always 204 at once, like forgot-password. */
+  @Public()
+  @Throttle(LINK_REQUEST_TIER)
+  @Post('resend-verification')
+  @HttpCode(204)
+  resendVerification(@Body() body: EmailOnlyDto): void {
+    this.auth.requestVerificationEmail(body.email);
+  }
+
+  /** Verifies an email address from its link. 204, or 400 with one message for every bad link. Never logs in. */
+  @Public()
+  @Throttle(STRICT_TIER)
+  @Post('verify-email')
+  @HttpCode(204)
+  async verifyEmail(@Body() body: VerifyEmailDto, @Req() req: Request): Promise<void> {
+    await this.auth.verifyEmail(body.token, clientInfo(req));
   }
 
   /** The session user, read fresh from the database (role included). A blocked user is logged out. */

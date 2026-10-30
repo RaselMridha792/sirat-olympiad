@@ -1,10 +1,17 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
+import type Redis from 'ioredis';
 import type { EnvVars } from '../../config/env';
+import { REDIS_CACHE } from '../../redis/redis.module';
 import { AuditModule } from '../audit/audit.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { AccessTokenService, accessTokenJwtOptions } from './access-token.service';
 import { AuthController } from './auth.controller';
+import { AuthService } from './auth.service';
+import { EmailSendLimiter } from './email-send-limiter';
+import { EMAIL_TOKEN_TTLS, EmailTokenService } from './email-tokens.service';
+import { LoginLimiter } from './login-limiter';
 import { PasswordService } from './password.service';
 import { SessionCookies } from './session-cookies';
 import { SessionService } from './session.service';
@@ -17,6 +24,7 @@ import { SessionService } from './session.service';
 @Module({
   imports: [
     AuditModule,
+    NotificationsModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService<EnvVars, true>) =>
@@ -27,7 +35,44 @@ import { SessionService } from './session.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AccessTokenService, PasswordService, SessionService, SessionCookies],
+  providers: [
+    AccessTokenService,
+    PasswordService,
+    SessionService,
+    SessionCookies,
+    AuthService,
+    EmailTokenService,
+    {
+      provide: EmailSendLimiter,
+      inject: [REDIS_CACHE, ConfigService],
+      useFactory: (redis: Redis, config: ConfigService<EnvVars, true>) =>
+        new EmailSendLimiter(redis, {
+          perMinute: config.get('AUTH_LINK_EMAILS_PER_MINUTE', { infer: true }),
+          perHour: config.get('AUTH_LINK_EMAILS_PER_HOUR', { infer: true }),
+        }),
+    },
+    {
+      provide: EMAIL_TOKEN_TTLS,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<EnvVars, true>) => ({
+        email_verify: config.get('EMAIL_VERIFY_TOKEN_HOURS', { infer: true }) * 3_600_000,
+        password_reset: config.get('PASSWORD_RESET_TOKEN_MINUTES', { infer: true }) * 60_000,
+      }),
+    },
+    {
+      provide: LoginLimiter,
+      inject: [REDIS_CACHE, ConfigService],
+      useFactory: (redis: Redis, config: ConfigService<EnvVars, true>) =>
+        new LoginLimiter(redis, {
+          ipFailuresPerMinute: config.get('LOGIN_IP_FAILURES_PER_MINUTE', { infer: true }),
+          pairMaxFailures: config.get('LOGIN_PAIR_MAX_FAILURES', { infer: true }),
+          lockBaseMs: config.get('LOGIN_LOCK_MINUTES', { infer: true }) * 60_000,
+          lockMaxMs: config.get('LOGIN_LOCK_MAX_MINUTES', { infer: true }) * 60_000,
+          accountFailuresPerHour: config.get('LOGIN_ACCOUNT_FAILURES_PER_HOUR', { infer: true }),
+          alertDistinctIps: config.get('LOGIN_ALERT_DISTINCT_IPS_PER_HOUR', { infer: true }),
+        }),
+    },
+  ],
   exports: [AccessTokenService, PasswordService, SessionService],
 })
 export class AuthModule {}

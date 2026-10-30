@@ -1,6 +1,7 @@
 import 'reflect-metadata'; // class-transformer/validator decorators need it even when env.ts is loaded on its own
 import { plainToInstance } from 'class-transformer';
 import {
+  IsEmail,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -27,6 +28,33 @@ export class EnvVars {
   @IsInt() @Min(1) REFRESH_TTL_DAYS: number = 7;
   /** Session cookies carry `Secure` unless this is 'false' (local plain-http development only; refused in production). */
   @IsIn(['true', 'false']) COOKIE_SECURE: string = 'true';
+
+  // Login limits (owner, 2026-10-31). Only failed logins count.
+  /** Failed logins per minute from one IP, all accounts together (owner: about 60-100; a school shares one IP). */
+  @IsInt() @Min(10) @Max(10_000) LOGIN_IP_FAILURES_PER_MINUTE: number = 100;
+  /** Failures of one account from one IP (within 15 min) that lock that pair. */
+  @IsInt() @Min(3) @Max(100) LOGIN_PAIR_MAX_FAILURES: number = 10;
+  /** First lock of a pair; each repeat within 24 h doubles it, up to LOGIN_LOCK_MAX_MINUTES. */
+  @IsInt() @Min(1) @Max(1_440) LOGIN_LOCK_MINUTES: number = 15;
+  @IsInt() @Min(1) @Max(10_080) LOGIN_LOCK_MAX_MINUTES: number = 240;
+  /** Failures per hour for one account from all IPs together (owner: about 50). */
+  @IsInt() @Min(10) @Max(10_000) LOGIN_ACCOUNT_FAILURES_PER_HOUR: number = 50;
+  /** Owner: failures on one account from more distinct IPs than this within an hour raise an alert (no blocking). */
+  @IsInt() @Min(2) @Max(999) LOGIN_ALERT_DISTINCT_IPS_PER_HOUR: number = 20;
+
+  /** The web origin used in email links, e.g. https://example.org (no path). Required in production. */
+  @IsOptional() @Matches(/^https?:\/\/[^\s/?#]+$/) APP_URL?: string;
+  /** Email link lifetimes (RULEBOOK §5: e.g. 24 h to verify, 30 min to reset). */
+  @IsInt() @Min(1) @Max(168) EMAIL_VERIFY_TOKEN_HOURS: number = 24;
+  @IsInt() @Min(5) @Max(1_440) PASSWORD_RESET_TOKEN_MINUTES: number = 30;
+  /** Link emails (reset, verification) one address can receive, per kind: stops mail bombing and SES costs. */
+  @IsInt() @Min(1) @Max(10) AUTH_LINK_EMAILS_PER_MINUTE: number = 1;
+  @IsInt() @Min(1) @Max(100) AUTH_LINK_EMAILS_PER_HOUR: number = 5;
+
+  /** Operator inbox for security alerts. Unset: alerts go to the audit log and the log only. */
+  @IsOptional() @IsEmail() SECURITY_ALERT_EMAIL?: string;
+  /** Owner: at most one alert email per kind per 10 minutes, and at most this many alert emails per hour. */
+  @IsInt() @Min(1) @Max(60) SECURITY_ALERT_EMAILS_PER_HOUR: number = 6;
   /** Optional override of the pino level (default: info in production, debug elsewhere). */
   @IsOptional()
   @IsIn(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
@@ -76,6 +104,9 @@ export function validateEnv(raw: Record<string, unknown>): EnvVars {
   const problem = secretProblem(env.JWT_ACCESS_SECRET);
   if (problem) {
     throw new Error(`JWT_ACCESS_SECRET ${problem}. Generate one with: openssl rand -base64 48`);
+  }
+  if (env.NODE_ENV === 'production' && !env.APP_URL) {
+    throw new Error('APP_URL is required in production: email links are built from it');
   }
   if (env.NODE_ENV === 'production' && env.COOKIE_SECURE === 'false') {
     throw new Error(

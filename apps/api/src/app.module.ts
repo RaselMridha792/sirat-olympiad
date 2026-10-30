@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import type Redis from 'ioredis';
 import { LoggerModule } from 'nestjs-pino';
+import { BackgroundModule } from './common/background/background-tasks';
 import { pinoHttpOptions } from './common/logging/pino-http.options';
 import { DrainService } from './common/shutdown/drain.service';
 import { RedisThrottlerStorage } from './common/throttler/redis-throttler.storage';
@@ -44,6 +45,7 @@ import { CertificatesModule } from './modules/certificates/certificates.module';
     }),
     PrismaModule,
     RedisModule,
+    BackgroundModule,
     HealthModule,
     AuthModule,
     UsersModule,
