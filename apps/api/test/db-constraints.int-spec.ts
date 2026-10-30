@@ -198,4 +198,67 @@ describe('identity and foreign keys', () => {
     const user = await makeUser(prisma);
     expect(user.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   });
+
+  it('refuses to hard-delete a user that history points to (ON DELETE RESTRICT)', async () => {
+    const owner = await makeUser(prisma);
+    await prisma.payment.create({ data: paymentData({ userId: owner.id }) });
+    await expect(prisma.user.delete({ where: { id: owner.id } })).rejects.toMatchObject(FOREIGN_KEY);
+
+    const admin = await makeUser(prisma);
+    const member = await makeUser(prisma);
+    await prisma.pointLedger.create({
+      data: { userId: member.id, eventKey: `adj:${randomUUID()}`, amount: 1, reason: 'test', createdById: admin.id },
+    });
+    await expect(prisma.user.delete({ where: { id: admin.id } })).rejects.toMatchObject(FOREIGN_KEY);
+
+    // Sessions are the deliberate exception: they cascade with their user.
+    const plain = await makeUser(prisma);
+    await prisma.session.create({
+      data: { userId: plain.id, familyId: randomUUID(), tokenHash: randomUUID(), expiresAt: new Date() },
+    });
+    await expect(prisma.user.delete({ where: { id: plain.id } })).resolves.toBeDefined();
+  });
+
+  it('treats promo codes case-insensitively (citext)', async () => {
+    const code = `Code${randomUUID().slice(0, 6)}`;
+    await prisma.ambassadorProfile.create({ data: { userId: (await makeUser(prisma)).id, promoCode: code } });
+    await expect(
+      prisma.ambassadorProfile.create({ data: { userId: (await makeUser(prisma)).id, promoCode: code.toUpperCase() } }),
+    ).rejects.toMatchObject(UNIQUE);
+  });
+});
+
+describe('schema invariants (catalog checks that guard future migrations)', () => {
+  it('has an index whose leading columns cover every foreign key', async () => {
+    const missing = await prisma.$queryRaw<{ tbl: string; fk: string }[]>`
+      SELECT c.conrelid::regclass::text AS tbl, c.conname AS fk
+      FROM pg_constraint c
+      WHERE c.contype = 'f' AND c.connamespace = 'public'::regnamespace
+        AND NOT EXISTS (
+          SELECT 1 FROM pg_index i
+          WHERE i.indrelid = c.conrelid
+            AND (i.indkey::int2[])[0:cardinality(c.conkey) - 1] = c.conkey
+        )`;
+    expect(missing).toEqual([]);
+  });
+
+  it('has no CHECK constraint that compares an enum to a literal (breaks Prisma enum migrations)', async () => {
+    const offending = await prisma.$queryRaw<{ name: string; def: string }[]>`
+      SELECT c.conname AS name, pg_get_constraintdef(c.oid) AS def
+      FROM pg_constraint c
+      WHERE c.contype = 'c' AND c.connamespace = 'public'::regnamespace
+        AND EXISTS (
+          SELECT 1 FROM pg_type t
+          WHERE t.typtype = 'e' AND t.typnamespace = 'public'::regnamespace
+            AND pg_get_constraintdef(c.oid) LIKE '%::"' || t.typname || '"%'
+        )`;
+    expect(offending).toEqual([]);
+  });
+
+  it('defaults updated_at in the database, so raw-SQL inserts do not need it', async () => {
+    const key = `raw-${randomUUID()}`;
+    await prisma.$executeRaw`INSERT INTO settings (key, value) VALUES (${key}, '1'::jsonb)`;
+    const row = await prisma.setting.findUniqueOrThrow({ where: { key } });
+    expect(row.updatedAt).toBeInstanceOf(Date);
+  });
 });

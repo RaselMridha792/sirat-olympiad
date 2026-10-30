@@ -95,10 +95,10 @@ model User {
   signupSource    String?   @map("signup_source")
   referredById    String?   @map("referred_by_id") @db.Uuid // ambassador user who referred
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  gradeLevel          GradeLevel?        @relation(fields: [gradeLevelId], references: [id])
-  referredBy          User?              @relation("Referrals", fields: [referredById], references: [id])
+  gradeLevel          GradeLevel?        @relation(fields: [gradeLevelId], references: [id], onDelete: Restrict)
+  referredBy          User?              @relation("Referrals", fields: [referredById], references: [id], onDelete: Restrict)
   referrals           User[]             @relation("Referrals")
   sessions            Session[]
   authTokens          AuthToken[]
@@ -137,7 +137,7 @@ model Session {
   userAgent String?   @map("user_agent")
   ip        String?
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -153,7 +153,7 @@ model AuthToken {
   expiresAt DateTime      @map("expires_at") @db.Timestamptz
   usedAt    DateTime?     @map("used_at") @db.Timestamptz
   createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  updatedAt DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, type])
@@ -186,7 +186,7 @@ model GradeLevel {
   sortOrder Int      @unique @map("sort_order")
   category  Category
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   users     User[]
 
   @@map("grade_levels")
@@ -197,7 +197,7 @@ model Setting {
   key       String   @id
   value     Json
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   @@map("settings")
 }
@@ -217,9 +217,9 @@ model Payment {
   expiresAt      DateTime      @map("expires_at") @db.Timestamptz
   paidAt         DateTime?     @map("paid_at") @db.Timestamptz
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  updatedAt      DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  user         User?                @relation(fields: [userId], references: [id])
+  user         User?                @relation(fields: [userId], references: [id], onDelete: Restrict)
   registration Registration?
   pending      PendingRegistration?
 
@@ -235,7 +235,7 @@ model PendingRegistration {
   payload    Json // validated form data (never contains role or a plain password)
   consumedAt DateTime? @map("consumed_at") @db.Timestamptz
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   payment    Payment   @relation(fields: [paymentId], references: [id])
 
   @@map("pending_registrations")
@@ -247,7 +247,7 @@ model Registration {
   userId    String   @unique @map("user_id") @db.Uuid
   paymentId String   @unique @map("payment_id") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   user      User     @relation(fields: [userId], references: [id])
   payment   Payment  @relation(fields: [paymentId], references: [id])
 
@@ -269,9 +269,9 @@ model Exam {
   status              ExamStatus @default(draft)
   resultsPublishedAt  DateTime?  @map("results_published_at") @db.Timestamptz
   createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt           DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+  updatedAt           DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  round     Round?     @relation(fields: [roundId], references: [id])
+  round     Round?     @relation(fields: [roundId], references: [id], onDelete: Restrict)
   questions Question[]
   attempts  Attempt[]
 
@@ -291,7 +291,7 @@ model Question {
   version     Int      @default(1)
   isActive    Boolean  @default(true) @map("is_active")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   exam        Exam     @relation(fields: [examId], references: [id])
 
   @@index([examId, isActive])
@@ -311,7 +311,7 @@ model Attempt {
   timeTakenSeconds Int?          @map("time_taken_seconds") // computed by server, never client-reported
   score            Int?
   createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  updatedAt        DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   user       User        @relation(fields: [userId], references: [id])
   exam       Exam        @relation(fields: [examId], references: [id])
@@ -347,7 +347,7 @@ model Round {
   opensAt   DateTime?    @map("opens_at") @db.Timestamptz
   closesAt  DateTime?    @map("closes_at") @db.Timestamptz
   createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+  updatedAt DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   exams     Exam[]
   entries   RoundEntry[]
 
@@ -364,7 +364,7 @@ model RoundEntry {
   score     Decimal?    @db.Decimal(8, 2)
   videoUrl  String?     @map("video_url")
   createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime    @updatedAt @map("updated_at") @db.Timestamptz
+  updatedAt DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   user      User        @relation(fields: [userId], references: [id])
   round     Round       @relation(fields: [roundId], references: [id])
   scores    JuryScore[]
@@ -399,7 +399,7 @@ model Certificate {
   verificationCode String   @unique @map("verification_code")
   issuedAt         DateTime @default(now()) @map("issued_at") @db.Timestamptz
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   user             User     @relation(fields: [userId], references: [id])
 
   @@index([userId])
@@ -411,10 +411,10 @@ model Certificate {
 model AmbassadorProfile {
   id         String    @id @default(uuid(7)) @db.Uuid
   userId     String    @unique @map("user_id") @db.Uuid
-  promoCode  String    @unique @map("promo_code")
+  promoCode  String    @unique @map("promo_code") @db.Citext // case-insensitive like users.email
   approvedAt DateTime? @map("approved_at") @db.Timestamptz // admin approval (to be confirmed with owner)
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   user       User      @relation(fields: [userId], references: [id])
 
   @@map("ambassador_profiles")
@@ -431,8 +431,8 @@ model PointLedger {
   createdById String?    @map("created_by_id") @db.Uuid
   createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz
   user        User       @relation("PointOwner", fields: [userId], references: [id])
-  createdBy   User?      @relation("PointCreatedBy", fields: [createdById], references: [id])
-  task        AdminTask? @relation(fields: [taskId], references: [id])
+  createdBy   User?      @relation("PointCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  task        AdminTask? @relation(fields: [taskId], references: [id], onDelete: Restrict)
 
   @@index([userId, createdAt])
   @@index([taskId])
@@ -445,7 +445,7 @@ model RankThreshold {
   name      String   @unique // Bronze, Silver, Gold ...
   minPoints Int      @unique @map("min_points")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   @@map("rank_thresholds")
 }
@@ -455,7 +455,7 @@ model Team {
   name      String       @unique
   ownerId   String       @map("owner_id") @db.Uuid
   createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+  updatedAt DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   owner     User         @relation(fields: [ownerId], references: [id])
   members   TeamMember[]
 
@@ -467,7 +467,7 @@ model TeamMember {
   teamId    String   @map("team_id") @db.Uuid
   userId    String   @map("user_id") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id])
 
@@ -483,7 +483,7 @@ model AdminTask {
   points       Int
   createdById  String           @map("created_by_id") @db.Uuid
   createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+  updatedAt    DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   createdBy    User             @relation(fields: [createdById], references: [id])
   assignments  TaskAssignment[]
   pointEntries PointLedger[]
@@ -500,10 +500,10 @@ model TaskAssignment {
   approvedById String?    @map("approved_by_id") @db.Uuid
   approvedAt   DateTime?  @map("approved_at") @db.Timestamptz
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+  updatedAt    DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   task         AdminTask  @relation(fields: [taskId], references: [id])
   user         User       @relation("TaskAssignee", fields: [userId], references: [id])
-  approvedBy   User?      @relation("TaskApprover", fields: [approvedById], references: [id])
+  approvedBy   User?      @relation("TaskApprover", fields: [approvedById], references: [id], onDelete: Restrict)
 
   @@unique([taskId, userId])
   @@index([userId])
@@ -518,7 +518,7 @@ model Announcement {
   publishedAt DateTime @default(now()) @map("published_at") @db.Timestamptz
   createdById String   @map("created_by_id") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   createdBy   User     @relation(fields: [createdById], references: [id])
 
   @@index([publishedAt])
