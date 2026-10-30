@@ -12,6 +12,9 @@ import {
   validateSync,
 } from 'class-validator';
 
+const ADDRESS = '[^<>\\s@]+@[^<>\\s@]+\\.[^<>\\s@]+';
+const SENDER = new RegExp(`^([^<>]+ <${ADDRESS}>|${ADDRESS})$`);
+
 /** Fail fast at startup if any required variable is missing (rulebook section 4). */
 export class EnvVars {
   @IsIn(['development', 'test', 'production']) NODE_ENV!: string;
@@ -28,6 +31,18 @@ export class EnvVars {
   @IsOptional()
   @IsIn(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
   LOG_LEVEL?: string;
+
+  // Email: only the worker sends, so only the worker requires these (validateWorkerEnv). Owner: Amazon SES in
+  // production, Mailpit in development.
+  @IsOptional() @IsIn(['ses', 'mailpit']) EMAIL_PROVIDER?: string;
+  /** `Name <address>` or a bare address. */
+  @IsOptional() @Matches(SENDER) EMAIL_FROM?: string;
+  /** Amazon SES (SESv2), e.g. ap-south-1. The keys belong to an IAM user allowed only ses:SendEmail. Never logged. */
+  @IsOptional() @Matches(/^[a-z]{2}(-[a-z]+)+-\d$/) SES_REGION?: string;
+  @IsOptional() @IsString() SES_ACCESS_KEY_ID?: string;
+  @IsOptional() @IsString() SES_SECRET_ACCESS_KEY?: string;
+  @IsOptional() @Matches(/^https?:\/\/\S+$/) MAILPIT_URL?: string;
+  @IsInt() @Min(1) @Max(65535) WORKER_HEALTH_PORT: number = 4001;
 }
 
 const MIN_SECRET_LENGTH = 32;
@@ -49,7 +64,10 @@ export function secretProblem(value: string): string | null {
 }
 
 export function validateEnv(raw: Record<string, unknown>): EnvVars {
-  const env = plainToInstance(EnvVars, raw, { enableImplicitConversion: true });
+  // `KEY=` in an env file means "not set": @IsOptional() only skips undefined, and a blank line copied from an
+  // example must not stop the API (required variables still fail, as missing).
+  const set = Object.fromEntries(Object.entries(raw).filter(([, value]) => value !== ''));
+  const env = plainToInstance(EnvVars, set, { enableImplicitConversion: true });
   const errors = validateSync(env, { skipMissingProperties: false });
   if (errors.length > 0) {
     const names = errors.map((e) => e.property).join(', ');
@@ -64,5 +82,33 @@ export function validateEnv(raw: Record<string, unknown>): EnvVars {
       'COOKIE_SECURE=false is for local development only, never with NODE_ENV=production',
     );
   }
+  return env;
+}
+
+/** Why the worker cannot send email with this configuration, or null. Never includes a key. */
+export function emailConfigProblem(env: EnvVars): string | null {
+  if (!env.EMAIL_PROVIDER) return 'EMAIL_PROVIDER must be ses or mailpit';
+  if (env.EMAIL_PROVIDER === 'ses') {
+    if (!env.SES_REGION) return 'SES_REGION is required with EMAIL_PROVIDER=ses (e.g. ap-south-1)';
+    const id = env.SES_ACCESS_KEY_ID ?? '';
+    const secret = env.SES_SECRET_ACCESS_KEY ?? '';
+    // Long-term IAM user keys only (AKIA...); AWS documentation examples contain "EXAMPLE" and are refused.
+    if (!/^AKIA[A-Z0-9]{16}$/.test(id) || PLACEHOLDER.test(id))
+      return 'SES_ACCESS_KEY_ID is missing or is not an IAM access key id (AKIA...)';
+    if (!/^[A-Za-z0-9/+]{40}$/.test(secret) || PLACEHOLDER.test(secret))
+      return 'SES_SECRET_ACCESS_KEY is missing or is not an IAM secret access key';
+  }
+  if (!env.EMAIL_FROM)
+    return 'EMAIL_FROM is required, e.g. "Sirat Olympiad <no-reply@your-domain>"';
+  if (env.EMAIL_PROVIDER === 'mailpit' && !env.MAILPIT_URL)
+    return 'MAILPIT_URL is required with EMAIL_PROVIDER=mailpit';
+  return null;
+}
+
+/** The worker's environment: everything the API needs, plus a usable email configuration. */
+export function validateWorkerEnv(raw: Record<string, unknown>): EnvVars {
+  const env = validateEnv(raw);
+  const problem = emailConfigProblem(env);
+  if (problem) throw new Error(`Invalid email configuration: ${problem}`);
   return env;
 }
