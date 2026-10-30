@@ -317,4 +317,12 @@ describe('schema invariants (catalog checks that guard future migrations)', () =
     const row = await prisma.setting.findUniqueOrThrow({ where: { key } });
     expect(row.updatedAt).toBeInstanceOf(Date);
   });
+
+  it('gives every new session the app-wide statement, lock and idle-transaction timeouts', async () => {
+    const [row] = await prisma.$queryRaw<{ statement: string; lock: string; idle: string }[]>`
+      SELECT current_setting('statement_timeout') AS statement,
+             current_setting('lock_timeout') AS lock,
+             current_setting('idle_in_transaction_session_timeout') AS idle`;
+    expect(row).toEqual({ statement: '10s', lock: '5s', idle: '1min' });
+  });
 });
