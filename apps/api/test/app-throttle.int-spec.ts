@@ -2,11 +2,11 @@
  * Boots the real AppModule (real env, Postgres, both Redis) and proves the rate limiter is wired globally:
  * 600 requests per minute per route and client, then 429 with Retry-After; liveness is never limited.
  */
-import type { INestApplication } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import Redis from 'ioredis';
 
-let app: INestApplication;
+let app: NestExpressApplication;
 let base: string;
 
 async function deleteThrottleKeys(client: Redis): Promise<void> {
@@ -37,10 +37,11 @@ beforeAll(async () => {
   await admin.quit();
 
   const { AppModule } = await import('../src/app.module');
+  const { configureApp } = await import('../src/configure-app');
   const { REDIS_CACHE } = await import('../src/redis/redis.module');
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-  app = moduleRef.createNestApplication({ logger: false });
-  app.setGlobalPrefix('api');
+  app = moduleRef.createNestApplication<NestExpressApplication>({ logger: false });
+  configureApp(app); // the production pipeline (main.ts)
   await app.listen(0, '127.0.0.1');
   base = (await app.getUrl()).replace('[::1]', '127.0.0.1');
 

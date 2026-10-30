@@ -3,7 +3,8 @@
  * its connection busy, because responses during the drain carry `Connection: close`. Without that, Node's
  * server.close() waits forever and the pools are never closed before Docker kills the process.
  */
-import { Controller, Get, type INestApplication } from '@nestjs/common';
+import { Controller, Get } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -21,21 +22,20 @@ class SlowController {
   }
 }
 
-let app: INestApplication;
+let app: NestExpressApplication;
 let port: number;
 
 beforeAll(async () => {
   process.env.LOG_LEVEL = 'silent';
   const { AppModule } = await import('../src/app.module');
-  const { DrainService } = await import('../src/common/shutdown/drain.service');
+  const { configureApp } = await import('../src/configure-app');
   const { REDIS_CACHE } = await import('../src/redis/redis.module');
   const moduleRef = await Test.createTestingModule({
     imports: [AppModule],
     controllers: [SlowController],
   }).compile();
-  app = moduleRef.createNestApplication({ logger: false });
-  app.setGlobalPrefix('api');
-  app.use(app.get(DrainService).middleware()); // same order as main.ts
+  app = moduleRef.createNestApplication<NestExpressApplication>({ logger: false });
+  configureApp(app); // the production pipeline (main.ts), drain middleware first
   await app.listen(0, '127.0.0.1');
   port = (app.getHttpServer().address() as AddressInfo).port;
   const cache = app.get<Redis>(REDIS_CACHE);
