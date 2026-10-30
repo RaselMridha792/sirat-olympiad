@@ -5,6 +5,8 @@ proxy_set_header Host $host;
 proxy_set_header X-Real-IP $remote_addr;
 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 proxy_set_header X-Forwarded-Proto $scheme;
+# nginx-generated id (overwrites any client value): the API logs it and returns it as X-Request-ID.
+proxy_set_header X-Request-ID $request_id;
 proxy_connect_timeout 5s;
 proxy_read_timeout 30s;
 # Retry another replica only when the connection itself failed (never replay a request that timed out,

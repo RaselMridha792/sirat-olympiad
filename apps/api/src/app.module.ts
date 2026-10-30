@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import type Redis from 'ioredis';
 import { LoggerModule } from 'nestjs-pino';
+import { pinoHttpOptions } from './common/logging/pino-http.options';
 import { DrainService } from './common/shutdown/drain.service';
 import { RedisThrottlerStorage } from './common/throttler/redis-throttler.storage';
 import { validateEnv } from './config/env';
@@ -25,13 +26,8 @@ import { CertificatesModule } from './modules/certificates/certificates.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
-    LoggerModule.forRoot({
-      pinoHttp: {
-        level: process.env.LOG_LEVEL ?? (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
-        // Never log credentials or tokens.
-        redact: ['req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'],
-      },
-    }),
+    // Request logs: method, path (no query), status, request id. No headers, cookies or bodies (A2.0 gate 2).
+    LoggerModule.forRoot({ pinoHttp: pinoHttpOptions() }),
     // Shared across replicas via the cache Redis (RULEBOOK §4). A1 safety net per route + client IP, sized for a
     // school NAT (~100 students start/reload together: ~300 req/min on one route); 600 leaves 2x headroom and stays
     // well under nginx's per-IP ceiling for /api/ (30 r/s + burst 60), so nginx remains the flood guard.

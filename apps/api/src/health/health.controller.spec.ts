@@ -62,7 +62,7 @@ describe('HealthController', () => {
   });
 
   it('answers 503 within the timeout when a dependency hangs instead of hanging itself', async () => {
-    jest.useFakeTimers();
+    jest.useFakeTimers({ doNotFake: ['setImmediate'] }); // withTimeout defers its rejection with setImmediate
     const hang = redis('ready', () => new Promise<string>(() => undefined));
     const result = make(dbOk, hang).ready();
     const assertion = expect(result).rejects.toBeInstanceOf(ServiceUnavailableException);
