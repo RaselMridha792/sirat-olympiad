@@ -17,6 +17,14 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - The PDF and the Postman export stay local and git-ignored (shared sandbox credentials inside); `PAYSTATION-NOTES.md` is the committed, credential-free summary.
    - PayStation has **no refund API**: refunds are reconciled by an admin (RUNBOOK §11); what a refund does to a student's access is OPEN-QUESTIONS P8.
 
+## 2026-10-30 — Email provider (owner)
+
+1. **Resend** is the transactional email provider (OPEN-QUESTIONS #16 closed).
+2. The notification module keeps a **provider abstraction**: Resend in production, **Mailpit** in development. Until the sending domain is verified (SPF/DKIM/DMARC), all email code is tested against Mailpit only.
+3. The Resend API key lives only in env vars: never logged, committed, or put in `NEXT_PUBLIC_*`.
+4. Every email goes through the **BullMQ queue with retries**. A failed or slow email never blocks registration, payment or login.
+5. Built as part of **A2** (auth: verification and reset emails), not before.
+
 ## 2026-10-30 — A1 review fixes (Claude; findings verified by experiments before fixing)
 
 An independent review plus a verification workflow (experiments in throwaway containers, skeptics, completeness critics) confirmed 16 of 18 review findings and 24 new ones; two were refuted (the leaderboard index is usable; `nginx:1.27-alpine` cannot float below 1.27.5). Supersedes A1 #4, #6, #8 and #17 below where they differ.

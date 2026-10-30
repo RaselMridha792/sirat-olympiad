@@ -98,7 +98,7 @@ Credentials are read inside the postgres container; nothing secret is typed on t
 
 ## 8. Contacts (fill in)
 
-Client: — · PayStation support: — · Email provider: — · Hostinger support: — · Cloudflare: — · Owner (Rasel Mridha): —
+Client: — · PayStation support: — · Email provider: Resend (support/contact: —) · Hostinger support: — · Cloudflare: — · Owner (Rasel Mridha): —
 
 ## 9. Pre-exam checklist (T-7 → T-0)
 

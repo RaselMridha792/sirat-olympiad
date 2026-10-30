@@ -16,7 +16,7 @@ Fixed unless the owner approves a change. Versions are what the scaffold was bui
 | Queue | Redis `noeviction` + AOF, BullMQ | BullMQ 5 | Email, scoring, reconciliation, certificates. Jobs must not be lost |
 | Auth | Own system: argon2id, JWT access (15 min) + rotating refresh (7 days), httpOnly cookies | argon2 0.44 | No third-party dependency in login path |
 | Payments | PayStation hosted checkout (BDT) | sandbox first | Wallets + cards on their page; no card data on our servers |
-| Email | Transactional provider (owner decides: SES/Brevo/Resend) via queue | — | SPF/DKIM/DMARC required |
+| Email | **Resend** (owner, 2026-10-30) behind a provider interface; Mailpit in dev; sent via the BullMQ queue with retries | — | SPF/DKIM/DMARC required before production sending |
 | Validation | class-validator + class-transformer (API); env validated at boot | 0.14 | Global `ValidationPipe` whitelist |
 | Logging | pino via nestjs-pino (JSON, redacts auth headers) | 9 | Structured logs |
 | Proxy | Nginx (Cloudflare in front) | 1.30 (pinned 1.30.6) | TLS, gzip, rate limit, static caching, real-IP restore |

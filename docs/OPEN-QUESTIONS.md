@@ -2,7 +2,7 @@
 
 Owner = Rasel Mridha. Client = GLTS Leadership × Sirat Olympiad. Add the answer + date, then move it to DECISIONS.md.
 
-**Answered 2026-10-30 (see DECISIONS.md "Owner answers before Phase A"):** email verification is lazy; #3 and #13 defaults accepted as placeholders pending client confirmation; #16 provider still open (dev uses Mailpit); #22 owner will confirm VPS specs later. PayStation P2-P5 answered by the official docs (section below). #27 is on the pre-launch checklist (RUNBOOK §9).
+**Answered 2026-10-30 (see DECISIONS.md "Owner answers before Phase A"):** email verification is lazy; #3 and #13 defaults accepted as placeholders pending client confirmation; #16 email provider = Resend (sending domain still to verify; dev uses Mailpit); #22 owner will confirm VPS specs later. PayStation P2-P5 answered by the official docs (section below). #27 is on the pre-launch checklist (RUNBOOK §9).
 
 ## Blocking for specific modules
 
@@ -23,7 +23,7 @@ Owner = Rasel Mridha. Client = GLTS Leadership × Sirat Olympiad. Add the answer
 | 13 | Ranks (names + point thresholds) and points per event (referral paid, task) | Ambassador | Bronze/Silver/Gold, thresholds editable |
 | 14 | Round structure after Round 1 (video? final? how many?) and jury count/criteria (old: 10 criteria 0–10) | Rounds | Data-driven; port old criteria |
 | 15 | Certificates: types, wording, who gets which, signatures | Certificates | Participation + promotion + winner, server-issued |
-| 16 | Email provider and sending domain (SPF/DKIM/DMARC) | Notifications | Queue + provider abstraction |
+| 16 | ~~Email provider~~ **Answered 2026-10-30: Resend** (DECISIONS "Email provider"). Still open: the sending domain and its SPF/DKIM/DMARC setup | Notifications | Mailpit in dev until the domain is verified |
 | 17 | Domain, Cloudflare available? TLS plan | Nginx | HTTP in compose, TLS TODO |
 | 18 | Off-server backup target (S3-compatible or second machine) | Backups | Local dump + TODO |
 | 19 | Import old Season 2 users/results, or start fresh? | Migration | Start fresh |
