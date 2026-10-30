@@ -1,4 +1,5 @@
 import { Controller, Get, Inject, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import type Redis from 'ioredis';
 import { withTimeout } from '../common/with-timeout';
 import { PrismaService } from '../prisma/prisma.service';
@@ -10,6 +11,7 @@ export const READY_TIMEOUT_MS = 2000;
 @Controller()
 export class HealthController {
   private readonly logger = new Logger(HealthController.name);
+  private readonly pingsInFlight = new Map<Redis, Promise<string>>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -17,7 +19,11 @@ export class HealthController {
     @Inject(REDIS_QUEUE) private readonly queue: Redis,
   ) {}
 
-  /** Liveness: process is up. No dependencies checked. */
+  /**
+   * Liveness: process is up. No dependencies checked. Never rate limited: the container healthchecks of all
+   * replicas share one loopback key, and a 429 here would mark a healthy replica unhealthy.
+   */
+  @SkipThrottle()
   @Get('health')
   health(): { status: 'ok' } {
     return { status: 'ok' };
@@ -28,8 +34,8 @@ export class HealthController {
   async ready(): Promise<{ status: 'ready' }> {
     const checks = {
       database: () => this.prisma.$queryRaw`SELECT 1`,
-      redisCache: () => this.cache.ping(),
-      redisQueue: () => this.queue.ping(),
+      redisCache: () => this.ping(this.cache),
+      redisQueue: () => this.ping(this.queue),
     };
     const names = Object.keys(checks) as (keyof typeof checks)[];
     const results = await Promise.allSettled(names.map((n) => withTimeout(checks[n](), READY_TIMEOUT_MS)));
@@ -40,5 +46,20 @@ export class HealthController {
       throw new ServiceUnavailableException('Dependency not ready');
     }
     return { status: 'ready' };
+  }
+
+  /**
+   * Never queue a PING on a disconnected client: the queue client (maxRetriesPerRequest: null) would keep every
+   * queued PING in memory until Redis returns. One PING in flight per client; concurrent probes share it.
+   */
+  private ping(client: Redis): Promise<string> {
+    if (client.status === 'wait') void client.connect().catch(() => undefined);
+    if (client.status !== 'ready') return Promise.reject(new Error(`redis ${client.status}`));
+    let pending = this.pingsInFlight.get(client);
+    if (!pending) {
+      pending = client.ping().finally(() => this.pingsInFlight.delete(client));
+      this.pingsInFlight.set(client, pending);
+    }
+    return pending;
   }
 }

@@ -1,5 +1,5 @@
 import { plainToInstance } from 'class-transformer';
-import { IsIn, IsInt, IsNotEmpty, IsString, Max, Min, validateSync } from 'class-validator';
+import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, Min, validateSync } from 'class-validator';
 
 /** Fail fast at startup if any required variable is missing (rulebook section 4). */
 export class EnvVars {
@@ -11,6 +11,8 @@ export class EnvVars {
   @IsString() @IsNotEmpty() JWT_ACCESS_SECRET!: string;
   @IsInt() @Min(60) JWT_ACCESS_TTL_SECONDS: number = 900;
   @IsInt() @Min(1) REFRESH_TTL_DAYS: number = 7;
+  /** Optional override of the pino level (default: info in production, debug elsewhere). */
+  @IsOptional() @IsIn(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']) LOG_LEVEL?: string;
 }
 
 export function validateEnv(raw: Record<string, unknown>): EnvVars {

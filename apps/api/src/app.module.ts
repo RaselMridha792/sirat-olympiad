@@ -26,16 +26,20 @@ import { CertificatesModule } from './modules/certificates/certificates.module';
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     LoggerModule.forRoot({
       pinoHttp: {
-        level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+        level: process.env.LOG_LEVEL ?? (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
         // Never log credentials or tokens.
         redact: ['req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'],
       },
     }),
-    // Shared across replicas via the cache Redis (RULEBOOK §4). Stricter per-route limits for /auth/* come with A2.
+    // Shared across replicas via the cache Redis (RULEBOOK §4). A1 safety net per route + client IP, sized for a
+    // school NAT (~100 students start/reload together: ~300 req/min on one route); 600 leaves 2x headroom and stays
+    // well under nginx's per-IP ceiling for /api/ (30 r/s + burst 60), so nginx remains the flood guard.
+    // blockDuration 0 = no penalty box: 429 + Retry-After only until the window resets.
+    // A2 adds per-user keys for exam routes and strict tiers for auth/registration/payment.
     ThrottlerModule.forRootAsync({
       inject: [REDIS_CACHE],
       useFactory: (redis: Redis) => ({
-        throttlers: [{ name: 'default', ttl: 60_000, limit: 120 }],
+        throttlers: [{ name: 'default', ttl: 60_000, limit: 600, blockDuration: 0 }],
         storage: new RedisThrottlerStorage(redis),
       }),
     }),
