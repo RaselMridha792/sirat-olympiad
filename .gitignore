@@ -14,3 +14,9 @@ backups/
 # Commit only a redacted copy named *.redacted.json.
 docs/paystation/*.json
 !docs/paystation/*.redacted.json
+# TLS material and DB dumps never go into git.
+infra/nginx/certs/*
+!infra/nginx/certs/.gitkeep
+*.pem
+*.key
+*.dump

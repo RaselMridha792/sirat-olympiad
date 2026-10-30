@@ -1,4 +1,4 @@
-# API image. Build context = repo root (monorepo); .dockerignore keeps .env, reference/ and fixtures out.
+# API image. Build context = repo root (monorepo); .dockerignore is an allow-list (no env, keys, infra, tests, fixtures).
 FROM node:22-slim AS build
 RUN corepack enable && apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 WORKDIR /repo
@@ -12,9 +12,18 @@ RUN pnpm install --frozen-lockfile \
  && pnpm --filter @sirat/api deploy --prod --legacy /out \
  && apps/api/node_modules/.bin/prisma generate --schema /out/prisma/schema.prisma
 
-# One-shot job (compose service `migrate`): apply migrations, then the idempotent config seed.
-# Uses the build stage because it needs the Prisma CLI and tsx (dev dependencies). Never runs fixtures.
-FROM build AS migrate
+# One-shot job (compose service `migrate`): apply migrations, then the idempotent config seed. Never runs fixtures.
+# Copies only what `prisma migrate deploy` and `tsx prisma/seed.ts` need from the build stage: no sources of the other
+# apps, no pnpm store. pnpm's isolated layout: apps/api/node_modules/* are symlinks into /repo/node_modules/.pnpm
+# (which also holds the generated Prisma client and engines), so the /repo paths are kept as they are.
+FROM node:22-slim AS migrate
+RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
+WORKDIR /repo
+COPY --from=build /repo/node_modules ./node_modules
+COPY --from=build /repo/tsconfig.base.json ./
+COPY --from=build /repo/apps/api/package.json /repo/apps/api/tsconfig.json ./apps/api/
+COPY --from=build /repo/apps/api/node_modules ./apps/api/node_modules
+COPY --from=build /repo/apps/api/prisma ./apps/api/prisma
 WORKDIR /repo/apps/api
 USER node
 CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy && node_modules/.bin/tsx prisma/seed.ts"]

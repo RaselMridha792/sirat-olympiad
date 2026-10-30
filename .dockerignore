@@ -1,19 +1,46 @@
-# Keep secrets, the old project and local build output out of every image (RULEBOOK §18).
-.env
-.env.*
-**/.env
-**/.env.*
-.git
-reference
-backups
-docs
-loadtests
+# ALLOW-LIST (RULEBOOK §18): the build context holds only what apps/api/Dockerfile and apps/web/Dockerfile need.
+# Everything else (.env*, keys/certs, infra/, scripts/, docs/, reference/, loadtests/, backups/, .git, CLAUDE.md) stays out.
+# A new root-level file a build needs (e.g. .npmrc, patches/) must be allowed here explicitly.
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!tsconfig.base.json
+# Tailwind v4 source detection honours .gitignore; it holds no secrets.
+!.gitignore
+!apps/api
+!apps/web
+!packages
+
+# Re-excluded inside the allowed trees (the last matching rule wins).
 **/node_modules
 **/dist
 **/.next
 **/coverage
+**/.turbo
 **/*.tsbuildinfo
 **/*.log
-# Dev/test-only data must never be present in a production image (docs/DECISIONS.md, 2026-10-30 A1).
+**/Dockerfile
+**/*.dockerignore
+# Dev/test-only code never enters an image (docs/DECISIONS.md 2026-10-30 A1 #4).
 apps/api/prisma/fixtures
 apps/api/test
+**/*.spec.ts
+**/*.spec.tsx
+**/*.test.ts
+**/*.test.tsx
+# Secrets, wherever they appear.
+**/.env
+**/.env.*
+**/.envrc
+**/.npmrc
+**/*.pem
+**/*.key
+**/*.crt
+**/*.p12
+**/*.pfx
+**/*.dump
+**/id_rsa*
+**/id_ed25519*
+**/certs
+**/secrets

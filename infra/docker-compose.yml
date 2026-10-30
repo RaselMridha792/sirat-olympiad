@@ -5,15 +5,21 @@
 name: sirat
 x-restart: &restart
   restart: unless-stopped
+# Rotate container logs so they can never fill the disk that holds pgdata (RULEBOOK §11).
+x-logging: &logging
+  logging:
+    driver: json-file
+    options: { max-size: "50m", max-file: "5" }
 
 services:
   nginx:
-    <<: *restart
-    image: nginx:1.27-alpine
+    <<: [*restart, *logging]
+    image: nginx:1.30.6-alpine # pinned stable; `server ... resolve` needs >= 1.27.3. Bump outside exam freeze windows
     ports: ["80:80", "443:443"]
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/proxy_params_inline:/etc/nginx/proxy_params_inline:ro
+      - ./nginx/cloudflare-realip.conf:/etc/nginx/cloudflare-realip.conf:ro
       - ./nginx/certs:/etc/nginx/certs:ro
     depends_on: [web, api]
     healthcheck:
@@ -23,9 +29,9 @@ services:
     deploy: { resources: { limits: { cpus: "1", memory: 512M } } }
 
   web:
-    <<: *restart
+    <<: [*restart, *logging]
     build: { context: .., dockerfile: apps/web/Dockerfile }
-    env_file: ../.env
+    # No env_file: the Next.js standalone server needs no secrets (PORT/HOSTNAME come from the image).
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
       interval: 15s
@@ -34,17 +40,25 @@ services:
   # One-shot: `prisma migrate deploy` + idempotent config seed, then exits. The API starts only after it succeeds.
   # Runs on every `up`; both steps are safe to repeat (seed never overwrites admin-edited values).
   migrate:
+    <<: *logging
     build: { context: .., dockerfile: apps/api/Dockerfile, target: migrate }
-    env_file: ../.env
+    # Only what `prisma migrate deploy` (DIRECT_URL) and the config seed (DATABASE_URL) read; not the whole .env.
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL missing - run compose with --env-file .env}
+      DIRECT_URL: ${DIRECT_URL:?DIRECT_URL missing - run compose with --env-file .env}
     restart: "no"
     depends_on:
       pgbouncer: { condition: service_healthy }
     deploy: { resources: { limits: { cpus: "1", memory: 1G } } }
 
   api:
-    <<: *restart
+    <<: [*restart, *logging]
     build: { context: .., dockerfile: apps/api/Dockerfile, target: runtime }
     env_file: ../.env
+    environment:
+      NODE_ENV: production # beats env_file: a NODE_ENV=development left in .env cannot downgrade the API
+    # Longer than nginx proxy_read_timeout (30 s): SIGTERM lets in-flight requests finish before pools close.
+    stop_grace_period: 35s
     deploy:
       replicas: 4
       resources: { limits: { cpus: "1", memory: 1G } }
@@ -58,7 +72,7 @@ services:
       redis-queue: { condition: service_healthy }
 
   pgbouncer:
-    <<: *restart
+    <<: [*restart, *logging]
     image: edoburu/pgbouncer:v1.25.2-p0 # pinned; bump deliberately outside exam freeze windows
     environment:
       DB_HOST: postgres
@@ -79,7 +93,7 @@ services:
     deploy: { resources: { limits: { cpus: "0.5", memory: 256M } } }
 
   postgres:
-    <<: *restart
+    <<: [*restart, *logging]
     image: postgres:17-alpine
     shm_size: 1g # Docker's 64 MB default /dev/shm breaks parallel queries
     environment:
@@ -97,7 +111,7 @@ services:
     deploy: { resources: { limits: { cpus: "3", memory: 12G } } }
 
   redis-cache:
-    <<: *restart
+    <<: [*restart, *logging]
     image: redis:7-alpine
     command: ["redis-server", "/usr/local/etc/redis/redis-cache.conf"]
     volumes: ["./redis/redis-cache.conf:/usr/local/etc/redis/redis-cache.conf:ro"]
@@ -105,7 +119,7 @@ services:
     deploy: { resources: { limits: { cpus: "0.5", memory: 2G } } }
 
   redis-queue:
-    <<: *restart
+    <<: [*restart, *logging]
     image: redis:7-alpine
     command: ["redis-server", "/usr/local/etc/redis/redis-queue.conf"]
     volumes:
