@@ -12,12 +12,15 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { SecurityAlerts } from '../audit/security-alerts.service';
 import type { AuthUser } from './access-token.service';
+import { EmailTokenService } from './email-tokens.service';
 import { LoginLimiter } from './login-limiter';
 import { PasswordService } from './password.service';
 import { type ClientInfo, type IssuedSession, SessionService } from './session.service';
 
 /** One message for every failed login: it never tells whether the email has an account. */
 export const LOGIN_FAILED_MESSAGE = 'Email or password is incorrect';
+/** One message for every bad emailed link: unknown, malformed, used, expired, other type, or a blocked account. */
+export const INVALID_LINK_MESSAGE = 'This link is invalid or has expired';
 
 /**
  * 429 for a locked pair or a reached limit. Same text whether or not the account exists, and it names the way out:
@@ -45,6 +48,7 @@ export class AuthService {
     private readonly limiter: LoginLimiter,
     private readonly audit: AuditService,
     private readonly alerts: SecurityAlerts,
+    private readonly tokens: EmailTokenService,
   ) {}
 
   /**
@@ -170,6 +174,74 @@ export class AuthService {
       meta: { sessionsEnded: ended },
     });
     return session;
+  }
+
+  /**
+   * Completes a password reset. A bad link is refused before argon2 runs; then one transaction uses the token, sets
+   * the hash, marks the email verified (the link proved the inbox), retires other reset links and ends every
+   * session. Only after the commit is the account unlocked everywhere (owner) - a failed reset never unlocks.
+   * No session is started: the user logs in with the new password.
+   */
+  async resetPassword(token: string, password: string, client: ClientInfo): Promise<void> {
+    if (!(await this.tokens.isUsable(token, AuthTokenType.password_reset)))
+      throw new BadRequestException(INVALID_LINK_MESSAGE);
+    const passwordHash = await this.passwords.hash(password);
+    const done = await this.prisma.$transaction(async (tx) => {
+      const used = await this.tokens.consume(token, AuthTokenType.password_reset, tx);
+      if (!used) return null;
+      const user = await tx.user.findUnique({
+        where: { id: used.userId },
+        select: { id: true, email: true, isBlocked: true, emailVerifiedAt: true },
+      });
+      if (!user || user.isBlocked) return null; // a reset never lifts a block
+      await tx.user.update({
+        where: { id: user.id },
+        data: { passwordHash, ...(user.emailVerifiedAt ? {} : { emailVerifiedAt: new Date() }) },
+      });
+      await tx.authToken.updateMany({
+        where: { userId: user.id, type: AuthTokenType.password_reset, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+      return { user, ended: await this.sessions.endAllForUser(user.id, tx) };
+    });
+    if (!done) throw new BadRequestException(INVALID_LINK_MESSAGE);
+    await this.limiter.resetAccount(done.user.email);
+    await this.audit.record({
+      action: 'auth.password_reset',
+      actorId: done.user.id,
+      ip: client.ip,
+      meta: { sessionsEnded: done.ended },
+    });
+  }
+
+  /**
+   * Verifies an email address. Never logs anyone in (RULEBOOK §5). A valid link for an address that is already
+   * verified still answers 204 and changes nothing.
+   */
+  async verifyEmail(token: string, client: ClientInfo): Promise<void> {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const used = await this.tokens.consume(token, AuthTokenType.email_verify, tx);
+      if (!used) return null;
+      const user = await tx.user.findUnique({
+        where: { id: used.userId },
+        select: { id: true, isBlocked: true, emailVerifiedAt: true },
+      });
+      if (!user || user.isBlocked) return null;
+      await tx.authToken.updateMany({
+        where: { userId: user.id, type: AuthTokenType.email_verify, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+      if (user.emailVerifiedAt) return { userId: user.id, newlyVerified: false };
+      await tx.user.update({ where: { id: user.id }, data: { emailVerifiedAt: new Date() } });
+      return { userId: user.id, newlyVerified: true };
+    });
+    if (!result) throw new BadRequestException(INVALID_LINK_MESSAGE);
+    if (result.newlyVerified)
+      await this.audit.record({
+        action: 'auth.email_verified',
+        actorId: result.userId,
+        ip: client.ip,
+      });
   }
 
   /** Upgrades an older hash after a successful login. Best effort: a failure here never blocks the login. */

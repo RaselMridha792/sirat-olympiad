@@ -53,6 +53,16 @@ export class EmailTokenService {
   }
 
   /**
+   * Whether a token would be accepted right now, without using it. Lets a reset refuse a bad link before paying
+   * for argon2; the real use is still consume(), inside the transaction.
+   */
+  async isUsable(token: string, type: AuthTokenType): Promise<boolean> {
+    if (!EMAIL_TOKEN_PATTERN.test(token)) return false;
+    const row = await this.prisma.authToken.findUnique({ where: { tokenHash: sha256(token) } });
+    return !!row && row.type === type && !row.usedAt && row.expiresAt > new Date();
+  }
+
+  /**
    * Uses a token once and returns its user, or null for an unknown, used, expired or other-type token (callers give
    * one answer for all of these). Of two requests with the same token, exactly one succeeds. Pass `tx` to make the
    * use part of a larger transaction (a reset changes the password in the same one).

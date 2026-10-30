@@ -9,7 +9,7 @@ import {
   Res,
   UnauthorizedException,
 } from '@nestjs/common';
-import { SkipThrottle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import type { SessionUser } from '@sirat/shared';
 import type { Request, Response } from 'express';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -18,9 +18,13 @@ import type { AuthUser } from './access-token.service';
 import { CurrentUser, Public } from './auth.decorators';
 import { AuthService, TooManyAttemptsException } from './auth.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { ResetPasswordDto, VerifyEmailDto } from './dto/email-link.dto';
 import { LoginDto } from './dto/login.dto';
 import { REFRESH_COOKIE, SessionCookies } from './session-cookies';
 import { type ClientInfo, SessionService } from './session.service';
+
+/** Stricter than the 600/min default for the email-link endpoints (per route and client IP; RULEBOOK §4). */
+const STRICT_TIER = { default: { limit: 30, ttl: 60_000 } };
 
 const clientInfo = (req: Request): ClientInfo => ({
   ip: req.ip ?? null,
@@ -134,6 +138,27 @@ export class AuthController {
         res.setHeader('Retry-After', String(e.retryAfterSeconds));
       throw e;
     }
+  }
+
+  /**
+   * Sets a new password from an emailed link. 204, or 400 with one message for every bad link; 400 "Validation
+   * failed" for a refused password (the link stays usable). Ends every session; never logs in.
+   */
+  @Public()
+  @Throttle(STRICT_TIER)
+  @Post('reset-password')
+  @HttpCode(204)
+  async resetPassword(@Body() body: ResetPasswordDto, @Req() req: Request): Promise<void> {
+    await this.auth.resetPassword(body.token, body.password, clientInfo(req));
+  }
+
+  /** Verifies an email address from its link. 204, or 400 with one message for every bad link. Never logs in. */
+  @Public()
+  @Throttle(STRICT_TIER)
+  @Post('verify-email')
+  @HttpCode(204)
+  async verifyEmail(@Body() body: VerifyEmailDto, @Req() req: Request): Promise<void> {
+    await this.auth.verifyEmail(body.token, clientInfo(req));
   }
 
   /** The session user, read fresh from the database (role included). A blocked user is logged out. */

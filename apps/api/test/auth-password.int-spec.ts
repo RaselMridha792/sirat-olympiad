@@ -2,7 +2,7 @@
  * Password endpoints over HTTP (RULEBOOK §5, owner rules of 2026-10-31). change-password: the current password is
  * checked under the login limits; success ends every session and gives this device a fresh one.
  */
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
@@ -192,5 +192,98 @@ describe('POST /api/auth/change-password', () => {
       where: { action: 'auth.password_changed', actorId: user.id },
     });
     expect(entry.meta).toEqual({ sessionsEnded: 2 });
+  });
+});
+
+describe('POST /api/auth/reset-password', () => {
+  const tokens = () => app.get(EmailTokenService);
+  const reset = (token: string, password: string, opts: { csrf?: boolean } = {}) =>
+    post('/api/auth/reset-password', { token, password }, { ip: newIp(), ...opts });
+  const messageOf = async (res: Response) => ((await res.json()) as { message: string }).message;
+
+  it('sets the new password, ends every session, verifies the email, and never logs in', async () => {
+    const user = await student();
+    const device = await loginAs(user.email);
+    const { token } = await tokens().issue(user.id, AuthTokenType.password_reset);
+
+    const res = await reset(token, NEW_PASSWORD);
+    expect(res.status).toBe(204);
+    expect(res.headers.getSetCookie()).toEqual([]); // no automatic login
+    expect(
+      (await post('/api/auth/refresh', {}, { cookie: pick(device, REFRESH_COOKIE) })).status,
+    ).toBe(401);
+    const login = (password: string) =>
+      post('/api/auth/login', { email: user.email, password }, { ip: newIp() });
+    expect((await login(PASSWORD)).status).toBe(401);
+    expect((await login(NEW_PASSWORD)).status).toBe(204);
+    const stored = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(stored.emailVerifiedAt).not.toBeNull(); // the link proved the inbox
+    const entry = await prisma.auditLog.findFirstOrThrow({
+      where: { action: 'auth.password_reset', actorId: user.id },
+    });
+    expect(entry.meta).toEqual({ sessionsEnded: 1 });
+  });
+
+  it('unlocks the account: a locked account+IP pair logs in right after a completed reset', async () => {
+    const user = await student();
+    const ip = newIp();
+    const login = (password: string) =>
+      post('/api/auth/login', { email: user.email, password }, { ip });
+    for (let i = 0; i < 3; i += 1) expect((await login('wrong')).status).toBe(401);
+    expect((await login(PASSWORD)).status).toBe(429);
+    const { token } = await tokens().issue(user.id, AuthTokenType.password_reset);
+    expect((await reset(token, NEW_PASSWORD)).status).toBe(204);
+    expect((await login(NEW_PASSWORD)).status).toBe(204);
+  });
+
+  it('answers every bad link the same way: unknown, malformed, used, expired, verify-type, blocked', async () => {
+    const user = await student();
+    const used = await tokens().issue(user.id, AuthTokenType.password_reset);
+    expect((await reset(used.token, NEW_PASSWORD)).status).toBe(204);
+    const expired = await tokens().issue(user.id, AuthTokenType.password_reset);
+    await prisma.authToken.update({
+      where: { id: expired.id },
+      data: { expiresAt: new Date(Date.now() - 1) },
+    });
+    const verifyType = await tokens().issue(user.id, AuthTokenType.email_verify);
+    const blocked = await student();
+    await prisma.user.update({ where: { id: blocked.id }, data: { isBlocked: true } });
+    const blockedLink = await tokens().issue(blocked.id, AuthTokenType.password_reset);
+
+    for (const token of [
+      randomBytes(32).toString('base64url'),
+      'short',
+      used.token,
+      expired.token,
+      verifyType.token,
+      blockedLink.token,
+    ]) {
+      const res = await reset(token, 'Another-good-pass-5');
+      expect(res.status).toBe(400);
+      expect(await messageOf(res)).toBe('This link is invalid or has expired');
+    }
+  });
+
+  it('keeps the link usable when the new password is refused', async () => {
+    const user = await student();
+    const { token } = await tokens().issue(user.id, AuthTokenType.password_reset);
+    const weak = await reset(token, 'password1');
+    expect(weak.status).toBe(400);
+    expect(JSON.stringify(await weak.json())).toContain('too common');
+    expect((await reset(token, NEW_PASSWORD)).status).toBe(204);
+  });
+
+  it('lets exactly one of two simultaneous resets with one link succeed', async () => {
+    const user = await student();
+    const { token } = await tokens().issue(user.id, AuthTokenType.password_reset);
+    const results = await Promise.all([reset(token, NEW_PASSWORD), reset(token, 'Other-pass-917')]);
+    expect(results.map((r) => r.status).sort()).toEqual([204, 400]);
+  });
+
+  it('needs the CSRF header, and a refused request leaves the link usable', async () => {
+    const user = await student();
+    const { token } = await tokens().issue(user.id, AuthTokenType.password_reset);
+    expect((await reset(token, NEW_PASSWORD, { csrf: false })).status).toBe(403);
+    expect((await reset(token, NEW_PASSWORD)).status).toBe(204);
   });
 });
