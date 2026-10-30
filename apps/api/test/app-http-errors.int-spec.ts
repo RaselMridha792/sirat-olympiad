@@ -7,8 +7,10 @@
 import { Controller, Get } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
+import { Public } from '../src/modules/auth/auth.decorators';
 
 /** Test-only route: takes 1 s, five times the request timeout used below. */
+@Public()
 @Controller('__probe')
 class SlowProbeController {
   @Get('slow')

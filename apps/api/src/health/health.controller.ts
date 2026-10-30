@@ -2,12 +2,15 @@ import { Controller, Get, Inject, Logger, ServiceUnavailableException } from '@n
 import { SkipThrottle } from '@nestjs/throttler';
 import type Redis from 'ioredis';
 import { withTimeout } from '../common/with-timeout';
+import { Public } from '../modules/auth/auth.decorators';
 import { PrismaService } from '../prisma/prisma.service';
 import { REDIS_CACHE, REDIS_QUEUE } from '../redis/redis.module';
 
 /** Each dependency must answer within this time, so a hung DB/Redis cannot hang the readiness probe. */
 export const READY_TIMEOUT_MS = 2000;
 
+/** Both probes are public: container healthchecks, deploys and the uptime monitor have no session. */
+@Public()
 @Controller()
 export class HealthController {
   private readonly logger = new Logger(HealthController.name);

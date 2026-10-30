@@ -9,10 +9,13 @@ import { Test } from '@nestjs/testing';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type Redis from 'ioredis';
+import { Public } from '../src/modules/auth/auth.decorators';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // A deliberately slow route keeps the single keep-alive connection busy at the moment shutdown starts.
+// Public: it stands for any handler; a 401 from the auth guard would answer at once and never be in flight.
+@Public()
 @Controller('drain-test')
 class SlowController {
   @Get('slow')
