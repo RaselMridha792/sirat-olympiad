@@ -112,9 +112,10 @@ Also before launch:
 ## 10. Cloudflare real-IP list (refresh every few months and before each exam)
 
 ```bash
-{ echo "# Cloudflare edge ranges (generated $(date -u +%F))"; for u in ips-v4 ips-v6; do curl -fsS "https://www.cloudflare.com/$u" | awk 1 | sed '/^$/d; s/^/set_real_ip_from /; s/$/;/'; done; echo "real_ip_header CF-Connecting-IP;"; echo "real_ip_recursive on;"; } > infra/nginx/cloudflare-realip.conf
+scripts/refresh-cloudflare-ips.sh     # VERIFIED: validates both lists, nginx -t on the pinned image, then rewrites the file in place
 $DC exec nginx nginx -t && $DC exec nginx nginx -s reload
 ```
+The script refuses (exit non-zero, live file untouched) when a download fails, returns anything that is not a CIDR, or has fewer than 10 IPv4 / 5 IPv6 ranges. Never edit `infra/nginx/cloudflare-realip.conf` by hand and never paste the old one-liner: it wrote an empty list when the download failed, which made every student behind a Cloudflare edge share one rate-limit bucket.
 After go-live, confirm in the nginx access log that client addresses are real users, not Cloudflare edges. If Cloudflare reaches the origin over IPv6 while the compose network has none, Docker replaces the source address and real-IP restore cannot work: keep the origin A-record-only.
 
 ## 11. Payments: refunds and manual reconciliation (PayStation has no refund API)
