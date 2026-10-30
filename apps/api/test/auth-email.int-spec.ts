@@ -1,41 +1,81 @@
 /**
- * Email-link endpoints over HTTP (RULEBOOK §5): verify-email marks the address verified from its link and never logs
- * in; every bad link gets one answer.
+ * Email-link endpoints over HTTP (RULEBOOK §5), end to end through the queue, a worker and Mailpit:
+ * forgot-password and resend-verification always answer 204 at once and email only real, unblocked accounts;
+ * verify-email marks the address verified and never logs in; every bad link gets one answer.
+ * The app's email queue is swapped for a queue of this test, served by an in-process worker.
  */
 import { randomBytes, randomUUID } from 'node:crypto';
-import { AuthTokenType, type PrismaClient } from '@prisma/client';
+import type { ConfigService } from '@nestjs/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
+import { AuthTokenType, type PrismaClient } from '@prisma/client';
+import { Queue } from 'bullmq';
+import type Redis from 'ioredis';
+import { BackgroundTasks } from '../src/common/background/background-tasks';
+import type { EnvVars } from '../src/config/env';
 import { EmailTokenService } from '../src/modules/auth/email-tokens.service';
+import { PasswordService } from '../src/modules/auth/password.service';
+import { EmailQueue } from '../src/modules/notifications/email-queue.service';
+import { EmailWorker } from '../src/modules/notifications/email.worker';
+import { MailpitProvider } from '../src/modules/notifications/mailpit.provider';
+import { REDIS_QUEUE } from '../src/redis/redis.module';
 import { makeUser, testPrisma } from './helpers';
+
+const MAILPIT = process.env.MAILPIT_URL ?? 'http://127.0.0.1:18025';
+const QUEUE = `email-test-${randomUUID()}`;
+const run = randomUUID().slice(0, 8);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 let app: NestExpressApplication;
 let base: string;
 let prisma: PrismaClient;
 let tokens: EmailTokenService;
+let worker: EmailWorker;
 
 beforeAll(async () => {
   process.env.LOG_LEVEL = 'silent';
+  process.env.APP_URL = 'http://sirat.test'; // read when AppModule is imported below
   const { AppModule } = await import('../src/app.module');
   const { configureApp } = await import('../src/configure-app');
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(EmailQueue)
+    .useFactory({ factory: (redis: Redis) => new EmailQueue(redis, QUEUE), inject: [REDIS_QUEUE] })
+    .compile();
   app = moduleRef.createNestApplication<NestExpressApplication>({ logger: false });
   configureApp(app);
   await app.listen(0, '127.0.0.1');
   base = (await app.getUrl()).replace('[::1]', '127.0.0.1');
   prisma = testPrisma();
   tokens = app.get(EmailTokenService);
+  const config = { get: () => process.env.REDIS_QUEUE_URL } as unknown as ConfigService<
+    EnvVars,
+    true
+  >;
+  worker = new EmailWorker(
+    new MailpitProvider(MAILPIT, 'Sirat Olympiad <no-reply@sirat.test>'),
+    config,
+    QUEUE,
+  );
+  worker.onModuleInit();
 }, 60_000);
 
 afterAll(async () => {
-  await app?.close();
+  await worker?.onApplicationShutdown();
+  if (app) {
+    const raw = new Queue(QUEUE, { connection: app.get<Redis>(REDIS_QUEUE) });
+    await raw.obliterate({ force: true });
+    await raw.close();
+    await app.close();
+  }
+  await fetch(`${MAILPIT}/api/v1/search?query=${run}`, { method: 'DELETE' });
   await prisma?.$disconnect();
 });
 
 // A /64 of its own per run and per call: per-IP counters live in Redis across runs.
-const run = randomUUID().slice(0, 4);
 let nextIp = 0;
-const newIp = () => `2001:db8:${run}:${(nextIp += 1).toString(16)}::1`;
+const newIp = () => `2001:db8:${run.slice(0, 4)}:${(nextIp += 1).toString(16)}::1`;
+let nextMail = 0;
+const address = (kind: string) => `${kind}-${run}-${(nextMail += 1)}@test.invalid`;
 
 function post(path: string, body: unknown, csrf = true) {
   const headers: Record<string, string> = {
@@ -46,16 +86,125 @@ function post(path: string, body: unknown, csrf = true) {
   return fetch(`${base}${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
 }
 const verify = (token: string, csrf = true) => post('/api/auth/verify-email', { token }, csrf);
-const unverified = () =>
-  makeUser(prisma, { email: `v-${randomUUID().slice(0, 8)}@test.invalid`, emailVerifiedAt: null });
+const unverified = (email = address('v')) => makeUser(prisma, { email, emailVerifiedAt: null });
+
+type Summary = { ID: string };
+async function mailsTo(to: string): Promise<Summary[]> {
+  const res = await fetch(`${MAILPIT}/api/v1/search?query=${encodeURIComponent(`to:"${to}"`)}`);
+  return ((await res.json()) as { messages: Summary[] }).messages;
+}
+async function waitForMail(to: string): Promise<{ Subject: string; Text: string }> {
+  for (let i = 0; i < 100; i += 1) {
+    const [first] = await mailsTo(to);
+    if (first)
+      return (await (await fetch(`${MAILPIT}/api/v1/message/${first.ID}`)).json()) as {
+        Subject: string;
+        Text: string;
+      };
+    await sleep(100);
+  }
+  throw new Error(`no email to ${to}`);
+}
+/** Lets the background work and the worker finish, so "no email" is a real absence. */
+async function settle() {
+  await app.get(BackgroundTasks).idle();
+  await sleep(1_500);
+}
+const tokenIn = (text: string) => /#token=([A-Za-z0-9_-]{43})/.exec(text)?.[1] ?? '';
+
+describe('POST /api/auth/forgot-password', () => {
+  it('answers 204 with an empty body, and the emailed link resets the password', async () => {
+    const email = address('f');
+    await makeUser(prisma, {
+      email,
+      name: 'Ayesha',
+      passwordHash: await app.get(PasswordService).hash('Old-river-moon-42'),
+    });
+    const res = await post('/api/auth/forgot-password', { email: email.toUpperCase() });
+    expect(res.status).toBe(204);
+    expect(await res.text()).toBe('');
+    expect(res.headers.getSetCookie()).toEqual([]);
+
+    const mail = await waitForMail(email);
+    expect(mail.Subject).toContain('Reset your password');
+    expect(mail.Text).toContain('প্রিয় Ayesha');
+    expect(mail.Text).toContain('http://sirat.test/reset-password#token=');
+    const reset = await post('/api/auth/reset-password', {
+      token: tokenIn(mail.Text),
+      password: 'New-hill-sun-77',
+    });
+    expect(reset.status).toBe(204);
+    const login = await post('/api/auth/login', { email, password: 'New-hill-sun-77' });
+    expect(login.status).toBe(204);
+  });
+
+  it('answers unknown and blocked addresses the same way and sends them nothing', async () => {
+    const unknown = address('f');
+    const blocked = address('f');
+    await makeUser(prisma, { email: blocked, isBlocked: true });
+    for (const email of [unknown, blocked]) {
+      const res = await post('/api/auth/forgot-password', { email });
+      expect(res.status).toBe(204);
+      expect(await res.text()).toBe('');
+    }
+    await settle();
+    expect(await mailsTo(unknown)).toEqual([]);
+    expect(await mailsTo(blocked)).toEqual([]);
+  });
+
+  it('sends one email per address per minute, however often it is asked', async () => {
+    const email = address('f');
+    await makeUser(prisma, { email });
+    for (let i = 0; i < 3; i += 1)
+      expect((await post('/api/auth/forgot-password', { email })).status).toBe(204);
+    await waitForMail(email);
+    await settle();
+    expect(await mailsTo(email)).toHaveLength(1);
+  });
+});
+
+describe('POST /api/auth/resend-verification', () => {
+  it('emails an unverified account a link that verifies it', async () => {
+    const email = address('r');
+    const user = await unverified(email);
+    expect((await post('/api/auth/resend-verification', { email })).status).toBe(204);
+    const mail = await waitForMail(email);
+    expect(mail.Subject).toContain('Verify your email');
+    expect(mail.Text).toContain('http://sirat.test/verify-email#token=');
+    expect((await verify(tokenIn(mail.Text))).status).toBe(204);
+    const stored = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(stored.emailVerifiedAt).not.toBeNull();
+  });
+
+  it('answers verified, blocked and unknown addresses the same way and sends them nothing', async () => {
+    const verified = address('r');
+    const blocked = address('r');
+    const unknown = address('r');
+    await makeUser(prisma, { email: verified, emailVerifiedAt: new Date() });
+    await makeUser(prisma, { email: blocked, emailVerifiedAt: null, isBlocked: true });
+    for (const email of [verified, blocked, unknown])
+      expect((await post('/api/auth/resend-verification', { email })).status).toBe(204);
+    await settle();
+    for (const email of [verified, blocked, unknown]) expect(await mailsTo(email)).toEqual([]);
+  });
+
+  it('both link requests refuse malformed input and need the CSRF header', async () => {
+    for (const path of ['/api/auth/forgot-password', '/api/auth/resend-verification']) {
+      expect((await post(path, { email: 'not-an-email' })).status).toBe(400);
+      expect((await post(path, { email: address('x'), role: 'admin' })).status).toBe(400);
+      expect((await post(path, { email: address('x') }, false)).status).toBe(403);
+    }
+  });
+});
 
 describe('POST /api/auth/verify-email', () => {
-  it('marks the address verified, sets no cookie, and audits it once', async () => {
+  it('marks the address verified and audits it, but never creates a session or sets a cookie', async () => {
     const user = await unverified();
     const { token } = await tokens.issue(user.id, AuthTokenType.email_verify);
     const res = await verify(token);
     expect(res.status).toBe(204);
-    expect(res.headers.getSetCookie()).toEqual([]); // verification never logs in
+    expect(res.headers.getSetCookie()).toEqual([]);
+    expect(await prisma.session.count({ where: { userId: user.id } })).toBe(0);
     const stored = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
     expect(stored.emailVerifiedAt).not.toBeNull();
     expect(

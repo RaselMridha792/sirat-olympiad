@@ -18,6 +18,7 @@ import type { AuthUser } from './access-token.service';
 import { CurrentUser, Public } from './auth.decorators';
 import { AuthService, TooManyAttemptsException } from './auth.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { EmailOnlyDto } from './dto/email-only.dto';
 import { ResetPasswordDto, VerifyEmailDto } from './dto/email-link.dto';
 import { LoginDto } from './dto/login.dto';
 import { REFRESH_COOKIE, SessionCookies } from './session-cookies';
@@ -25,6 +26,8 @@ import { type ClientInfo, SessionService } from './session.service';
 
 /** Stricter than the 600/min default for the email-link endpoints (per route and client IP; RULEBOOK §4). */
 const STRICT_TIER = { default: { limit: 30, ttl: 60_000 } };
+/** Requests for a link email: per route and client IP, sized for a school sharing one IP. */
+const LINK_REQUEST_TIER = { default: { limit: 60, ttl: 60_000 } };
 
 const clientInfo = (req: Request): ClientInfo => ({
   ip: req.ip ?? null,
@@ -150,6 +153,27 @@ export class AuthController {
   @HttpCode(204)
   async resetPassword(@Body() body: ResetPasswordDto, @Req() req: Request): Promise<void> {
     await this.auth.resetPassword(body.token, body.password, clientInfo(req));
+  }
+
+  /**
+   * Asks for a password-reset email. Always 204 at once, whatever the address: an email follows only for an
+   * existing, unblocked account, and nothing in the answer or its timing tells which.
+   */
+  @Public()
+  @Throttle(LINK_REQUEST_TIER)
+  @Post('forgot-password')
+  @HttpCode(204)
+  forgotPassword(@Body() body: EmailOnlyDto): void {
+    this.auth.requestPasswordReset(body.email);
+  }
+
+  /** Asks for a new verification email. Always 204 at once, like forgot-password. */
+  @Public()
+  @Throttle(LINK_REQUEST_TIER)
+  @Post('resend-verification')
+  @HttpCode(204)
+  resendVerification(@Body() body: EmailOnlyDto): void {
+    this.auth.requestVerificationEmail(body.email);
   }
 
   /** Verifies an email address from its link. 204, or 400 with one message for every bad link. Never logs in. */

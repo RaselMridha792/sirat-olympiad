@@ -7,11 +7,17 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AuthTokenType } from '@prisma/client';
+import { BackgroundTasks } from '../../common/background/background-tasks';
+import type { EnvVars } from '../../config/env';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { SecurityAlerts } from '../audit/security-alerts.service';
+import { EmailQueue } from '../notifications/email-queue.service';
 import type { AuthUser } from './access-token.service';
+import { emailLink, resetPasswordMessage, verifyEmailMessage } from './auth-emails';
+import { EmailSendLimiter } from './email-send-limiter';
 import { EmailTokenService } from './email-tokens.service';
 import { LoginLimiter } from './login-limiter';
 import { PasswordService } from './password.service';
@@ -49,7 +55,64 @@ export class AuthService {
     private readonly audit: AuditService,
     private readonly alerts: SecurityAlerts,
     private readonly tokens: EmailTokenService,
-  ) {}
+    private readonly emails: EmailQueue,
+    private readonly sendLimiter: EmailSendLimiter,
+    private readonly background: BackgroundTasks,
+    config: ConfigService<EnvVars, true>,
+  ) {
+    this.appUrl = config.get('APP_URL', { infer: true }) ?? 'http://localhost:3000';
+    this.resetMinutes = config.get('PASSWORD_RESET_TOKEN_MINUTES', { infer: true });
+    this.verifyHours = config.get('EMAIL_VERIFY_TOKEN_HOURS', { infer: true });
+  }
+
+  /** Web origin for email links (APP_URL; required in production). */
+  private readonly appUrl: string;
+  private readonly resetMinutes: number;
+  private readonly verifyHours: number;
+
+  /**
+   * Forgot password. The caller answers the same at once; the lookup, the token and the email run in the
+   * background, so neither the answer nor its timing reveals whether an account exists. Unknown and blocked
+   * accounts get nothing; one address gets at most AUTH_LINK_EMAILS_PER_MINUTE/HOUR reset emails.
+   */
+  requestPasswordReset(email: string): void {
+    this.background.run('password-reset-email', () => this.sendPasswordReset(email));
+  }
+
+  /** Resend verification: the same shape; only an existing, unblocked, unverified account gets an email. */
+  requestVerificationEmail(email: string): void {
+    this.background.run('verify-email', () => this.sendVerification(email));
+  }
+
+  private async sendPasswordReset(email: string): Promise<void> {
+    if (!(await this.sendLimiter.allow('reset', email))) return;
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true, name: true, email: true, isBlocked: true },
+    });
+    if (!user || user.isBlocked) return;
+    const issued = await this.tokens.issue(user.id, AuthTokenType.password_reset);
+    const link = emailLink(this.appUrl, 'reset-password', issued.token);
+    await this.emails.enqueue('password-reset', `password-reset.${issued.id}`, {
+      to: user.email,
+      ...resetPasswordMessage(user.name, link, this.resetMinutes),
+    });
+  }
+
+  private async sendVerification(email: string): Promise<void> {
+    if (!(await this.sendLimiter.allow('verify', email))) return;
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true, name: true, email: true, isBlocked: true, emailVerifiedAt: true },
+    });
+    if (!user || user.isBlocked || user.emailVerifiedAt) return;
+    const issued = await this.tokens.issue(user.id, AuthTokenType.email_verify);
+    const link = emailLink(this.appUrl, 'verify-email', issued.token);
+    await this.emails.enqueue('verify-email', `verify-email.${issued.id}`, {
+      to: user.email,
+      ...verifyEmailMessage(user.name, link, this.verifyHours),
+    });
+  }
 
   /**
    * Limits first: during a lock the password is not even checked, so the right one is refused too (owner).

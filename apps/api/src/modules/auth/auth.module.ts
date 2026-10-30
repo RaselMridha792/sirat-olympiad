@@ -5,6 +5,7 @@ import type Redis from 'ioredis';
 import type { EnvVars } from '../../config/env';
 import { REDIS_CACHE } from '../../redis/redis.module';
 import { AuditModule } from '../audit/audit.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { AccessTokenService, accessTokenJwtOptions } from './access-token.service';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -23,6 +24,7 @@ import { SessionService } from './session.service';
 @Module({
   imports: [
     AuditModule,
+    NotificationsModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService<EnvVars, true>) =>
