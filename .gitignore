@@ -22,3 +22,6 @@ infra/nginx/certs/*
 *.pem
 *.key
 *.dump
+# Old Zero Olympiad copies are a local, read-only spec (reference/README.md); new files under reference/ are never committed.
+# Files committed here before this rule (README.md, zero-olympiad-ui/, zero-olympiad-server/) stay tracked until the owner decides.
+/reference/
