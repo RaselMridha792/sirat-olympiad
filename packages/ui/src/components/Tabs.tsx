@@ -34,7 +34,9 @@ export function Tabs({
                 aria-current={active ? 'page' : undefined}
                 className={cn(
                   'block whitespace-nowrap rounded-[10px] px-4 py-2 text-xs font-black uppercase transition-colors',
-                  active ? 'bg-surface text-primary shadow-card' : 'text-ink-muted hover:text-ink',
+                  active
+                    ? 'bg-surface text-primary-strong shadow-card'
+                    : 'text-ink-muted hover:text-ink',
                 )}
               >
                 {item.label}

@@ -1,6 +1,9 @@
 import { defineMessages } from './messages.ts';
 
-/** Strings shared by every dashboard screen (states, paging, enum labels). */
+/**
+ * Strings shared by every dashboard screen and the root boundaries (states, 404, paging, enum
+ * labels). The root error/loading/not-found files show `bn` and `en` side by side.
+ */
 export const common = defineMessages({
   en: {
     nav: { main: 'Main menu', openMenu: 'Open menu', closeMenu: 'Close menu' },
@@ -12,6 +15,12 @@ export const common = defineMessages({
       retry: 'Try again',
       saving: 'Saving…',
       close: 'Close',
+    },
+    /** 404 screens: the root one (both languages) and the ones inside the two dashboard shells. */
+    notFound: {
+      title: 'Page not found',
+      text: 'The page you are looking for does not exist or has been moved.',
+      back: 'Back to home',
     },
     pagination: {
       label: 'Pages',
@@ -66,10 +75,16 @@ export const common = defineMessages({
     states: {
       loading: 'লোড হচ্ছে…',
       errorTitle: 'কিছু একটা সমস্যা হয়েছে',
-      errorMessage: 'পেজটি লোড করা যায়নি। ইন্টারনেট সংযোগ দেখে আবার চেষ্টা করুন।',
+      // 'পৃষ্ঠা' means "page" everywhere in this module (also in pagination below).
+      errorMessage: 'পৃষ্ঠাটি লোড করা যায়নি। ইন্টারনেট সংযোগ দেখে আবার চেষ্টা করুন।',
       retry: 'আবার চেষ্টা করুন',
       saving: 'সংরক্ষণ হচ্ছে…',
       close: 'বন্ধ করুন',
+    },
+    notFound: {
+      title: 'পৃষ্ঠাটি পাওয়া যায়নি',
+      text: 'আপনি যে পৃষ্ঠাটি খুঁজছেন, সেটি নেই অথবা সরিয়ে নেওয়া হয়েছে।',
+      back: 'হোমে ফিরে যান',
     },
     pagination: {
       label: 'পৃষ্ঠা',
@@ -96,10 +111,12 @@ export const common = defineMessages({
       eliminated: 'উত্তীর্ণ হয়নি',
     },
     examStatus: { draft: 'খসড়া', published: 'প্রকাশিত', archived: 'আর্কাইভ' },
+    // open = the student may start now; in_progress = the student has started (timer running).
+    // The badge is often shown on its own, so these two must not read as synonyms.
     examState: {
       upcoming: 'শীঘ্রই শুরু',
-      open: 'এখন চলছে',
-      in_progress: 'চলমান',
+      open: 'এখন দেওয়া যাবে',
+      in_progress: 'শুরু করেছেন',
       submitted: 'জমা হয়েছে',
       closed: 'বন্ধ',
     },
@@ -115,7 +132,7 @@ export const common = defineMessages({
       assigned: 'দেওয়া হয়েছে',
       submitted: 'জমা হয়েছে',
       approved: 'অনুমোদিত',
-      rejected: 'বাতিল',
+      rejected: 'গ্রহণ করা হয়নি', // not 'বাতিল', which reads as "cancelled"
     },
   },
 });

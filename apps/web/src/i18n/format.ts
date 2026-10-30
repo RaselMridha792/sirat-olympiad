@@ -18,14 +18,20 @@ export function formatDate(locale: Locale, iso: string): string {
   }).format(new Date(iso));
 }
 
+/**
+ * Date and 24-hour time, e.g. en "2 Nov 2026, 00:27", bn "২ নভে, ২০২৬, ০০:২৭". A fixed `h23`
+ * clock keeps both languages on the same clock and keeps Latin "AM"/"PM" (the bn-BD 12-hour
+ * pattern) out of Bangla text.
+ */
 export function formatDateTime(locale: Locale, iso: string): string {
   return new Intl.DateTimeFormat(intlTag(locale), {
     timeZone: TIME_ZONE,
     day: 'numeric',
     month: 'short',
     year: 'numeric',
-    hour: 'numeric',
+    hour: '2-digit',
     minute: '2-digit',
+    hourCycle: 'h23',
   }).format(new Date(iso));
 }
 

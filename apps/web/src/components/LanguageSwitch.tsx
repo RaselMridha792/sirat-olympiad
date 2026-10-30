@@ -31,7 +31,7 @@ export async function LanguageSwitch({ tone = 'surface' }: { tone?: 'shell' | 's
               className={cn(
                 'rounded-[10px] px-3 py-1.5 text-xs font-bold transition-colors',
                 active
-                  ? 'bg-primary text-white'
+                  ? 'bg-primary-strong text-white'
                   : dark
                     ? 'text-white/80 hover:bg-white/10 hover:text-white'
                     : 'text-ink-muted hover:bg-surface hover:text-ink',

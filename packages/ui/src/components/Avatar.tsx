@@ -9,15 +9,20 @@ const sizes: Record<Size, string> = {
 };
 
 /**
- * Initial-letter avatar. Replaces the old avatar images and ui-avatars.com calls
- * (which sent participant names to a third party). Decorative: the name is always shown next to it.
+ * Initial-letter avatar. Replaces the old avatar images and the calls to a third-party avatar
+ * service (which sent participant names to that service). Decorative: the name is always shown
+ * next to it. Inside a client component pass `initial`, worked out on the server with initialOf,
+ * so the server HTML and the browser render the same character.
  */
 export function Avatar({
   name,
+  initial,
   size = 'md',
   className,
 }: {
   name: string;
+  /** The initial to show, already worked out (initialOf(name) on the server). Overrides `name`. */
+  initial?: string;
   size?: Size;
   className?: string;
 }) {
@@ -25,12 +30,12 @@ export function Avatar({
     <span
       aria-hidden="true"
       className={cn(
-        'inline-flex shrink-0 items-center justify-center rounded-xl bg-primary font-bold text-white',
+        'inline-flex shrink-0 items-center justify-center rounded-xl bg-primary-strong font-bold text-white',
         sizes[size],
         className,
       )}
     >
-      {initialOf(name)}
+      {initial ?? initialOf(name)}
     </span>
   );
 }

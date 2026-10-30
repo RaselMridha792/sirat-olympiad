@@ -4,11 +4,11 @@ import { Card } from './Card';
 
 type Tone = 'brand' | 'secondary' | 'info' | 'success' | 'warning';
 const tones: Record<Tone, string> = {
-  brand: 'bg-primary-soft text-primary',
+  brand: 'bg-primary-soft text-primary-strong',
   secondary: 'bg-secondary-soft text-secondary',
-  info: 'bg-info-soft text-info',
-  success: 'bg-success-soft text-success',
-  warning: 'bg-warning-soft text-warning',
+  info: 'bg-info-soft text-info-strong',
+  success: 'bg-success-soft text-success-strong',
+  warning: 'bg-warning-soft text-warning-strong',
 };
 
 /** Replaces old admin/components/StatCard.jsx. Pass the icon as a node (no icon lib dependency). */

@@ -5,11 +5,11 @@ type Variant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
 type Size = 'sm' | 'md' | 'lg';
 
 const variants: Record<Variant, string> = {
-  primary: 'bg-primary text-white hover:bg-primary-hover',
+  primary: 'bg-primary-strong text-white hover:bg-primary-strong-hover',
   secondary: 'bg-secondary text-white hover:bg-secondary-hover',
   outline: 'border border-line bg-surface text-ink hover:bg-page',
   ghost: 'text-ink hover:bg-page',
-  danger: 'bg-danger text-white hover:opacity-90',
+  danger: 'bg-danger-strong text-white hover:bg-danger-strong-hover',
 };
 const sizes: Record<Size, string> = {
   sm: 'px-3 py-1.5 text-sm',

@@ -1,24 +1,73 @@
-import { Home, User, BookOpen, Trophy, Award, Megaphone, Receipt, Users } from 'lucide-react';
-import type { NavItem } from '@sirat/ui';
+import { BookOpen, Home, Megaphone, Trophy, User, Users } from 'lucide-react';
+import { initialOf, type NavItem } from '@sirat/ui';
+import { I18nProvider } from '@/components/I18nProvider';
+import { LanguageSwitch } from '@/components/LanguageSwitch';
 import { NavShell } from '@/components/NavShell';
+import { UserChip } from '@/components/student/UserChip';
+import { common } from '@/i18n/common';
+import { studentShellMessages } from '@/i18n/messages/student-shell';
+import { getMessages } from '@/i18n/server';
 import { getSession } from '@/lib/session';
 
+/**
+ * Student dashboard frame (old dashboard/layout.js + Sidebar.jsx + Dashboard.jsx): navy sidebar and
+ * navy top bar with the language switch and the user chip. Links are filtered by role here only to
+ * hide them; the API guards each route. Certificates and payments are not built yet, so hidden.
+ */
 export default async function StudentLayout({ children }: { children: React.ReactNode }) {
-  const user = await getSession('student');
+  const [user, { locale, m }, { m: c }] = await Promise.all([
+    getSession('student'),
+    getMessages(studentShellMessages),
+    getMessages(common),
+  ]);
   const items: NavItem[] = [
-    { href: '/dashboard', label: 'Dashboard', icon: <Home size={20} /> },
-    { href: '/dashboard/profile', label: 'My Profile', icon: <User size={20} /> },
-    { href: '/dashboard/exam', label: 'My Exams', icon: <BookOpen size={20} /> },
-    { href: '/dashboard/leaderboard', label: 'Leaderboard', icon: <Trophy size={20} /> },
-    { href: '/dashboard/certificates', label: 'Certificates', icon: <Award size={20} /> },
-    { href: '/dashboard/announcements', label: 'Announcements', icon: <Megaphone size={20} /> },
-    { href: '/dashboard/payments', label: 'Payments', icon: <Receipt size={20} /> },
-    // Only for users with the ambassador role (filter on the server, enforce in the API):
-    { href: '/dashboard/ambassador', label: 'Ambassador Panel', icon: <Users size={20} /> },
+    { href: '/dashboard', label: m.nav.home, icon: <Home size={20} aria-hidden /> },
+    { href: '/dashboard/profile', label: m.nav.profile, icon: <User size={20} aria-hidden /> },
+    { href: '/dashboard/exam', label: m.nav.exams, icon: <BookOpen size={20} aria-hidden /> },
+    {
+      href: '/dashboard/leaderboard',
+      label: m.nav.leaderboard,
+      icon: <Trophy size={20} aria-hidden />,
+    },
+    {
+      href: '/dashboard/announcements',
+      label: m.nav.announcements,
+      icon: <Megaphone size={20} aria-hidden />,
+    },
+    ...(user.role === 'ambassador'
+      ? [
+          {
+            href: '/dashboard/ambassador',
+            label: m.nav.ambassador,
+            icon: <Users size={20} aria-hidden />,
+          },
+        ]
+      : []),
   ];
   return (
-    <NavShell brand="Sirat Olympiad" items={items} userName={user.name} userRole={user.role}>
-      {children}
-    </NavShell>
+    <div lang={locale}>
+      <I18nProvider value={{ locale, states: c.states }}>
+        <NavShell
+          brand={m.brand}
+          title={m.topbarTitle}
+          topbarTone="shell"
+          topbar={
+            <>
+              <LanguageSwitch tone="shell" />
+              <span aria-hidden="true" className="mx-1 hidden h-8 w-px bg-white/15 sm:block" />
+              <UserChip name={user.name} label={m.userChip(user.name)} />
+            </>
+          }
+          labels={{ nav: c.nav.main, openMenu: c.nav.openMenu, closeMenu: c.nav.closeMenu }}
+          items={items}
+          userName={user.name}
+          // Worked out here on the server: the browser may split a Bangla name differently.
+          userInitial={initialOf(user.name)}
+          userRole={c.roles[user.role]}
+        >
+          {children}
+        </NavShell>
+      </I18nProvider>
+    </div>
   );
 }

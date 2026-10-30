@@ -18,3 +18,4 @@ export * from './components/Skeleton';
 export * from './components/Tabs';
 export * from './components/SearchBox';
 export * from './components/Dialog';
+export * from './components/DetailList';

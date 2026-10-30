@@ -30,7 +30,7 @@ function FieldMessages({
       {error ? (
         <p
           id={fieldId ? `${fieldId}-error` : undefined}
-          className="text-xs font-medium text-danger"
+          className="text-xs font-medium text-danger-strong"
         >
           {error}
         </p>

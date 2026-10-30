@@ -28,10 +28,14 @@ export function EmptyState({
   );
 }
 
+/** Loading indicator; the ring spins only when the user has not asked for reduced motion. */
 export function Spinner({ label = 'Loading…' }: { label?: string }) {
   return (
     <div role="status" className="flex items-center justify-center gap-3 py-10 text-ink-muted">
-      <span className="h-5 w-5 animate-spin rounded-full border-2 border-line border-t-primary" />
+      <span
+        aria-hidden="true"
+        className="h-5 w-5 rounded-full border-2 border-line border-t-primary motion-safe:animate-spin"
+      />
       <span className="text-sm">{label}</span>
     </div>
   );
@@ -43,12 +47,18 @@ export function Spinner({ label = 'Loading…' }: { label?: string }) {
  */
 export function ErrorState({
   title,
+  titleAs: Title = 'p',
   message,
   onRetry,
   retryLabel = 'Try again',
   action,
 }: {
   title?: string;
+  /**
+   * Element of the title. Use 'h1' when the panel replaces a whole page (a route error boundary),
+   * so the page still has its one heading; the look stays the same.
+   */
+  titleAs?: 'p' | 'h1' | 'h2';
   message: string;
   onRetry?: () => void;
   retryLabel?: string;
@@ -59,15 +69,15 @@ export function ErrorState({
       role="alert"
       className="rounded-card border border-danger/30 bg-danger-soft px-6 py-8 text-center"
     >
-      {title ? <p className="text-lg font-bold text-danger">{title}</p> : null}
-      <p className="mt-1 font-semibold text-danger">{message}</p>
+      {title ? <Title className="text-lg font-bold text-danger-strong">{title}</Title> : null}
+      <p className="mt-1 font-semibold text-danger-strong">{message}</p>
       {onRetry || action ? (
         <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
           {onRetry ? (
             <button
               type="button"
               onClick={onRetry}
-              className="rounded-control bg-danger px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+              className="rounded-control bg-danger-strong px-4 py-2 text-sm font-semibold text-white hover:bg-danger-strong-hover"
             >
               {retryLabel}
             </button>
