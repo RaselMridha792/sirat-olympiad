@@ -3,10 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import type { EnvVars } from '../../config/env';
 import { AccessTokenService, accessTokenJwtOptions } from './access-token.service';
+import { PasswordService } from './password.service';
 
 /**
- * Auth (A2). So far: access-token signing/verification used by the global AuthGuard (registered in AppModule).
- * Sessions, login and the other endpoints follow (docs/06-API.md). Rules: RULEBOOK §5.
+ * Auth (A2). So far: access-token signing/verification used by the global AuthGuard (registered in AppModule), and
+ * argon2id password hashing. Sessions, login and the other endpoints follow (docs/06-API.md). Rules: RULEBOOK §5.
  */
 @Module({
   imports: [
@@ -19,7 +20,7 @@ import { AccessTokenService, accessTokenJwtOptions } from './access-token.servic
         ),
     }),
   ],
-  providers: [AccessTokenService],
-  exports: [AccessTokenService],
+  providers: [AccessTokenService, PasswordService],
+  exports: [AccessTokenService, PasswordService],
 })
 export class AuthModule {}
