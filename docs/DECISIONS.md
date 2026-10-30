@@ -2,6 +2,12 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — Launch target and how the next work is split (Lead, through the owner)
+
+1. **Launch on 2026-11-15 with registration and payment only.** Students log in after paying, so the first-admin CLI and the web session are on the critical path.
+2. The first-admin CLI is its own small PR. The web session (the mock replaced) follows on its own branch from `main` after a short plan to the owner, so it does not collide with the UI work.
+3. `apps/api/package.json` is shared by several sessions: keep changes to single lines. A new dependency or a `pnpm-lock.yaml` change is announced to the owner first.
+
 ## 2026-10-31 — First-admin CLI (Claude; owner's A2 order)
 
 1. **Admins are created only from the command line** (`apps/api/src/cli/create-admin.ts`, RUNBOOK §13): there is no admin sign-up and the web never accepts a role (RULEBOOK §18). The same CLI creates later admins.
