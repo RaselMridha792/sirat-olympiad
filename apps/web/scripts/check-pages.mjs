@@ -7,12 +7,17 @@
 //     its HTML (including the inline RSC payload) must contain none of them.
 //
 //   node scripts/check-pages.mjs prod [baseUrl]
-//     Production server with no API connected. Every dashboard page must render the app shell and
-//     a polite error or empty state in a real browser: never a blank page, never raw error text.
+//     Production server with no API connected. Every dashboard page must render the app shell, a
+//     heading and its polite error state (or, for a page that reads no data, its content) in a real
+//     browser: never a blank page, never raw error text.
+//
+// Routes are discovered from src/app (every page.tsx under /dashboard and /admin), so a new screen
+// is checked without editing this file; a new dynamic segment needs a sample value in SAMPLE.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const [mode, base = 'http://localhost:3100'] = process.argv.slice(2);
 
@@ -41,26 +46,34 @@ const LEAK_NEEDLES = [
   ...numberForms(Math.floor(CANARY.seconds / 60)), // formatDuration's minutes part
 ];
 
-const STUDENT_ROUTES = [
-  '/dashboard',
-  '/dashboard/profile',
-  '/dashboard/profile/edit',
-  '/dashboard/exam',
-  '/dashboard/leaderboard',
-  '/dashboard/leaderboard?round=rd-1&page=2',
-  '/dashboard/leaderboard?q=Padma',
-  '/dashboard/announcements',
-  '/dashboard/ambassador',
-];
-const ADMIN_ROUTES = [
-  '/admin',
-  '/admin/users',
-  '/admin/ambassadors',
-  '/admin/leaderboard',
-  '/admin/exams',
-  '/admin/exams/ex-r1-amb',
-  '/admin/announcements',
-];
+// Sample values for dynamic segments (ids that exist in the dev mock), by route path.
+const SAMPLE = { 'admin/exams/[id]': 'ex-r1-amb' };
+
+function discoverRoutes(dir, parts = []) {
+  const routes = [];
+  for (const name of readdirSync(dir).sort()) {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) {
+      if (/^\(.+\)$/.test(name))
+        routes.push(...discoverRoutes(path, parts)); // route group
+      else if (/^\[.+\]$/.test(name)) {
+        const sample = SAMPLE[[...parts, name].join('/')];
+        if (!sample)
+          throw new Error(`check-pages: add a SAMPLE value for ${[...parts, name].join('/')}`);
+        routes.push(...discoverRoutes(path, [...parts, sample]));
+      } else routes.push(...discoverRoutes(path, [...parts, name]));
+    } else if (name === 'page.tsx') routes.push('/' + parts.join('/'));
+  }
+  return routes;
+}
+
+const ROUTES = discoverRoutes(fileURLToPath(new URL('../src/app/', import.meta.url)));
+const under = (prefix) => ROUTES.filter((r) => r === prefix || r.startsWith(prefix + '/'));
+const STUDENT_ROUTES = under('/dashboard');
+if (STUDENT_ROUTES.includes('/dashboard/leaderboard')) {
+  STUDENT_ROUTES.push('/dashboard/leaderboard?round=rd-1&page=2', '/dashboard/leaderboard?q=Padma');
+}
+const ADMIN_ROUTES = under('/admin');
 const ERROR_TEXT = ['Something went wrong', 'কিছু একটা সমস্যা হয়েছে'];
 const RAW_ERROR = [
   'DataSourceUnavailableError',
@@ -115,6 +128,9 @@ async function prodMode() {
   const browser = findBrowser();
   if (!browser) throw new Error('prod mode needs Chrome or Edge (set CHROME_PATH)');
   const profile = mkdtempSync(join(tmpdir(), 'sirat-check-'));
+  // GitHub's Ubuntu runners cannot start Chrome's sandbox (user namespaces are restricted).
+  const ciFlags = process.env.CI ? ['--no-sandbox'] : [];
+  let errorStates = 0;
   try {
     for (const route of [...STUDENT_ROUTES, ...ADMIN_ROUTES]) {
       const res = await fetch(base + route);
@@ -127,6 +143,7 @@ async function prodMode() {
           '--disable-gpu',
           '--no-first-run',
           '--lang=en-US',
+          ...ciFlags,
           `--user-data-dir=${profile}`,
           '--virtual-time-budget=15000',
           '--dump-dom',
@@ -134,15 +151,16 @@ async function prodMode() {
         ],
         { encoding: 'utf8', timeout: 60_000, stdio: ['ignore', 'pipe', 'ignore'] },
       );
-      const text = dom
-        .replace(/<script[\s\S]*?<\/script>/g, ' ')
+      const markup = dom.replace(/<script[\s\S]*?<\/script>/g, ' ');
+      const text = markup
         .replace(/<style[\s\S]*?<\/style>/g, ' ')
         .replace(/<[^>]+>/g, ' ')
         .replace(/\s+/g, ' ');
       if (text.trim().length < 40) fail(route, 'blank page');
       if (!text.includes('Sirat')) fail(route, 'app shell (brand) missing');
-      if (!ERROR_TEXT.some((t) => text.includes(t)))
-        fail(route, 'no polite error/empty state shown');
+      // The error state renders its title as the page's h1, so every healthy page has one.
+      if (!/<h1[\s>]/.test(markup)) fail(route, 'no heading: neither content nor a polite error');
+      if (ERROR_TEXT.some((t) => text.includes(t))) errorStates += 1;
       for (const raw of RAW_ERROR) {
         if (typeof raw === 'string' ? text.includes(raw) : raw.test(text))
           fail(route, `raw error text: ${raw}`);
@@ -151,6 +169,7 @@ async function prodMode() {
   } finally {
     rmSync(profile, { recursive: true, force: true });
   }
+  console.log(`check-pages (prod): ${errorStates} page(s) showed the polite error state`);
   return STUDENT_ROUTES.length + ADMIN_ROUTES.length;
 }
 
