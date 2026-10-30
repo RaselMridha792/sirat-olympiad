@@ -104,6 +104,11 @@ Client: — · PayStation support: — · Email provider: — · Hostinger suppo
 
 See `RULEBOOK.md` section 13: load test at 1.5–2× peak, backup + restore drill, 48 h code freeze, patches before freeze, monitoring + fake alert, Cloudflare verified, email deliverability, real small PayStation payment, rollback rehearsed, owner watching dashboards.
 
+Also before launch:
+- [ ] The API connects to Postgres with a **non-superuser runtime role** (OPEN-QUESTIONS #27); the bootstrap superuser is used only for migrations, backup and restore.
+- [ ] PayStation sandbox checklist done (`docs/paystation/SANDBOX-CHECKLIST.md`) and the accepted `trx_status` values confirmed.
+- [ ] Cloudflare real-IP list refreshed (section 10).
+
 ## 10. Cloudflare real-IP list (refresh every few months and before each exam)
 
 ```bash
@@ -111,3 +116,20 @@ See `RULEBOOK.md` section 13: load test at 1.5–2× peak, backup + restore dril
 $DC exec nginx nginx -t && $DC exec nginx nginx -s reload
 ```
 After go-live, confirm in the nginx access log that client addresses are real users, not Cloudflare edges. If Cloudflare reaches the origin over IPv6 while the compose network has none, Docker replaces the source address and real-IP restore cannot work: keep the origin A-record-only.
+
+## 11. Payments: refunds and manual reconciliation (PayStation has no refund API)
+
+The admin payments screen (look up by invoice / PayStation `trx_id` / phone, re-check, manual reconcile; every action audit-logged with a reason) arrives with the payments module. Until then, this is the procedure.
+
+**Refund a payment**
+1. Find the payment by invoice number, `trx_id` or phone; its status must be `paid`.
+2. Refund it in the PayStation merchant panel, or ask PayStation support. Keep their refund reference.
+3. Re-check (transaction status v1 by invoice). When PayStation reports `trx_status = refund`, the system moves the payment `paid → refunded` and audit-logs it.
+4. If PayStation does not show `refund` yet, reconcile it manually to `refunded` with the reason and PayStation's refund reference (audit-logged). Never delete the payment or the registration row.
+5. What happens to the student's registration and exam access follows the owner's policy (OPEN-QUESTIONS P8). Until it is decided, ask the owner before changing access.
+
+**Money taken but our DB says unpaid (the worst case)**
+1. Look up the payment; read `gateway_payload` and the stored IPN bodies.
+2. Re-check. If `status_code` is `"200"`, `trx_status` is success/successful and amount + invoice match, the re-check marks it paid; nothing else to do.
+3. If the gateway reports success but the amount or invoice does not match, or `2001` keeps coming back: do **not** mark it paid. Contact PayStation support with the invoice number and `trx_id`, and record the case in the audit log.
+4. If a student paid twice for one registration: refund the second payment (steps above).

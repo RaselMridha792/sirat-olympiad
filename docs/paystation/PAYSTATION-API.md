@@ -1,4 +1,4 @@
-> **SUPERSEDED, do not use.** (owner, 2026-10-30) This summary was built from the public page and is wrong or outdated: the official merchant-dashboard Postman collection uses `POST /initiate-payment` and `POST /transaction-status`, not the endpoints below. Official sources are only the dashboard Postman collection and the official docs PDF. Open items: `docs/OPEN-QUESTIONS.md` (P1–P7) and `SANDBOX-CHECKLIST.md`.
+> **SUPERSEDED, do not use.** (owner, 2026-10-30) This summary was built from the public page and is wrong or outdated: the official merchant-dashboard Postman collection uses `POST /initiate-payment` and `POST /transaction-status`, not the endpoints below. Official sources are only the dashboard Postman collection and the official docs PDF. **Use `PAYSTATION-NOTES.md`** (the official docs, summarised). Open items: `docs/OPEN-QUESTIONS.md` (P1, P6–P8) and `SANDBOX-CHECKLIST.md`.
 
 # PayStation API — notes for implementation
 
