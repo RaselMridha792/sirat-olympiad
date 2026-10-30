@@ -10,3 +10,7 @@ coverage
 *.tsbuildinfo
 .turbo
 backups/
+# PayStation Postman exports from the merchant dashboard carry merchantId/password (docs/paystation/README.md).
+# Commit only a redacted copy named *.redacted.json.
+docs/paystation/*.json
+!docs/paystation/*.redacted.json
