@@ -5,12 +5,21 @@
 import { randomUUID } from 'node:crypto';
 import { PaymentStatus, PrismaClient } from '@prisma/client';
 import { seedConfig } from '../prisma/seed';
-import { examData, makeAttempt, makeUser, paymentData, testPrisma, truncateAll } from './helpers';
+import {
+  applyReferenceData,
+  examData,
+  makeAttempt,
+  makeUser,
+  paymentData,
+  testPrisma,
+  truncateAll,
+} from './helpers';
 
 const prisma: PrismaClient = testPrisma();
 
 beforeAll(async () => {
   await truncateAll(prisma);
+  await applyReferenceData(prisma); // Round 1 etc. come from the baseline data migration
   await seedConfig(prisma);
 });
 afterAll(async () => {
