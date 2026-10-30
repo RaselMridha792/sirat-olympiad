@@ -31,6 +31,25 @@ Built against a requirements checklist (seven read-only agents over the docs, DE
 3. A separate, larger account-wide limit: about 50 failures per hour.
 4. Now build login, forgot, reset, verify, resend and change-password.
 
+## 2026-10-31 — Email provider: Amazon SES (owner)
+
+1. **Amazon SES** is the production email provider. Supersedes "Email provider (owner)" of 2026-10-30 (Resend); the Resend adapter built that day was removed before merge.
+2. SESv2 through the AWS SDK v3 (`@aws-sdk/client-sesv2`). Credentials come from env only (`SES_REGION`, `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY`) and are passed to the client explicitly, so the SDK never reads `~/.aws`, instance metadata or other `AWS_*` variables.
+3. The IAM user may call **`ses:SendEmail` only**, scoped to the sending identity (policy in RUNBOOK §12). The worker accepts long-term IAM user keys (`AKIA...`) only and refuses AWS's documentation example keys. Keys are never logged or committed.
+4. The worker refuses to start when no provider is configured. Locally it always uses Mailpit (the dev override pins it).
+
+## 2026-10-31 — A2.1c email: queue, worker, SES and Mailpit (Claude; owner's email rules of 2026-10-30)
+
+1. **Only the worker sends.** The API enqueues (`EmailQueue.enqueue`) on the queue Redis; `apps/api/src/worker.ts` (same image, compose service `worker`, 02-SYSTEM-DESIGN) consumes. Only the worker requires the email settings (`validateWorkerEnv`); the API boots without them.
+2. **Never blocks** (owner): `enqueue` never throws. It returns false at once when the queue Redis is not ready and after 2 s when it hangs, and logs kind and key only. Callers carry on either way; the user can ask for the email again.
+3. **Idempotency:** the caller's key (e.g. `verify-email.<token id>`; BullMQ forbids colons) is the job id, so a key still waiting or failed is not queued twice. SES has no idempotency key, so a retry after a lost SES response can send twice (rare); Mailpit shows the key as a header.
+4. **Retries:** 8 attempts, exponential from 30 s (about 2 h in all). Failed jobs are kept 3 days; sent jobs are removed at once, because they hold the address and the link. A permanent provider error fails the job immediately.
+5. **Providers:** SES (SESv2 `SendEmail`, SDK retries off so the queue is the one retry layer, 10 s abort signal per call). `MessageRejected`, `BadRequestException` and `NotFoundException` are permanent; throttling, quota, paused or suspended sending, an unverified MAIL FROM domain, service and network errors are retried. Mailpit (`POST /api/v1/send`, plain fetch) in development and CI. Errors carry status codes and SES error names only; keys, addresses and content are never logged.
+6. **Config:** `EMAIL_PROVIDER` (ses|mailpit), `EMAIL_FROM`, `SES_REGION`, `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY`, `MAILPIT_URL`. The scaffold's unused `EMAIL_API_KEY` is gone.
+7. **Infra:** the worker publishes no port; its health endpoint (`WORKER_HEALTH_PORT`, 4001) serves only the container healthcheck. Mailpit `v1.32.0` runs in the dev override (UI `http://127.0.0.1:18025`) and in CI's database job.
+8. **No real email from a local stack:** the dev override pins the worker to Mailpit, whatever `.env` says. On the VPS the email settings start blank, so the worker refuses to start until a provider is configured. A blank `KEY=` in any env file now counts as not set (class-validator's `@IsOptional()` only skips undefined; blank lines copied from an old example would otherwise stop the API).
+9. **Not yet:** the emails themselves (verify, reset, welcome) and their templates arrive with their endpoints; the SES setup (verified domain, DKIM, MAIL FROM, DMARC, production access) before any production sending (RUNBOOK §9 and §12).
+
 ## 2026-10-30 — A2.1b passwords and sessions (Claude)
 
 Each item has tests, and each test was checked to fail with its protection removed (20 mutations: 7 password, 13 session).
@@ -108,7 +127,7 @@ Each gate has its own tests, and each test was checked to fail with its gate rem
    - The PDF and the Postman export stay local and git-ignored (shared sandbox credentials inside); `PAYSTATION-NOTES.md` is the committed, credential-free summary.
    - PayStation has **no refund API**: refunds are reconciled by an admin (RUNBOOK §11); what a refund does to a student's access is OPEN-QUESTIONS P8.
 
-## 2026-10-30 — Email provider (owner)
+## 2026-10-30 — Email provider (owner) *(superseded 2026-10-31: Amazon SES)*
 
 1. **Resend** is the transactional email provider (OPEN-QUESTIONS #16 closed).
 2. The notification module keeps a **provider abstraction**: Resend in production, **Mailpit** in development. Until the sending domain is verified (SPF/DKIM/DMARC), all email code is tested against Mailpit only.

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { secretProblem, validateEnv } from './env';
+import { emailConfigProblem, secretProblem, validateEnv, validateWorkerEnv } from './env';
 
 const strongSecret = () => randomBytes(32).toString('base64');
 const valid = () => ({
@@ -117,5 +117,103 @@ describe('validateEnv: email links', () => {
       EMAIL_VERIFY_TOKEN_HOURS: 24,
       PASSWORD_RESET_TOKEN_MINUTES: 30,
     });
+  });
+});
+
+describe('validateWorkerEnv: email (owner: Amazon SES in production, Mailpit in development)', () => {
+  const worker = (extra: Record<string, string>) => ({
+    ...valid(),
+    EMAIL_FROM: 'Sirat Olympiad <no-reply@sirat.test>',
+    ...extra,
+  });
+
+  it('accepts Mailpit with a URL', () => {
+    expect(() =>
+      validateWorkerEnv(worker({ EMAIL_PROVIDER: 'mailpit', MAILPIT_URL: 'http://mailpit:8025' })),
+    ).not.toThrow();
+  });
+
+  it('refuses to start without a configured provider', () => {
+    expect(() => validateWorkerEnv(worker({}))).toThrow(/EMAIL_PROVIDER must be ses or mailpit/);
+    expect(() => validateWorkerEnv(worker({ EMAIL_PROVIDER: 'mailpit' }))).toThrow(/MAILPIT_URL/);
+  });
+
+  it('no longer knows Resend', () => {
+    expect(() => validateEnv({ ...valid(), EMAIL_PROVIDER: 'resend' })).toThrow(/EMAIL_PROVIDER/);
+  });
+
+  it('keeps the API itself free of email settings (only the worker sends)', () => {
+    expect(() => validateEnv(valid())).not.toThrow();
+    expect(emailConfigProblem(validateEnv(valid()))).toMatch(/EMAIL_PROVIDER/);
+  });
+
+  it('rejects a malformed sender', () => {
+    expect(() => validateEnv({ ...valid(), EMAIL_FROM: 'not an address' })).toThrow(/EMAIL_FROM/);
+  });
+});
+
+describe('validateEnv: blank values', () => {
+  it('treats KEY= as not set, so blank optional settings never stop the API', () => {
+    const env = validateEnv({
+      ...valid(),
+      EMAIL_PROVIDER: '',
+      EMAIL_FROM: '',
+      SES_ACCESS_KEY_ID: '',
+      MAILPIT_URL: '',
+      LOG_LEVEL: '',
+    });
+    expect(env.EMAIL_PROVIDER).toBeUndefined();
+    expect(env.COOKIE_SECURE).toBe('true');
+  });
+
+  it('still refuses a blank required variable, by name', () => {
+    expect(() => validateEnv({ ...valid(), DATABASE_URL: '' })).toThrow(/DATABASE_URL/);
+  });
+});
+
+describe('validateWorkerEnv: Amazon SES (owner, 2026-10-31)', () => {
+  const ses = (extra: Record<string, string>) => ({
+    ...valid(),
+    EMAIL_PROVIDER: 'ses',
+    EMAIL_FROM: 'Sirat Olympiad <no-reply@sirat.test>',
+    SES_REGION: 'ap-south-1',
+    SES_ACCESS_KEY_ID: 'AKIA4QWERTYUIOPASDFG',
+    SES_SECRET_ACCESS_KEY: randomBytes(30).toString('base64'),
+    ...extra,
+  });
+
+  it('accepts a region and an IAM user key pair', () => {
+    expect(() => validateWorkerEnv(ses({}))).not.toThrow();
+  });
+
+  it.each([
+    ['no region', { SES_REGION: '' }, /SES_REGION/],
+    ['no access key id', { SES_ACCESS_KEY_ID: '' }, /SES_ACCESS_KEY_ID/],
+    ['a temporary (ASIA) key', { SES_ACCESS_KEY_ID: 'ASIA4QWERTYUIOPASDFG' }, /SES_ACCESS_KEY_ID/],
+    [
+      "AWS's documentation example key",
+      { SES_ACCESS_KEY_ID: 'AKIAIOSFODNN7EXAMPLE' },
+      /SES_ACCESS_KEY_ID/,
+    ],
+    ['no secret', { SES_SECRET_ACCESS_KEY: '' }, /SES_SECRET_ACCESS_KEY/],
+    [
+      "AWS's documentation example secret",
+      { SES_SECRET_ACCESS_KEY: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY' },
+      /SES_SECRET_ACCESS_KEY/,
+    ],
+  ])('refuses %s, never echoing a key', (_label, extra, reason) => {
+    let message = '';
+    try {
+      validateWorkerEnv(ses(extra as Record<string, string>));
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    expect(message).toMatch(reason);
+    for (const value of Object.values(extra as Record<string, string>))
+      if (value) expect(message).not.toContain(value);
+  });
+
+  it('refuses a region that is not an AWS region name', () => {
+    expect(() => validateEnv({ ...valid(), SES_REGION: 'mumbai' })).toThrow(/SES_REGION/);
   });
 });

@@ -61,6 +61,13 @@ jobs:
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 5s --health-retries 20
+      # Email integration tests deliver to Mailpit (owner: Mailpit until the sending domain is verified).
+      mailpit:
+        image: axllent/mailpit:v1.32.0
+        ports: ['8025:8025']
+        options: >-
+          --health-cmd "/mailpit readyz"
+          --health-interval 5s --health-timeout 5s --health-retries 20
     env:
       NODE_ENV: test
       DATABASE_URL: postgresql://sirat:ci-only-password@localhost:5432/sirat_test
@@ -71,6 +78,7 @@ jobs:
       # The AppModule wiring tests boot the real app, which validates these at startup.
       # JWT_ACCESS_SECRET is generated per run (see the first step): the app refuses weak or placeholder secrets.
       REDIS_QUEUE_URL: redis://localhost:6379
+      MAILPIT_URL: http://localhost:8025
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4

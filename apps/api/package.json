@@ -17,6 +17,7 @@
     "db:fixtures:dev": "tsx --env-file-if-exists=.env prisma/fixtures/dev-fixtures.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.1160.0",
     "@nestjs/bullmq": "^11.0.0",
     "@nestjs/common": "^11.0.0",
     "@nestjs/config": "^4.0.0",

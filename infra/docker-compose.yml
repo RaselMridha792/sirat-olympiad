@@ -75,6 +75,31 @@ services:
       redis-cache: { condition: service_healthy }
       redis-queue: { condition: service_healthy }
 
+  # Queue workers (email today): the API image with the worker entrypoint, so job load never slows the API.
+  # No published port; the health endpoint (WORKER_HEALTH_PORT, default 4001) is only for this healthcheck.
+  worker:
+    <<: [*restart, *logging]
+    build: { context: .., dockerfile: apps/api/Dockerfile, target: runtime }
+    command: ['node', 'dist/worker.js']
+    env_file: ../.env
+    environment:
+      NODE_ENV: production
+    # Jobs in progress finish on SIGTERM (an email send gives up after 10 s).
+    stop_grace_period: 35s
+    deploy:
+      replicas: 1
+      resources: { limits: { cpus: '1', memory: 512M } }
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'node -e "fetch(''http://127.0.0.1:4001/health'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
+        ]
+      interval: 15s
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis-queue: { condition: service_healthy }
+
   pgbouncer:
     <<: [*restart, *logging]
     image: edoburu/pgbouncer:v1.25.2-p0 # pinned; bump deliberately outside exam freeze windows
