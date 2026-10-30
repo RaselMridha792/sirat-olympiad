@@ -33,8 +33,8 @@ sirat-olympiad/
 ├─ packages/
 │  ├─ ui/                     shared React components + tokens.css (source-consumed by web)
 │  └─ shared/                 types/constants for web+api (compiled to dist; run its build first)
-├─ .github/workflows/ci.yml   CI gates (checks, DB integration tests, Docker images)
-├─ infra/                     docker-compose.yml, docker-compose.dev.yml (local only), nginx/, postgres/, redis/
+├─ .github/workflows/ci.yml   CI checks, advisory on GitHub Free (format, lint, tests, DB integration, full-stack smoke test)
+├─ infra/                     docker-compose.yml, docker-compose.dev.yml (local only), nginx/ (incl. cloudflare-realip.conf), postgres/, redis/
 ├─ scripts/                   bootstrap.sh backup.sh restore.sh healthcheck.sh
 ├─ loadtests/                 k6 scripts (smoke.js + README)
 ├─ docs/                      this documentation set

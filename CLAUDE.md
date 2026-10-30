@@ -82,7 +82,8 @@ Local setup, fixtures and ports: `docs/RUNBOOK.md` section 0. Git: commits/pushe
 
 ## 4. Current state (update this when it changes)
 
-- **Phase A, step A1 (foundation) built — awaiting owner approval** (2026-10-30). Prisma migrations (init + raw-SQL CHECKs), idempotent config seed, guarded dev fixtures, DB/Redis integration tests, Redis-backed global rate limiter, `/api/ready` (DB + both Redis), working Docker images with a `migrate` job, CI in `.github/workflows/ci.yml`. Details: `docs/DECISIONS.md` (A1).
+- **Phase A, step A1 (foundation) built and review-hardened — awaiting owner approval** (2026-10-30). Prisma migrations (init, raw-SQL CHECKs, review hardening), idempotent config seed, dev fixtures guarded by a server marker, DB/Redis/AppModule integration tests, Redis-backed global rate limiter, `/api/ready` (DB + both Redis), allow-list Docker builds with a `migrate` job, CI with a full-stack smoke test. Details: `docs/DECISIONS.md` (A1, A1 review fixes).
 - Phase A scope (owner): auth (A2), exam engine, leaderboard/results, admin core. Rounds/jury/certificates/ambassador later; registration + payment is Phase C. Phases: `docs/10-BUILD-PLAN.md`.
-- Not built yet: auth, payments, exam engine, queues/workers, admin features, the "no unguarded route" CI test (A2).
+- Not built yet: auth, payments, exam engine, queues/workers, admin features, the "no unguarded route" CI test (A2). A2 starts with the logging/secret gates listed under "Deferred" in DECISIONS (A1 review fixes).
+- PayStation: official sources are the dashboard Postman collection (git-ignored, holds credentials) and the docs PDF (not yet received). No PayStation code until the PDF is read (owner).
 - Auth session in the web app is a **mock** (`apps/web/src/lib/session.ts`). Replaced in A2.

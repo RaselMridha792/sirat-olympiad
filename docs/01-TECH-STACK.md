@@ -19,7 +19,7 @@ Fixed unless the owner approves a change. Versions are what the scaffold was bui
 | Email | Transactional provider (owner decides: SES/Brevo/Resend) via queue | — | SPF/DKIM/DMARC required |
 | Validation | class-validator + class-transformer (API); env validated at boot | 0.14 | Global `ValidationPipe` whitelist |
 | Logging | pino via nestjs-pino (JSON, redacts auth headers) | 9 | Structured logs |
-| Proxy | Nginx (Cloudflare in front) | 1.27 | TLS, gzip, rate limit, static caching, real-IP restore |
+| Proxy | Nginx (Cloudflare in front) | 1.30 (pinned 1.30.6) | TLS, gzip, rate limit, static caching, real-IP restore |
 | Hosting | ONE Hostinger KVM 8 VPS (verify specs) | — | Predictable cost. Single point of failure is accepted, so backups + rebuild script are mandatory |
 | Monitoring | Uptime monitor + Netdata or Prometheus/Grafana + Sentry | to set up | Know before the client does |
 | Load test | k6 from another machine | — | Required before any real exam |

@@ -32,6 +32,9 @@ Owner = Rasel Mridha. Client = GLTS Leadership × Sirat Olympiad. Add the answer
 | 22 | Hosting: confirm Hostinger KVM 8 specs; Malaysia/AWS fallback plan | Infra | Single VPS |
 | 23 | Support coverage promised to client (exam-day only vs 24/7 any-time) | Runbook/contract | Exam-day only |
 | 24 | Real expected **peak concurrency** and whether starts are bunched (e.g. at window open) | Load test | 1,300–3,800 estimate |
+| 25 | **CI cannot block merges**: the repo is private on GitHub Free, where branch protection/required checks are unavailable (HTTP 403). Upgrade to GitHub Pro (or make the repo public) and switch to pull requests with required checks, or keep pushing to `main` with the rule "deploy only a commit with a green CI run"? | Release process | Advisory CI + green-SHA deploy rule |
+| 26 | Postgres error logs include the conflicting value on unique violations (e.g. `Key (email)=(…) already exists`). Accept (logs are private and rotated), or set `log_error_verbosity = terse` (also drops deadlock/lock-wait detail)? | Logging / privacy | Keep default; A2 checks duplicates in code first so the constraint rarely fires |
+| 27 | Run the API with a **non-superuser** DB role (separate from the bootstrap/migration role)? Needs a second PgBouncer user and grants. | Security hardening | Yes, in the hardening phase |
 
 ## PayStation — unconfirmed until the official docs PDF is read (owner, 2026-10-30)
 

@@ -20,7 +20,7 @@ pnpm db:generate
 $DCD up -d postgres pgbouncer redis-cache redis-queue   # data services on 127.0.0.1:15432/16432/16379/16380
 pnpm db:migrate                                         # prisma migrate dev (host, via DIRECT_URL)
 pnpm --filter @sirat/api db:seed                        # idempotent config seed
-pnpm --filter @sirat/api db:fixtures:dev                # DEV ONLY: 3 verified students with paid registrations
+ALLOW_DEV_FIXTURES=yes-this-is-not-production pnpm --filter @sirat/api db:fixtures:dev   # DEV ONLY (see below)
 pnpm dev:api                                            # http://localhost:4000/api/health
 
 pnpm typecheck && pnpm lint && pnpm test && pnpm build  # unit gates
@@ -29,7 +29,7 @@ pnpm --filter @sirat/api test:int                       # DB + Redis integration
 $DCD up -d --build                                      # full stack; http://127.0.0.1:8080 and /api/ready
 ```
 
-Fixture login emails: `student1@fixtures.invalid` … `student3@fixtures.invalid`, password = `FIXTURE_PASSWORD` from `apps/api/.env`. Fixtures refuse to run unless `NODE_ENV` is development/test, `ALLOW_DEV_FIXTURES=yes-this-is-not-production` and the DB host is local.
+Fixtures: 3 verified students with paid registrations, `student1@fixtures.invalid` … `student3@fixtures.invalid`, password = your `FIXTURE_PASSWORD` in `apps/api/.env`. They refuse to run unless `NODE_ENV` is development/test, the confirmation is set for that run, the URL is local with no `host`/`hostaddr` parameter, and the connected Postgres server carries `sirat.environment=development` (only the dev override sets it; after pulling this change once, recreate the dev Postgres with `$DCD up -d postgres`, data is kept). PowerShell: `$env:ALLOW_DEV_FIXTURES='yes-this-is-not-production'; pnpm --filter @sirat/api db:fixtures:dev`.
 
 ## 1. Status and logs
 
@@ -44,13 +44,19 @@ df -h; free -m; docker stats --no-stream
 ## 2. Deploy and rollback
 
 ```bash
-git pull --ff-only
+set -e                             # paste as a block or run as a script, so a failing step stops the deploy
+git tag "deploy-$(date -u +%Y%m%dT%H%M%SZ)" HEAD   # remember what was running (local tag, never pushed from the VPS)
+git switch main && git fetch origin
+sha=$(git rev-parse origin/main)   # deploy ONLY a commit whose CI run is green (CI is advisory, OPEN-QUESTIONS #25):
+# gh run list --workflow CI --commit "$sha" --json conclusion --jq '.[0].conclusion'   -> must print success
+git merge --ff-only "$sha"
 $DC up -d --build                  # VERIFIED locally: builds, runs `migrate` (migrate deploy + config seed), then starts api
 $DC logs migrate                   # must end with "config seed done"; the api will not start if migrate failed
 scripts/healthcheck.sh https://<domain>   # if this fails -> rollback
 # Re-run migrations + seed by hand (safe to repeat):
 $DC run --rm migrate
-# Rollback: git checkout <previous-tag> && $DC up -d --build
+# Rollback: git checkout --detach <deploy-tag|sha> && $DC up -d --build   (next deploy starts with `git switch main`)
+# A rollback does NOT undo migrations; migrations must stay backward-compatible.
 ```
 Migrations must stay backward-compatible (old code keeps running while the new one starts). TODO: `scripts/deploy.sh` = build → migrate → start → health-check → auto-rollback on failure. **No deploys during a live exam window** except a critical fix agreed with the owner.
 
@@ -67,10 +73,13 @@ TODO: Nginx `maintenance.html` toggle (return 503 with a friendly page for `/` a
 ## 5. Backup and restore
 
 ```bash
-scripts/backup.sh                       # VERIFIED: pg_dump -Fc into ./backups (then ship OFF the server)
-scripts/restore.sh backups/<file>.dump  # DESTRUCTIVE, asks for YES (not yet rehearsed)
+scripts/backup.sh                       # VERIFIED (Windows Git Bash; re-check on the VPS): owner-only dump, verified by a full read
+# Restore: stop traffic first, restore (refuses a truncated dump; one transaction), then migrate and start again
+$DC stop nginx web api
+scripts/restore.sh backups/<file>.dump  # DESTRUCTIVE, asks for YES (truncated-dump refusal VERIFIED; full restore not yet rehearsed)
+$DC run --rm migrate && $DC exec redis-cache redis-cli FLUSHALL && $DC up -d && scripts/healthcheck.sh https://<domain>
 ```
-Credentials are read inside the postgres container; nothing secret is typed on the host. Before every exam: fresh backup + **restore drill on another machine**. Keep ≥ 7 daily + 4 weekly. Alert on failure.
+Credentials are read inside the postgres container; nothing secret is typed on the host. One-time on hosts with older backups: `chmod 700 backups && chmod 600 backups/*.dump`. Hardening phase: restore into a fresh database instead of `--clean` over the live schema. Before every exam: fresh backup + **restore drill on another machine**. Keep ≥ 7 daily + 4 weekly. Alert on failure.
 
 ## 6. Rebuild on a fresh VPS (< 1 hour)
 
@@ -82,6 +91,8 @@ Credentials are read inside the postgres container; nothing secret is typed on t
 **Site down:** `$DC ps` → Nginx logs → `df -h` (disk full?) → Postgres/Redis health → restart failing service → if data loss suspected, restore plan (section 5).
 **`/api/ready` returns 503:** `$DC logs --tail=50 api | grep "readiness failed"` names the dependency (database, redisCache, redisQueue); check that container.
 **Logs say "rate limiter unavailable":** the cache Redis is down or slow; the API keeps serving (fail-open) but per-IP limits are off until it is back. Restart `redis-cache`.
+**Clients get 429:** a JSON body with code `TOO_MANY_REQUESTS` and `Retry-After: 1` comes from nginx `limit_req`; a JSON body from the API (`ThrottlerException`) comes from the 600/min app limit. If a whole school is limited, check that real client IPs are restored (section 10).
+**More log detail:** set `LOG_LEVEL=debug` in `.env` and `$DC up -d api` (default `info` in production). Container logs rotate at 50 MB × 5 per container.
 **Payments stuck:** admin → Payments → lookup by invoice/trx/phone → manual reconcile (audit-logged). Money taken but DB says unpaid is the worst case: alert on any `pending` beyond expiry.
 **Submissions failing:** check `/api/ready`, Redis queue instance, API logs for 5xx; clients retry with backoff and keep local copies, so fix fast rather than patch hastily.
 
@@ -92,3 +103,11 @@ Client: — · PayStation support: — · Email provider: — · Hostinger suppo
 ## 9. Pre-exam checklist (T-7 → T-0)
 
 See `RULEBOOK.md` section 13: load test at 1.5–2× peak, backup + restore drill, 48 h code freeze, patches before freeze, monitoring + fake alert, Cloudflare verified, email deliverability, real small PayStation payment, rollback rehearsed, owner watching dashboards.
+
+## 10. Cloudflare real-IP list (refresh every few months and before each exam)
+
+```bash
+{ echo "# Cloudflare edge ranges (generated $(date -u +%F))"; for u in ips-v4 ips-v6; do curl -fsS "https://www.cloudflare.com/$u" | awk 1 | sed '/^$/d; s/^/set_real_ip_from /; s/$/;/'; done; echo "real_ip_header CF-Connecting-IP;"; echo "real_ip_recursive on;"; } > infra/nginx/cloudflare-realip.conf
+$DC exec nginx nginx -t && $DC exec nginx nginx -s reload
+```
+After go-live, confirm in the nginx access log that client addresses are real users, not Cloudflare edges. If Cloudflare reaches the origin over IPv6 while the compose network has none, Docker replaces the source address and real-IP restore cannot work: keep the origin A-record-only.
