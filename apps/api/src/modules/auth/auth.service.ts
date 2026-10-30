@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   HttpException,
   HttpStatus,
@@ -9,6 +10,7 @@ import {
 import type { SessionUser } from '@sirat/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import type { AuthUser } from './access-token.service';
 import { LoginLimiter, emailHash } from './login-limiter';
 import { PasswordService } from './password.service';
 import { type ClientInfo, type IssuedSession, SessionService } from './session.service';
@@ -105,6 +107,55 @@ export class AuthService {
       user: { id: user.id, name: user.name, email: user.email, role: user.role },
       session,
     };
+  }
+
+  /**
+   * Change password (RULEBOOK §5): the current password is checked under the same limits as login, since a stolen
+   * session must not become a way to guess it. Success ends every session on every device and starts a fresh one
+   * for this device, which the caller sets as cookies.
+   */
+  async changePassword(
+    actor: AuthUser,
+    currentPassword: string,
+    newPassword: string,
+    client: ClientInfo,
+  ): Promise<IssuedSession> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: actor.id },
+      select: { id: true, email: true, role: true, isBlocked: true, passwordHash: true },
+    });
+    if (!user || user.isBlocked) throw new UnauthorizedException('Authentication required');
+
+    const verdict = await this.limiter.check(user.email, client.ip);
+    if (!verdict.allowed)
+      throw new TooManyAttemptsException(Math.ceil(verdict.retryAfterMs / 1000));
+    if (!(await this.passwords.verify(user.passwordHash, currentPassword))) {
+      const { lockedForMs } = await this.limiter.recordFailure(user.email, client.ip);
+      await this.audit.record({
+        action: 'auth.password_change_failed',
+        actorId: user.id,
+        ip: client.ip,
+        meta: { locked: lockedForMs > 0 },
+      });
+      throw new BadRequestException('Current password is incorrect');
+    }
+    await this.limiter.recordSuccess(user.email, client.ip);
+    if (await this.passwords.verify(user.passwordHash, newPassword))
+      throw new BadRequestException('Choose a new password that differs from the current one');
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: await this.passwords.hash(newPassword) },
+    });
+    const ended = await this.sessions.endAllForUser(user.id);
+    const session = await this.sessions.start({ id: user.id, role: user.role }, client);
+    await this.audit.record({
+      action: 'auth.password_changed',
+      actorId: user.id,
+      ip: client.ip,
+      meta: { sessionsEnded: ended },
+    });
+    return session;
   }
 
   /** Upgrades an older hash after a successful login. Best effort: a failure here never blocks the login. */

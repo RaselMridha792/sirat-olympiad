@@ -17,6 +17,7 @@ import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from './access-token.service';
 import { CurrentUser, Public } from './auth.decorators';
 import { AuthService, TooManyAttemptsException } from './auth.service';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { REFRESH_COOKIE, SessionCookies } from './session-cookies';
 import { type ClientInfo, SessionService } from './session.service';
@@ -108,6 +109,33 @@ export class AuthController {
       meta: { sessions: ended },
     });
     this.cookies.clear(res);
+  }
+
+  /**
+   * Ends every session on every device; this device gets a fresh one (cookies). 400 for a wrong current password,
+   * 429 + Retry-After under the login limits.
+   */
+  @Post('change-password')
+  @HttpCode(204)
+  async changePassword(
+    @CurrentUser() user: AuthUser,
+    @Body() body: ChangePasswordDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<void> {
+    try {
+      const session = await this.auth.changePassword(
+        user,
+        body.currentPassword,
+        body.newPassword,
+        clientInfo(req),
+      );
+      this.cookies.set(res, session);
+    } catch (e) {
+      if (e instanceof TooManyAttemptsException)
+        res.setHeader('Retry-After', String(e.retryAfterSeconds));
+      throw e;
+    }
   }
 
   /** The session user, read fresh from the database (role included). A blocked user is logged out. */
