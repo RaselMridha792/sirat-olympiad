@@ -9,7 +9,7 @@ Owner = Rasel Mridha. Client = GLTS Leadership × Sirat Olympiad. Add the answer
 | # | Question | Blocks | Default if unanswered |
 |---|---|---|---|
 | 1 | **PayStation:** production merchant account and approval? Which methods enabled? Who pays the gateway charge (`pay_with_charge`, P6)? Checkout expiry and the IPN retry count/interval (not in the official docs). Callback parameters: P1. (Shared sandbox credentials are published on PayStation's docs page; currency BDT per docs.) | Payments | Build against sandbox; expiry 60 min; `pay_with_charge=1`; verify the rest in sandbox |
-| 2 | Registration fee amount and registration open/close dates | Registration | Config in `settings`, no hardcoding |
+| 2 | ~~Registration fee amount~~ **Fee answered 2026-10-31: 400 BDT** in `settings` (DECISIONS "Registration fee"). Still open: registration open/close dates | Registration | Config in `settings`, no hardcoding |
 | 3 | Category ↔ grade-level mapping for the 17 grade levels (Activist / Ambassador / Achiever bands) | Seed data | Use old bands (SDG 1–4 → Activist, 5–10 → Ambassador, 11–17 → Achiever) |
 | 4 | Exam format: question types, count, negative marking, image questions, languages | Exam engine | MCQ A–D, no negative marking, text only |
 | 5 | Question **pool size** and questions per attempt | Exam engine | Pool configurable per exam |

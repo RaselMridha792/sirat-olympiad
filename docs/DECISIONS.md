@@ -2,6 +2,26 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — First release: registration and payment by 15 November 2026 (owner, via the lead)
+
+1. **Target 15 November 2026.** The first release is registration and payment only. It ends when a student logs in and sees their own registration and payment status on the dashboard. No part of the exam engine is needed.
+2. **Order change:** this release comes before the exam engine. For it, the phase order of `10-BUILD-PLAN.md` (A backend → B dashboards → C registration/payment) is replaced: the registration and payment API, the web wizard, the payment result page and the dashboard status are built now. The public marketing site stays Phase D. The Phase C Definition of Done (17 points) applies in full.
+3. Plan, day-by-day order and the proof for each DoD point: `docs/plans/PAYMENTS-PLAN.md`. Pull requests only when the owner says so.
+
+## 2026-10-31 — Registration fee: 400 BDT, stored in settings (owner)
+
+1. **The fee is 400 BDT**, stored as `settings.registration_fee_minor = 40000` (paisa, integer), not in `.env`. Replaces the same day's `REGISTRATION_FEE_BDT` idea (never built) and the placeholder 0 of A1 #6.
+2. **Set by a migration** that inserts the key when it is missing and changes it only while it is still the placeholder 0. Why: the `migrate` job runs migrations before the seed and the seed only inserts missing keys, so an UPDATE alone does nothing on an empty database and the seed would then write 0. The seed default becomes 40000 too.
+3. **Only an admin changes it**, after a confirmation: a dialog shows the old and new value, and the server requires the value the form showed and answers 409 if it changed in the meantime, so an old form never overwrites someone else's change. Every change is audit-logged with the old value, the new value and a reason.
+4. **Snapshot:** a payment copies the fee when it starts. An amount from the client is never accepted. The amount PayStation reports must match the payment row.
+5. **A fee of 0 or less, or not whole taka, stops payments:** the server does not start one, and a DB CHECK refuses such a value.
+6. The currency stays BDT (`settings.currency`); a payment refuses to start with anything else.
+
+## 2026-10-31 — PayStation account settings from env (owner)
+
+1. Sandbox work uses the owner's own PayStation test account now; the client's account replaces it later. Credentials, base URL, callback URL and IPN URL all come from `.env`; the code holds no PayStation host name. `PAYSTATION_ENV` stays only as a label for the guards (live only with `NODE_ENV=production`). Supersedes "base URL derived from `PAYSTATION_ENV`" (2026-10-30).
+2. Each payment records the account it belongs to, and invoice numbers carry an account prefix, so test data never mixes with live data. The switch checklist (what to re-verify, how test data stays apart): `docs/plans/PAYMENTS-PLAN.md` section 13.
+
 ## 2026-10-31 — A2.1e email-link endpoints and operator alert emails (Claude; owner rules of 2026-10-31)
 
 Each protection has a test that fails without it (mutation-checked); forgot/resend are tested end to end through a worker and Mailpit.
