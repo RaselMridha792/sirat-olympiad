@@ -2,6 +2,20 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-30 — A2.1b passwords and sessions (Claude)
+
+Each item has tests, and each test was checked to fail with its protection removed (20 mutations: 7 password, 13 session).
+
+1. **Passwords:** argon2id at the OWASP baseline (19 MiB, t=2, p=1), to be tuned by the login load test; `needsRehash` lets login upgrade older hashes later. Every password is NFKC-normalized before it is checked, hashed or verified, and its length counts characters (code points): 8–128 (owner). The 10,000 most common passwords (SecLists `10k-most-common.txt`, MIT, compared case-insensitively) are refused. The list ships in `dist` and is loaded at boot: the compiled API was started without it and refused to start. `verifyDummy` costs the same as a real verify, for unknown emails at login.
+2. **Sessions:** one family per login. Each refresh retires the presented token with a conditional update (of five simultaneous refreshes exactly one wins, tested) and issues a new pair in the same family; the 7-day expiry slides with each refresh. Only SHA-256 hashes of refresh tokens are stored.
+3. **Reuse detection:** a retired token that comes back while its family is alive ends the family for every holder and is audited once (`auth.refresh_reuse`). Within 10 s of its rotation the same thing is two tabs refreshing at once: 409, family kept, and the client retries with the cookies the other tab already received. Inside those 10 s a theft is not detected; after them it is. A token of a family that already ended (logout, an earlier reuse) is refused without an audit entry.
+4. **Cookies:** `sirat_access` (httpOnly, SameSite=Lax, Path=/, 15 min) and `sirat_refresh` (httpOnly, SameSite=Strict, Path=/api/auth, expires with the session). Host-only: the unused `COOKIE_DOMAIN` was removed from `.env.example`. `COOKIE_SECURE` defaults to true; `false` is only for local plain-http development and is refused with `NODE_ENV=production`.
+5. **Logout** ends this device's family; **logout-all** ends every family and is audited. An access token stays valid until it expires (at most 15 min), because it is verified locally (03-HOW-IT-WORKS §2); logout removes it from the browser.
+6. **`/auth/me`** reads the user fresh from the database (role included) and treats a blocked user as logged out; a refresh by a blocked user ends the family.
+7. **Audit writes never fail a request:** a failed write is logged with the action and error class only.
+8. **AppModule integration tests now use the `*_test` database** for the app's runtime connection too (the database half of the A1.1 backlog item; Redis is still shared).
+9. **Follow-up (with the queue workers):** a periodic job deletes sessions that expired or were revoked more than 30 days ago, since every refresh adds a row.
+
 ## 2026-10-30 — A2.1a auth guard rails (Claude; first part of A2.1)
 
 Each item has tests, and each test was checked to fail with its protection removed (15 mutations).
@@ -46,7 +60,7 @@ Each gate has its own tests, and each test was checked to fail with its gate rem
 
 **Confirmed by the second review but outside the A1.1 scope (owner, 2026-10-30), with their likely home:**
 - *Hardening / `scripts/deploy.sh` (build step 9):* nginx never routes around a stalled replica (`max_fails=0` + `proxy_next_upstream error`, medium); ~5–10 s of 504s to a stopped replica's stale IP; sporadic POST 502 on reused idle upstream connections (align keep-alive timeouts); exported shell variables override `.env` for `migrate` only; the full-dependency audit can block hotfix deploys; `backup.sh` keeps every dump (retention); the green-CI deploy rule is not enforced by a script; RSC payloads (`text/x-component`) are not gzipped.
-- *A2 (rate limiter and tests):* the breaker also trips on event-loop stalls (*fixed: A2.0 #6*); a hung-but-connected cache Redis still costs some requests 300 ms and grows the ioredis queue; the AppModule wiring tests run against `DATABASE_URL` and the shared cache Redis instead of the `*_test` database.
+- *A2 (rate limiter and tests):* the breaker also trips on event-loop stalls (*fixed: A2.0 #6*); a hung-but-connected cache Redis still costs some requests 300 ms and grows the ioredis queue; the AppModule wiring tests run against `DATABASE_URL` and the shared cache Redis instead of the `*_test` database (*database half fixed: A2.1b #8*).
 - *Next DB work:* the enum-literal catalog test misses unquoted type names and partial-index predicates; RESTRICT is asserted for only two foreign keys (Prisma's default for new optional relations is SET NULL).
 - *Fixtures (low):* the server marker can also be satisfied per session (URL `options`, or a SET left on a PgBouncer connection); the per-run confirmation is documented, not enforced.
 

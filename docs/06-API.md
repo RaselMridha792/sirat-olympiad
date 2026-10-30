@@ -13,9 +13,9 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | Module | Method + path | Guard | Notes |
 |---|---|---|---|
 | auth | `POST /auth/login` | Public, throttled | Sets httpOnly cookies |
-| | `POST /auth/refresh` | Public (cookie) | Rotation + reuse detection |
-| | `POST /auth/logout`, `POST /auth/logout-all` | Auth | |
-| | `GET /auth/me` | Auth | Session user only; no writes in GET |
+| | `POST /auth/refresh` | Public (cookie) | Rotation + reuse detection. 204 + new cookies; 409 = another tab refreshed a moment ago (retry); 401 = log in again (cookies cleared). Built (A2.1b) |
+| | `POST /auth/logout`, `POST /auth/logout-all` | Auth | Logout ends this device's session family; logout-all ends all of them (audited). Built (A2.1b) |
+| | `GET /auth/me` | Auth | Session user only, read fresh from the DB (`SessionUser`); a blocked user gets 401. No writes in GET. Built (A2.1b) |
 | | `POST /auth/forgot-password`, `/reset-password`, `/verify-email`, `/resend-verification` | Public, throttled | Identical responses (no enumeration) |
 | | `POST /auth/change-password` | Auth | Revokes all sessions |
 | users | `GET /users/me`, `PATCH /users/me` | Auth | **Allow-list DTO**: name, phone, district, institution, education, grade, photo |
