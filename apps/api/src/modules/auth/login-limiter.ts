@@ -10,7 +10,9 @@ import { withTimeout } from '../../common/with-timeout';
  * - per account + IP pair: LOGIN_PAIR_MAX_FAILURES within 15 min lock that pair for 15 min, doubling with every
  *   repeat lock within 24 h up to a cap. During a lock even the right password is refused (the password is not
  *   checked at all). Without a lock, a right password resets the pair's count and its escalation;
- * - per account, all IPs together (about 50 per hour).
+ * - per account, all IPs together (about 50 per hour). At that limit only IPs that failed on the account within the
+ *   hour are refused: an IP without failures (usually the student's own) can still log in, while an attacker gets
+ *   one guess per fresh IP. So nobody can lock someone else's account on purpose from elsewhere (owner, A2 rule).
  * A completed password reset clears every lock and count of that account: the account's "generation" in the keys
  * changes, and old keys simply expire. Emails appear in keys only as SHA-256 hashes, and the same counting runs for
  * emails without an account, so nothing here reveals whether an account exists.
@@ -34,6 +36,10 @@ export interface FailureResult {
   /** Set when this failure locked the pair. */
   lockedForMs: number;
   lockLevel: number;
+  /** The account's failures in the current hour, this one included. */
+  accountFailures: number;
+  /** This failure brought the account to its hourly limit (true once per window). */
+  accountLimitStarted: boolean;
 }
 
 const PAIR_WINDOW_MS = 15 * 60_000;
@@ -56,8 +62,12 @@ const CHECK_LUA = `${PRELUDE}
 local lockLeft = redis.call('PTTL', p .. 'lock:' .. scope .. ':' .. ip)
 if lockLeft > 0 then return { 1, lockLeft } end
 local acctKey = p .. 'acct:' .. scope
+local seenKey = p .. 'seen:' .. scope .. ':' .. ip
 if tonumber(redis.call('GET', acctKey) or '0') >= tonumber(ARGV[5]) then
-  return { 2, math.max(redis.call('PTTL', acctKey), 1000) }
+  local seenLeft = redis.call('PTTL', seenKey)
+  if seenLeft > 0 then
+    return { 2, math.max(math.min(seenLeft, redis.call('PTTL', acctKey)), 1000) }
+  end
 end
 local ipKey = p .. 'ip:' .. ip
 if tonumber(redis.call('GET', ipKey) or '0') >= tonumber(ARGV[4]) then
@@ -66,7 +76,7 @@ end
 return { 0, 0 }
 `;
 
-/** Counts one failure everywhere and locks the pair at the limit. Returns { lockedForMs, level }. */
+/** Counts one failure everywhere, marks the IP as failed on the account, locks the pair at the limit. */
 const FAIL_LUA = `${PRELUDE}
 local function bump(key, ttl)
   local n = redis.call('INCR', key)
@@ -75,7 +85,8 @@ local function bump(key, ttl)
 end
 if g ~= '0' then redis.call('PEXPIRE', p .. 'gen:' .. h, ARGV[11]) end
 bump(p .. 'ip:' .. ip, ARGV[10])
-bump(p .. 'acct:' .. scope, ARGV[9])
+local acct = bump(p .. 'acct:' .. scope, ARGV[9])
+redis.call('SET', p .. 'seen:' .. scope .. ':' .. ip, '1', 'PX', ARGV[9])
 local pairKey = p .. 'pair:' .. scope .. ':' .. ip
 if bump(pairKey, ARGV[4]) >= tonumber(ARGV[5]) then
   local levelKey = p .. 'level:' .. scope .. ':' .. ip
@@ -84,14 +95,14 @@ if bump(pairKey, ARGV[4]) >= tonumber(ARGV[5]) then
   local lockMs = math.floor(math.min(tonumber(ARGV[6]) * 2 ^ (level - 1), tonumber(ARGV[7])))
   redis.call('SET', p .. 'lock:' .. scope .. ':' .. ip, '1', 'PX', lockMs)
   redis.call('DEL', pairKey)
-  return { lockMs, level }
+  return { lockMs, level, acct }
 end
-return { 0, 0 }
+return { 0, 0, acct }
 `;
 
-/** A right password while not locked: the pair's count and its escalation start again from zero. */
+/** A right password while not locked: the pair's count, escalation and failed mark start again from zero. */
 const SUCCESS_LUA = `${PRELUDE}
-redis.call('DEL', p .. 'pair:' .. scope .. ':' .. ip, p .. 'level:' .. scope .. ':' .. ip)
+redis.call('DEL', p .. 'pair:' .. scope .. ':' .. ip, p .. 'level:' .. scope .. ':' .. ip, p .. 'seen:' .. scope .. ':' .. ip)
 return 1
 `;
 
@@ -199,8 +210,15 @@ export class LoginLimiter {
       IP_WINDOW_MS,
       GENERATION_TTL_MS,
     );
-    const [lockedForMs, lockLevel] = Array.isArray(result) ? (result as [number, number]) : [0, 0];
-    return { lockedForMs, lockLevel };
+    const [lockedForMs, lockLevel, accountFailures] = Array.isArray(result)
+      ? (result as [number, number, number])
+      : [0, 0, 0];
+    return {
+      lockedForMs,
+      lockLevel,
+      accountFailures,
+      accountLimitStarted: accountFailures === this.limits.accountFailuresPerHour,
+    };
   }
 
   /** A right password while not locked. */

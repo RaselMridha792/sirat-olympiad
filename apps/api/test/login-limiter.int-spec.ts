@@ -4,7 +4,11 @@
  */
 import { randomUUID } from 'node:crypto';
 import Redis from 'ioredis';
-import { LoginLimiter, type LoginLimits } from '../src/modules/auth/login-limiter';
+import {
+  type FailureResult,
+  LoginLimiter,
+  type LoginLimits,
+} from '../src/modules/auth/login-limiter';
 
 const url = process.env.REDIS_CACHE_URL as string;
 const prefix = `login-test:${randomUUID()}:`;
@@ -36,7 +40,12 @@ const email = () => `u-${randomUUID().slice(0, 8)}@test.invalid`;
 let n = 0;
 const ip = () => `198.51.100.${(n = (n % 250) + 1)}`; // a fresh IPv4 per call
 async function fail(times: number, mail: string, from: string) {
-  let last = { lockedForMs: 0, lockLevel: 0 };
+  let last: FailureResult = {
+    lockedForMs: 0,
+    lockLevel: 0,
+    accountFailures: 0,
+    accountLimitStarted: false,
+  };
   for (let i = 0; i < times; i += 1) last = await limiter.recordFailure(mail, from);
   return last;
 }
@@ -45,9 +54,9 @@ describe('LoginLimiter', () => {
   it('locks an account+IP pair at the failure limit, and only that pair', async () => {
     const mail = email();
     const [a, b] = [ip(), ip()];
-    expect(await fail(2, mail, a)).toEqual({ lockedForMs: 0, lockLevel: 0 });
+    expect(await fail(2, mail, a)).toMatchObject({ lockedForMs: 0, lockLevel: 0 });
     expect(await limiter.check(mail, a)).toEqual({ allowed: true });
-    expect(await fail(1, mail, a)).toEqual({ lockedForMs: 1_000, lockLevel: 1 });
+    expect(await fail(1, mail, a)).toMatchObject({ lockedForMs: 1_000, lockLevel: 1 });
 
     const locked = await limiter.check(mail, a);
     expect(locked).toMatchObject({ allowed: false, reason: 'pair_locked' });
@@ -61,9 +70,9 @@ describe('LoginLimiter', () => {
     expect((await fail(3, mail, from)).lockedForMs).toBe(1_000);
     await sleep(1_100);
     expect(await limiter.check(mail, from)).toEqual({ allowed: true });
-    expect(await fail(3, mail, from)).toEqual({ lockedForMs: 2_000, lockLevel: 2 });
+    expect(await fail(3, mail, from)).toMatchObject({ lockedForMs: 2_000, lockLevel: 2 });
     await sleep(2_100);
-    expect(await fail(3, mail, from)).toEqual({ lockedForMs: 3_000, lockLevel: 3 }); // 4 s capped at 3 s
+    expect(await fail(3, mail, from)).toMatchObject({ lockedForMs: 3_000, lockLevel: 3 }); // 4 s capped at 3 s
   });
 
   it('resets the count and the escalation after a right password without a lock', async () => {
@@ -71,16 +80,31 @@ describe('LoginLimiter', () => {
     await fail(2, mail, from);
     await limiter.recordSuccess(mail, from);
     expect((await fail(2, mail, from)).lockedForMs).toBe(0); // counting started again
-    expect(await fail(1, mail, from)).toEqual({ lockedForMs: 1_000, lockLevel: 1 });
+    expect(await fail(1, mail, from)).toMatchObject({ lockedForMs: 1_000, lockLevel: 1 });
   });
 
-  it('limits one account across all IPs', async () => {
+  it('at the account limit refuses only IPs that failed on it; a fresh IP still gets in', async () => {
     const mail = email();
-    for (let i = 0; i < 5; i += 1) await fail(1, mail, ip());
-    expect(await limiter.check(mail, ip())).toMatchObject({
+    const failed = [ip(), ip(), ip(), ip(), ip()];
+    const results = [];
+    for (const from of failed) results.push(await fail(1, mail, from)); // 5: the account limit here
+    expect(results.map((r) => r.accountLimitStarted)).toEqual([false, false, false, false, true]);
+    expect(await limiter.check(mail, failed[0])).toMatchObject({
       allowed: false,
       reason: 'account_limit',
     });
+    const fresh = ip(); // e.g. the student's own network
+    expect(await limiter.check(mail, fresh)).toEqual({ allowed: true });
+    await fail(1, mail, fresh); // one guess per fresh IP, then refused too
+    expect(await limiter.check(mail, fresh)).toMatchObject({ reason: 'account_limit' });
+  });
+
+  it('counts the account failures, and a right password clears the failed mark of that IP', async () => {
+    const [mail, mine] = [email(), ip()];
+    expect((await fail(1, mail, mine)).accountFailures).toBe(1);
+    await limiter.recordSuccess(mail, mine); // the student got in from here
+    for (let i = 0; i < 5; i += 1) await fail(1, mail, ip()); // others push the account over the limit
+    expect(await limiter.check(mail, mine)).toEqual({ allowed: true });
   });
 
   it('limits one IP across accounts, counting only failures', async () => {
@@ -109,7 +133,7 @@ describe('LoginLimiter', () => {
     expect(await roomy.check(mail, a)).toEqual({ allowed: true });
     expect(await roomy.check(mail, b)).toEqual({ allowed: true });
     expect(await roomy.check(other, a)).toMatchObject({ reason: 'pair_locked' });
-    expect(await roomy.recordFailure(mail, a)).toEqual({ lockedForMs: 0, lockLevel: 0 }); // fresh count
+    expect(await roomy.recordFailure(mail, a)).toMatchObject({ lockedForMs: 0, lockLevel: 0 }); // fresh count
   });
 
   it('keeps an IP limit after a password reset: it protects every account', async () => {
@@ -147,7 +171,10 @@ describe('LoginLimiter', () => {
     down.on('error', () => undefined);
     const blind = new LoginLimiter(down, limits, prefix);
     expect(await blind.check(email(), ip())).toEqual({ allowed: true });
-    expect(await blind.recordFailure(email(), ip())).toEqual({ lockedForMs: 0, lockLevel: 0 });
+    expect(await blind.recordFailure(email(), ip())).toMatchObject({
+      lockedForMs: 0,
+      lockLevel: 0,
+    });
     down.disconnect();
   });
 });
