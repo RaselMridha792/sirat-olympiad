@@ -11,6 +11,16 @@ services:
     deploy:
       replicas: 1
 
+  # Development email (owner): every email lands in Mailpit, nothing leaves the machine. UI: http://127.0.0.1:18025
+  mailpit:
+    image: axllent/mailpit:v1.32.0
+    restart: unless-stopped
+    ports: ['127.0.0.1:18025:8025']
+    healthcheck:
+      test: ['CMD', '/mailpit', 'readyz']
+      interval: 15s
+    deploy: { resources: { limits: { cpus: '0.5', memory: 128M } } }
+
   postgres:
     ports: ['127.0.0.1:15432:5432']
     command:
