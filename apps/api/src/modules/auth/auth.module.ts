@@ -8,6 +8,7 @@ import { AuditModule } from '../audit/audit.module';
 import { AccessTokenService, accessTokenJwtOptions } from './access-token.service';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { EmailTokenService } from './email-tokens.service';
 import { LoginLimiter } from './login-limiter';
 import { PasswordService } from './password.service';
 import { SessionCookies } from './session-cookies';
@@ -37,6 +38,7 @@ import { SessionService } from './session.service';
     SessionService,
     SessionCookies,
     AuthService,
+    EmailTokenService,
     {
       provide: LoginLimiter,
       inject: [REDIS_CACHE, ConfigService],
