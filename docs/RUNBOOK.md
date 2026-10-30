@@ -198,7 +198,7 @@ The `worker` service sends; the API only queues. Locally every email goes to Mai
 There is no sign-up for admins and the web never accepts a role, so an operator creates every admin from the command line, at a terminal. The password is typed at a hidden prompt, twice. It is never an argument, an environment variable or a log line.
 
 ```bash
-# VPS. The runtime api image has no tsx and no src/: this runs the compiled CLI from dist/.
+# VPS. The runtime api image has no tsx (its src/ cannot run), so this runs the compiled CLI from dist/.
 # No -T: the hidden prompt needs the terminal that `run` gives. --no-deps: otherwise compose runs `migrate` again first.
 $DC run --rm --no-deps api node dist/cli/create-admin.js --email ops@example.org --name "Ops Admin"
 #   Password:              <- type it; nothing shows on screen
