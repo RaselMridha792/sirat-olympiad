@@ -8,7 +8,7 @@ import { AuditModule } from '../audit/audit.module';
 import { AccessTokenService, accessTokenJwtOptions } from './access-token.service';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { EmailTokenService } from './email-tokens.service';
+import { EMAIL_TOKEN_TTLS, EmailTokenService } from './email-tokens.service';
 import { LoginLimiter } from './login-limiter';
 import { PasswordService } from './password.service';
 import { SessionCookies } from './session-cookies';
@@ -39,6 +39,14 @@ import { SessionService } from './session.service';
     SessionCookies,
     AuthService,
     EmailTokenService,
+    {
+      provide: EMAIL_TOKEN_TTLS,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<EnvVars, true>) => ({
+        email_verify: config.get('EMAIL_VERIFY_TOKEN_HOURS', { infer: true }) * 3_600_000,
+        password_reset: config.get('PASSWORD_RESET_TOKEN_MINUTES', { infer: true }) * 60_000,
+      }),
+    },
     {
       provide: LoginLimiter,
       inject: [REDIS_CACHE, ConfigService],

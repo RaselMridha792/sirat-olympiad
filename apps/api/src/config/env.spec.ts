@@ -8,6 +8,7 @@ const valid = () => ({
   REDIS_CACHE_URL: 'redis://redis-cache:6379',
   REDIS_QUEUE_URL: 'redis://redis-queue:6379',
   JWT_ACCESS_SECRET: strongSecret(),
+  APP_URL: 'https://sirat.test',
 });
 
 describe('validateEnv (A2.0 gate 3: no placeholder or weak signing secrets)', () => {
@@ -96,5 +97,25 @@ describe('validateEnv: login limits (owner, 2026-10-31)', () => {
     expect(() => validateEnv({ ...valid(), LOGIN_PAIR_MAX_FAILURES: '1' })).toThrow(
       /LOGIN_PAIR_MAX_FAILURES/,
     );
+  });
+});
+
+describe('validateEnv: email links', () => {
+  it('requires APP_URL in production, as an origin without a path', () => {
+    const withoutUrl = (extra: Record<string, string> = {}) => {
+      const env: Record<string, unknown> = { ...valid(), ...extra };
+      delete env.APP_URL;
+      return env;
+    };
+    expect(() => validateEnv(withoutUrl())).toThrow(/APP_URL is required in production/);
+    expect(() => validateEnv({ ...valid(), APP_URL: 'https://sirat.test/app' })).toThrow(/APP_URL/);
+    expect(() => validateEnv(withoutUrl({ NODE_ENV: 'development' }))).not.toThrow();
+  });
+
+  it('defaults the link lifetimes to 24 h (verify) and 30 min (reset)', () => {
+    expect(validateEnv(valid())).toMatchObject({
+      EMAIL_VERIFY_TOKEN_HOURS: 24,
+      PASSWORD_RESET_TOKEN_MINUTES: 30,
+    });
   });
 });

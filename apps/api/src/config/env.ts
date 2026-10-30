@@ -35,6 +35,12 @@ export class EnvVars {
   @IsInt() @Min(1) @Max(10_080) LOGIN_LOCK_MAX_MINUTES: number = 240;
   /** Failures per hour for one account from all IPs together (owner: about 50). */
   @IsInt() @Min(10) @Max(10_000) LOGIN_ACCOUNT_FAILURES_PER_HOUR: number = 50;
+
+  /** The web origin used in email links, e.g. https://example.org (no path). Required in production. */
+  @IsOptional() @Matches(/^https?:\/\/[^\s/?#]+$/) APP_URL?: string;
+  /** Email link lifetimes (RULEBOOK §5: e.g. 24 h to verify, 30 min to reset). */
+  @IsInt() @Min(1) @Max(168) EMAIL_VERIFY_TOKEN_HOURS: number = 24;
+  @IsInt() @Min(5) @Max(1_440) PASSWORD_RESET_TOKEN_MINUTES: number = 30;
   /** Optional override of the pino level (default: info in production, debug elsewhere). */
   @IsOptional()
   @IsIn(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
@@ -69,6 +75,9 @@ export function validateEnv(raw: Record<string, unknown>): EnvVars {
   const problem = secretProblem(env.JWT_ACCESS_SECRET);
   if (problem) {
     throw new Error(`JWT_ACCESS_SECRET ${problem}. Generate one with: openssl rand -base64 48`);
+  }
+  if (env.NODE_ENV === 'production' && !env.APP_URL) {
+    throw new Error('APP_URL is required in production: email links are built from it');
   }
   if (env.NODE_ENV === 'production' && env.COOKIE_SECURE === 'false') {
     throw new Error(

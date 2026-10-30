@@ -1,10 +1,14 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { AuthTokenType, type Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
+export type EmailTokenTtls = Readonly<Record<AuthTokenType, number>>;
+/** Injection token for the lifetimes from config (EMAIL_VERIFY_TOKEN_HOURS, PASSWORD_RESET_TOKEN_MINUTES). */
+export const EMAIL_TOKEN_TTLS = Symbol('EMAIL_TOKEN_TTLS');
+
 /** RULEBOOK §5: e.g. 24 h to verify an email, 30 min to reset a password. */
-export const EMAIL_TOKEN_TTL_MS: Readonly<Record<AuthTokenType, number>> = {
+export const DEFAULT_EMAIL_TOKEN_TTL_MS: EmailTokenTtls = {
   [AuthTokenType.email_verify]: 24 * 3_600_000,
   [AuthTokenType.password_reset]: 30 * 60_000,
 };
@@ -26,11 +30,16 @@ export interface IssuedEmailToken {
  */
 @Injectable()
 export class EmailTokenService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional()
+    @Inject(EMAIL_TOKEN_TTLS)
+    private readonly ttls: EmailTokenTtls = DEFAULT_EMAIL_TOKEN_TTL_MS,
+  ) {}
 
   async issue(userId: string, type: AuthTokenType): Promise<IssuedEmailToken> {
     const token = randomBytes(32).toString('base64url');
-    const expiresAt = new Date(Date.now() + EMAIL_TOKEN_TTL_MS[type]);
+    const expiresAt = new Date(Date.now() + this.ttls[type]);
     return this.prisma.$transaction(async (tx) => {
       await tx.authToken.updateMany({
         where: { userId, type, usedAt: null },

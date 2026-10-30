@@ -1,7 +1,10 @@
 /** Single-use email tokens against the *_test database (RULEBOOK §5). */
 import { createHash, randomBytes } from 'node:crypto';
 import { AuthTokenType, type PrismaClient } from '@prisma/client';
-import { EMAIL_TOKEN_TTL_MS, EmailTokenService } from '../src/modules/auth/email-tokens.service';
+import {
+  DEFAULT_EMAIL_TOKEN_TTL_MS as EMAIL_TOKEN_TTL_MS,
+  EmailTokenService,
+} from '../src/modules/auth/email-tokens.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { makeUser, testPrisma } from './helpers';
 
