@@ -1,4 +1,5 @@
 import {
+  Body,
   ConflictException,
   Controller,
   Get,
@@ -8,12 +9,15 @@ import {
   Res,
   UnauthorizedException,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import type { SessionUser } from '@sirat/shared';
 import type { Request, Response } from 'express';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from './access-token.service';
 import { CurrentUser, Public } from './auth.decorators';
+import { AuthService, TooManyAttemptsException } from './auth.service';
+import { LoginDto } from './dto/login.dto';
 import { REFRESH_COOKIE, SessionCookies } from './session-cookies';
 import { type ClientInfo, SessionService } from './session.service';
 
@@ -22,15 +26,41 @@ const clientInfo = (req: Request): ClientInfo => ({
   userAgent: req.get('user-agent') ?? null,
 });
 
-/** Session endpoints (06-API). Login, password and email-token endpoints follow. */
+/** Auth endpoints (06-API). Password and email-token endpoints follow. */
 @Controller('auth')
 export class AuthController {
   constructor(
+    private readonly auth: AuthService,
     private readonly sessions: SessionService,
     private readonly cookies: SessionCookies,
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
   ) {}
+
+  /**
+   * Sets the session cookies and returns the user; no token ever goes into the body. Not counted by the global
+   * limiter: only failed logins count (owner), in LoginLimiter. 401 for any failure, 429 + Retry-After while a
+   * lock or limit applies, 403 for a blocked account (after the right password only).
+   */
+  @Public()
+  @SkipThrottle()
+  @Post('login')
+  @HttpCode(200)
+  async login(
+    @Body() body: LoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{ user: SessionUser }> {
+    try {
+      const { user, session } = await this.auth.login(body.email, body.password, clientInfo(req));
+      this.cookies.set(res, session);
+      return { user };
+    } catch (e) {
+      if (e instanceof TooManyAttemptsException)
+        res.setHeader('Retry-After', String(e.retryAfterSeconds));
+      throw e;
+    }
+  }
 
   /**
    * Rotation. Public, because the access token may already have expired: the refresh cookie is the credential.
