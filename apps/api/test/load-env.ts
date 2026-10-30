@@ -11,3 +11,10 @@ if (existsSync(file)) {
     if (process.env[key] === undefined) process.env[key] = value;
   }
 }
+
+// Integration tests never touch the dev database: tests that boot the AppModule use the *_test database for the
+// app's runtime connection too (prepare-test-db.mjs refuses any other name).
+const testUrl = process.env.TEST_DATABASE_URL ?? '';
+if (!/^postgres(ql)?:\/\/[^/]+\/[a-z0-9_]+_test(\?|$)/.test(testUrl))
+  throw new Error('TEST_DATABASE_URL must point to a database whose name ends with _test');
+process.env.DATABASE_URL = testUrl;
