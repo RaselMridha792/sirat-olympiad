@@ -24,6 +24,17 @@ export class EnvVars {
   @IsInt() @Min(1) REFRESH_TTL_DAYS: number = 7;
   /** Session cookies carry `Secure` unless this is 'false' (local plain-http development only; refused in production). */
   @IsIn(['true', 'false']) COOKIE_SECURE: string = 'true';
+
+  // Login limits (owner, 2026-10-31). Only failed logins count.
+  /** Failed logins per minute from one IP, all accounts together (owner: about 60-100; a school shares one IP). */
+  @IsInt() @Min(10) @Max(10_000) LOGIN_IP_FAILURES_PER_MINUTE: number = 100;
+  /** Failures of one account from one IP (within 15 min) that lock that pair. */
+  @IsInt() @Min(3) @Max(100) LOGIN_PAIR_MAX_FAILURES: number = 10;
+  /** First lock of a pair; each repeat within 24 h doubles it, up to LOGIN_LOCK_MAX_MINUTES. */
+  @IsInt() @Min(1) @Max(1_440) LOGIN_LOCK_MINUTES: number = 15;
+  @IsInt() @Min(1) @Max(10_080) LOGIN_LOCK_MAX_MINUTES: number = 240;
+  /** Failures per hour for one account from all IPs together (owner: about 50). */
+  @IsInt() @Min(10) @Max(10_000) LOGIN_ACCOUNT_FAILURES_PER_HOUR: number = 50;
   /** Optional override of the pino level (default: info in production, debug elsewhere). */
   @IsOptional()
   @IsIn(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])

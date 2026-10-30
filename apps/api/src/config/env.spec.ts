@@ -74,3 +74,27 @@ describe('validateEnv: session cookies', () => {
     expect(() => validateEnv({ ...valid(), COOKIE_SECURE: 'no' })).toThrow(/COOKIE_SECURE/);
   });
 });
+
+describe('validateEnv: login limits (owner, 2026-10-31)', () => {
+  it('defaults to 100 failures/min per IP, a lock after 10, 15 min doubling to 4 h, 50/h per account', () => {
+    expect(validateEnv(valid())).toMatchObject({
+      LOGIN_IP_FAILURES_PER_MINUTE: 100,
+      LOGIN_PAIR_MAX_FAILURES: 10,
+      LOGIN_LOCK_MINUTES: 15,
+      LOGIN_LOCK_MAX_MINUTES: 240,
+      LOGIN_ACCOUNT_FAILURES_PER_HOUR: 50,
+    });
+  });
+
+  it('can be changed in config, within sane bounds', () => {
+    expect(validateEnv({ ...valid(), LOGIN_IP_FAILURES_PER_MINUTE: '60' })).toMatchObject({
+      LOGIN_IP_FAILURES_PER_MINUTE: 60,
+    });
+    expect(() => validateEnv({ ...valid(), LOGIN_IP_FAILURES_PER_MINUTE: '5' })).toThrow(
+      /LOGIN_IP_FAILURES_PER_MINUTE/,
+    );
+    expect(() => validateEnv({ ...valid(), LOGIN_PAIR_MAX_FAILURES: '1' })).toThrow(
+      /LOGIN_PAIR_MAX_FAILURES/,
+    );
+  });
+});
