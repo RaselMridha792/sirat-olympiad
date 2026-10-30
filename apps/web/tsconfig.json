@@ -6,6 +6,7 @@
     "noEmit": true,
     "incremental": true,
     "allowJs": false,
+    "allowImportingTsExtensions": true,
     "plugins": [{ "name": "next" }],
     "paths": { "@/*": ["./src/*"] }
   },
