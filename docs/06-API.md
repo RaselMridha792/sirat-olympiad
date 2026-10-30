@@ -12,12 +12,12 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 
 | Module | Method + path | Guard | Notes |
 |---|---|---|---|
-| auth | `POST /auth/login` | Public, throttled | Sets httpOnly cookies |
+| auth | `POST /auth/login` | Public, failed-login limits | 204, empty body; sets the httpOnly cookies. 401 one message for any failure; 429 + `Retry-After` during a lock or limit (the password is not checked); 403 for a blocked account, only after the right password. Built (A2.1d) |
 | | `POST /auth/refresh` | Public (cookie) | Rotation + reuse detection. 204 + new cookies; 409 = another tab refreshed a moment ago (retry); 401 = log in again (cookies cleared). Built (A2.1b) |
 | | `POST /auth/logout`, `POST /auth/logout-all` | Auth | Logout ends this device's session family; logout-all ends all of them (audited). Built (A2.1b) |
 | | `GET /auth/me` | Auth | Session user only, read fresh from the DB (`SessionUser`); a blocked user gets 401. No writes in GET. Built (A2.1b) |
 | | `POST /auth/forgot-password`, `/reset-password`, `/verify-email`, `/resend-verification` | Public, throttled | Identical responses (no enumeration) |
-| | `POST /auth/change-password` | Auth | Revokes all sessions |
+| | `POST /auth/change-password` | Auth, login limits | `{currentPassword, newPassword}`. 204 + fresh cookies for this device; one transaction writes the hash, ends every session and retires reset links. 400 for a wrong current password or a refused new one; 429 + `Retry-After` while locked. Built (A2.1d) |
 | users | `GET /users/me`, `PATCH /users/me` | Auth | **Allow-list DTO**: name, phone, district, institution, education, grade, photo |
 | registrations | `POST /registrations/start` | Public, throttled | Creates pending registration + payment, returns `payment_url`. No `role` |
 | payments | `GET /payments/:id/status` | Owner | Reads our DB |
