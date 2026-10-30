@@ -38,6 +38,8 @@ Source of truth: `apps/api/prisma/schema.prisma` (validated; see note at bottom)
 | Foreign keys `ON DELETE RESTRICT` (only `sessions`, `auth_tokens`, `team_members` cascade) | Deleting a row never silently rewrites history |
 | CHECKs on enum columns compare `col::text` | Enum-literal CHECKs break Prisma enum migrations (catalog test) |
 | Every FK has a covering index | Catalog test |
+| `audit_logs` append-only: UPDATE, DELETE and TRUNCATE refused (triggers) | The security trail cannot be rewritten by an app bug or an injected statement |
+| Session defaults: `statement_timeout 10s`, `lock_timeout 5s`, `idle_in_transaction_session_timeout 60s` (database level, migration `*_db_session_timeouts`) | No statement outlives the 25 s request timeout; lock waits fail fast; a stuck transaction cannot hold locks or a PgBouncer connection |
 | `registrations.payment_id` must reference a `paid` payment (trigger) | **Phase C**; a CHECK cannot look at another table |
 | `exams CHECK (duration_minutes BETWEEN 1 AND 30)` | **Raw SQL migration** (Prisma cannot express it) |
 | `exams CHECK (window_end > window_start)` | Raw SQL |
@@ -60,6 +62,8 @@ Leaderboard query form (index verified): `WHERE exam_id = $1 AND score IS NOT NU
 ## PgBouncer + Prisma
 
 Runtime `DATABASE_URL` → pgbouncer:6432 with `?pgbouncer=true&connection_limit=5`. `DIRECT_URL` → postgres:5432 (migrations only). No session-level features (advisory locks across statements, `LISTEN`) on the runtime connection. Use `SELECT … FOR UPDATE` inside a transaction (works in transaction mode).
+
+Timeouts are database defaults (see the constraints table), so they reach every session, including through PgBouncer. Work that needs longer sets its own value first: a migration starts with `SET statement_timeout = '15min';`, a worker job uses `SET LOCAL statement_timeout = …` inside its transaction.
 
 ## Data that does NOT live in Postgres
 

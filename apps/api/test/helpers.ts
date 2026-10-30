@@ -35,13 +35,17 @@ export function testPrisma(): PrismaClient {
   return new PrismaClient({ datasourceUrl: url });
 }
 
-/** Empties every application table. Double-checks the connected database is a *_test database first. */
+/**
+ * Empties every application table except `audit_logs`, which is append-only (its trigger refuses TRUNCATE; tests
+ * tell their audit rows apart by ids). Double-checks the connected database is a *_test database first.
+ */
 export async function truncateAll(prisma: PrismaClient): Promise<void> {
   const [row] = await prisma.$queryRaw<{ db: string }[]>`SELECT current_database() AS db`;
   const db = row?.db ?? '';
   if (!TEST_DB.test(db)) throw new Error(`Refusing to truncate non-test database "${db}"`);
   const tables = await prisma.$queryRaw<{ tablename: string }[]>`
-    SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'`;
+    SELECT tablename FROM pg_tables
+    WHERE schemaname = 'public' AND tablename NOT IN ('_prisma_migrations', 'audit_logs')`;
   if (tables.length === 0) return;
   const list = tables.map((t) => `"public"."${t.tablename}"`).join(', ');
   await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${list} CASCADE`);

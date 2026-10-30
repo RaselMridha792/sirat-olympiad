@@ -284,6 +284,39 @@ describe('identity and foreign keys', () => {
   });
 });
 
+describe('audit_logs is append-only (trigger)', () => {
+  it('accepts inserts and reads them back', async () => {
+    const entityId = randomUUID();
+    await prisma.auditLog.create({ data: { action: 'test.append', entityType: 'test', entityId } });
+    expect(await prisma.auditLog.count({ where: { entityId } })).toBe(1);
+  });
+
+  it('refuses UPDATE, DELETE and TRUNCATE, through Prisma and raw SQL', async () => {
+    const entityId = randomUUID();
+    const row = await prisma.auditLog.create({
+      data: { action: 'test.append', entityType: 'test', entityId },
+    });
+    await expect(
+      prisma.auditLog.update({ where: { id: row.id }, data: { action: 'test.rewritten' } }),
+    ).rejects.toThrow(/append-only: UPDATE/);
+    await expect(prisma.auditLog.delete({ where: { id: row.id } })).rejects.toThrow(
+      /append-only: DELETE/,
+    );
+    await expect(
+      prisma.$executeRaw`UPDATE audit_logs SET action = 'x' WHERE entity_id = ${entityId}`,
+    ).rejects.toThrow(/append-only: UPDATE/);
+    await expect(
+      prisma.$executeRaw`DELETE FROM audit_logs WHERE entity_id = ${entityId}`,
+    ).rejects.toThrow(/append-only: DELETE/);
+    await expect(prisma.$executeRawUnsafe('TRUNCATE audit_logs')).rejects.toThrow(
+      /append-only: TRUNCATE/,
+    );
+    expect(await prisma.auditLog.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({
+      action: 'test.append',
+    });
+  });
+});
+
 describe('schema invariants (catalog checks that guard future migrations)', () => {
   it('has an index whose leading columns cover every foreign key', async () => {
     const missing = await prisma.$queryRaw<{ tbl: string; fk: string }[]>`
@@ -316,5 +349,13 @@ describe('schema invariants (catalog checks that guard future migrations)', () =
     await prisma.$executeRaw`INSERT INTO settings (key, value) VALUES (${key}, '1'::jsonb)`;
     const row = await prisma.setting.findUniqueOrThrow({ where: { key } });
     expect(row.updatedAt).toBeInstanceOf(Date);
+  });
+
+  it('gives every new session the app-wide statement, lock and idle-transaction timeouts', async () => {
+    const [row] = await prisma.$queryRaw<{ statement: string; lock: string; idle: string }[]>`
+      SELECT current_setting('statement_timeout') AS statement,
+             current_setting('lock_timeout') AS lock,
+             current_setting('idle_in_transaction_session_timeout') AS idle`;
+    expect(row).toEqual({ statement: '10s', lock: '5s', idle: '1min' });
   });
 });

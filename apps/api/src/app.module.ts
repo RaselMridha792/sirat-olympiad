@@ -11,7 +11,9 @@ import { validateEnv } from './config/env';
 import { PrismaModule } from './prisma/prisma.module';
 import { REDIS_CACHE, RedisModule } from './redis/redis.module';
 import { HealthModule } from './health/health.module';
+import { AuthGuard } from './modules/auth/auth.guard';
 import { AuthModule } from './modules/auth/auth.module';
+import { CsrfGuard } from './modules/auth/csrf.guard';
 import { UsersModule } from './modules/users/users.module';
 import { ExamsModule } from './modules/exams/exams.module';
 import { AttemptsModule } from './modules/attempts/attempts.module';
@@ -55,7 +57,13 @@ import { CertificatesModule } from './modules/certificates/certificates.module';
     LeaderboardModule,
     CertificatesModule,
   ],
-  // The scaffold declared the throttler but never applied it; this guard makes it active on every route.
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }, DrainService],
+  // Global guards, run in this order on every route: rate limit, CSRF header on state-changing requests, then
+  // the session (deny by default; @Public() opens a route, @Roles() narrows it).
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: CsrfGuard },
+    { provide: APP_GUARD, useClass: AuthGuard },
+    DrainService,
+  ],
 })
 export class AppModule {}
