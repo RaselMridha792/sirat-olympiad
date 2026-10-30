@@ -1,0 +1,41 @@
+# DEV ONLY — never use on the VPS (owner decision 2026-10-30).
+# Publishes the data services on 127.0.0.1 (loopback only, not the network) so `pnpm dev:api`,
+# the Prisma CLI and integration tests can run on the host, and shrinks memory for a laptop.
+# Host ports are offset (15432/16432/16379/16380) to avoid clashing with locally installed services.
+#   docker compose --env-file .env -f infra/docker-compose.yml -f infra/docker-compose.dev.yml up -d postgres pgbouncer redis-cache redis-queue
+services:
+  nginx:
+    ports: !override ["127.0.0.1:8080:80"]
+
+  api:
+    deploy:
+      replicas: 1
+
+  postgres:
+    ports: ["127.0.0.1:15432:5432"]
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=1GB
+      - -c
+      - maintenance_work_mem=128MB
+      - -c
+      - work_mem=8MB
+    deploy: { resources: { limits: { cpus: "2", memory: 2G } } }
+
+  pgbouncer:
+    ports: ["127.0.0.1:16432:6432"]
+
+  redis-cache:
+    ports: ["127.0.0.1:16379:6379"]
+    command: ["redis-server", "/usr/local/etc/redis/redis-cache.conf", "--maxmemory", "256mb"]
+    deploy: { resources: { limits: { cpus: "0.5", memory: 512M } } }
+
+  redis-queue:
+    ports: ["127.0.0.1:16380:6379"]
+    command: ["redis-server", "/usr/local/etc/redis/redis-queue.conf", "--maxmemory", "256mb"]
+    deploy: { resources: { limits: { cpus: "0.5", memory: 512M } } }

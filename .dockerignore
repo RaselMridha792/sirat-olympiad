@@ -1,0 +1,19 @@
+# Keep secrets, the old project and local build output out of every image (RULEBOOK §18).
+.env
+.env.*
+**/.env
+**/.env.*
+.git
+reference
+backups
+docs
+loadtests
+**/node_modules
+**/dist
+**/.next
+**/coverage
+**/*.tsbuildinfo
+**/*.log
+# Dev/test-only data must never be present in a production image (docs/DECISIONS.md, 2026-10-30 A1).
+apps/api/prisma/fixtures
+apps/api/test
