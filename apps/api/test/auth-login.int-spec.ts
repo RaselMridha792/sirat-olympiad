@@ -29,6 +29,7 @@ beforeAll(async () => {
     LOGIN_LOCK_MINUTES: '1',
     LOGIN_ACCOUNT_FAILURES_PER_HOUR: '10',
     LOGIN_IP_FAILURES_PER_MINUTE: '20',
+    LOGIN_ALERT_DISTINCT_IPS_PER_HOUR: '3',
   });
   const { AppModule } = await import('../src/app.module');
   const { configureApp } = await import('../src/configure-app');
@@ -145,10 +146,21 @@ describe('POST /api/auth/login', () => {
     for (const ip of failedIps) await login(user.email, 'wrong', ip);
     expect((await login(user.email, PASSWORD, failedIps[0] as string)).status).toBe(429);
     expect((await login(user.email, PASSWORD, newIp())).status).toBe(204);
-    const started = await prisma.auditLog.findMany({
-      where: { action: 'auth.login_locked', actorId: user.id },
+    // Owner condition (1): the start of the account limit is a security alert, raised once.
+    const alerts = await prisma.auditLog.findMany({
+      where: { action: 'security.login.account_limit', actorId: user.id },
     });
-    expect(started.map((r) => r.meta)).toEqual([{ scope: 'account' }]);
+    expect(alerts.map((r) => r.meta)).toEqual([{ accountFailures: 10, distinctIps: 10 }]);
+  });
+
+  it('raises one alert when more distinct IPs than the threshold (3 here) fail on an account, and blocks nobody for it', async () => {
+    const user = await student();
+    for (let i = 0; i < 5; i += 1) await login(user.email, 'wrong', newIp());
+    const alerts = await prisma.auditLog.findMany({
+      where: { action: 'security.login.distributed', actorId: user.id },
+    });
+    expect(alerts.map((r) => r.meta)).toEqual([{ accountFailures: 4, distinctIps: 4 }]);
+    expect((await login(user.email, PASSWORD, newIp())).status).toBe(204);
   });
 
   it('keys limits on the address nginx appended, never on X-Forwarded-For entries a client wrote', async () => {

@@ -35,6 +35,8 @@ export class EnvVars {
   @IsInt() @Min(1) @Max(10_080) LOGIN_LOCK_MAX_MINUTES: number = 240;
   /** Failures per hour for one account from all IPs together (owner: about 50). */
   @IsInt() @Min(10) @Max(10_000) LOGIN_ACCOUNT_FAILURES_PER_HOUR: number = 50;
+  /** Owner: failures on one account from more distinct IPs than this within an hour raise an alert (no blocking). */
+  @IsInt() @Min(2) @Max(999) LOGIN_ALERT_DISTINCT_IPS_PER_HOUR: number = 20;
 
   /** The web origin used in email links, e.g. https://example.org (no path). Required in production. */
   @IsOptional() @Matches(/^https?:\/\/[^\s/?#]+$/) APP_URL?: string;

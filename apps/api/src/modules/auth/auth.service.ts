@@ -10,6 +10,7 @@ import {
 import { AuthTokenType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { SecurityAlerts } from '../audit/security-alerts.service';
 import type { AuthUser } from './access-token.service';
 import { LoginLimiter } from './login-limiter';
 import { PasswordService } from './password.service';
@@ -43,6 +44,7 @@ export class AuthService {
     private readonly sessions: SessionService,
     private readonly limiter: LoginLimiter,
     private readonly audit: AuditService,
+    private readonly alerts: SecurityAlerts,
   ) {}
 
   /**
@@ -85,12 +87,18 @@ export class AuthService {
             minutes: failure.lockedForMs / 60_000,
           },
         });
+      // Owner conditions for the account limit (2026-10-31): its start and a distributed attempt are alerts.
       if (failure.accountLimitStarted)
-        await this.audit.record({
-          action: 'auth.login_locked',
+        await this.alerts.raise('login.account_limit', {
           actorId,
           ip: client.ip,
-          meta: { scope: 'account' },
+          meta: { accountFailures: failure.accountFailures, distinctIps: failure.distinctIps },
+        });
+      if (failure.distributedSignal)
+        await this.alerts.raise('login.distributed', {
+          actorId,
+          ip: client.ip,
+          meta: { accountFailures: failure.accountFailures, distinctIps: failure.distinctIps },
         });
       throw new UnauthorizedException(LOGIN_FAILED_MESSAGE);
     }

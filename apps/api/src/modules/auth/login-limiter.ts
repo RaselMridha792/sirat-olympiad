@@ -26,6 +26,8 @@ export interface LoginLimits {
   lockBaseMs: number;
   lockMaxMs: number;
   accountFailuresPerHour: number;
+  /** More distinct IPs than this failing on one account within the hour is a separate signal (no blocking). */
+  alertDistinctIps: number;
 }
 
 /** Why an attempt is refused before the password is checked. The client sees one generic message for all three. */
@@ -40,12 +42,18 @@ export interface FailureResult {
   accountFailures: number;
   /** This failure brought the account to its hourly limit (true once per window). */
   accountLimitStarted: boolean;
+  /** Distinct IPs that failed on the account within the hour (counted up to 1000). */
+  distinctIps: number;
+  /** This failure took the account past alertDistinctIps (true once per window). */
+  distributedSignal: boolean;
 }
 
 const PAIR_WINDOW_MS = 15 * 60_000;
 const LEVEL_TTL_MS = 24 * 3_600_000;
 const ACCOUNT_WINDOW_MS = 3_600_000;
 const IP_WINDOW_MS = 60_000;
+/** Distinct IPs remembered per account and hour; enough for the signal, bounded against huge botnets. */
+const MAX_TRACKED_IPS = 1_000;
 /** Longer than any other key of a generation, so its keys always expire before the generation is forgotten. */
 const GENERATION_TTL_MS = 48 * 3_600_000;
 export const LOGIN_REDIS_TIMEOUT_MS = 300;
@@ -76,7 +84,7 @@ end
 return { 0, 0 }
 `;
 
-/** Counts one failure everywhere, marks the IP as failed on the account, locks the pair at the limit. */
+/** Counts one failure everywhere, marks and remembers the IP on the account, locks the pair at the limit. */
 const FAIL_LUA = `${PRELUDE}
 local function bump(key, ttl)
   local n = redis.call('INCR', key)
@@ -87,6 +95,11 @@ if g ~= '0' then redis.call('PEXPIRE', p .. 'gen:' .. h, ARGV[11]) end
 bump(p .. 'ip:' .. ip, ARGV[10])
 local acct = bump(p .. 'acct:' .. scope, ARGV[9])
 redis.call('SET', p .. 'seen:' .. scope .. ':' .. ip, '1', 'PX', ARGV[9])
+local ipsKey = p .. 'ips:' .. scope
+local added = 0
+if redis.call('SCARD', ipsKey) < tonumber(ARGV[12]) then added = redis.call('SADD', ipsKey, ip) end
+local distinct = redis.call('SCARD', ipsKey)
+if added == 1 and distinct == 1 then redis.call('PEXPIRE', ipsKey, ARGV[9]) end
 local pairKey = p .. 'pair:' .. scope .. ':' .. ip
 if bump(pairKey, ARGV[4]) >= tonumber(ARGV[5]) then
   local levelKey = p .. 'level:' .. scope .. ':' .. ip
@@ -95,9 +108,9 @@ if bump(pairKey, ARGV[4]) >= tonumber(ARGV[5]) then
   local lockMs = math.floor(math.min(tonumber(ARGV[6]) * 2 ^ (level - 1), tonumber(ARGV[7])))
   redis.call('SET', p .. 'lock:' .. scope .. ':' .. ip, '1', 'PX', lockMs)
   redis.call('DEL', pairKey)
-  return { lockMs, level, acct }
+  return { lockMs, level, acct, distinct, added }
 end
-return { 0, 0, acct }
+return { 0, 0, acct, distinct, added }
 `;
 
 /** A right password while not locked: the pair's count, escalation and failed mark start again from zero. */
@@ -209,15 +222,18 @@ export class LoginLimiter {
       ACCOUNT_WINDOW_MS,
       IP_WINDOW_MS,
       GENERATION_TTL_MS,
+      MAX_TRACKED_IPS,
     );
-    const [lockedForMs, lockLevel, accountFailures] = Array.isArray(result)
-      ? (result as [number, number, number])
-      : [0, 0, 0];
+    const [lockedForMs, lockLevel, accountFailures, distinctIps, added] = Array.isArray(result)
+      ? (result as [number, number, number, number, number])
+      : [0, 0, 0, 0, 0];
     return {
       lockedForMs,
       lockLevel,
       accountFailures,
       accountLimitStarted: accountFailures === this.limits.accountFailuresPerHour,
+      distinctIps,
+      distributedSignal: added === 1 && distinctIps === this.limits.alertDistinctIps + 1,
     };
   }
 

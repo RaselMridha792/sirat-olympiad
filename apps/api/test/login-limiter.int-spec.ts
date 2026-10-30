@@ -18,6 +18,7 @@ const limits: LoginLimits = {
   lockBaseMs: 1_000,
   lockMaxMs: 3_000,
   accountFailuresPerHour: 5,
+  alertDistinctIps: 3,
 };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -45,6 +46,8 @@ async function fail(times: number, mail: string, from: string) {
     lockLevel: 0,
     accountFailures: 0,
     accountLimitStarted: false,
+    distinctIps: 0,
+    distributedSignal: false,
   };
   for (let i = 0; i < times; i += 1) last = await limiter.recordFailure(mail, from);
   return last;
@@ -142,6 +145,20 @@ describe('LoginLimiter', () => {
     for (let i = 0; i < 6; i += 1) await fail(1, i === 0 ? mail : email(), shared);
     await limiter.resetAccount(mail);
     expect(await limiter.check(mail, shared)).toMatchObject({ reason: 'ip_limit' });
+  });
+
+  it('signals once when more distinct IPs than the threshold fail on one account, and blocks nobody for it', async () => {
+    const roomy = new LoginLimiter(redis, { ...limits, accountFailuresPerHour: 100 }, prefix);
+    const mail = email();
+    const first = ip();
+    const signals: boolean[] = [];
+    signals.push((await roomy.recordFailure(mail, first)).distributedSignal);
+    signals.push((await roomy.recordFailure(mail, first)).distributedSignal); // the same IP adds nothing
+    for (let i = 0; i < 4; i += 1)
+      signals.push((await roomy.recordFailure(mail, ip())).distributedSignal);
+    expect(signals).toEqual([false, false, false, false, true, false]); // 4 distinct IPs: more than 3
+    expect((await roomy.recordFailure(mail, ip())).distinctIps).toBe(6);
+    expect(await roomy.check(mail, ip())).toEqual({ allowed: true }); // a signal, not a block
   });
 
   it('treats addresses of one IPv6 /64 as one client', async () => {

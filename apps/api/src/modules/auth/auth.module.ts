@@ -57,6 +57,7 @@ import { SessionService } from './session.service';
           lockBaseMs: config.get('LOGIN_LOCK_MINUTES', { infer: true }) * 60_000,
           lockMaxMs: config.get('LOGIN_LOCK_MAX_MINUTES', { infer: true }) * 60_000,
           accountFailuresPerHour: config.get('LOGIN_ACCOUNT_FAILURES_PER_HOUR', { infer: true }),
+          alertDistinctIps: config.get('LOGIN_ALERT_DISTINCT_IPS_PER_HOUR', { infer: true }),
         }),
     },
   ],
