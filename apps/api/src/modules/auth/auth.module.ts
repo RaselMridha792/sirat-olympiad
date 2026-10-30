@@ -8,6 +8,7 @@ import { AuditModule } from '../audit/audit.module';
 import { AccessTokenService, accessTokenJwtOptions } from './access-token.service';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { EmailSendLimiter } from './email-send-limiter';
 import { EMAIL_TOKEN_TTLS, EmailTokenService } from './email-tokens.service';
 import { LoginLimiter } from './login-limiter';
 import { PasswordService } from './password.service';
@@ -39,6 +40,15 @@ import { SessionService } from './session.service';
     SessionCookies,
     AuthService,
     EmailTokenService,
+    {
+      provide: EmailSendLimiter,
+      inject: [REDIS_CACHE, ConfigService],
+      useFactory: (redis: Redis, config: ConfigService<EnvVars, true>) =>
+        new EmailSendLimiter(redis, {
+          perMinute: config.get('AUTH_LINK_EMAILS_PER_MINUTE', { infer: true }),
+          perHour: config.get('AUTH_LINK_EMAILS_PER_HOUR', { infer: true }),
+        }),
+    },
     {
       provide: EMAIL_TOKEN_TTLS,
       inject: [ConfigService],

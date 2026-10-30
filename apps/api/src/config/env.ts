@@ -43,6 +43,9 @@ export class EnvVars {
   /** Email link lifetimes (RULEBOOK §5: e.g. 24 h to verify, 30 min to reset). */
   @IsInt() @Min(1) @Max(168) EMAIL_VERIFY_TOKEN_HOURS: number = 24;
   @IsInt() @Min(5) @Max(1_440) PASSWORD_RESET_TOKEN_MINUTES: number = 30;
+  /** Link emails (reset, verification) one address can receive, per kind: stops mail bombing and SES costs. */
+  @IsInt() @Min(1) @Max(10) AUTH_LINK_EMAILS_PER_MINUTE: number = 1;
+  @IsInt() @Min(1) @Max(100) AUTH_LINK_EMAILS_PER_HOUR: number = 5;
   /** Optional override of the pino level (default: info in production, debug elsewhere). */
   @IsOptional()
   @IsIn(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
