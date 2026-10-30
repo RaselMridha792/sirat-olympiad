@@ -1,28 +1,38 @@
 import type { Metadata } from 'next';
-import { DataTable, PageHeader, EmptyState, Badge } from '@sirat/ui';
-import { mockLeaderboard } from '@/lib/mock';
+import { DataTable, PageHeader, EmptyState } from '@sirat/ui';
+import { getData } from '@/data';
+import { first, parsePageQuery, type SearchParams } from '@/data/query';
 
 export const metadata: Metadata = { title: 'Leaderboard' };
 
-// Real version: server-side pagination + search, data from a precomputed Redis/CDN snapshot,
-// published only after the window closes. Old page loaded 4000 rows into the browser — never do that.
-export default function LeaderboardPage() {
-  const rows = mockLeaderboard;
+// Interim: reads the data layer (server-paged snapshot). The full port (round tabs, search,
+// pagination, i18n) replaces this page.
+export default async function LeaderboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const params = await searchParams;
+  const data = await getData(params);
+  const view = await data.leaderboard.get({
+    ...parsePageQuery(params),
+    roundId: first(params.round),
+  });
   return (
     <>
       <PageHeader
         title="Leaderboard"
         subtitle="Official results. Updated after the exam window closes."
       />
-      {rows.length === 0 ? (
+      {view.status === 'unpublished' || view.items.length === 0 ? (
         <EmptyState
           title="No results yet"
           description="Results are published after the window closes."
         />
       ) : (
         <DataTable
-          rows={rows}
-          rowKey={(r) => String(r.rank)}
+          rows={view.items}
+          rowKey={(r) => `${r.rank}-${r.name}`}
           columns={[
             {
               key: 'rank',
@@ -34,12 +44,7 @@ export default function LeaderboardPage() {
               header: 'Name',
               render: (r) => <span className="font-bold">{r.name}</span>,
             },
-            { key: 'inst', header: 'Institution', render: (r) => r.institution },
-            {
-              key: 'cat',
-              header: 'Category',
-              render: (r) => <Badge tone="brand">{r.category}</Badge>,
-            },
+            { key: 'inst', header: 'Institution', render: (r) => r.institution ?? '—' },
           ]}
         />
       )}

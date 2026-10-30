@@ -1,7 +1,7 @@
 'use client';
 import { createContext, useContext } from 'react';
 import type { Locale } from '@/i18n';
-import type { CommonMessages } from '@/i18n/common';
+import { common, type CommonMessages } from '@/i18n/common';
 
 /** What client components (error boundaries, dialogs) need: plain strings only, no functions. */
 export interface ClientI18n {
@@ -22,8 +22,9 @@ export function I18nProvider({
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 
+const FALLBACK: ClientI18n = { locale: 'en', states: common.en.states };
+
+/** Falls back to English outside a provider: an error boundary must never throw itself. */
 export function useClientI18n(): ClientI18n {
-  const value = useContext(I18nContext);
-  if (!value) throw new Error('useClientI18n must be used inside <I18nProvider>');
-  return value;
+  return useContext(I18nContext) ?? FALLBACK;
 }

@@ -1,16 +1,25 @@
 import type { Metadata } from 'next';
 import { DataTable, PageHeader, Badge } from '@sirat/ui';
-import { mockUsers } from '@/lib/mock';
+import { getData } from '@/data';
+import { parsePageQuery, type SearchParams } from '@/data/query';
 
 export const metadata: Metadata = { title: 'Users' };
 
-// Real version: server-side pagination/search/role filter. Role changes only via admin endpoint, audit-logged.
-export default function AdminUsers() {
+// Interim: reads the data layer (server-paged). The full port (search, role filter, detail
+// dialog, i18n) replaces this page. Role changes only via the admin endpoint, audit-logged.
+export default async function AdminUsers({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const params = await searchParams;
+  const data = await getData(params);
+  const users = await data.admin.listUsers(parsePageQuery(params));
   return (
     <>
       <PageHeader title="Users" />
       <DataTable
-        rows={mockUsers}
+        rows={users.items}
         rowKey={(u) => u.id}
         columns={[
           {
@@ -28,7 +37,9 @@ export default function AdminUsers() {
             key: 'status',
             header: 'Status',
             render: (u) => (
-              <Badge tone={u.status === 'active' ? 'success' : 'danger'}>{u.status}</Badge>
+              <Badge tone={u.isBlocked ? 'danger' : 'success'}>
+                {u.isBlocked ? 'blocked' : 'active'}
+              </Badge>
             ),
           },
         ]}
