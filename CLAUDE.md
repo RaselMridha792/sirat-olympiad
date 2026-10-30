@@ -16,7 +16,8 @@ Owner: Rasel Mridha (Exprovia). Reply to the owner in Bengali; code, comments an
 8. **Do move slow work to the queue** (email, PDF, certificates, scoring). Every job is idempotent with retries.
 9. **Do reuse `packages/ui` components and the tokens in `packages/ui/src/styles/tokens.css`.** Add new shared components there.
 10. **Do treat `reference/` as a read-only specification** of the old Zero Olympiad (UI look, business rules). Re-write in TypeScript against our rules; see `docs/07-UI-MIGRATION.md`.
-11. **Do run `pnpm typecheck && pnpm lint && pnpm test && pnpm build`** before saying anything works, and report the real output.
+11. **Do run checks at the right time, never skip them** (owner, 2026-10-31): before each commit `tsc --noEmit` in apps/api, lint on the changed files and the related tests; once before opening a PR the full `pnpm typecheck && pnpm lint && pnpm test && pnpm build`, `pnpm --filter @sirat/api test:int` and the docker smoke test; password hashing, refresh rotation/reuse, CSRF, login limits/lockout, the guard coverage test and the audit log run their related tests at every step.
+    Report success in one line (`api types ✓, lint ✓, auth tests 14 ✓`) and failures with their error lines only; never say "done" without the checks.
 12. **Do log every non-obvious decision** in `docs/DECISIONS.md` and keep `docs/RUNBOOK.md` current.
 13. **Do ask the owner** when auth, payments or exam logic is unclear. See `docs/OPEN-QUESTIONS.md`.
 
