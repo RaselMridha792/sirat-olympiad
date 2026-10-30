@@ -12,6 +12,9 @@ import {
   validateSync,
 } from 'class-validator';
 
+const ADDRESS = '[^<>\\s@]+@[^<>\\s@]+\\.[^<>\\s@]+';
+const SENDER = new RegExp(`^([^<>]+ <${ADDRESS}>|${ADDRESS})$`);
+
 /** Fail fast at startup if any required variable is missing (rulebook section 4). */
 export class EnvVars {
   @IsIn(['development', 'test', 'production']) NODE_ENV!: string;
@@ -28,6 +31,16 @@ export class EnvVars {
   @IsOptional()
   @IsIn(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
   LOG_LEVEL?: string;
+
+  // Email: only the worker sends, so only the worker requires these (validateWorkerEnv). Owner: Resend in
+  // production, Mailpit in development.
+  @IsOptional() @IsIn(['resend', 'mailpit']) EMAIL_PROVIDER?: string;
+  /** `Name <address>` or a bare address. */
+  @IsOptional() @Matches(SENDER) EMAIL_FROM?: string;
+  /** Never logged, committed or put in NEXT_PUBLIC_*. */
+  @IsOptional() @IsString() RESEND_API_KEY?: string;
+  @IsOptional() @Matches(/^https?:\/\/\S+$/) MAILPIT_URL?: string;
+  @IsInt() @Min(1) @Max(65535) WORKER_HEALTH_PORT: number = 4001;
 }
 
 const MIN_SECRET_LENGTH = 32;
@@ -64,5 +77,28 @@ export function validateEnv(raw: Record<string, unknown>): EnvVars {
       'COOKIE_SECURE=false is for local development only, never with NODE_ENV=production',
     );
   }
+  return env;
+}
+
+/** Why the worker cannot send email with this configuration, or null. Never includes a key. */
+export function emailConfigProblem(env: EnvVars): string | null {
+  if (!env.EMAIL_PROVIDER) return 'EMAIL_PROVIDER must be resend or mailpit';
+  if (!env.EMAIL_FROM)
+    return 'EMAIL_FROM is required, e.g. "Sirat Olympiad <no-reply@your-domain>"';
+  if (env.EMAIL_PROVIDER === 'resend') {
+    const key = env.RESEND_API_KEY ?? '';
+    if (!/^re_\S{16,}$/.test(key) || PLACEHOLDER.test(key))
+      return 'RESEND_API_KEY is missing or is not a Resend API key (re_...)';
+  }
+  if (env.EMAIL_PROVIDER === 'mailpit' && !env.MAILPIT_URL)
+    return 'MAILPIT_URL is required with EMAIL_PROVIDER=mailpit';
+  return null;
+}
+
+/** The worker's environment: everything the API needs, plus a usable email configuration. */
+export function validateWorkerEnv(raw: Record<string, unknown>): EnvVars {
+  const env = validateEnv(raw);
+  const problem = emailConfigProblem(env);
+  if (problem) throw new Error(`Invalid email configuration: ${problem}`);
   return env;
 }

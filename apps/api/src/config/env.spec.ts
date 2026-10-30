@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { secretProblem, validateEnv } from './env';
+import { emailConfigProblem, secretProblem, validateEnv, validateWorkerEnv } from './env';
 
 const strongSecret = () => randomBytes(32).toString('base64');
 const valid = () => ({
@@ -72,5 +72,58 @@ describe('validateEnv: session cookies', () => {
 
   it('rejects anything but true or false', () => {
     expect(() => validateEnv({ ...valid(), COOKIE_SECURE: 'no' })).toThrow(/COOKIE_SECURE/);
+  });
+});
+
+describe('validateWorkerEnv: email (owner: Resend in production, Mailpit in development)', () => {
+  const resendKey = () => `re_${randomBytes(18).toString('base64url')}`;
+  const worker = (extra: Record<string, string>) => ({
+    ...valid(),
+    EMAIL_FROM: 'Sirat Olympiad <no-reply@sirat.test>',
+    ...extra,
+  });
+
+  it('accepts Resend with a real-looking key, and Mailpit with a URL', () => {
+    expect(() =>
+      validateWorkerEnv(worker({ EMAIL_PROVIDER: 'resend', RESEND_API_KEY: resendKey() })),
+    ).not.toThrow();
+    expect(() =>
+      validateWorkerEnv(worker({ EMAIL_PROVIDER: 'mailpit', MAILPIT_URL: 'http://mailpit:8025' })),
+    ).not.toThrow();
+  });
+
+  it.each([
+    ['no provider', {}, /EMAIL_PROVIDER/],
+    ['Resend without a key', { EMAIL_PROVIDER: 'resend' }, /RESEND_API_KEY/],
+    [
+      'Resend with a placeholder',
+      { EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 're_fake_key_for_examples_1234' },
+      /RESEND_API_KEY/,
+    ],
+    [
+      'Resend with a non-Resend key',
+      { EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'sk_live_0123456789abcdef0123' },
+      /RESEND_API_KEY/,
+    ],
+    ['Mailpit without a URL', { EMAIL_PROVIDER: 'mailpit' }, /MAILPIT_URL/],
+  ])('refuses %s, never echoing the key', (_label, extra, reason) => {
+    let message = '';
+    try {
+      validateWorkerEnv(worker(extra as Record<string, string>));
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    expect(message).toMatch(reason);
+    const key = (extra as Record<string, string>).RESEND_API_KEY;
+    if (key) expect(message).not.toContain(key);
+  });
+
+  it('keeps the API itself free of email settings (only the worker sends)', () => {
+    expect(() => validateEnv(valid())).not.toThrow();
+    expect(emailConfigProblem(validateEnv(valid()))).toMatch(/EMAIL_PROVIDER/);
+  });
+
+  it('rejects a malformed sender', () => {
+    expect(() => validateEnv({ ...valid(), EMAIL_FROM: 'not an address' })).toThrow(/EMAIL_FROM/);
   });
 });
