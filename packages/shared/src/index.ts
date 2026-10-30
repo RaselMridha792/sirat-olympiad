@@ -26,6 +26,7 @@ export type AttemptStatus = (typeof ATTEMPT_STATUSES)[number];
 export const EXAM_MAX_DURATION_MINUTES = 30;
 export const CHECKPOINT_INTERVAL_SECONDS = { min: 60, max: 120 } as const;
 export const AUTO_SUBMIT_JITTER_SECONDS = { min: 0, max: 20 } as const;
+/** Pre-fill for the admin exam form only. The server reads exams.grace_seconds (per exam) and nothing else. */
 export const SUBMIT_GRACE_SECONDS_DEFAULT = 30;
 
 /** Standard API error shape returned by the global exception filter. */

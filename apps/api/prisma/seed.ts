@@ -2,8 +2,13 @@
  * Idempotent CONFIG seed: grade levels, settings, rank thresholds, rounds.
  * Runs in every environment (production included) via the `migrate` service after `prisma migrate deploy`.
  *
- * Rule: insert-if-missing only (`createMany` + `skipDuplicates` = ON CONFLICT DO NOTHING).
- * It never overwrites a value an admin has changed, so it is safe to run on every deploy.
+ * Rules (safe to run on every deploy; it never overwrites or re-adds what an admin changed):
+ * - settings: insert each missing KEY (keys are a code contract, so new keys reach existing databases);
+ *   existing values are never touched.
+ * - grade_levels, rank_thresholds, rounds: seeded ONCE, only while the table is empty. Later changes to these
+ *   tables ship as SQL data migrations, so an admin rename, reorder or removal is never undone by a deploy.
+ *   Each table is checked separately, so a partially failed run heals on the next one; skipDuplicates keeps two
+ *   concurrent runners from failing on each other.
  * Values marked PLACEHOLDER await client confirmation (docs/OPEN-QUESTIONS.md #2, #3, #13).
  */
 import { Category, Prisma, PrismaClient, RoundType } from '@prisma/client';
@@ -36,7 +41,7 @@ export const DEFAULT_SETTINGS: Readonly<Record<string, Prisma.InputJsonValue>> =
   currency: 'BDT',
   leaderboard_public: false,
   payment_expiry_minutes: 60,
-  submit_grace_seconds: 30,
+  // No global submit grace: exams.grace_seconds (per exam) is the only source (DECISIONS, A1 review).
 };
 
 /** PLACEHOLDER thresholds (OQ #13); admins edit them in the DB. */
@@ -54,22 +59,32 @@ export type SeedResult = Record<'gradeLevels' | 'settings' | 'rankThresholds' | 
 
 /** Inserts missing config rows and returns how many were inserted per table. Existing rows are untouched. */
 export async function seedConfig(prisma: PrismaClient): Promise<SeedResult> {
-  const gradeLevels = await prisma.gradeLevel.createMany({
-    data: GRADE_LEVELS.map((g, i) => ({ ...g, sortOrder: i + 1 })),
-    skipDuplicates: true,
-  });
   const settings = await prisma.setting.createMany({
     data: Object.entries(DEFAULT_SETTINGS).map(([key, value]) => ({ key, value })),
     skipDuplicates: true,
   });
-  const rankThresholds = await prisma.rankThreshold.createMany({ data: [...RANK_THRESHOLDS], skipDuplicates: true });
-  const rounds = await prisma.round.createMany({ data: [...ROUNDS], skipDuplicates: true });
-  return {
-    gradeLevels: gradeLevels.count,
-    settings: settings.count,
-    rankThresholds: rankThresholds.count,
-    rounds: rounds.count,
-  };
+  const gradeLevels = await seedIfEmpty(
+    () => prisma.gradeLevel.count(),
+    () =>
+      prisma.gradeLevel.createMany({
+        data: GRADE_LEVELS.map((g, i) => ({ ...g, sortOrder: i + 1 })),
+        skipDuplicates: true,
+      }),
+  );
+  const rankThresholds = await seedIfEmpty(
+    () => prisma.rankThreshold.count(),
+    () => prisma.rankThreshold.createMany({ data: [...RANK_THRESHOLDS], skipDuplicates: true }),
+  );
+  const rounds = await seedIfEmpty(
+    () => prisma.round.count(),
+    () => prisma.round.createMany({ data: [...ROUNDS], skipDuplicates: true }),
+  );
+  return { gradeLevels, settings: settings.count, rankThresholds, rounds };
+}
+
+async function seedIfEmpty(count: () => Promise<number>, insert: () => Promise<{ count: number }>): Promise<number> {
+  if ((await count()) > 0) return 0;
+  return (await insert()).count;
 }
 
 async function main(): Promise<void> {
