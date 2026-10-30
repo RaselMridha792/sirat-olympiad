@@ -62,7 +62,10 @@ export function secretProblem(value: string): string | null {
 }
 
 export function validateEnv(raw: Record<string, unknown>): EnvVars {
-  const env = plainToInstance(EnvVars, raw, { enableImplicitConversion: true });
+  // `KEY=` in an env file means "not set": @IsOptional() only skips undefined, and a blank line copied from an
+  // example must not stop the API (required variables still fail, as missing).
+  const set = Object.fromEntries(Object.entries(raw).filter(([, value]) => value !== ''));
+  const env = plainToInstance(EnvVars, set, { enableImplicitConversion: true });
   const errors = validateSync(env, { skipMissingProperties: false });
   if (errors.length > 0) {
     const names = errors.map((e) => e.property).join(', ');

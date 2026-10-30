@@ -11,6 +11,15 @@ services:
     deploy:
       replicas: 1
 
+  # A local stack can never send real email (owner: Mailpit until the domain is verified): beats any .env value.
+  worker:
+    environment:
+      EMAIL_PROVIDER: mailpit
+      EMAIL_FROM: Sirat Olympiad (dev) <no-reply@sirat.test>
+      MAILPIT_URL: http://mailpit:8025
+    depends_on:
+      mailpit: { condition: service_healthy }
+
   # Development email (owner): every email lands in Mailpit, nothing leaves the machine. UI: http://127.0.0.1:18025
   mailpit:
     image: axllent/mailpit:v1.32.0

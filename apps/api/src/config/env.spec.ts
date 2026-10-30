@@ -127,3 +127,22 @@ describe('validateWorkerEnv: email (owner: Resend in production, Mailpit in deve
     expect(() => validateEnv({ ...valid(), EMAIL_FROM: 'not an address' })).toThrow(/EMAIL_FROM/);
   });
 });
+
+describe('validateEnv: blank values', () => {
+  it('treats KEY= as not set, so blank optional settings never stop the API', () => {
+    const env = validateEnv({
+      ...valid(),
+      EMAIL_PROVIDER: '',
+      EMAIL_FROM: '',
+      RESEND_API_KEY: '',
+      MAILPIT_URL: '',
+      LOG_LEVEL: '',
+    });
+    expect(env.EMAIL_PROVIDER).toBeUndefined();
+    expect(env.COOKIE_SECURE).toBe('true');
+  });
+
+  it('still refuses a blank required variable, by name', () => {
+    expect(() => validateEnv({ ...valid(), DATABASE_URL: '' })).toThrow(/DATABASE_URL/);
+  });
+});

@@ -11,7 +11,8 @@ One short entry per non-obvious technical or product decision. Newest first. For
 5. **Providers, plain fetch (no SDK):** Resend (`POST https://api.resend.com/emails`: Bearer key, a required `User-Agent`, `Idempotency-Key`). 400/401/403/404/405/422 and a key reused with another body are permanent; 429, 5xx, "request in progress" and network errors are retried; 10 s timeout per call. Mailpit (`POST /api/v1/send`) in development and CI. Errors carry status codes and Resend error names only; the key, the address and the content are never logged.
 6. **Config:** `EMAIL_PROVIDER` (resend|mailpit), `EMAIL_FROM`, `RESEND_API_KEY` (must look like `re_...`, no placeholder), `MAILPIT_URL`. The scaffold's unused `EMAIL_API_KEY` is gone.
 7. **Infra:** the worker publishes no port; its health endpoint (`WORKER_HEALTH_PORT`, 4001) serves only the container healthcheck. Mailpit `v1.32.0` runs in the dev override (UI `http://127.0.0.1:18025`) and in CI's database job.
-8. **Not yet:** the emails themselves (verify, reset, welcome) and their templates arrive with their endpoints; the sending domain (SPF, DKIM, DMARC) before any production sending (RUNBOOK §9).
+8. **No real email from a local stack:** the dev override pins the worker to Mailpit, whatever `.env` says. On the VPS the email settings start blank, so the worker refuses to start until Resend is configured. A blank `KEY=` in any env file now counts as not set (class-validator's `@IsOptional()` only skips undefined; blank lines copied from an old example would otherwise stop the API).
+9. **Not yet:** the emails themselves (verify, reset, welcome) and their templates arrive with their endpoints; the sending domain (SPF, DKIM, DMARC) before any production sending (RUNBOOK §9).
 
 ## 2026-10-30 — A2.1b passwords and sessions (Claude)
 
