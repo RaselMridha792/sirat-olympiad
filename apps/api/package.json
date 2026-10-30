@@ -14,7 +14,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "db:seed": "tsx --env-file-if-exists=.env prisma/seed.ts",
-    "db:fixtures:dev": "tsx --env-file-if-exists=.env prisma/fixtures/dev-fixtures.ts"
+    "db:fixtures:dev": "tsx --env-file-if-exists=.env prisma/fixtures/dev-fixtures.ts",
+    "admin:create": "tsx --env-file-if-exists=.env src/cli/create-admin.ts"
   },
   "dependencies": {
     "@aws-sdk/client-sesv2": "^3.1160.0",

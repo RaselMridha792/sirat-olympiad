@@ -23,6 +23,7 @@ pnpm db:migrate                                         # prisma migrate dev (ho
 pnpm --filter @sirat/api db:seed                        # idempotent config seed
 ALLOW_DEV_FIXTURES=yes-this-is-not-production pnpm --filter @sirat/api db:fixtures:dev   # DEV ONLY (see below)
 pnpm dev:api                                            # http://localhost:4000/api/health
+pnpm --filter @sirat/api admin:create --email you@example.org --name "Your Name"   # a local admin (section 13)
 
 pnpm typecheck && pnpm lint && pnpm test && pnpm build  # unit gates
 pnpm --filter @sirat/api test:int                       # DB + Redis integration tests (uses sirat_test only)
@@ -128,6 +129,7 @@ Also before launch:
 - [ ] Cloudflare real-IP list refreshed (section 10).
 - [ ] Email: SES set up as in section 12 (domain verified with DKIM, MAIL FROM, DMARC, production access granted), `EMAIL_PROVIDER=ses` with the IAM user's keys, `EMAIL_FROM` on the verified domain, one real test email received, and `$DC ps worker` healthy.
 - [ ] `SECURITY_ALERT_EMAIL` is an inbox someone reads during exams, and `APP_URL` is the public web origin (email links).
+- [ ] The first admin exists (section 13): one account per person, never shared, its password only in that person's password manager.
 - [ ] The VPS `.env` has its own `JWT_ACCESS_SECRET` (`openssl rand -base64 48`) and no `COOKIE_SECURE=false` (the API refuses it with `NODE_ENV=production`).
 
 ## 10. Cloudflare real-IP list (refresh every few months and before each exam)
@@ -190,3 +192,20 @@ The `worker` service sends; the API only queues. Locally every email goes to Mai
 **Key rotation:** create a second access key for the IAM user → put it in `.env` → `$DC up -d worker` → check `$DC logs worker` for `email sent` → deactivate, then delete the old key.
 
 **Failed emails:** `$DC logs worker | grep 'email attempt failed'` shows kind, job id, attempt and the SES error name (never the address). Each job is tried 8 times over about 2 hours; failed jobs are kept 3 days. Users can always ask for the email again (resend verification, forgot password).
+
+## 13. Admin accounts (create-admin CLI)
+
+There is no sign-up for admins and the web never accepts a role, so an operator creates every admin from the command line. The password is typed at a hidden prompt (twice). It is never an argument, so it stays out of shell history and the process list.
+
+```bash
+# VPS: the api image ships the CLI; --no-deps starts nothing else; the prompt uses the TTY that `run` gives by default
+$DC run --rm --no-deps api node dist/cli/create-admin.js --email ops@example.org --name "Ops Admin"
+# Local (uses apps/api/.env)
+pnpm --filter @sirat/api admin:create --email ops@example.org --name "Ops Admin"
+```
+
+- The password must pass the same policy as everyone's (8–128 characters, not on the common-passwords list) and is hashed with argon2id. The account gets role admin and a verified email (no verification email). An `admin.created` audit row records it (`meta.via = cli`). The CLI prints only the new user id.
+- An email that already has an account is refused and nothing changes: the CLI never promotes, edits or resets an existing account.
+- Scripts: with piped input the first line of stdin is the password (with `$DC run`, add `-T`: no TTY). Never keep the password in the repo, a file on the VPS or shell history.
+- Exit codes: 0 created, 1 refused (password policy, existing email, invalid email or name), 2 usage (including `--password`), 130 cancelled.
+- Blocking an admin or changing a role: not built yet (admin features, later in Phase A).
