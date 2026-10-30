@@ -1,15 +1,15 @@
 packages:
-  - "apps/*"
-  - "packages/*"
+  - 'apps/*'
+  - 'packages/*'
 onlyBuiltDependencies:
-  - "@nestjs/core"
-  - "@prisma/client"
-  - "@prisma/engines"
+  - '@nestjs/core'
+  - '@prisma/client'
+  - '@prisma/engines'
   - argon2
   - esbuild
   - prisma
   - sharp
-  - "@swc/core"
+  - '@swc/core'
   - unrs-resolver
 # Security overrides (docs/DECISIONS.md, 2026-10-30 A1). Remove once upstream ships the fix.
 overrides:
@@ -20,3 +20,6 @@ auditConfig:
     # deepmerge-ts 7.x (stack exhaustion on recursive input). Only used by the Prisma CLI config loader,
     # never with user input; the fix is a major bump Prisma 6.19.3 does not support. Revisit on Prisma 7.
     - GHSA-ggr8-5vv4-36mx
+# Refuse installs on Node versions outside package.json "engines" (scripts need --env-file-if-exists, Node >= 22.9;
+# locked deps need >= 22.13).
+engineStrict: true

@@ -9,13 +9,13 @@ x-restart: &restart
 x-logging: &logging
   logging:
     driver: json-file
-    options: { max-size: "50m", max-file: "5" }
+    options: { max-size: '50m', max-file: '5' }
 
 services:
   nginx:
     <<: [*restart, *logging]
     image: nginx:1.30.6-alpine # pinned stable; `server ... resolve` needs >= 1.27.3. Bump outside exam freeze windows
-    ports: ["80:80", "443:443"]
+    ports: ['80:80', '443:443']
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/proxy_params_inline:/etc/nginx/proxy_params_inline:ro
@@ -24,18 +24,18 @@ services:
     depends_on: [web, api]
     healthcheck:
       # 127.0.0.1, not localhost: in these images localhost resolves to ::1 and the services listen on IPv4.
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1/healthz']
       interval: 15s
-    deploy: { resources: { limits: { cpus: "1", memory: 512M } } }
+    deploy: { resources: { limits: { cpus: '1', memory: 512M } } }
 
   web:
     <<: [*restart, *logging]
     build: { context: .., dockerfile: apps/web/Dockerfile }
     # No env_file: the Next.js standalone server needs no secrets (PORT/HOSTNAME come from the image).
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/']
       interval: 15s
-    deploy: { resources: { limits: { cpus: "1", memory: 1G } } }
+    deploy: { resources: { limits: { cpus: '1', memory: 1G } } }
 
   # One-shot: `prisma migrate deploy` + idempotent config seed, then exits. The API starts only after it succeeds.
   # Runs on every `up`; both steps are safe to repeat (seed never overwrites admin-edited values).
@@ -46,10 +46,10 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL missing - run compose with --env-file .env}
       DIRECT_URL: ${DIRECT_URL:?DIRECT_URL missing - run compose with --env-file .env}
-    restart: "no"
+    restart: 'no'
     depends_on:
       pgbouncer: { condition: service_healthy }
-    deploy: { resources: { limits: { cpus: "1", memory: 1G } } }
+    deploy: { resources: { limits: { cpus: '1', memory: 1G } } }
 
   api:
     <<: [*restart, *logging]
@@ -61,9 +61,13 @@ services:
     stop_grace_period: 35s
     deploy:
       replicas: 4
-      resources: { limits: { cpus: "1", memory: 1G } }
+      resources: { limits: { cpus: '1', memory: 1G } }
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      test:
+        [
+          'CMD-SHELL',
+          'node -e "fetch(''http://127.0.0.1:4000/api/health'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
+        ]
       interval: 15s
     depends_on:
       migrate: { condition: service_completed_successfully }
@@ -76,21 +80,21 @@ services:
     image: edoburu/pgbouncer:v1.25.2-p0 # pinned; bump deliberately outside exam freeze windows
     environment:
       DB_HOST: postgres
-      DB_PORT: "5432"
+      DB_PORT: '5432'
       DB_USER: ${POSTGRES_USER:?POSTGRES_USER missing - run compose with --env-file .env}
       DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD missing - run compose with --env-file .env}
       DB_NAME: ${POSTGRES_DB:?POSTGRES_DB missing - run compose with --env-file .env}
-      LISTEN_PORT: "6432" # must match DATABASE_URL (image default is 5432)
+      LISTEN_PORT: '6432' # must match DATABASE_URL (image default is 5432)
       POOL_MODE: transaction
-      MAX_CLIENT_CONN: "2000"
-      DEFAULT_POOL_SIZE: "40"
+      MAX_CLIENT_CONN: '2000'
+      DEFAULT_POOL_SIZE: '40'
       AUTH_TYPE: scram-sha-256
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432"]
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -p 6432']
       interval: 10s
     depends_on:
       postgres: { condition: service_healthy }
-    deploy: { resources: { limits: { cpus: "0.5", memory: 256M } } }
+    deploy: { resources: { limits: { cpus: '0.5', memory: 256M } } }
 
   postgres:
     <<: [*restart, *logging]
@@ -103,30 +107,30 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
-    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+    command: ['postgres', '-c', 'config_file=/etc/postgresql/postgresql.conf']
     healthcheck:
       # $$ = read the container's own env at runtime, not compose interpolation
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
       interval: 10s
-    deploy: { resources: { limits: { cpus: "3", memory: 12G } } }
+    deploy: { resources: { limits: { cpus: '3', memory: 12G } } }
 
   redis-cache:
     <<: [*restart, *logging]
     image: redis:7-alpine
-    command: ["redis-server", "/usr/local/etc/redis/redis-cache.conf"]
-    volumes: ["./redis/redis-cache.conf:/usr/local/etc/redis/redis-cache.conf:ro"]
-    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 10s }
-    deploy: { resources: { limits: { cpus: "0.5", memory: 2G } } }
+    command: ['redis-server', '/usr/local/etc/redis/redis-cache.conf']
+    volumes: ['./redis/redis-cache.conf:/usr/local/etc/redis/redis-cache.conf:ro']
+    healthcheck: { test: ['CMD', 'redis-cli', 'ping'], interval: 10s }
+    deploy: { resources: { limits: { cpus: '0.5', memory: 2G } } }
 
   redis-queue:
     <<: [*restart, *logging]
     image: redis:7-alpine
-    command: ["redis-server", "/usr/local/etc/redis/redis-queue.conf"]
+    command: ['redis-server', '/usr/local/etc/redis/redis-queue.conf']
     volumes:
       - ./redis/redis-queue.conf:/usr/local/etc/redis/redis-queue.conf:ro
       - redisqueue:/data
-    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 10s }
-    deploy: { resources: { limits: { cpus: "0.5", memory: 1G } } }
+    healthcheck: { test: ['CMD', 'redis-cli', 'ping'], interval: 10s }
+    deploy: { resources: { limits: { cpus: '0.5', memory: 1G } } }
 
 volumes:
   pgdata:

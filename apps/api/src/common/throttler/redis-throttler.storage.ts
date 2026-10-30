@@ -64,7 +64,9 @@ export class RedisThrottlerStorage implements ThrottlerStorage {
   ) {
     redis.defineCommand('siratThrottle', { numberOfKeys: 2, lua: THROTTLE_LUA });
     // defineCommand adds the method at runtime; ioredis cannot type it statically.
-    this.command = (redis as unknown as { siratThrottle: ThrottleCommand }).siratThrottle.bind(redis);
+    this.command = (redis as unknown as { siratThrottle: ThrottleCommand }).siratThrottle.bind(
+      redis,
+    );
   }
 
   async increment(
@@ -108,6 +110,11 @@ export class RedisThrottlerStorage implements ThrottlerStorage {
       this.lastWarnAt = now;
       this.logger.warn(`rate limiter unavailable, allowing requests: ${reason}`);
     }
-    return { totalHits: 0, timeToExpire: Math.ceil(ttl / 1000), isBlocked: false, timeToBlockExpire: 0 };
+    return {
+      totalHits: 0,
+      timeToExpire: Math.ceil(ttl / 1000),
+      isBlocked: false,
+      timeToBlockExpire: 0,
+    };
   }
 }

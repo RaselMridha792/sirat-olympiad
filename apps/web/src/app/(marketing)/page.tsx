@@ -14,10 +14,16 @@ export default function HomePage() {
           rise on the leaderboard.
         </p>
         <div className="mt-8 flex justify-center gap-3">
-          <Link href="/register" className="rounded-control bg-primary px-6 py-3 font-semibold text-white">
+          <Link
+            href="/register"
+            className="rounded-control bg-primary px-6 py-3 font-semibold text-white"
+          >
             Register
           </Link>
-          <Link href="/login" className="rounded-control border border-white/30 px-6 py-3 font-semibold">
+          <Link
+            href="/login"
+            className="rounded-control border border-white/30 px-6 py-3 font-semibold"
+          >
             Sign in
           </Link>
         </div>

@@ -44,7 +44,11 @@ async function blackHole(): Promise<{ port: number; close: () => Promise<void> }
 }
 
 /** A proxy to the real Redis that can stop forwarding requests (Redis hangs after the client is ready). */
-async function pausableProxy(): Promise<{ port: number; pause: () => void; close: () => Promise<void> }> {
+async function pausableProxy(): Promise<{
+  port: number;
+  pause: () => void;
+  close: () => Promise<void>;
+}> {
   const target = new URL(url as string);
   let paused = false;
   const sockets = new Set<net.Socket>();
@@ -75,7 +79,8 @@ describe('RedisThrottlerStorage', () => {
   it('counts hits in a window and blocks once the limit is exceeded', async () => {
     const key = randomUUID();
     const hits = [];
-    for (let i = 0; i < 3; i += 1) hits.push(await storage.increment(key, 60_000, 3, 5_000, 'default'));
+    for (let i = 0; i < 3; i += 1)
+      hits.push(await storage.increment(key, 60_000, 3, 5_000, 'default'));
     expect(hits.map((h) => h.totalHits)).toEqual([1, 2, 3]);
     expect(hits.every((h) => !h.isBlocked)).toBe(true);
     expect(hits[0]?.timeToExpire).toBeGreaterThan(55);
@@ -94,14 +99,20 @@ describe('RedisThrottlerStorage', () => {
     for (let i = 0; i < 2; i += 1) await storage.increment(key, 10_000, 2, 1_000, 'default');
     expect((await storage.increment(key, 10_000, 2, 1_000, 'default')).isBlocked).toBe(true);
     await sleep(1_200);
-    expect(await storage.increment(key, 10_000, 2, 1_000, 'default')).toMatchObject({ isBlocked: false, totalHits: 1 });
+    expect(await storage.increment(key, 10_000, 2, 1_000, 'default')).toMatchObject({
+      isBlocked: false,
+      totalHits: 1,
+    });
   });
 
   it('accepts a fractional ttl instead of silently failing open', async () => {
     const key = randomUUID();
     await storage.increment(key, 1500.5, 2, 0, 'default');
     await storage.increment(key, 1500.5, 2, 0, 'default');
-    expect(await storage.increment(key, 1500.5, 2, 0, 'default')).toMatchObject({ isBlocked: true, totalHits: 3 });
+    expect(await storage.increment(key, 1500.5, 2, 0, 'default')).toMatchObject({
+      isBlocked: true,
+      totalHits: 3,
+    });
   });
 
   it('keeps separate counters per key and per throttler name', async () => {
@@ -116,7 +127,10 @@ describe('RedisThrottlerStorage', () => {
     await storage.increment(key, 200, 1, 0, 'default');
     expect((await storage.increment(key, 200, 1, 0, 'default')).isBlocked).toBe(true);
     await sleep(300);
-    expect(await storage.increment(key, 200, 1, 0, 'default')).toMatchObject({ totalHits: 1, isBlocked: false });
+    expect(await storage.increment(key, 200, 1, 0, 'default')).toMatchObject({
+      totalHits: 1,
+      isBlocked: false,
+    });
   });
 
   it('shares state between two storage instances (= two API replicas)', async () => {
@@ -139,7 +153,13 @@ describe('RedisThrottlerStorage', () => {
     try {
       await sleep(100); // connected at TCP level, but the ready check never completes
       const started = Date.now();
-      const res = await new RedisThrottlerStorage(client, prefix).increment(randomUUID(), 60_000, 1, 0, 'default');
+      const res = await new RedisThrottlerStorage(client, prefix).increment(
+        randomUUID(),
+        60_000,
+        1,
+        0,
+        'default',
+      );
       expect(res).toMatchObject({ isBlocked: false, totalHits: 0 });
       expect(Date.now() - started).toBeLessThan(100);
     } finally {
@@ -159,13 +179,17 @@ describe('RedisThrottlerStorage', () => {
 
       proxy.pause();
       let started = Date.now();
-      expect(await limiter.increment(randomUUID(), 60_000, 5, 0, 'default')).toMatchObject({ totalHits: 0 });
+      expect(await limiter.increment(randomUUID(), 60_000, 5, 0, 'default')).toMatchObject({
+        totalHits: 0,
+      });
       const waited = Date.now() - started;
       expect(waited).toBeGreaterThanOrEqual(THROTTLE_REDIS_TIMEOUT_MS - 20);
       expect(waited).toBeLessThan(THROTTLE_REDIS_TIMEOUT_MS + 300);
 
       started = Date.now(); // breaker open: no second 300 ms wait
-      expect(await limiter.increment(randomUUID(), 60_000, 5, 0, 'default')).toMatchObject({ totalHits: 0 });
+      expect(await limiter.increment(randomUUID(), 60_000, 5, 0, 'default')).toMatchObject({
+        totalHits: 0,
+      });
       expect(Date.now() - started).toBeLessThan(50);
       expect(THROTTLE_BREAKER_MS).toBeGreaterThan(0);
     } finally {

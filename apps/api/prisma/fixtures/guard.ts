@@ -18,10 +18,14 @@ const HOST_OVERRIDE_KEYS = new Set(['host', 'hostaddr']);
 export function assertFixturesAllowed(env: Readonly<Record<string, string | undefined>>): void {
   const nodeEnv = env.NODE_ENV ?? '';
   if (!ALLOWED_NODE_ENVS.has(nodeEnv)) {
-    throw new Error(`Refusing to load fixtures: NODE_ENV must be development or test (got "${nodeEnv || 'unset'}").`);
+    throw new Error(
+      `Refusing to load fixtures: NODE_ENV must be development or test (got "${nodeEnv || 'unset'}").`,
+    );
   }
   if (env.ALLOW_DEV_FIXTURES !== FIXTURE_CONFIRM_VALUE) {
-    throw new Error(`Refusing to load fixtures: set ALLOW_DEV_FIXTURES=${FIXTURE_CONFIRM_VALUE} for this run.`);
+    throw new Error(
+      `Refusing to load fixtures: set ALLOW_DEV_FIXTURES=${FIXTURE_CONFIRM_VALUE} for this run.`,
+    );
   }
   const url = env.DATABASE_URL;
   if (!url) throw new Error('Refusing to load fixtures: DATABASE_URL is not set.');
@@ -34,7 +38,9 @@ export function assertFixturesAllowed(env: Readonly<Record<string, string | unde
   // Refuse the key itself whatever its value or case: Prisma lets ?host= override the URL authority.
   const keys = [...parsed.searchParams.keys()].map((k) => k.toLowerCase());
   if (keys.some((k) => HOST_OVERRIDE_KEYS.has(k))) {
-    throw new Error('Refusing to load fixtures: DATABASE_URL must not carry a host/hostaddr query parameter.');
+    throw new Error(
+      'Refusing to load fixtures: DATABASE_URL must not carry a host/hostaddr query parameter.',
+    );
   }
   // Production and the compose network use service hostnames (pgbouncer, postgres); only a local DB is allowed.
   if (!LOCAL_HOSTS.has(parsed.hostname)) {

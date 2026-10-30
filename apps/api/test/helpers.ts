@@ -8,7 +8,8 @@ export function testPrisma(): PrismaClient {
   const url = process.env.TEST_DATABASE_URL;
   if (!url) throw new Error('TEST_DATABASE_URL is not set');
   const db = new URL(url).pathname.replace(/^\//, '');
-  if (!TEST_DB.test(db)) throw new Error(`Refusing: test database must end with _test (got "${db}")`);
+  if (!TEST_DB.test(db))
+    throw new Error(`Refusing: test database must end with _test (got "${db}")`);
   return new PrismaClient({ datasourceUrl: url });
 }
 
@@ -26,13 +27,23 @@ export async function truncateAll(prisma: PrismaClient): Promise<void> {
 
 const uniq = (): string => randomUUID().slice(0, 8);
 
-export function makeUser(prisma: PrismaClient, data: Partial<Prisma.UserUncheckedCreateInput> = {}) {
+export function makeUser(
+  prisma: PrismaClient,
+  data: Partial<Prisma.UserUncheckedCreateInput> = {},
+) {
   return prisma.user.create({
-    data: { email: `u-${uniq()}@test.invalid`, passwordHash: 'not-a-real-hash', name: 'Test User', ...data },
+    data: {
+      email: `u-${uniq()}@test.invalid`,
+      passwordHash: 'not-a-real-hash',
+      name: 'Test User',
+      ...data,
+    },
   });
 }
 
-export function examData(data: Partial<Prisma.ExamUncheckedCreateInput> = {}): Prisma.ExamUncheckedCreateInput {
+export function examData(
+  data: Partial<Prisma.ExamUncheckedCreateInput> = {},
+): Prisma.ExamUncheckedCreateInput {
   return {
     title: `Exam ${uniq()}`,
     windowStart: new Date('2026-11-01T04:00:00Z'),
@@ -43,7 +54,9 @@ export function examData(data: Partial<Prisma.ExamUncheckedCreateInput> = {}): P
   };
 }
 
-export function paymentData(data: Partial<Prisma.PaymentUncheckedCreateInput> = {}): Prisma.PaymentUncheckedCreateInput {
+export function paymentData(
+  data: Partial<Prisma.PaymentUncheckedCreateInput> = {},
+): Prisma.PaymentUncheckedCreateInput {
   return {
     invoiceNumber: `INV-${uniq()}`,
     amountMinor: 50000,
@@ -55,6 +68,12 @@ export function paymentData(data: Partial<Prisma.PaymentUncheckedCreateInput> = 
 export function makeAttempt(prisma: PrismaClient, userId: string, examId: string) {
   const startedAt = new Date();
   return prisma.attempt.create({
-    data: { userId, examId, startedAt, endsAt: new Date(startedAt.getTime() + 30 * 60 * 1000), layout: [] },
+    data: {
+      userId,
+      examId,
+      startedAt,
+      endsAt: new Date(startedAt.getTime() + 30 * 60 * 1000),
+      layout: [],
+    },
   });
 }

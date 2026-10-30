@@ -12,7 +12,9 @@ export default function AmbassadorPage() {
         <StatCard title="Rank" value="Bronze" hint="Thresholds come from a config table" />
         <StatCard title="Referrals" value={0} hint="Counted from real rows" />
       </div>
-      <div className="mt-6"><EmptyState title="No tasks assigned yet" /></div>
+      <div className="mt-6">
+        <EmptyState title="No tasks assigned yet" />
+      </div>
     </>
   );
 }

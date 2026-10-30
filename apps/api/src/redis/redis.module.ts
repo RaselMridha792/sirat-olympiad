@@ -47,7 +47,9 @@ class RedisShutdown implements OnApplicationShutdown {
   async onApplicationShutdown(): Promise<void> {
     // quit() can hang on a stalled server (the queue client never gives up on commands): bound it, then force.
     await Promise.allSettled(
-      [this.cache, this.queue].map((c) => withTimeout(c.quit(), QUIT_TIMEOUT_MS).catch(() => c.disconnect())),
+      [this.cache, this.queue].map((c) =>
+        withTimeout(c.quit(), QUIT_TIMEOUT_MS).catch(() => c.disconnect()),
+      ),
     );
   }
 }
@@ -57,11 +59,13 @@ class RedisShutdown implements OnApplicationShutdown {
   providers: [
     {
       provide: REDIS_CACHE,
-      useFactory: () => createClient('cache', process.env.REDIS_CACHE_URL as string, CACHE_REDIS_OPTIONS),
+      useFactory: () =>
+        createClient('cache', process.env.REDIS_CACHE_URL as string, CACHE_REDIS_OPTIONS),
     },
     {
       provide: REDIS_QUEUE,
-      useFactory: () => createClient('queue', process.env.REDIS_QUEUE_URL as string, QUEUE_REDIS_OPTIONS),
+      useFactory: () =>
+        createClient('queue', process.env.REDIS_QUEUE_URL as string, QUEUE_REDIS_OPTIONS),
     },
     RedisShutdown,
   ],

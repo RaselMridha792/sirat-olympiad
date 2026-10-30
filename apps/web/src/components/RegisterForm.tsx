@@ -21,10 +21,14 @@ export function RegisterForm() {
       <Field label="District" name="district" required />
       <Field label="Institution" name="institution" required />
       <Field label="Referral code (optional)" name="promoCode" />
-      <Button type="submit" size="lg" className="w-full">Continue</Button>
+      <Button type="submit" size="lg" className="w-full">
+        Continue
+      </Button>
       <p className="text-center text-sm text-ink-muted">
         Already registered?{' '}
-        <Link href="/login" className="font-bold text-secondary hover:underline">Sign in</Link>
+        <Link href="/login" className="font-bold text-secondary hover:underline">
+          Sign in
+        </Link>
       </p>
     </form>
   );

@@ -3,7 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "packageManager": "pnpm@10.34.9",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": "^22.13.0 || >=24"
+  },
   "scripts": {
     "dev:web": "pnpm --filter @sirat/web dev",
     "dev:api": "pnpm --filter @sirat/api start:dev",
@@ -11,9 +13,10 @@
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "format": "prettier --write \"**/*.{ts,tsx,json,md,css}\" --ignore-path .gitignore",
+    "format": "prettier --write .",
     "db:migrate": "pnpm --filter @sirat/api prisma:migrate",
-    "db:generate": "pnpm --filter @sirat/api prisma:generate"
+    "db:generate": "pnpm --filter @sirat/api prisma:generate",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
     "prettier": "^3.6.2",

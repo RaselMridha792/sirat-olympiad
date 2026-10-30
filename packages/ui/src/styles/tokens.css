@@ -38,8 +38,8 @@
   --color-rank-silver: #94a3b8;
   --color-rank-gold: #f59e0b;
 
-  --font-sans: "Inter Variable", "Noto Sans Bengali Variable", system-ui, sans-serif;
-  --font-bangla: "Noto Sans Bengali Variable", system-ui, sans-serif;
+  --font-sans: 'Inter Variable', 'Noto Sans Bengali Variable', system-ui, sans-serif;
+  --font-bangla: 'Noto Sans Bengali Variable', system-ui, sans-serif;
 
   --radius-card: 1rem;
   --radius-control: 0.75rem;

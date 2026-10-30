@@ -22,7 +22,9 @@ async function deleteThrottleKeys(client: Redis): Promise<void> {
 async function statuses(path: string, count: number): Promise<number[]> {
   const out: number[] = [];
   for (let i = 0; i < count; i += 50) {
-    const batch = Array.from({ length: Math.min(50, count - i) }, () => fetch(`${base}${path}`).then((r) => r.status));
+    const batch = Array.from({ length: Math.min(50, count - i) }, () =>
+      fetch(`${base}${path}`).then((r) => r.status),
+    );
     out.push(...(await Promise.all(batch)));
   }
   return out;

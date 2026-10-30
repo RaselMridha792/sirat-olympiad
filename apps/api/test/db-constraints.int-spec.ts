@@ -28,21 +28,25 @@ describe('exams CHECK constraints (raw SQL migration)', () => {
   });
 
   it('accepts the 1 and 30 minute boundaries', async () => {
-    await expect(prisma.exam.create({ data: examData({ durationMinutes: 1 }) })).resolves.toBeDefined();
-    await expect(prisma.exam.create({ data: examData({ durationMinutes: 30 }) })).resolves.toBeDefined();
+    await expect(
+      prisma.exam.create({ data: examData({ durationMinutes: 1 }) }),
+    ).resolves.toBeDefined();
+    await expect(
+      prisma.exam.create({ data: examData({ durationMinutes: 30 }) }),
+    ).resolves.toBeDefined();
   });
 
   it('rejects a window that ends at or before it starts', async () => {
     const t = new Date('2026-11-01T04:00:00Z');
-    await expect(prisma.exam.create({ data: examData({ windowStart: t, windowEnd: t }) })).rejects.toThrow(
-      /exams_window_check/,
-    );
+    await expect(
+      prisma.exam.create({ data: examData({ windowStart: t, windowEnd: t }) }),
+    ).rejects.toThrow(/exams_window_check/);
   });
 
   it('rejects questions_per_attempt = 0 and a negative grace period', async () => {
-    await expect(prisma.exam.create({ data: examData({ questionsPerAttempt: 0 }) })).rejects.toThrow(
-      /exams_questions_per_attempt_check/,
-    );
+    await expect(
+      prisma.exam.create({ data: examData({ questionsPerAttempt: 0 }) }),
+    ).rejects.toThrow(/exams_questions_per_attempt_check/);
     await expect(prisma.exam.create({ data: examData({ graceSeconds: -1 }) })).rejects.toThrow(
       /exams_grace_seconds_check/,
     );
@@ -54,21 +58,27 @@ describe('payments', () => {
     await expect(prisma.payment.create({ data: paymentData({ amountMinor: 0 }) })).rejects.toThrow(
       /payments_amount_minor_check/,
     );
-    await expect(prisma.payment.create({ data: paymentData({ amountMinor: -100 }) })).rejects.toThrow(
-      /payments_amount_minor_check/,
-    );
+    await expect(
+      prisma.payment.create({ data: paymentData({ amountMinor: -100 }) }),
+    ).rejects.toThrow(/payments_amount_minor_check/);
   });
 
   it('rejects status=paid without trx_id / paid_at, accepts it with both', async () => {
-    await expect(prisma.payment.create({ data: paymentData({ status: PaymentStatus.paid }) })).rejects.toThrow(
-      /payments_paid_has_trx_check/,
-    );
     await expect(
-      prisma.payment.create({ data: paymentData({ status: PaymentStatus.paid, trxId: `T-${randomUUID()}` }) }),
+      prisma.payment.create({ data: paymentData({ status: PaymentStatus.paid }) }),
     ).rejects.toThrow(/payments_paid_has_trx_check/);
     await expect(
       prisma.payment.create({
-        data: paymentData({ status: PaymentStatus.paid, trxId: `T-${randomUUID()}`, paidAt: new Date() }),
+        data: paymentData({ status: PaymentStatus.paid, trxId: `T-${randomUUID()}` }),
+      }),
+    ).rejects.toThrow(/payments_paid_has_trx_check/);
+    await expect(
+      prisma.payment.create({
+        data: paymentData({
+          status: PaymentStatus.paid,
+          trxId: `T-${randomUUID()}`,
+          paidAt: new Date(),
+        }),
       }),
     ).resolves.toBeDefined();
   });
@@ -76,11 +86,15 @@ describe('payments', () => {
   it('never reuses an invoice_number or applies a trx_id twice', async () => {
     const invoiceNumber = `INV-${randomUUID()}`;
     await prisma.payment.create({ data: paymentData({ invoiceNumber }) });
-    await expect(prisma.payment.create({ data: paymentData({ invoiceNumber }) })).rejects.toMatchObject(UNIQUE);
+    await expect(
+      prisma.payment.create({ data: paymentData({ invoiceNumber }) }),
+    ).rejects.toMatchObject(UNIQUE);
 
     const trxId = `TRX-${randomUUID()}`;
     await prisma.payment.create({ data: paymentData({ trxId }) });
-    await expect(prisma.payment.create({ data: paymentData({ trxId }) })).rejects.toMatchObject(UNIQUE);
+    await expect(prisma.payment.create({ data: paymentData({ trxId }) })).rejects.toMatchObject(
+      UNIQUE,
+    );
   });
 });
 
@@ -92,18 +106,18 @@ describe('one payment <-> one registration', () => {
     await prisma.registration.create({ data: { userId: u1.id, paymentId: p1.id } });
 
     // Same payment cannot create a second account's registration (replayed callback).
-    await expect(prisma.registration.create({ data: { userId: u2.id, paymentId: p1.id } })).rejects.toMatchObject(
-      UNIQUE,
-    );
+    await expect(
+      prisma.registration.create({ data: { userId: u2.id, paymentId: p1.id } }),
+    ).rejects.toMatchObject(UNIQUE);
     // Same user cannot hold two registrations.
-    await expect(prisma.registration.create({ data: { userId: u1.id, paymentId: p2.id } })).rejects.toMatchObject(
-      UNIQUE,
-    );
+    await expect(
+      prisma.registration.create({ data: { userId: u1.id, paymentId: p2.id } }),
+    ).rejects.toMatchObject(UNIQUE);
 
     await prisma.pendingRegistration.create({ data: { paymentId: p2.id, payload: {} } });
-    await expect(prisma.pendingRegistration.create({ data: { paymentId: p2.id, payload: {} } })).rejects.toMatchObject(
-      UNIQUE,
-    );
+    await expect(
+      prisma.pendingRegistration.create({ data: { paymentId: p2.id, payload: {} } }),
+    ).rejects.toMatchObject(UNIQUE);
   });
 });
 
@@ -123,11 +137,13 @@ describe('exam attempts and submissions', () => {
     await prisma.submission.create({ data: { attemptId: a1.id, requestId, answers: {} } });
 
     await expect(
-      prisma.submission.create({ data: { attemptId: a1.id, requestId: randomUUID(), answers: {} } }),
+      prisma.submission.create({
+        data: { attemptId: a1.id, requestId: randomUUID(), answers: {} },
+      }),
     ).rejects.toMatchObject(UNIQUE);
-    await expect(prisma.submission.create({ data: { attemptId: a2.id, requestId, answers: {} } })).rejects.toMatchObject(
-      UNIQUE,
-    );
+    await expect(
+      prisma.submission.create({ data: { attemptId: a2.id, requestId, answers: {} } }),
+    ).rejects.toMatchObject(UNIQUE);
   });
 });
 
@@ -135,9 +151,13 @@ describe('ambassador program and rounds', () => {
   it('never awards the same point event twice', async () => {
     const user = await makeUser(prisma);
     const eventKey = `referral_paid:${randomUUID()}`;
-    await prisma.pointLedger.create({ data: { userId: user.id, eventKey, amount: 10, reason: 'test' } });
+    await prisma.pointLedger.create({
+      data: { userId: user.id, eventKey, amount: 10, reason: 'test' },
+    });
     await expect(
-      prisma.pointLedger.create({ data: { userId: user.id, eventKey, amount: 10, reason: 'test' } }),
+      prisma.pointLedger.create({
+        data: { userId: user.id, eventKey, amount: 10, reason: 'test' },
+      }),
     ).rejects.toMatchObject(UNIQUE);
   });
 
@@ -145,9 +165,9 @@ describe('ambassador program and rounds', () => {
     const user = await makeUser(prisma);
     const round = await prisma.round.findUniqueOrThrow({ where: { sortOrder: 1 } });
     await prisma.roundEntry.create({ data: { userId: user.id, roundId: round.id } });
-    await expect(prisma.roundEntry.create({ data: { userId: user.id, roundId: round.id } })).rejects.toMatchObject(
-      UNIQUE,
-    );
+    await expect(
+      prisma.roundEntry.create({ data: { userId: user.id, roundId: round.id } }),
+    ).rejects.toMatchObject(UNIQUE);
   });
 
   it('assigns a task to a user once, and promo codes / profiles are unique', async () => {
@@ -157,9 +177,9 @@ describe('ambassador program and rounds', () => {
       data: { title: 't', description: 'd', points: 5, createdById: admin.id },
     });
     await prisma.taskAssignment.create({ data: { taskId: task.id, userId: amb.id } });
-    await expect(prisma.taskAssignment.create({ data: { taskId: task.id, userId: amb.id } })).rejects.toMatchObject(
-      UNIQUE,
-    );
+    await expect(
+      prisma.taskAssignment.create({ data: { taskId: task.id, userId: amb.id } }),
+    ).rejects.toMatchObject(UNIQUE);
 
     const promoCode = `CODE-${randomUUID().slice(0, 6)}`;
     await prisma.ambassadorProfile.create({ data: { userId: amb.id, promoCode } });
@@ -176,8 +196,12 @@ describe('identity and foreign keys', () => {
   it('treats emails case-insensitively (citext)', async () => {
     const local = `case-${randomUUID().slice(0, 8)}`;
     await makeUser(prisma, { email: `${local}@Test.invalid` });
-    await expect(makeUser(prisma, { email: `${local.toUpperCase()}@test.INVALID` })).rejects.toMatchObject(UNIQUE);
-    const found = await prisma.user.findUnique({ where: { email: `${local.toUpperCase()}@TEST.invalid` } });
+    await expect(
+      makeUser(prisma, { email: `${local.toUpperCase()}@test.INVALID` }),
+    ).rejects.toMatchObject(UNIQUE);
+    const found = await prisma.user.findUnique({
+      where: { email: `${local.toUpperCase()}@TEST.invalid` },
+    });
     expect(found).not.toBeNull();
   });
 
@@ -190,40 +214,63 @@ describe('identity and foreign keys', () => {
     const round = await prisma.round.findUniqueOrThrow({ where: { sortOrder: 1 } });
     const entry = await prisma.roundEntry.create({ data: { userId: admin.id, roundId: round.id } });
     await expect(
-      prisma.juryScore.create({ data: { entryId: entry.id, judgeId: randomUUID(), criteria: {}, total: 0 } }),
+      prisma.juryScore.create({
+        data: { entryId: entry.id, judgeId: randomUUID(), criteria: {}, total: 0 },
+      }),
     ).rejects.toMatchObject(FOREIGN_KEY);
   });
 
   it('generates UUIDv7 primary keys', async () => {
     const user = await makeUser(prisma);
-    expect(user.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(user.id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
   });
 
   it('refuses to hard-delete a user that history points to (ON DELETE RESTRICT)', async () => {
     const owner = await makeUser(prisma);
     await prisma.payment.create({ data: paymentData({ userId: owner.id }) });
-    await expect(prisma.user.delete({ where: { id: owner.id } })).rejects.toMatchObject(FOREIGN_KEY);
+    await expect(prisma.user.delete({ where: { id: owner.id } })).rejects.toMatchObject(
+      FOREIGN_KEY,
+    );
 
     const admin = await makeUser(prisma);
     const member = await makeUser(prisma);
     await prisma.pointLedger.create({
-      data: { userId: member.id, eventKey: `adj:${randomUUID()}`, amount: 1, reason: 'test', createdById: admin.id },
+      data: {
+        userId: member.id,
+        eventKey: `adj:${randomUUID()}`,
+        amount: 1,
+        reason: 'test',
+        createdById: admin.id,
+      },
     });
-    await expect(prisma.user.delete({ where: { id: admin.id } })).rejects.toMatchObject(FOREIGN_KEY);
+    await expect(prisma.user.delete({ where: { id: admin.id } })).rejects.toMatchObject(
+      FOREIGN_KEY,
+    );
 
     // Sessions are the deliberate exception: they cascade with their user.
     const plain = await makeUser(prisma);
     await prisma.session.create({
-      data: { userId: plain.id, familyId: randomUUID(), tokenHash: randomUUID(), expiresAt: new Date() },
+      data: {
+        userId: plain.id,
+        familyId: randomUUID(),
+        tokenHash: randomUUID(),
+        expiresAt: new Date(),
+      },
     });
     await expect(prisma.user.delete({ where: { id: plain.id } })).resolves.toBeDefined();
   });
 
   it('treats promo codes case-insensitively (citext)', async () => {
     const code = `Code${randomUUID().slice(0, 6)}`;
-    await prisma.ambassadorProfile.create({ data: { userId: (await makeUser(prisma)).id, promoCode: code } });
+    await prisma.ambassadorProfile.create({
+      data: { userId: (await makeUser(prisma)).id, promoCode: code },
+    });
     await expect(
-      prisma.ambassadorProfile.create({ data: { userId: (await makeUser(prisma)).id, promoCode: code.toUpperCase() } }),
+      prisma.ambassadorProfile.create({
+        data: { userId: (await makeUser(prisma)).id, promoCode: code.toUpperCase() },
+      }),
     ).rejects.toMatchObject(UNIQUE);
   });
 });

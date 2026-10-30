@@ -26,7 +26,10 @@ export const GRADE_LEVELS: ReadonlyArray<{ label: string; category: Category }> 
   { label: 'Class 12 / DP 2', category: Category.ambassador },
   { label: 'HSC / A Level / Alim Candidate', category: Category.ambassador },
   { label: 'University Admission Candidate / Musannif', category: Category.achiever },
-  { label: 'University 1st Year / Diploma 1st Year / Fazil / Mishkat', category: Category.achiever },
+  {
+    label: 'University 1st Year / Diploma 1st Year / Fazil / Mishkat',
+    category: Category.achiever,
+  },
   { label: 'University 2nd Year / Diploma 2nd Year', category: Category.achiever },
   { label: 'University 3rd Year / Diploma 3rd Year', category: Category.achiever },
   { label: 'University 4th Year / Diploma 4th Year', category: Category.achiever },
@@ -82,7 +85,10 @@ export async function seedConfig(prisma: PrismaClient): Promise<SeedResult> {
   return { gradeLevels, settings: settings.count, rankThresholds, rounds };
 }
 
-async function seedIfEmpty(count: () => Promise<number>, insert: () => Promise<{ count: number }>): Promise<number> {
+async function seedIfEmpty(
+  count: () => Promise<number>,
+  insert: () => Promise<{ count: number }>,
+): Promise<number> {
   if ((await count()) > 0) return 0;
   return (await insert()).count;
 }

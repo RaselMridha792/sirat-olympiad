@@ -38,7 +38,9 @@ export class HealthController {
       redisQueue: () => this.ping(this.queue),
     };
     const names = Object.keys(checks) as (keyof typeof checks)[];
-    const results = await Promise.allSettled(names.map((n) => withTimeout(checks[n](), READY_TIMEOUT_MS)));
+    const results = await Promise.allSettled(
+      names.map((n) => withTimeout(checks[n](), READY_TIMEOUT_MS)),
+    );
     const failed = names.filter((_, i) => results[i]?.status === 'rejected');
     if (failed.length > 0) {
       // Operators see which dependency failed in the logs; clients only get a generic 503.

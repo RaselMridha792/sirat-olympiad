@@ -15,7 +15,9 @@ export default function AdminHome() {
         <StatCard title="Active attempts" value="—" icon={<Activity size={26} />} />
         <StatCard title="Submitted" value="—" icon={<CheckCircle size={26} />} />
       </div>
-      <Card className="mt-6 text-sm text-ink-muted">Charts (registrations trend, by category) go here.</Card>
+      <Card className="mt-6 text-sm text-ink-muted">
+        Charts (registrations trend, by category) go here.
+      </Card>
     </>
   );
 }

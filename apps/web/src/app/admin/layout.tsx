@@ -1,4 +1,13 @@
-import { LayoutDashboard, Users, FileText, Trophy, Megaphone, Gavel, Wallet, Shield } from 'lucide-react';
+import {
+  LayoutDashboard,
+  Users,
+  FileText,
+  Trophy,
+  Megaphone,
+  Gavel,
+  Wallet,
+  Shield,
+} from 'lucide-react';
 import type { NavItem } from '@sirat/ui';
 import { NavShell } from '@/components/NavShell';
 import { getSession } from '@/lib/session';

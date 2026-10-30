@@ -9,7 +9,13 @@ const ok = {
 describe('assertFixturesAllowed', () => {
   it('allows a local development database with explicit confirmation', () => {
     expect(() => assertFixturesAllowed(ok)).not.toThrow();
-    expect(() => assertFixturesAllowed({ ...ok, NODE_ENV: 'test', DATABASE_URL: 'postgresql://u:p@localhost/x' })).not.toThrow();
+    expect(() =>
+      assertFixturesAllowed({
+        ...ok,
+        NODE_ENV: 'test',
+        DATABASE_URL: 'postgresql://u:p@localhost/x',
+      }),
+    ).not.toThrow();
   });
 
   it('refuses in production even when everything else is set', () => {
@@ -21,15 +27,25 @@ describe('assertFixturesAllowed', () => {
   });
 
   it('refuses without the explicit confirmation value', () => {
-    expect(() => assertFixturesAllowed({ ...ok, ALLOW_DEV_FIXTURES: 'true' })).toThrow(/ALLOW_DEV_FIXTURES/);
-    expect(() => assertFixturesAllowed({ ...ok, ALLOW_DEV_FIXTURES: undefined })).toThrow(/ALLOW_DEV_FIXTURES/);
+    expect(() => assertFixturesAllowed({ ...ok, ALLOW_DEV_FIXTURES: 'true' })).toThrow(
+      /ALLOW_DEV_FIXTURES/,
+    );
+    expect(() => assertFixturesAllowed({ ...ok, ALLOW_DEV_FIXTURES: undefined })).toThrow(
+      /ALLOW_DEV_FIXTURES/,
+    );
   });
 
   it('refuses a non-local database host (compose/production hostnames)', () => {
-    expect(() => assertFixturesAllowed({ ...ok, DATABASE_URL: 'postgresql://u:p@pgbouncer:6432/sirat' })).toThrow(/not local/);
-    expect(() => assertFixturesAllowed({ ...ok, DATABASE_URL: 'postgresql://u:p@db.example.com/sirat' })).toThrow(/not local/);
+    expect(() =>
+      assertFixturesAllowed({ ...ok, DATABASE_URL: 'postgresql://u:p@pgbouncer:6432/sirat' }),
+    ).toThrow(/not local/);
+    expect(() =>
+      assertFixturesAllowed({ ...ok, DATABASE_URL: 'postgresql://u:p@db.example.com/sirat' }),
+    ).toThrow(/not local/);
     // userinfo containing "@": the real host is the part after the last "@"
-    expect(() => assertFixturesAllowed({ ...ok, DATABASE_URL: 'postgresql://u:p@127.0.0.1@prod-db:5432/x' })).toThrow(/not local/);
+    expect(() =>
+      assertFixturesAllowed({ ...ok, DATABASE_URL: 'postgresql://u:p@127.0.0.1@prod-db:5432/x' }),
+    ).toThrow(/not local/);
   });
 
   it.each([
@@ -54,7 +70,10 @@ describe('assertDevServerMarker', () => {
     expect(() => assertDevServerMarker(marker)).not.toThrow();
   });
 
-  it.each([null, undefined, '', 'production', 'Development'])('refuses a server marked %p', (marker) => {
-    expect(() => assertDevServerMarker(marker)).toThrow(/not marked dev\/test/);
-  });
+  it.each([null, undefined, '', 'production', 'Development'])(
+    'refuses a server marked %p',
+    (marker) => {
+      expect(() => assertDevServerMarker(marker)).toThrow(/not marked dev\/test/);
+    },
+  );
 });

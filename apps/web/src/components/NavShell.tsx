@@ -5,14 +5,23 @@ import { AppShell, type NavItem } from '@sirat/ui';
 
 /** Client wrapper: binds next/link + current path to the shared AppShell. */
 export function NavShell({
-  brand, items, userName, userRole, children,
+  brand,
+  items,
+  userName,
+  userRole,
+  children,
 }: {
-  brand: string; items: NavItem[]; userName: string; userRole: string; children: React.ReactNode;
+  brand: string;
+  items: NavItem[];
+  userName: string;
+  userRole: string;
+  children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const active = [...items]
-    .sort((a, b) => b.href.length - a.href.length)
-    .find((i) => pathname === i.href || pathname.startsWith(i.href + '/'))?.href ?? '';
+  const active =
+    [...items]
+      .sort((a, b) => b.href.length - a.href.length)
+      .find((i) => pathname === i.href || pathname.startsWith(i.href + '/'))?.href ?? '';
   return (
     <AppShell
       brand={brand}

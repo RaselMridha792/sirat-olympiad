@@ -1,0 +1,13 @@
+# Prettier 3 also reads .gitignore.
+reference/
+pnpm-lock.yaml
+**/dist
+**/.next
+**/coverage
+**/node_modules
+apps/web/next-env.d.ts
+# Generated SQL is applied as-is; never reformat applied migrations.
+apps/api/prisma/migrations
+# Owner-authored documents are not reformatted automatically.
+*.md
+backups/

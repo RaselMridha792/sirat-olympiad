@@ -2,14 +2,20 @@ import { ServiceUnavailableException } from '@nestjs/common';
 import { HealthController, READY_TIMEOUT_MS } from './health.controller';
 
 type FakeRedis = { status: string; ping: jest.Mock; connect: jest.Mock };
-const redis = (status = 'ready', ping: () => Promise<string> = () => Promise.resolve('PONG')): FakeRedis => ({
+const redis = (
+  status = 'ready',
+  ping: () => Promise<string> = () => Promise.resolve('PONG'),
+): FakeRedis => ({
   status,
   ping: jest.fn(ping),
   connect: jest.fn(() => Promise.resolve()),
 });
 const db = (impl: () => Promise<unknown>) => ({ $queryRaw: impl }) as never;
-const make = (database: () => Promise<unknown>, cache: FakeRedis = redis(), queue: FakeRedis = redis()) =>
-  new HealthController(db(database), cache as never, queue as never);
+const make = (
+  database: () => Promise<unknown>,
+  cache: FakeRedis = redis(),
+  queue: FakeRedis = redis(),
+) => new HealthController(db(database), cache as never, queue as never);
 const dbOk = () => Promise.resolve([1]);
 
 describe('HealthController', () => {
@@ -26,7 +32,9 @@ describe('HealthController', () => {
 
   it('is not ready when the queue Redis is down (jobs must not be lost)', async () => {
     const down = redis('ready', () => Promise.reject(new Error('ECONNREFUSED')));
-    await expect(make(dbOk, redis(), down).ready()).rejects.toBeInstanceOf(ServiceUnavailableException);
+    await expect(make(dbOk, redis(), down).ready()).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
   });
 
   it('is not ready when the database is down', async () => {
@@ -37,7 +45,9 @@ describe('HealthController', () => {
 
   it('does not queue a PING on a disconnected client, it answers 503 at once', async () => {
     const reconnecting = redis('reconnecting');
-    await expect(make(dbOk, redis(), reconnecting).ready()).rejects.toBeInstanceOf(ServiceUnavailableException);
+    await expect(make(dbOk, redis(), reconnecting).ready()).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
     expect(reconnecting.ping).not.toHaveBeenCalled();
   });
 

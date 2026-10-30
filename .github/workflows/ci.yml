@@ -46,13 +46,13 @@ jobs:
           POSTGRES_USER: sirat
           POSTGRES_PASSWORD: ci-only-password # throwaway CI container, not a secret
           POSTGRES_DB: sirat_test
-        ports: ["5432:5432"]
+        ports: ['5432:5432']
         options: >-
           --health-cmd "pg_isready -U sirat -d sirat_test"
           --health-interval 5s --health-timeout 5s --health-retries 20
       redis:
         image: redis:7-alpine
-        ports: ["6379:6379"]
+        ports: ['6379:6379']
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 5s --health-retries 20

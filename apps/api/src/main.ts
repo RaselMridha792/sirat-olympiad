@@ -15,7 +15,9 @@ async function bootstrap(): Promise<void> {
   app.set('trust proxy', 1); // behind Nginx/Cloudflare; real IPs only from trusted proxy headers
   app.use(helmet());
   app.use(cookieParser());
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
+  app.useGlobalPipes(
+    new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
+  );
   app.useGlobalFilters(new AllExceptionsFilter());
   app.enableShutdownHooks(); // SIGTERM: finish in-flight requests, close pools
   await app.listen(Number(process.env.PORT ?? 4000), '0.0.0.0');

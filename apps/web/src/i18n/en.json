@@ -1,4 +1,13 @@
 {
-  "common": { "signIn": "Sign in", "register": "Register", "email": "Email", "password": "Password" },
-  "login": { "title": "Sign in", "subtitle": "Log in to your account to continue.", "forgot": "Forgot password?" }
+  "common": {
+    "signIn": "Sign in",
+    "register": "Register",
+    "email": "Email",
+    "password": "Password"
+  },
+  "login": {
+    "title": "Sign in",
+    "subtitle": "Log in to your account to continue.",
+    "forgot": "Forgot password?"
+  }
 }

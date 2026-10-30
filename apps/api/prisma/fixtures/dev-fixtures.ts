@@ -25,12 +25,15 @@ const FIXTURE_AMOUNT_MINOR = 100; // fake amount; payments CHECK requires > 0
 async function main(): Promise<void> {
   assertFixturesAllowed(process.env);
   const password = process.env.FIXTURE_PASSWORD ?? '';
-  if (password.length < 12) throw new Error('FIXTURE_PASSWORD must be set (at least 12 characters).');
+  if (password.length < 12)
+    throw new Error('FIXTURE_PASSWORD must be set (at least 12 characters).');
 
   // Same (already guarded) URL for every query; the server marker is checked before anything else runs.
   const prisma = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL });
   try {
-    const [row] = await prisma.$queryRaw<{ marker: string | null }[]>`SELECT current_setting('sirat.environment', true) AS marker`;
+    const [row] = await prisma.$queryRaw<
+      { marker: string | null }[]
+    >`SELECT current_setting('sirat.environment', true) AS marker`;
     assertDevServerMarker(row?.marker);
     // A2 (auth) owns the tuned argon2id parameters; library defaults are fine for dev data.
     const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
@@ -39,7 +42,10 @@ async function main(): Promise<void> {
       const email = `student${s.n}@fixtures.invalid`;
       if (await prisma.user.findUnique({ where: { email }, select: { id: true } })) continue;
       const grade = await prisma.gradeLevel.findUnique({ where: { sortOrder: s.gradeSortOrder } });
-      if (!grade) throw new Error('Grade levels missing: run the config seed first (pnpm --filter @sirat/api db:seed).');
+      if (!grade)
+        throw new Error(
+          'Grade levels missing: run the config seed first (pnpm --filter @sirat/api db:seed).',
+        );
 
       await prisma.$transaction(async (tx) => {
         const now = new Date();
@@ -69,7 +75,13 @@ async function main(): Promise<void> {
       });
       created += 1;
     }
-    console.log(JSON.stringify({ msg: 'dev fixtures done', created, skippedExisting: STUDENTS.length - created }));
+    console.log(
+      JSON.stringify({
+        msg: 'dev fixtures done',
+        created,
+        skippedExisting: STUDENTS.length - created,
+      }),
+    );
   } finally {
     await prisma.$disconnect();
   }

@@ -7,7 +7,10 @@ import type { ApiError } from '@sirat/shared';
  * - State-changing requests send a custom header (CSRF defense on top of SameSite=Lax).
  */
 export class ApiRequestError extends Error {
-  constructor(public readonly status: number, public readonly body: ApiError | null) {
+  constructor(
+    public readonly status: number,
+    public readonly body: ApiError | null,
+  ) {
     super(body?.message ?? `Request failed (${status})`);
   }
 }

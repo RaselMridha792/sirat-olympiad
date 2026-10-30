@@ -5,14 +5,14 @@
 #   docker compose --env-file .env -f infra/docker-compose.yml -f infra/docker-compose.dev.yml up -d postgres pgbouncer redis-cache redis-queue
 services:
   nginx:
-    ports: !override ["127.0.0.1:8080:80"]
+    ports: !override ['127.0.0.1:8080:80']
 
   api:
     deploy:
       replicas: 1
 
   postgres:
-    ports: ["127.0.0.1:15432:5432"]
+    ports: ['127.0.0.1:15432:5432']
     command:
       - postgres
       - -c
@@ -28,17 +28,17 @@ services:
       # Dev/test marker: dev fixtures refuse any server without it (production never sets it).
       - -c
       - sirat.environment=development
-    deploy: { resources: { limits: { cpus: "2", memory: 2G } } }
+    deploy: { resources: { limits: { cpus: '2', memory: 2G } } }
 
   pgbouncer:
-    ports: ["127.0.0.1:16432:6432"]
+    ports: ['127.0.0.1:16432:6432']
 
   redis-cache:
-    ports: ["127.0.0.1:16379:6379"]
-    command: ["redis-server", "/usr/local/etc/redis/redis-cache.conf", "--maxmemory", "256mb"]
-    deploy: { resources: { limits: { cpus: "0.5", memory: 512M } } }
+    ports: ['127.0.0.1:16379:6379']
+    command: ['redis-server', '/usr/local/etc/redis/redis-cache.conf', '--maxmemory', '256mb']
+    deploy: { resources: { limits: { cpus: '0.5', memory: 512M } } }
 
   redis-queue:
-    ports: ["127.0.0.1:16380:6379"]
-    command: ["redis-server", "/usr/local/etc/redis/redis-queue.conf", "--maxmemory", "256mb"]
-    deploy: { resources: { limits: { cpus: "0.5", memory: 512M } } }
+    ports: ['127.0.0.1:16380:6379']
+    command: ['redis-server', '/usr/local/etc/redis/redis-queue.conf', '--maxmemory', '256mb']
+    deploy: { resources: { limits: { cpus: '0.5', memory: 512M } } }

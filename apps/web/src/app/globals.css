@@ -3,5 +3,10 @@
 /* Tailwind must scan the shared UI package, otherwise its classes are not generated */
 @source '../../../../packages/ui/src';
 
-html { font-family: var(--font-sans); }
-body { background: var(--color-page); color: var(--color-ink); }
+html {
+  font-family: var(--font-sans);
+}
+body {
+  background: var(--color-page);
+  color: var(--color-ink);
+}
