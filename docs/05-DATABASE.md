@@ -48,7 +48,7 @@ Source of truth: `apps/api/prisma/schema.prisma` (validated; see note at bottom)
 
 * `grade_levels`: the 17 labels from the old wizard (see `reference/zero-olympiad-ui/app/registration-full/Step2_Auth.jsx`) mapped to categories **Activist / Ambassador / Achiever** (grade bands to confirm with the client; SDG numbers are dropped).
 * `settings`: `registration_open=false`, `registration_fee_minor` (placeholder 0), `currency=BDT`, `leaderboard_public=false`, `payment_expiry_minutes=60`. Inserted per missing key; values are never overwritten. The submit grace lives only in `exams.grace_seconds`.
-* `grade_levels`, `rank_thresholds`, `rounds` are seeded once, only while the table is empty; later changes ship as SQL data migrations.
+* `grade_levels`, `rank_thresholds`, `rounds` are NOT in the seed: they ship as the data migration `*_reference_data_baseline` (each INSERT only while its table is empty), so they run in a fixed order with later data migrations on every database. Later data migrations match rows by natural key (label, sort_order, name), never by id.
 * `rank_thresholds`: Bronze 0 / Silver 100 / Gold 250 (placeholders; owner confirms with the client).
 * Seed code: `apps/api/prisma/seed.ts` (insert-only, never overwrites admin edits; runs in the compose `migrate` job). Dev-only test users: `apps/api/prisma/fixtures` (see RUNBOOK section 0).
 * Rounds: Round 1 (quiz); later rounds when defined.
