@@ -2,6 +2,18 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — A2.1e email-link endpoints and operator alert emails (Claude; owner rules of 2026-10-31)
+
+Each protection has a test that fails without it (mutation-checked); forgot/resend are tested end to end through a worker and Mailpit.
+
+1. **forgot-password, resend-verification:** always 204 at once with an empty body. The account lookup, the token and the email run in the background (`BackgroundTasks`), so neither the answer nor its timing reveals whether an account exists. Only an existing, unblocked account gets a reset link; only an existing, unblocked, unverified one gets a verification link. At most `AUTH_LINK_EMAILS_PER_MINUTE` (1) and `AUTH_LINK_EMAILS_PER_HOUR` (5) link emails per address and kind; the answer is the same either way.
+2. **reset-password:** a bad link is refused before argon2 runs. One transaction uses the token, sets the hash, marks the email verified (the link proved the inbox), retires the other reset links and ends every session; only after the commit is the account unlocked everywhere (owner). No automatic login. A password refused by the policy leaves the link usable.
+3. **verify-email:** sets `email_verified_at` in the same transaction that uses the token; never creates a session or sets a cookie (tested). A valid link for an already verified address answers 204 and changes nothing.
+4. **Bad links:** unknown, malformed, used, expired, other-type and blocked-account links all get one 400 ("This link is invalid or has expired"). Exactly one of two simultaneous uses of a link succeeds.
+5. **Throttle tiers** (per route and client IP, on top of the per-address caps): 60/min for the two link requests (sized for a school behind one IP), 30/min for reset and verify.
+6. **Operator alert emails** (owner): the `security.<kind>` audit row and a warn log line marked `alert` come first and are the source of truth. The email to `SECURITY_ALERT_EMAIL` (unset: no email) goes out from the background, so it never slows or blocks a login: at most one per alert kind per 10 minutes and `SECURITY_ALERT_EMAILS_PER_HOUR` (6) in all, through the cache Redis. If that limit cannot be checked, the email is held back. It names the kind, the time, the account id and counts; never an email address or an IP.
+7. **BackgroundTasks:** work after the response logs failures by class only and may finish on SIGTERM (up to 10 s); a crash in between loses that email, and the user asks again.
+
 ## 2026-10-31 — UI port of the dashboards (owner decisions; Claude implementation)
 
 The client accepted the old dashboard UI, so student and admin screens were ported before their APIs exist. Details and the endpoint map: `07-UI-MIGRATION.md`.
@@ -24,6 +36,36 @@ The client accepted the old dashboard UI, so student and admin screens were port
 16. **Follow-ups (owner, 2026-10-31):** `<html lang>` follows the locale together with the public pages (the root layout is static and shared with the auth pages; dashboard content already carries `lang` on its wrapper); nginx access logs drop the query string in a separate infra commit (the default `combined` format logs `$request`, so admin search terms such as names and emails reach the logs; this UI work does not touch nginx); the `LoginForm.tsx` error text (`text-danger`, below AA) is a small follow-up after the student PR merges.
 17. **Known limitations:** error states appear after hydration (Next behaviour), so page checks use a headless browser; `next dev` writes `apps/web/AGENTS.md` (git-ignored) and rewrites `next-env.d.ts` (never commit it).
 18. **Open:** leaderboard tie rule (the mock shares a rank: 1, 2, 2, 4); default UI language (English for now); new endpoints to add to `06-API.md` (`GET /dashboard/home`, `/content/profile-options`, `/admin/leaderboard`).
+
+## 2026-10-31 — Account limit: only IPs that failed are refused, with alerts (owner)
+
+1. **Approved:** when an account reaches its hourly failure limit (`LOGIN_ACCOUNT_FAILURES_PER_HOUR`, 50), only IPs that failed on that account within the hour are refused; an IP without failures (usually the student's own) can still log in.
+2. **Condition 1:** reaching that limit is a security event: a `security.login.account_limit` audit row and an alert (a warn log line marked `alert`, matched by log-based alerting; an email to an operator follows with the email queue).
+3. **Condition 2:** failed logins on one account from more than `LOGIN_ALERT_DISTINCT_IPS_PER_HOUR` (20) distinct IPs within an hour are a separate signal, logged and alerted the same way (`security.login.distributed`). No automatic blocking for now.
+4. **Later, if needed:** Cloudflare Turnstile (a challenge on login, forgot-password and resend) as the next step against distributed guessing, instead of blocking students.
+
+## 2026-10-31 — A2.1d login, change-password, email tokens (Claude; owner rules of 2026-10-31)
+
+Built against a requirements checklist (seven read-only agents over the docs, DECISIONS and `reference/`). Each protection has a test that fails without it (mutation-checked).
+
+1. **Limits** (all from env, `LOGIN_*`): 100 failed logins per minute per IP; 10 failures within 15 min lock an account+IP pair for 15 min, doubling on each repeat within 24 h up to 240 min; 50 failures per hour per account. Atomic Lua scripts in the cache Redis; emails appear in keys only as truncated SHA-256 hashes; IPv6 is keyed by its /64; fixed windows; a completed password reset bumps the account's key generation; 300 ms Redis timeout, fail-open (logged) like the global limiter.
+2. **Account limit refuses only IPs that failed on the account within the hour** (implementer choice, *approved by the owner on 2026-10-31 with two alert conditions; see "Account limit: only IPs that failed are refused, with alerts"*): refusing every IP let anyone lock a student out on purpose (two IPs reach 50 an hour through the pair locks; five re-lock right after a reset). An IP without failures (usually the student's own) still logs in; an attacker gets one guess per fresh IP.
+3. **Login:** limits are checked before the password, so a lock refuses even the right one (owner). An unknown email pays a dummy argon2 verify and is counted like a real one; every failure answers one 401 message; a refusal answers 429 with `Retry-After` and "…or reset your password". A blocked account learns it is blocked only after the right password (403). 204 with an empty body: no token and no personal data; the web reads `/auth/me`. The global request limiter skips login (only failures count).
+4. **Audit:** failed logins (reason only) and the start of a pair lock or of the account limit; never an email or an email hash. A successful login is not audited: the sessions row records it, and login stays at one read and one write (02-SYSTEM-DESIGN §3).
+5. **nginx:** the strict zone now covers only the credential endpoints (login, forgot/reset password, verify/resend email) as a flood guard sized for a school behind one IP (20 r/s, burst 200). `/me`, refresh and logout run on every page and moved to the general API zone.
+6. **change-password:** under the login limits (a stolen session must not become a way to guess the password); 400 for a wrong current password, not 401, which the web treats as logged out; the new password must pass the policy and differ. One transaction writes the hash, ends every session and retires outstanding reset links; then a fresh session for this device.
+7. **Email tokens:** 32 random bytes as base64url (43 characters), SHA-256 stored, lifetimes from env (24 h verify, 30 min reset); a conditional update makes each token single-use, and a new token retires the older ones of its type.
+8. **Emails:** one bilingual message (Bangla first). Links are `APP_URL/<page>#token=…`: the token never reaches a server, a log or a Referer header, and mail scanners that open links cannot use it up. Names are HTML-escaped. `APP_URL` is required in production.
+9. **Known risks (told to the owner):** students behind one school IP share the account+IP pair, so a classmate can lock a student out *at school*; a completed reset unlocks at once. A script on a school network can trip that IP's failure limit every minute. After a reset, a password change or a block, other devices keep a valid access token for up to 15 min (local JWT verification).
+10. **Not yet:** the web pages (reset, verify) and the web refresh flow, the first-admin CLI, and the cleanup job for old sessions and tokens. *(forgot/reset/verify/resend and the per-address caps: done, A2.1e.)*
+
+## 2026-10-31 — Login limits and locks (owner)
+
+1. The per-IP limit counts **only failed** logins, about 60–100 per minute, changeable in config; the IP comes only from Cloudflare's trusted header (nginx restores it; the API trusts one proxy hop).
+2. Failures are counted per account+IP pair. **During a lock even the correct password does not log in.** A lock ends by itself after 15 minutes, longer step by step when locks repeat. Without a lock, a correct password resets the failure count to zero. A completed password reset unlocks the account. Messages never reveal whether an account exists.
+3. A separate, larger account-wide limit: about 50 failures per hour.
+4. Now build login, forgot, reset, verify, resend and change-password.
+
 ## 2026-10-31 — Email provider: Amazon SES (owner)
 
 1. **Amazon SES** is the production email provider. Supersedes "Email provider (owner)" of 2026-10-30 (Resend); the Resend adapter built that day was removed before merge.
@@ -88,7 +130,7 @@ Each gate has its own tests, and each test was checked to fail with its gate rem
 3. **Login limits:**
    - The per-IP limit counts **failed** logins only, about 60–100 per minute: all students of one school can share one IP.
    - Failures are counted per **account + IP pair**, so nobody can lock someone else's account on purpose. The whole account has a separate, higher limit.
-   - A correct password or a password reset unlocks.
+   - A correct password or a password reset unlocks. *(Superseded 2026-10-31: during a lock even the correct password is refused; see "Login limits and locks (owner)".)*
 4. **A2.0 first:** the four logging/secret gates, each with its own test, before any auth code.
 
 ## 2026-10-30 — A1.1 deploy fixes (Claude; owner-scoped to four confirmed findings)
