@@ -2,6 +2,18 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-30 — A2.1a auth guard rails (Claude; first part of A2.1)
+
+Each item has tests, and each test was checked to fail with its protection removed (15 mutations).
+
+1. **DB session timeouts** are database defaults, set by a migration: `statement_timeout 10s`, `lock_timeout 5s`, `idle_in_transaction_session_timeout 60s`. They reach every new session (API through PgBouncer, workers, migrations, psql); pg_dump and its dumps set their own. Work that needs longer sets its own value first (RUNBOOK §2). Chosen over per-role settings because there is one DB role until OPEN-QUESTIONS #27, and over PgBouncer's `query_timeout` because that would not cover direct connections.
+2. **`audit_logs` is append-only:** triggers refuse UPDATE, DELETE and TRUNCATE. The table owner can still disable them deliberately; the app never does. Test helpers no longer truncate it.
+3. **Request timeout:** a global interceptor answers 503 after 25 s (below nginx's 30 s) and logs method and path. The handler cannot be cancelled; its DB statements stop at 10 s.
+4. **Deny by default:** the global `AuthGuard` requires a valid access token in the httpOnly cookie `sirat_access` unless the route is `@Public()`; `@Roles()` narrows a route to roles from the token. Tokens are HS256 only, issuer and audience pinned, 15 min, verified locally, with claims `sub`, `role`, `sid`. Only the cookie counts (an `Authorization` header is ignored). A valid session is also attached on public routes.
+5. **CSRF:** a global guard requires a non-empty `X-Requested-With` on every request except GET/HEAD/OPTIONS, public routes included (login CSRF). The API never enables CORS (tested). `@SkipCsrf()` is reserved for the PayStation IPN.
+6. **Route inventory test** (`apps/api/test/app-routes.int-spec.ts`): boots the real AppModule and compares the routes controllers declare with the routes Express serves, so a route added outside a controller (and so outside the guards) fails; every `@Public()` route must be in the reviewed allow-list from 06-API. Nest registers module middleware applied with `forRoutes('*')` (nestjs-pino) as catch-all routes for every HTTP method; the test excludes exactly that shape.
+7. **Guard order** (AppModule): rate limit → CSRF → session.
+
 ## 2026-10-30 — A2.0 logging and secret gates (Claude; owner-ordered before any auth code)
 
 Each gate has its own tests, and each test was checked to fail with its gate removed.
@@ -87,7 +99,7 @@ An independent review plus a verification workflow (experiments in throwaway con
 20. **Scripts:** backups are owner-only and verified by a full read before they get their final name; restore reads the whole dump before touching the DB and runs in one transaction; `healthcheck.sh` exits non-zero on failure; scripts are executable in git.
 
 **Deferred, with owners:**
-- *Start of A2 (gate before the first auth/users handler):* the exception filter must not log Prisma error messages (they contain query arguments); request logs without query strings and headers; reject placeholder or low-entropy JWT secrets; map body-parser errors (413/400/415) to 4xx instead of 500 (*these four: done, A2.0 #1–#4*); DB `statement_timeout`/`lock_timeout` for the app and a request timeout below nginx's 30 s; append-only trigger for `audit_logs` (*these: still before the first auth/users handler, A2.1*).
+- *Start of A2 (gate before the first auth/users handler):* the exception filter must not log Prisma error messages (they contain query arguments); request logs without query strings and headers; reject placeholder or low-entropy JWT secrets; map body-parser errors (413/400/415) to 4xx instead of 500 (*these four: done, A2.0 #1–#4*); DB `statement_timeout`/`lock_timeout` for the app and a request timeout below nginx's 30 s; append-only trigger for `audit_logs` (*these: done, A2.1a #1–#3*).
 - *Exam engine / ambassador / jury modules:* append-only triggers for `submissions`, `point_ledger`, `jury_scores` with their modules.
 - *Leaderboard (A4):* query must be `WHERE exam_id = $1 AND score IS NOT NULL ORDER BY score DESC, time_taken_seconds ASC` (uses the index without a sort; do not add `NULLS LAST`).
 - *Phase C:* a trigger so a registration can only reference a `paid` payment.
