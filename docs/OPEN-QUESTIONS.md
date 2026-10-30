@@ -33,6 +33,20 @@ Owner = Rasel Mridha. Client = GLTS Leadership × Sirat Olympiad. Add the answer
 | 23 | Support coverage promised to client (exam-day only vs 24/7 any-time) | Runbook/contract | Exam-day only |
 | 24 | Real expected **peak concurrency** and whether starts are bunched (e.g. at window open) | Load test | 1,300–3,800 estimate |
 
+## PayStation — unconfirmed until the official docs PDF is read (owner, 2026-10-30)
+
+Official sources are only the merchant-dashboard Postman collection (`docs/paystation/postmanCollection.json`, git-ignored because it holds credentials) and the official docs PDF (not yet in the repo). `docs/paystation/PAYSTATION-API.md` is superseded. The Postman collection contains only `POST /initiate-payment` (multipart form, `merchantId` + `password` in the body) and `POST /transaction-status` (header `merchantId`, JSON `invoice_number`), both on `https://api.paystation.com.bd`, with no example responses. Do not build on the items below until the PDF confirms them.
+
+| # | Question | Postman shows | Blocks |
+|---|---|---|---|
+| P1 | **Callback parameters**: which query parameters does PayStation append to `callback_url` (names, values for success/failed/canceled, is `trx_id` included)? | Nothing | Callback handler |
+| P2 | **IPN** (server-to-server notification): does it exist, URL registration, payload, signature, retry rules? RULEBOOK §8.2 assumes an unsigned IPN for successful payments only. Until confirmed the system must stay correct with callback + transaction status + reconciliation only. | Nothing | IPN endpoint |
+| P3 | **Transaction status v2** (`/v2/transaction-status` by `trxId`, RULEBOOK §8.1): does it exist, and what are the response fields? | Only v1 `/transaction-status` by `invoice_number` | Verification |
+| P4 | **Sandbox base URL**: the collection named "PayStation Sandbox" calls `https://api.paystation.com.bd` (same host as live); is sandbox selected by credentials only, or is there a separate host? | Same host as live | Config (`PAYSTATION_ENV`) |
+| P5 | **Response shapes and codes** for both endpoints: `status_code` values (200, 1008 duplicate invoice, 2001, …), `payment_url`, `trx_status` values, amount field and format | No example responses | Client, settlement |
+| P6 | `pay_with_charge` (RULEBOOK §8.1) is absent from the collection: is it supported, and does the status response amount include the gateway charge when the customer pays it? | Absent | Amount check |
+| P7 | **invoice_number length**: we keep it ≤ 20 characters, but the collection's cURL example uses a 23-character invoice. What does the API (sandbox) do with longer values? See `docs/paystation/SANDBOX-CHECKLIST.md`. | 23-char example | Invoice generator |
+
 ## Notes from the old system worth confirming
 
 * Old `/api/leaderboard` showed rank/name/institution/status but no scores.
