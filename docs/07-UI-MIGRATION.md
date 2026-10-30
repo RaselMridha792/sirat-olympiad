@@ -6,7 +6,7 @@ Old source lives in `reference/zero-olympiad-ui/app/…` (committed). A fuller l
 
 ## Mapping
 
-Status as of 2026-10-31 (UI port on the dev-only mock data layer; see "Data layer" below). Branches: student screens `feat/ui-port` (PR 1), admin screens `feat/ui-port-admin` (PR 2), student ambassador panel `feat/ui-port-ambassador` (held until the ambassador backend exists).
+Status as of 2026-10-31 (UI port on the dev-only mock data layer; see "Data layer" below). Branches: student screens `feat/ui-student` (PR to `main`), admin screens `feat/ui-admin` (PR to `feat/ui-student`), student ambassador panel `feat/ui-ambassador` (local, held until the ambassador backend exists).
 
 | Screen | Old file(s) | New file(s) | Status | What to keep | What to change |
 |---|---|---|---|---|---|
@@ -27,7 +27,7 @@ Status as of 2026-10-31 (UI port on the dev-only mock data layer; see "Data laye
 | Exam player | `quiz/page.jsx`, `Components/QuizePageComponents/QuizForm.jsx`, `StartModal.jsx` | `(student)/dashboard/exam/[id]/*` (TODO), `Countdown` | TODO | Rules modal + agree, one-question-at-a-time, violation warnings (if owner enables) | Server attempt + remaining seconds; local autosave; checkpoints; auto-submit sends **current** answers; connection indicator |
 | Video evaluation | `admin/video-evaluation/page.jsx` | `admin/jury/*` (TODO) | — | Pending/Evaluated tabs, 10 criteria 0–10 | Judge recorded; history; server totals |
 | Mark controller (promotion) | `admin/mark-controller/page.jsx` | `admin/rounds/*` (TODO) | — | Top-N preview | Idempotent, audited, no overwrite |
-| Ambassadors | `dashboard/ambassador/page.jsx`, `admin/ambassadors-list` | `(student)/dashboard/ambassador/page.tsx` (branch `feat/ui-port-ambassador`), `admin/ambassadors/page.tsx` | **Ported (mock)**; student panel held | Code box, referral stats, referral list; admin list | Points/rank/team/tasks (RULEBOOK §19); code assigned by the server (the old "set your own code" input is gone); rank names as badges |
+| Ambassadors | `dashboard/ambassador/page.jsx`, `admin/ambassadors-list` | `(student)/dashboard/ambassador/page.tsx` (branch `feat/ui-ambassador`), `admin/ambassadors/page.tsx` | **Ported (mock)**; student panel held | Code box, referral stats, referral list; admin list | Points/rank/team/tasks (RULEBOOK §19); code assigned by the server (the old "set your own code" input is gone); rank names as badges |
 | Certificates | `dashboard/certificates/page.jsx`, `Components/CertificateCard.jsx` | TODO | — | Card list | Server-issued with verification URL; Bangla font handled server-side |
 | Invoice | `dashboard/history/page.jsx`, `InvoiceDocument.jsx` | TODO | — | Invoice layout | Real status; server-generated PDF |
 | Announcements | `dashboard/announcement`, `admin/announcement` | `(student)/dashboard/announcements/page.tsx`, `admin/announcements/page.tsx` | **Ported (mock, list only)** | Card list (student), table (admin) | Admin create/edit/delete with the API |
@@ -64,7 +64,22 @@ Pages never fetch on their own. Server Components call `getData()` from `apps/we
 
 - `pnpm -F web test` (`node --test`, no extra dependencies): schema mirror, mock gate, students-get-no-scores, leak harness, WCAG AA contrast of every tone and every bg+text pair in the code, rank states, profile validation, URL parsing, i18n formatting.
 - `pnpm -F web check:leak` against a dev server on port 3100: every student page is rendered with canary data (scores, times, other people's emails, answer keys) and the HTML, including the inline RSC payload, must contain none of it.
-- `pnpm -F web check:prod` against a production server (`next build && next start -p 3100`): every dashboard page, opened in headless Chrome/Edge, shows the shell and a polite error, never a blank page or raw error text.
+- `pnpm -F web check:prod` against a production server (`next build && next start -p 3100`): every dashboard page, opened in headless Chrome/Edge, shows the shell and a heading (pages that read data show their polite error state, because production has no data source yet), never a blank page or raw error text.
+- Routes are discovered from `src/app` (every `page.tsx` under `/dashboard` and `/admin`); a new dynamic segment needs a sample value in `SAMPLE` in `scripts/check-pages.mjs`.
+- CI runs both in the `web-pages` job of `.github/workflows/ci.yml` (dev server on :3100, production server on :3101).
+
+## Remaining work (owner decisions, 2026-10-31)
+
+| Item | Plan |
+|---|---|
+| `<html lang>` | Stays `en` in the static root layout (shared with the auth pages). It follows the locale together with the public pages; dashboard content already carries `lang` on its wrapper. |
+| nginx access log | The default `combined` format logs `$request`, so admin search terms (names, emails) in the URL reach the logs. A separate infra commit drops the query string; the UI work does not touch nginx. |
+| `LoginForm.tsx` contrast | Its error text uses `text-danger` (below AA). Small follow-up after the student PR merges (auth files are owned by the auth work). |
+| CI | The `web-pages` job runs `check:leak` and `check:prod`. Make it a required check once branch protection is available (OPEN-QUESTIONS #25). |
+| Unknown exam id | `/admin/exams/:id` calls `notFound()` and shows the translated not-found card with `noindex`, but answers HTTP 200: the `loading.tsx` boundaries above it start the stream first (Next 16 `loading.md`, "Status codes"). The skeletons stay; a real 404 needs a Proxy check once the exams API exists. |
+| HTTP data source | `data/http/` implementing `DataSource`, calling the API server-side with the session cookie; dashboard route guards come from the auth team's session helper, not from this UI code. |
+| API contract | Add `GET /dashboard/home`, `GET /content/profile-options` and `GET /admin/leaderboard` to `06-API.md`; decide the leaderboard tie rule (the mock shares a rank: 1, 2, 2, 4). |
+| Later screens | Exam player, results/review, certificates, payment history, video submission, jury evaluation, promotion, admin create/edit flows, the ambassador panel (branch `feat/ui-ambassador`). |
 
 ## Old components → shared components
 
