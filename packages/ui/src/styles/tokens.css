@@ -1,14 +1,22 @@
 /*
  * GLOBAL DESIGN TOKENS — single source of truth for colors, fonts, radii.
- * Brand colors are carried over from Zero Olympiad (Primary #E3621C orange, Secondary #083E5F navy).
+ * Brand colors are carried over from the previous site (Primary #E3621C orange, Secondary #083E5F navy).
  * Change a color HERE, never hardcode hex in components. See docs/08-DESIGN-TOKENS.md.
  * Tailwind v4: tokens declared in @theme become utilities (bg-primary, text-ink, ...).
  */
 @theme {
+  /*
+   * Contrast rule (WCAG AA, apps/web/src/design/contrast.test.ts): base colours (primary, success,
+   * warning, danger, info, rank-*) are for icons, borders and large accents. TEXT and filled
+   * buttons use the -strong variants, which reach 4.5:1 on white and on their -soft background.
+   */
+
   /* Brand */
   --color-primary: #e3621c;
   --color-primary-hover: #c95416;
   --color-primary-soft: #fdeee5;
+  --color-primary-strong: #b4470f; /* small text, filled buttons (owner decision 2026-10-31) */
+  --color-primary-strong-hover: #963a0b;
   --color-secondary: #083e5f;
   --color-secondary-hover: #062f48;
   --color-secondary-soft: #e6eff5;
@@ -20,23 +28,35 @@
   --color-surface: #ffffff;
   --color-line: #e2e8f0;
   --color-ink: #0f172a;
-  --color-ink-muted: #64748b;
-  --color-ink-faint: #94a3b8;
+  --color-ink-muted: #475569;
+  --color-ink-faint: #64748b; /* on dark surfaces use text-white/70 instead */
 
   /* Status */
   --color-success: #10b981;
   --color-success-soft: #d1fae5;
+  --color-success-strong: #047857;
   --color-warning: #f59e0b;
   --color-warning-soft: #fef3c7;
+  --color-warning-strong: #92400e;
   --color-danger: #ef4444;
   --color-danger-soft: #fee2e2;
+  --color-danger-strong: #b91c1c;
+  --color-danger-strong-hover: #991b1b;
   --color-info: #2563eb;
   --color-info-soft: #dbeafe;
+  --color-info-strong: #1d4ed8;
 
-  /* Rank tiers (ambassador program; real thresholds live in DB config table) */
+  /* Rank tiers (ambassador program; real thresholds live in DB config table).
+     Names render as badges: light -soft background + dark -strong text. */
   --color-rank-bronze: #b45309;
+  --color-rank-bronze-soft: #ffedd5;
+  --color-rank-bronze-strong: #9a3412;
   --color-rank-silver: #94a3b8;
+  --color-rank-silver-soft: #f1f5f9;
+  --color-rank-silver-strong: #334155;
   --color-rank-gold: #f59e0b;
+  --color-rank-gold-soft: #fef3c7;
+  --color-rank-gold-strong: #854d0e;
 
   --font-sans: 'Inter Variable', 'Noto Sans Bengali Variable', system-ui, sans-serif;
   --font-bangla: 'Noto Sans Bengali Variable', system-ui, sans-serif;

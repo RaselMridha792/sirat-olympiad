@@ -16,7 +16,7 @@ export default function HomePage() {
         <div className="mt-8 flex justify-center gap-3">
           <Link
             href="/register"
-            className="rounded-control bg-primary px-6 py-3 font-semibold text-white"
+            className="rounded-control bg-primary-strong px-6 py-3 font-semibold text-white"
           >
             Register
           </Link>

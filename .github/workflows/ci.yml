@@ -40,6 +40,39 @@ jobs:
       - name: Dependency audit (all deps, high and above; the migrate image runs dev dependencies)
         run: pnpm audit --audit-level high
 
+  web-pages:
+    # Render-level checks of every dashboard page (apps/web/scripts/check-pages.mjs, docs/07-UI-MIGRATION.md).
+    name: Dashboard pages (no student data leaks, polite states without the API)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @sirat/shared build
+      - name: Student pages show no scores, times, emails or answer keys (dev server, ?mock=leak)
+        run: |
+          setsid pnpm --filter @sirat/web exec next dev -p 3100 > /tmp/next-dev.log 2>&1 &
+          DEV=$!
+          for i in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:3100/ && break; sleep 2; done
+          pnpm --filter @sirat/web check:leak http://localhost:3100
+          kill -- -"$DEV"
+      - name: Production build has no mock code; every page shows the shell and a polite state (headless Chrome)
+        run: |
+          pnpm --filter @sirat/web build
+          setsid pnpm --filter @sirat/web exec next start -p 3101 > /tmp/next-start.log 2>&1 &
+          PROD=$!
+          for i in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:3101/ && break; sleep 1; done
+          pnpm --filter @sirat/web check:prod http://localhost:3101
+          kill -- -"$PROD"
+      - name: Server logs on failure
+        if: failure()
+        run: tail -n 80 /tmp/next-dev.log /tmp/next-start.log || true
+
   database:
     name: Migrations, drift check, DB + Redis integration tests
     runs-on: ubuntu-latest
