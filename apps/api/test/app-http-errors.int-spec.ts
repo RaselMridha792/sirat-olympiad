@@ -1,9 +1,22 @@
 /**
- * Gate (A2.0): request bodies the parser rejects are client errors. Through the real pipeline (configureApp +
- * Express body-parser) they answer 4xx with the standard JSON shape and a fixed message, never 500.
+ * Error answers of the real pipeline (configureApp + Express body-parser):
+ * - Gate (A2.0): request bodies the parser rejects are client errors: 4xx with the standard JSON shape and a fixed
+ *   message, never 500.
+ * - A handler that runs too long answers 503 before nginx gives up (A2.1).
  */
+import { Controller, Get } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
+
+/** Test-only route: takes 1 s, five times the request timeout used below. */
+@Controller('__probe')
+class SlowProbeController {
+  @Get('slow')
+  async slow(): Promise<{ ok: true }> {
+    await new Promise((r) => setTimeout(r, 1_000));
+    return { ok: true };
+  }
+}
 
 let app: NestExpressApplication;
 let base: string;
@@ -12,9 +25,12 @@ beforeAll(async () => {
   process.env.LOG_LEVEL = 'silent';
   const { AppModule } = await import('../src/app.module');
   const { configureApp } = await import('../src/configure-app');
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+  const moduleRef = await Test.createTestingModule({
+    imports: [AppModule],
+    controllers: [SlowProbeController],
+  }).compile();
   app = moduleRef.createNestApplication<NestExpressApplication>({ logger: false });
-  configureApp(app);
+  configureApp(app, { requestTimeoutMs: 200 });
   await app.listen(0, '127.0.0.1');
   base = (await app.getUrl()).replace('[::1]', '127.0.0.1');
 }, 60_000);
@@ -50,5 +66,19 @@ describe('body-parser errors answer 4xx JSON, never 500', () => {
     const res = await post('{}', 'application/json; charset=latin1');
     expect(res.status).toBe(415);
     expect(await res.json()).toMatchObject({ statusCode: 415, code: 'UNSUPPORTED_MEDIA_TYPE' });
+  });
+});
+
+describe('request timeout (below nginx proxy_read_timeout)', () => {
+  it('answers 503 JSON when a handler runs past the limit', async () => {
+    const started = Date.now();
+    const res = await fetch(`${base}/api/__probe/slow`);
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({
+      statusCode: 503,
+      code: 'SERVICE_UNAVAILABLE',
+      message: 'Request timed out',
+    });
+    expect(Date.now() - started).toBeLessThan(900);
   });
 });
