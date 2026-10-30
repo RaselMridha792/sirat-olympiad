@@ -22,6 +22,7 @@ import {
   type MockUser,
   type MockWorld,
 } from './fixtures.ts';
+import { withLeakCanaries } from './leak.ts';
 import { emptyPage, matches, paginate } from './paging.ts';
 
 /**
@@ -123,7 +124,7 @@ export function createMockSource(state: MockState | null): DataSource {
     educationTypes: [...EDUCATION_TYPES],
   });
 
-  return {
+  const source: DataSource = {
     kind: 'mock',
     student: {
       getHome: () =>
@@ -281,7 +282,11 @@ export function createMockSource(state: MockState | null): DataSource {
             approvedAt: null,
             referralCount: 0,
             points: 0,
-            rank: { current: RANKS[0] ? { name: RANKS[0].name, minPoints: 0 } : null, next: null },
+            // A brand-new ambassador: lowest tier, the next tier still ahead (not "top rank").
+            rank: {
+              current: RANKS[0] ? { name: RANKS[0].name, minPoints: RANKS[0].minPoints } : null,
+              next: RANKS[1] ? { name: RANKS[1].name, minPoints: RANKS[1].minPoints } : null,
+            },
             team: null,
             tasks: [],
             recentReferrals: [],
@@ -549,4 +554,21 @@ export function createMockSource(state: MockState | null): DataSource {
         ),
     },
   };
+  return state === 'leak' ? withStudentLeaks(source) : source;
+}
+
+/**
+ * ?mock=leak: every student-facing response also carries fields its type does not have (scores,
+ * times, other people's emails, answer keys). Pages must render none of them; scripts/check-pages.mjs
+ * fetches the rendered HTML (including the inline RSC payload) and fails if a canary shows up.
+ */
+function withStudentLeaks(source: DataSource): DataSource {
+  const leaky =
+    <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
+    async (...args: A): Promise<R> =>
+      withLeakCanaries(await fn(...args));
+  const student = Object.fromEntries(
+    Object.entries(source.student).map(([name, fn]) => [name, leaky(fn as () => Promise<unknown>)]),
+  ) as unknown as DataSource['student'];
+  return { ...source, student, leaderboard: { get: leaky(source.leaderboard.get) } };
 }

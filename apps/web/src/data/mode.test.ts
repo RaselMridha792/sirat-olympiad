@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { mockAllowed, parseMockState } from './mode.ts';
+import { MOCK_STATES, mockAllowed, parseMockState } from './mode.ts';
 
 test('the mock switch is ignored in production builds', () => {
   assert.equal(mockAllowed('production'), false);
-  for (const value of ['empty', 'error', 'slow']) {
+  for (const value of MOCK_STATES) {
     assert.equal(
       parseMockState(value, 'production'),
       null,

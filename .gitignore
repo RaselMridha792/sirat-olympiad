@@ -25,3 +25,7 @@ infra/nginx/certs/*
 # Old Zero Olympiad copies are a local, read-only spec (reference/README.md); new files under reference/ are never committed.
 # Files committed here before this rule (README.md, zero-olympiad-ui/, zero-olympiad-server/) stay tracked until the owner decides.
 /reference/
+# Written by `next dev` (Next 16 agent rules); not project documentation.
+apps/web/AGENTS.md
+# Throwaway copy used to type-check each commit in isolation (git archive + offline install).
+/.verify/

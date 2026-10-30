@@ -1,9 +1,11 @@
 /**
- * Dev-only mock switch. `?mock=empty|error|slow` previews a page's empty, error and loading states.
- * Pure (no Next imports) so node --test covers the production rule: in a production build the
- * parameter is ignored and the mock source is not even in the bundle (scripts/assert-no-mock.mjs).
+ * Dev-only mock switch. `?mock=empty|error|slow` previews a page's empty, error and loading states;
+ * `?mock=leak` adds canary fields to student data for the render-level leak check
+ * (scripts/check-pages.mjs). Pure (no Next imports) so node --test covers the production rule: in a
+ * production build the parameter is ignored and the mock source is not even in the bundle
+ * (scripts/assert-no-mock.mjs).
  */
-export const MOCK_STATES = ['empty', 'error', 'slow'] as const;
+export const MOCK_STATES = ['empty', 'error', 'slow', 'leak'] as const;
 export type MockState = (typeof MOCK_STATES)[number];
 
 export function mockAllowed(nodeEnv: string | undefined): boolean {
