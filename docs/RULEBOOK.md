@@ -235,19 +235,19 @@ This section refines the rules above. Where they differ, this section wins.
 
 The gateway is **PayStation** (hosted checkout, paystation.com.bd). Wallets (bKash, Nagad, Rocket, Upay) and cards are offered on PayStation's page, so card data never touches our servers. The owner needs a PayStation merchant account; build and test against the **PayStation sandbox** (`https://sandbox.paystation.com.bd`) first, production API is `https://api.paystation.com.bd`.
 
-> The official PayStation documentation (paystation.com.bd/documentation) is the source of truth for endpoints, field names and limits. Anything marked VERIFY is not stated in the docs we read and must be confirmed in the sandbox or with PayStation support, not assumed.
+> Official sources (owner, 2026-10-30): the PayStation documentation page (paystation.com.bd/documentation; printed copy `docs/paystation/paystation.pdf`) and the merchant-dashboard Postman collection. Both are kept locally and git-ignored because they contain PayStation's shared sandbox credentials; the committed, credential-free summary is `docs/paystation/PAYSTATION-NOTES.md`. Anything marked VERIFY is not stated in the official docs and must be confirmed in the sandbox or with PayStation support, not assumed.
 
 ### 8.1 PayStation flow
 
-1. **Create payment:** our API creates a local `payments` row first (`status = initiated`, unique `invoice_number`, amount, user, registration id). It then calls `POST /initiate-payment` with `merchantId`, `password`, `invoice_number`, `payment_amount`, `pay_with_charge` (1 = customer pays the gateway charge, 0 = merchant pays; owner decides), customer name/phone/email and our `callback_url`. A duplicate `invoice_number` returns `status_code` 1008. On `status_code` 200 the response holds `payment_url`; return it to the client, which redirects the user. Credentials stay in env vars, never in the browser.
-2. **User pays on PayStation's page.** After paying, cancelling or failing, PayStation sends the browser back to our `callback_url`. The docs do not name the callback parameters (VERIFY in sandbox), so the callback is only a hint.
-3. **Callback handler (GET, public):** treat it as a **hint, not proof**. Find the payment by our `invoice_number`, then call **transaction status** (`POST /transaction-status` with `merchantId` header and `invoice_number`, or v2 `POST /v2/transaction-status` by `trxId`). Mark `paid` only when `trx_status` is success (compare case-insensitively) and the amount and invoice number match our row. Store `trx_id`.
+1. **Create payment:** our API creates a local `payments` row first (`status = initiated`, unique `invoice_number`, amount, user, registration id). It then calls `POST /initiate-payment` (form-encoded body) with `merchantId`, `password`, `invoice_number` (ours: at most 20 characters, unique, never reused), `payment_amount` (an **integer**: whole BDT, so the fee is set in whole taka), `currency=BDT`, `pay_with_charge` (always sent explicitly: 1 = customer pays the gateway charge, 0 = merchant pays; owner decides), `reference` (our payment id; the status APIs echo it back), customer name/phone/email and our `callback_url`, which carries our invoice number in its path (at most 200 characters). `status_code` is a string: `"1008"` = duplicate `invoice_number`; on `"200"` the response holds `payment_url`; return it to the client, which redirects the user. Credentials stay in env vars, never in the browser.
+2. **User pays on PayStation's page.** Once payment completes, PayStation sends the browser back to our `callback_url` "with parameters indicating payment outcomes". The docs do not name those parameters or the HTTP method, nor say whether cancel/failure also return there (VERIFY in sandbox), so the callback is only a hint. The reconciliation job covers every browser that never comes back.
+3. **Callback handler (public; the method is not documented, GET assumed: VERIFY and accept POST if used):** treat it as a **hint, not proof**, including the invoice number in our own callback path. Find the payment by that `invoice_number`, then call **transaction status**: v1 `POST /transaction-status` (header `merchantId`, form field `invoice_number`) or, once a `trx_id` is known, v2 `POST /v2/transaction-status` (header `merchantId`, JSON `{"trxId": ...}`). A top-level `status` of `success` only means the transaction was found (the docs show `status: success` with `trx_status: Failed`). Mark `paid` only when `status_code` is `"200"`, `lowercase(data.trx_status)` is `success` or `successful`, and the amount and invoice number match our row. `failed` marks failed; any other or unknown value is neither paid nor failed (it stays pending for the reconciliation job). A `2001` reply means not found **or** credential mismatch and never marks a payment failed. Store `trx_id`; an empty `trx_id` is stored as NULL.
 4. After marking paid, redirect the user to a normal "payment result" page in our app. Everything slow (email, receipt, registration side effects) runs in the queue.
 
 ### 8.2 IPN (server notification)
 
-- PayStation can POST an IPN to an HTTPS URL we give it, for **successful transactions only**. The IPN has **no signature or auth header**, so treat the payload as untrusted.
-- Add `POST /api/payments/paystation/ipn` as an **extra** signal. It must confirm the `invoice_number` exists and is pending, match `trx_amount`, check `trx_id` was not already processed, and then **confirm through transaction status** before marking paid. Return 2xx quickly. Retry count and delay are not documented (VERIFY), so the handler must be idempotent.
+- PayStation POSTs an IPN (JSON) to an HTTPS URL we register with PayStation, for **successful transactions only**. The IPN has **no signature or auth header**, so treat the payload as untrusted. Payload: `invoice_number`, `trx_status` (`"Success"`), `trx_id`, `trx_amount` (number, BDT), `order_date_time`, `payment_method`, optional `reference` (the provider's, not ours).
+- Add `POST /api/payments/paystation/ipn` as an **extra** signal. It must confirm the `invoice_number` exists and is pending, match `trx_amount`, check `trx_id` was not already processed, and then **confirm through transaction status** before marking paid. Return 2xx quickly. Non-2xx replies and timeouts are retried "a limited number of times with a delay"; the count and interval are not documented, so the handler must be idempotent. Store the raw body first; reply 200 for processed, duplicate and recorded-but-rejected IPNs (alert on rejects).
 - The system must stay correct using only callback + transaction status + the reconciliation job below.
 
 ### 8.3 Users closing the payment page must never break anything
@@ -255,7 +255,7 @@ The gateway is **PayStation** (hosted checkout, paystation.com.bd). Wallets (bKa
 This is a hard requirement. A user can close the tab, lose network, or kill the app at any step.
 
 - The payment row exists **before** the user leaves our site, so we always know a payment was started.
-- If the callback never arrives, the **reconciliation job** (BullMQ repeatable job, every 2-5 minutes) takes every payment in `initiated`/`pending` older than ~2 minutes, calls **transaction status** by `invoice_number`, and moves it to `paid`, `failed` or `expired`. The docs do not state a checkout expiry (VERIFY with PayStation); until confirmed, use a configurable expiry (default 60 minutes) and then mark `expired`. Statuses are `processing`, `success`, `failed`, `refund`.
+- If the callback never arrives, the **reconciliation job** (BullMQ repeatable job, every 2-5 minutes) takes every payment in `initiated`/`pending` older than ~2 minutes, calls **transaction status** by `invoice_number`, and moves it to `paid`, `failed` or `expired`. The docs do not state a checkout expiry (VERIFY with PayStation); until confirmed, use a configurable expiry (default 60 minutes) and then mark `expired`. Statuses are `processing`, `success`, `failed`, `refund` (compared lowercased; `successful` is also treated as success by owner decision until the sandbox shows the real values; unknown values stay pending).
 - The payment/registration page polls `GET /api/payments/:id/status` (every few seconds, with backoff) and also offers a **"Check my payment status"** button. Status always comes from our DB, which the callback, IPN or reconciliation job updates.
 - Coming back later: "My registrations" shows pending payments with a button to resume (if still valid) or start a new payment (if expired/failed).
 - **No double charging:** before creating a new payment for the same registration, check for an existing active one. If one is `initiated`/`pending`, query it first. One registration can have only one `paid` payment (DB unique constraint). Never reuse an `invoice_number`.
@@ -268,13 +268,14 @@ This is a hard requirement. A user can close the tab, lose network, or kill the 
 
 - **The gateway's own API response (query/execute) or a verified server-to-server notification is the source of truth.** Never mark a payment as paid because the user's browser returned to a success page.
 - Verify any server-to-server notification: use the signature if the gateway provides one; PayStation IPN has none, so always re-confirm through the gateway status API before marking paid.
-- Notification/callback handling is **idempotent**: processing the same event twice must not create two registrations. Store the gateway transaction id (`trxID`) with a unique constraint.
+- Notification/callback handling is **idempotent**: processing the same event twice must not create two registrations. Store the gateway transaction id (PayStation `trx_id`; sent as `trxId` in v2 status requests) with a unique constraint.
 - Payment status is a state machine (`pending → paid / failed / refunded`). Illegal transitions are rejected.
 - Store the raw gateway payload for audits.
 - Webhook handler does the minimum (verify, record, enqueue) and returns fast. Emails, receipts and certificates run in the queue.
 - Run a **reconciliation job** (e.g. every 10 minutes) that checks pending payments against the gateway and fixes mismatches.
 - The payment path should stay healthy even when the exam path is busy (keep it lightweight and separate by queue and rate limits).
 - Never log card data or full payloads containing sensitive fields.
+- PayStation documents **no refund API**: refunds are made in the merchant panel or through PayStation support and reconciled by an admin (RUNBOOK §11). A refund shows up only as `trx_status = refund` on a status query, never as an IPN.
 
 ---
 
@@ -415,7 +416,7 @@ Must contain copy-paste commands for:
 
 ## 17. Open questions (ask the owner before building the affected part)
 
-1. PayStation merchant account status: sandbox credentials available? Production approval timeline? Which methods enabled (bKash, Nagad, Rocket, Upay, cards)? Who pays the gateway charge (`pay_with_charge`)? Callback parameter names, checkout expiry and IPN retry rules (not in the public docs). Currency is BDT only?
+1. PayStation merchant account status: sandbox credentials available? Production approval timeline? Which methods enabled (bKash, Nagad, Rocket, Upay, cards)? Who pays the gateway charge (`pay_with_charge`)? Callback parameter names, checkout expiry and the IPN retry count/interval (not in the official docs). Currency is BDT only?
 2. What is the real **peak concurrent** user count (not total registered)? Are exams in batches or all at once?
 3. Exam format: question types, number of questions, time limit, negative marking, image-based questions?
 4. Which transactional email provider and sending domain?

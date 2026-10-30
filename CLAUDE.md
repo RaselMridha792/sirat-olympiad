@@ -78,12 +78,12 @@ pnpm --filter @sirat/api db:seed      # idempotent config seed (also runs in the
 docker compose --env-file .env -f infra/docker-compose.yml up -d --build                                  # server
 docker compose --env-file .env -f infra/docker-compose.yml -f infra/docker-compose.dev.yml up -d --build  # local only
 ```
-Local setup, fixtures and ports: `docs/RUNBOOK.md` section 0. Git: commits/pushes are authored by the owner only, no AI co-author trailers.
+Local setup, fixtures and ports: `docs/RUNBOOK.md` section 0. Git: commits/pushes are authored by the owner only, no AI co-author trailers; no direct pushes to `main` (branch + pull request, the owner merges) until OPEN-QUESTIONS #25 is decided.
 
 ## 4. Current state (update this when it changes)
 
-- **Phase A, step A1 (foundation) built and review-hardened — awaiting owner approval** (2026-10-30). Prisma migrations (init, raw-SQL CHECKs, review hardening), idempotent config seed, dev fixtures guarded by a server marker, DB/Redis/AppModule integration tests, Redis-backed global rate limiter, `/api/ready` (DB + both Redis), allow-list Docker builds with a `migrate` job, CI with a full-stack smoke test. Details: `docs/DECISIONS.md` (A1, A1 review fixes).
+- **Phase A, step A1 (foundation) approved by the owner (2026-10-30).** A1.1 (deploy-only fixes) is in a pull request. Next, in order: A2 auth (starts with the four logging/secret gates in DECISIONS) → payments (PayStation) → the rest of Phase A per `docs/10-BUILD-PLAN.md`. Prisma migrations (init, raw-SQL CHECKs, review hardening), idempotent config seed, dev fixtures guarded by a server marker, DB/Redis/AppModule integration tests, Redis-backed global rate limiter, `/api/ready` (DB + both Redis), allow-list Docker builds with a `migrate` job, CI with a full-stack smoke test. Details: `docs/DECISIONS.md` (A1, A1 review fixes).
 - Phase A scope (owner): auth (A2), exam engine, leaderboard/results, admin core. Rounds/jury/certificates/ambassador later; registration + payment is Phase C. Phases: `docs/10-BUILD-PLAN.md`.
 - Not built yet: auth, payments, exam engine, queues/workers, admin features, the "no unguarded route" CI test (A2). A2 starts with the logging/secret gates listed under "Deferred" in DECISIONS (A1 review fixes).
-- PayStation: official sources are the dashboard Postman collection (git-ignored, holds credentials) and the docs PDF (not yet received). No PayStation code until the PDF is read (owner).
+- PayStation: official docs read; summary in `docs/paystation/PAYSTATION-NOTES.md` (the PDF and Postman export stay local, git-ignored). PayStation code starts after A2.
 - Auth session in the web app is a **mock** (`apps/web/src/lib/session.ts`). Replaced in A2.

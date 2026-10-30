@@ -1,7 +1,29 @@
 import { randomUUID } from 'node:crypto';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Prisma, PrismaClient } from '@prisma/client';
 
 const TEST_DB = /^[a-z0-9_]+_test$/;
+const MIGRATIONS = join(__dirname, '..', 'prisma', 'migrations');
+
+/** The SQL statements of the reference-data baseline migration, read from the real migration file. */
+export function referenceDataStatements(): string[] {
+  const dir = readdirSync(MIGRATIONS).find((d) => d.endsWith('_reference_data_baseline'));
+  if (!dir) throw new Error('reference_data_baseline migration not found');
+  const sql = readFileSync(join(MIGRATIONS, dir, 'migration.sql'), 'utf8')
+    .split('\n')
+    .filter((l) => !l.trimStart().startsWith('--'))
+    .join('\n');
+  return sql
+    .split(';')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** Re-applies the baseline data migration (after truncateAll), exactly as `prisma migrate deploy` would. */
+export async function applyReferenceData(prisma: PrismaClient): Promise<void> {
+  for (const statement of referenceDataStatements()) await prisma.$executeRawUnsafe(statement);
+}
 
 /** Prisma client bound to TEST_DATABASE_URL. Refuses anything that is not a *_test database. */
 export function testPrisma(): PrismaClient {

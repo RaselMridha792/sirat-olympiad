@@ -2,7 +2,7 @@
 
 Run each item against the PayStation **sandbox** with sandbox credentials (never live credentials outside production). Record the date, the exact request (credentials removed) and the response, then move the answer to `docs/DECISIONS.md` and close the matching row in `docs/OPEN-QUESTIONS.md` (P1–P7).
 
-Official sources only: the merchant-dashboard Postman collection and the official docs PDF. `PAYSTATION-API.md` is superseded.
+Read `PAYSTATION-NOTES.md` first (the official docs, summarised). `PAYSTATION-API.md` is superseded.
 
 | # | Test | Expected / why it matters | Result |
 |---|---|---|---|
@@ -20,3 +20,6 @@ Official sources only: the merchant-dashboard Postman collection and the officia
 | S12 | How long does an unpaid checkout link stay valid? | Payment expiry setting (default 60 min) | |
 | S13 | Close the tab mid-payment, then pay later or not at all | Reconciliation job must settle it; no double charge | |
 | S14 | Refresh/replay the callback URL several times | Must be a no-op after the first settlement | |
+| S15 | Exact `trx_status` strings from v1 **and** v2 for paid, failed, refunded and in-progress payments (case and spelling: `success`, `Success`, `successful`?) | Update the accepted list (owner: lowercased `success`/`successful` = paid; anything else is neither paid nor failed) | |
+| S16 | Cancel on the checkout page, and a failed payment: is the browser sent back to `callback_url` at all, with which HTTP method and which parameters? | OPEN-QUESTIONS P1 | |
+| S17 | `2001` for an unknown invoice vs for a wrong `merchantId`: same code and message? | `2001` is never treated as failed; alert when it repeats | |

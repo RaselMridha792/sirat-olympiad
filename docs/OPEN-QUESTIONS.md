@@ -2,13 +2,13 @@
 
 Owner = Rasel Mridha. Client = GLTS Leadership × Sirat Olympiad. Add the answer + date, then move it to DECISIONS.md.
 
-**Answered 2026-10-30 (see DECISIONS.md "Owner answers before Phase A"):** email verification is lazy; #3 and #13 defaults accepted as placeholders pending client confirmation; #16 provider still open (dev uses Mailpit); #22 owner will confirm VPS specs later.
+**Answered 2026-10-30 (see DECISIONS.md "Owner answers before Phase A"):** email verification is lazy; #3 and #13 defaults accepted as placeholders pending client confirmation; #16 email provider = Resend (sending domain still to verify; dev uses Mailpit); #22 owner will confirm VPS specs later. PayStation P2-P5 answered by the official docs (section below). #27 is on the pre-launch checklist (RUNBOOK §9).
 
 ## Blocking for specific modules
 
 | # | Question | Blocks | Default if unanswered |
 |---|---|---|---|
-| 1 | **PayStation:** merchant account + sandbox credentials? Which methods enabled? Who pays the gateway charge (`pay_with_charge`)? Callback parameter names, checkout expiry, IPN retry rules (not in public docs)? Currency BDT only? | Payments | Build against sandbox; expiry 60 min; `pay_with_charge=1`; verify callback params in sandbox |
+| 1 | **PayStation:** production merchant account and approval? Which methods enabled? Who pays the gateway charge (`pay_with_charge`, P6)? Checkout expiry and the IPN retry count/interval (not in the official docs). Callback parameters: P1. (Shared sandbox credentials are published on PayStation's docs page; currency BDT per docs.) | Payments | Build against sandbox; expiry 60 min; `pay_with_charge=1`; verify the rest in sandbox |
 | 2 | Registration fee amount and registration open/close dates | Registration | Config in `settings`, no hardcoding |
 | 3 | Category ↔ grade-level mapping for the 17 grade levels (Activist / Ambassador / Achiever bands) | Seed data | Use old bands (SDG 1–4 → Activist, 5–10 → Ambassador, 11–17 → Achiever) |
 | 4 | Exam format: question types, count, negative marking, image questions, languages | Exam engine | MCQ A–D, no negative marking, text only |
@@ -23,7 +23,7 @@ Owner = Rasel Mridha. Client = GLTS Leadership × Sirat Olympiad. Add the answer
 | 13 | Ranks (names + point thresholds) and points per event (referral paid, task) | Ambassador | Bronze/Silver/Gold, thresholds editable |
 | 14 | Round structure after Round 1 (video? final? how many?) and jury count/criteria (old: 10 criteria 0–10) | Rounds | Data-driven; port old criteria |
 | 15 | Certificates: types, wording, who gets which, signatures | Certificates | Participation + promotion + winner, server-issued |
-| 16 | Email provider and sending domain (SPF/DKIM/DMARC) | Notifications | Queue + provider abstraction |
+| 16 | ~~Email provider~~ **Answered 2026-10-30: Resend** (DECISIONS "Email provider"). Still open: the sending domain and its SPF/DKIM/DMARC setup | Notifications | Mailpit in dev until the domain is verified |
 | 17 | Domain, Cloudflare available? TLS plan | Nginx | HTTP in compose, TLS TODO |
 | 18 | Off-server backup target (S3-compatible or second machine) | Backups | Local dump + TODO |
 | 19 | Import old Season 2 users/results, or start fresh? | Migration | Start fresh |
@@ -36,19 +36,27 @@ Owner = Rasel Mridha. Client = GLTS Leadership × Sirat Olympiad. Add the answer
 | 26 | Postgres error logs include the conflicting value on unique violations (e.g. `Key (email)=(…) already exists`). Accept (logs are private and rotated), or set `log_error_verbosity = terse` (also drops deadlock/lock-wait detail)? | Logging / privacy | Keep default; A2 checks duplicates in code first so the constraint rarely fires |
 | 27 | Run the API with a **non-superuser** DB role (separate from the bootstrap/migration role)? Needs a second PgBouncer user and grants. | Security hardening | Yes, in the hardening phase |
 
-## PayStation — unconfirmed until the official docs PDF is read (owner, 2026-10-30)
+## PayStation (official docs read 2026-10-30; summary: `docs/paystation/PAYSTATION-NOTES.md`)
 
-Official sources are only the merchant-dashboard Postman collection (`docs/paystation/postmanCollection.json`, git-ignored because it holds credentials) and the official docs PDF (not yet in the repo). `docs/paystation/PAYSTATION-API.md` is superseded. The Postman collection contains only `POST /initiate-payment` (multipart form, `merchantId` + `password` in the body) and `POST /transaction-status` (header `merchantId`, JSON `invoice_number`), both on `https://api.paystation.com.bd`, with no example responses. Do not build on the items below until the PDF confirms them.
+Official sources: the documentation page (printed copy `docs/paystation/paystation.pdf`) and the merchant-dashboard Postman collection, both local and git-ignored (shared sandbox credentials inside). `PAYSTATION-API.md` is superseded.
 
-| # | Question | Postman shows | Blocks |
+**Open**
+
+| # | Question | What the official docs say | Blocks |
 |---|---|---|---|
-| P1 | **Callback parameters**: which query parameters does PayStation append to `callback_url` (names, values for success/failed/canceled, is `trx_id` included)? | Nothing | Callback handler |
-| P2 | **IPN** (server-to-server notification): does it exist, URL registration, payload, signature, retry rules? RULEBOOK §8.2 assumes an unsigned IPN for successful payments only. Until confirmed the system must stay correct with callback + transaction status + reconciliation only. | Nothing | IPN endpoint |
-| P3 | **Transaction status v2** (`/v2/transaction-status` by `trxId`, RULEBOOK §8.1): does it exist, and what are the response fields? | Only v1 `/transaction-status` by `invoice_number` | Verification |
-| P4 | **Sandbox base URL**: the collection named "PayStation Sandbox" calls `https://api.paystation.com.bd` (same host as live); is sandbox selected by credentials only, or is there a separate host? | Same host as live | Config (`PAYSTATION_ENV`) |
-| P5 | **Response shapes and codes** for both endpoints: `status_code` values (200, 1008 duplicate invoice, 2001, …), `payment_url`, `trx_status` values, amount field and format | No example responses | Client, settlement |
-| P6 | `pay_with_charge` (RULEBOOK §8.1) is absent from the collection: is it supported, and does the status response amount include the gateway charge when the customer pays it? | Absent | Amount check |
-| P7 | **invoice_number length**: we keep it ≤ 20 characters, but the collection's cURL example uses a 23-character invoice. What does the API (sandbox) do with longer values? See `docs/paystation/SANDBOX-CHECKLIST.md`. | 23-char example | Invoice generator |
+| P1 | **Callback parameters**: names and values PayStation appends to `callback_url` (success/failed/cancelled), the HTTP method, and whether cancel/failure return at all | Only "parameters indicating payment outcomes"; no names. PayStation's own WooCommerce/OpenCart plugins read GET `status`, `invoice_number`, `trx_id` (`status=canceled` for cancel), which is plugin code, not API docs. We carry our invoice in the callback path and verify via transaction status, so nothing depends on these names | Callback handler (sandbox S4, S5, S16) |
+| P6 | `pay_with_charge`: with 1 (customer pays the charge), is the status amount ours or ours + charge? Which value does the owner choose? | Marked "Required", "1 customer / 0 merchant", "default 0"; nothing on amounts. v2 returns both `request_amount` and `payment_amount` | Amount check (sandbox S10) |
+| P7 | invoice_number length the gateway accepts | No limit stated. Our rule stays: at most 20 characters, unique, never reused | Informational (sandbox S1, S2) |
+| P8 | **Refunds**: when a payment is refunded (merchant panel; there is no refund API), what happens to the student's registration and exam access? | Not a PayStation question: owner policy | RUNBOOK §11, admin payments screen |
+
+**Answered by the official docs (closed 2026-10-30)**
+
+| # | Answer |
+|---|---|
+| P2 | **IPN exists**: JSON POST to an HTTPS URL registered with PayStation, successful transactions only, no auth/signature, retried a limited (unstated) number of times on non-2xx or timeout. Payload `invoice_number`, `trx_status`, `trx_id`, `trx_amount` (number), `order_date_time`, `payment_method`, optional `reference` |
+| P3 | **Transaction status v2 exists**: `POST /v2/transaction-status`, headers `merchantId` + `Content-Type: application/json`, JSON `{"trxId"}`; adds `trx_amount`, `trx_date`, `request_amount`, `payment_amount`. v1 (`/transaction-status`, form `invoice_number`) stays our main check |
+| P4 | **Sandbox** `https://sandbox.paystation.com.bd`, **live** `https://api.paystation.com.bd`. The docs' code samples still call the live host with sandbox credentials: confirm the host in sandbox (S11) |
+| P5 | `status_code` is a string: `"200"` success, `"1008"` duplicate invoice, `"2001"` not found **or** credential mismatch. `data` only on `"200"`; top-level `status` = lookup result; `data.trx_status` = `processing`/`success`/`failed`/`refund` (case varies); amounts as `"120"`, `"120.00"` or numbers; empty `trx_id` when none |
 
 ## Notes from the old system worth confirming
 
