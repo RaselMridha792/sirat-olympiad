@@ -13,6 +13,7 @@ export DCD="$DC -f infra/docker-compose.dev.yml"
 ```bash
 cp .env.example .env                    # fill real local passwords; never commit
 cp apps/api/.env.example apps/api/.env  # host-side dev env (same POSTGRES_PASSWORD)
+openssl rand -base64 48                 # paste a fresh output into JWT_ACCESS_SECRET of each file (blank in the examples)
 pnpm install
 pnpm --filter @sirat/shared build
 pnpm db:generate
@@ -28,6 +29,8 @@ pnpm --filter @sirat/api test:int                       # DB + Redis integration
 
 $DCD up -d --build                                      # full stack; http://127.0.0.1:8080 and /api/ready
 ```
+
+Signing secret: the API refuses to start (in every `NODE_ENV`) when `JWT_ACCESS_SECRET` is blank, shorter than 32 characters, too repetitive, or contains a placeholder word such as `fake`, `example` or `change me`. The error names the rule, never the value. Use a separate value per environment and never reuse the dev value on the VPS.
 
 Fixtures: 3 verified students with paid registrations, `student1@fixtures.invalid` … `student3@fixtures.invalid`, password = your `FIXTURE_PASSWORD` in `apps/api/.env`. They refuse to run unless `NODE_ENV` is development/test, the confirmation is set for that run, the URL is local with no `host`/`hostaddr` parameter, and the connected Postgres server carries `sirat.environment=development` (only the dev override sets it; after pulling this change once, recreate the dev Postgres with `$DCD up -d postgres`, data is kept). PowerShell: `$env:ALLOW_DEV_FIXTURES='yes-this-is-not-production'; pnpm --filter @sirat/api db:fixtures:dev`.
 
