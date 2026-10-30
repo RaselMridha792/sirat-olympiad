@@ -1,6 +1,7 @@
 import 'reflect-metadata'; // class-transformer/validator decorators need it even when env.ts is loaded on its own
 import { plainToInstance } from 'class-transformer';
 import {
+  IsEmail,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -49,6 +50,11 @@ export class EnvVars {
   /** Link emails (reset, verification) one address can receive, per kind: stops mail bombing and SES costs. */
   @IsInt() @Min(1) @Max(10) AUTH_LINK_EMAILS_PER_MINUTE: number = 1;
   @IsInt() @Min(1) @Max(100) AUTH_LINK_EMAILS_PER_HOUR: number = 5;
+
+  /** Operator inbox for security alerts. Unset: alerts go to the audit log and the log only. */
+  @IsOptional() @IsEmail() SECURITY_ALERT_EMAIL?: string;
+  /** Owner: at most one alert email per kind per 10 minutes, and at most this many alert emails per hour. */
+  @IsInt() @Min(1) @Max(60) SECURITY_ALERT_EMAILS_PER_HOUR: number = 6;
   /** Optional override of the pino level (default: info in production, debug elsewhere). */
   @IsOptional()
   @IsIn(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])

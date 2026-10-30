@@ -5,21 +5,15 @@
  * POSTs it on a button press (mail scanners that open links cannot use it up).
  */
 
+import { escapeHtml } from '../../common/html';
+
 export interface AuthEmail {
   subject: string;
   text: string;
   html: string;
 }
 
-const HTML_ESCAPES: Record<string, string> = {
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-  '"': '&quot;',
-  "'": '&#39;',
-};
-export const escapeHtml = (value: string): string =>
-  value.replace(/[&<>"']/g, (c) => HTML_ESCAPES[c] ?? c);
+export { escapeHtml };
 
 const BANGLA_DIGITS = '০১২৩৪৫৬৭৮৯';
 const bn = (n: number): string => String(n).replace(/\d/g, (d) => BANGLA_DIGITS[Number(d)] ?? d);
