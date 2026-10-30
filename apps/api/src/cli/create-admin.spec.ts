@@ -14,13 +14,27 @@ describe('create-admin arguments', () => {
     expect(parseArgs(['--email', ' Ops@Sirat.Test ', '--name', ' Ops Admin '])).toEqual({
       email: 'ops@sirat.test',
       name: 'Ops Admin',
+      passwordStdin: false,
+    });
+    expect(parseArgs(['--password-stdin', '--email', 'a@b.co', '--name', 'A'])).toMatchObject({
+      passwordStdin: true,
     });
   });
 
-  it('refuses a password given as an argument (shell history, process list)', () => {
-    const e = failure(['--email', 'a@b.co', '--name', 'A', '--password', 'secret']);
-    expect(e.message).toMatch(/Never pass the password as an argument/);
-    expect(e.message).not.toContain('secret');
+  it.each([[['--password', 'secret']], [['--password=secret']], [['--passwordsecret']]])(
+    'refuses a password given as an argument, never repeating it: %j',
+    (extra) => {
+      const e = failure(['--email', 'a@b.co', '--name', 'A', ...extra]);
+      expect(e.message).toMatch(/Never pass the password as an argument/);
+      expect(e.message).not.toContain('secret');
+      expect(e.exitCode).toBe(2);
+    },
+  );
+
+  it('never repeats a stray value back (it could be a password typed in the wrong place)', () => {
+    const e = failure(['--email', 'a@b.co', '--name', 'A', 'Quiet-harbour-lamp-58']);
+    expect(e.message).toMatch(/Unknown argument\. Usage/);
+    expect(e.message).not.toContain('Quiet-harbour');
     expect(e.exitCode).toBe(2);
   });
 

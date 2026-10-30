@@ -195,17 +195,27 @@ The `worker` service sends; the API only queues. Locally every email goes to Mai
 
 ## 13. Admin accounts (create-admin CLI)
 
-There is no sign-up for admins and the web never accepts a role, so an operator creates every admin from the command line. The password is typed at a hidden prompt (twice). It is never an argument, so it stays out of shell history and the process list.
+There is no sign-up for admins and the web never accepts a role, so an operator creates every admin from the command line, at a terminal. The password is typed at a hidden prompt, twice. It is never an argument, an environment variable or a log line.
 
 ```bash
-# VPS: the api image ships the CLI; --no-deps starts nothing else; the prompt uses the TTY that `run` gives by default
+# VPS. The runtime api image has no tsx and no src/: this runs the compiled CLI from dist/.
+# No -T: the hidden prompt needs the terminal that `run` gives. --no-deps: otherwise compose runs `migrate` again first.
 $DC run --rm --no-deps api node dist/cli/create-admin.js --email ops@example.org --name "Ops Admin"
-# Local (uses apps/api/.env)
+#   Password:              <- type it; nothing shows on screen
+#   Repeat the password:   <- the same again; nothing shows
+#   Admin created: <id>    <- the new user id, nothing else
+
+# Check the audit row (the SQL goes through stdin, hence -T here)
+$DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+select created_at, entity_id, meta from audit_logs where action = 'admin.created' order by created_at desc limit 5;
+SQL
+
+# Local (uses apps/api/.env; on Windows run it in PowerShell or Windows Terminal)
 pnpm --filter @sirat/api admin:create --email ops@example.org --name "Ops Admin"
 ```
 
 - The password must pass the same policy as everyone's (8–128 characters, not on the common-passwords list) and is hashed with argon2id. The account gets role admin and a verified email (no verification email). An `admin.created` audit row records it (`meta.via = cli`). The CLI prints only the new user id.
 - An email that already has an account is refused and nothing changes: the CLI never promotes, edits or resets an existing account.
-- Scripts: with piped input the first line of stdin is the password (with `$DC run`, add `-T`: no TTY). Never keep the password in the repo, a file on the VPS or shell history.
-- Exit codes: 0 created, 1 refused (password policy, existing email, invalid email or name), 2 usage (including `--password`), 130 cancelled.
+- Without a terminal (for example with `-T`) it stops at once with exit code 2. `--password-stdin` (first line of piped stdin) exists for the automated tests only: a piped password usually ends up in shell history.
+- Exit codes: 0 created, 1 refused (password policy, existing email, invalid email or name), 2 usage (any `--password` argument, no terminal), 130 cancelled (Ctrl+C).
 - Blocking an admin or changing a role: not built yet (admin features, later in Phase A).

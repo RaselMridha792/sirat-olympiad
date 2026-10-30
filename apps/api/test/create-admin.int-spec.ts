@@ -23,7 +23,7 @@ afterAll(async () => {
 
 const email = () => `admin-${randomUUID().slice(0, 8)}@test.invalid`;
 
-/** Runs the real CLI (TypeScript through tsx, no shell: arguments with spaces stay whole) with stdin piped. */
+/** Runs the real CLI (TypeScript through tsx, no shell: arguments with spaces stay whole) with stdin piped, no TTY. */
 const tsxCli = require.resolve('tsx/cli', { paths: [apiDir] });
 function cli(args: string[], stdin: string) {
   const r = spawnSync(process.execPath, [tsxCli, 'src/cli/create-admin.ts', ...args], {
@@ -40,7 +40,7 @@ describe('create-admin CLI', () => {
   it('creates a verified admin with an argon2id hash and an audit row, printing only its id', async () => {
     const address = email();
     const { code, out } = cli(
-      ['--email', address.toUpperCase(), '--name', 'Ops Admin'],
+      ['--email', address.toUpperCase(), '--name', 'Ops Admin', '--password-stdin'],
       `${PASSWORD}\n`,
     );
     expect(code).toBe(0);
@@ -62,9 +62,20 @@ describe('create-admin CLI', () => {
 
   it('refuses a common password and creates nothing', () => {
     const address = email();
-    const { code, out } = cli(['--email', address, '--name', 'Ops'], '12345678\n');
+    const { code, out } = cli(
+      ['--email', address, '--name', 'Ops', '--password-stdin'],
+      '12345678\n',
+    );
     expect(code).toBe(1);
     expect(out).toContain('too common');
+    return expect(prisma.user.count({ where: { email: address } })).resolves.toBe(0);
+  });
+
+  it('without a terminal it stops at once unless --password-stdin is given, and creates nothing', () => {
+    const address = email();
+    const { code, out } = cli(['--email', address, '--name', 'Ops'], `${PASSWORD}\n`);
+    expect(code).toBe(2);
+    expect(out).toContain('needs a terminal');
     return expect(prisma.user.count({ where: { email: address } })).resolves.toBe(0);
   });
 

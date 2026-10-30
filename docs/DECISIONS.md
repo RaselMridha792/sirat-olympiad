@@ -5,7 +5,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 ## 2026-10-31 — First-admin CLI (Claude; owner's A2 order)
 
 1. **Admins are created only from the command line** (`apps/api/src/cli/create-admin.ts`, RUNBOOK §13): there is no admin sign-up and the web never accepts a role (RULEBOOK §18). The same CLI creates later admins.
-2. **The password is never an argument** (shell history, process list): a hidden prompt asked twice on a terminal, else the first line of stdin. `--password` is refused (exit code 2). Same policy as every password (length, common-passwords list), hashed with argon2id.
+2. **The password is never an argument or an environment variable** (shell history, process list): a hidden prompt asked twice, so the command needs a terminal; without one it stops at once (exit code 2) instead of waiting for input with no prompt on screen. Any `--password…` argument is refused and never repeated back, and neither is a stray value. `--password-stdin` reads piped stdin for the automated tests only (Lead, 2026-10-31: the prompt is the main path, a piped password stays in shell history). Same policy as every password (length, common-passwords list), hashed with argon2id.
 3. **Created verified**, with no verification email: an operator typed the address. One transaction writes the user and an `admin.created` audit row (`meta.via = cli`; no actor, there is no session).
 4. **An existing email is refused, never changed:** the CLI cannot promote a student or reset someone's password. Role changes stay a later, audited admin feature.
 5. It prints only the new user id; errors are fixed messages (never the password or a raw database error).

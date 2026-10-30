@@ -6,10 +6,11 @@
  *            node dist/cli/create-admin.js --email ops@example.org --name "Ops Admin"
  *   Local: pnpm --filter @sirat/api admin:create --email ops@example.org --name "Ops Admin"
  *
- * The password is typed at a hidden prompt (twice) on a terminal, or read from the first line of stdin when piped;
- * never from an argument (shell history, process list). It must pass the owner's policy. The account is created
- * verified, with role admin, hashed with argon2id like every password; an audit row records it. An existing email is
- * refused, never changed. Prints the new user id only.
+ * The password is typed at a hidden prompt (twice), so the command needs a terminal (no -T with docker compose run).
+ * It is never an argument or an environment variable (shell history, process list). `--password-stdin` reads the first
+ * line of piped stdin instead: for tests only, since a piped password usually ends up in shell history. It must pass
+ * the owner's policy. The account is created verified, with role admin, hashed with argon2id like every password; an
+ * audit row records it. An existing email is refused, never changed. Prints the new user id only.
  */
 import { Prisma, PrismaClient, Role } from '@prisma/client';
 import { passwordProblem } from '../modules/auth/password-policy';
@@ -38,23 +39,34 @@ export interface AdminInput {
   name: string;
 }
 
-export function parseArgs(argv: readonly string[]): AdminInput {
+export interface AdminArgs extends AdminInput {
+  /** `--password-stdin`: the first line of piped stdin instead of the prompt (tests only). */
+  passwordStdin: boolean;
+}
+
+export function parseArgs(argv: readonly string[]): AdminArgs {
   const values: Record<string, string> = {};
+  let passwordStdin = false;
   for (let i = 0; i < argv.length; i += 1) {
-    const flag = argv[i];
+    const flag = argv[i] ?? '';
     if (flag === '--email' || flag === '--name') {
       const value = argv[i + 1];
       if (value === undefined || value.startsWith('--'))
         throw new AdminCliError(`${flag} needs a value. ${USAGE}`, 2);
       values[flag.slice(2)] = value;
       i += 1;
-    } else if (flag === '--password') {
+    } else if (flag === '--password-stdin') {
+      passwordStdin = true;
+    } else if (flag.startsWith('--password')) {
+      // Also --password=...: the value is never repeated back.
       throw new AdminCliError(
         'Never pass the password as an argument; you will be asked for it.',
         2,
       );
     } else {
-      throw new AdminCliError(`Unknown argument ${JSON.stringify(flag)}. ${USAGE}`, 2);
+      // Only a flag-like word is repeated back: a stray value could be a password typed in the wrong place.
+      const shown = /^--[a-z-]+$/.test(flag) ? ` ${flag}` : '';
+      throw new AdminCliError(`Unknown argument${shown}. ${USAGE}`, 2);
     }
   }
   const email = (values.email ?? '').trim().toLowerCase();
@@ -63,7 +75,7 @@ export function parseArgs(argv: readonly string[]): AdminInput {
   if (!EMAIL.test(email) || email.length > 254)
     throw new AdminCliError('That is not a valid email address.');
   if (name.length > 100) throw new AdminCliError('The name must be at most 100 characters.');
-  return { email, name };
+  return { email, name, passwordStdin };
 }
 
 /** Creates the admin in one transaction with its audit row; returns the new user id. */
@@ -105,13 +117,29 @@ export async function createAdmin(
   }
 }
 
-/** The password: a hidden prompt (twice) on a terminal, else the first line of stdin. */
-export async function readPassword(stdin: NodeJS.ReadStream = process.stdin): Promise<string> {
-  if (!stdin.isTTY) {
+/**
+ * The password: a hidden prompt (twice) on a terminal; with `fromStdin`, the first line of piped stdin. Without a
+ * terminal and without the flag it stops at once, instead of waiting for stdin with no prompt on screen.
+ */
+export async function readPassword(
+  fromStdin: boolean,
+  stdin: NodeJS.ReadStream = process.stdin,
+): Promise<string> {
+  if (fromStdin) {
+    if (stdin.isTTY)
+      throw new AdminCliError(
+        '--password-stdin needs piped input. At a terminal, leave it out and type the password at the prompt.',
+        2,
+      );
     const chunks: Buffer[] = [];
     for await (const chunk of stdin) chunks.push(Buffer.from(chunk as Buffer));
     return (Buffer.concat(chunks).toString('utf8').split(/\r?\n/)[0] ?? '').replace(/\r$/, '');
   }
+  if (!stdin.isTTY)
+    throw new AdminCliError(
+      'The hidden password prompt needs a terminal. Run the command in a terminal (with docker compose run, without -T).',
+      2,
+    );
   const first = await promptHidden(stdin, 'Password: ');
   const second = await promptHidden(stdin, 'Repeat the password: ');
   if (first !== second) throw new AdminCliError('The two passwords differ. Nothing was changed.');
@@ -146,11 +174,11 @@ function promptHidden(stdin: NodeJS.ReadStream, question: string): Promise<strin
 }
 
 async function main(): Promise<void> {
-  const input = parseArgs(process.argv.slice(2));
-  const password = await readPassword();
+  const args = parseArgs(process.argv.slice(2));
+  const password = await readPassword(args.passwordStdin);
   const prisma = new PrismaClient();
   try {
-    const id = await createAdmin(prisma, input, password);
+    const id = await createAdmin(prisma, { email: args.email, name: args.name }, password);
     process.stdout.write(`Admin created: ${id}\n`);
   } finally {
     await prisma.$disconnect();
