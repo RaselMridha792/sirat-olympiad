@@ -2,6 +2,18 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — A2.1e email-link endpoints and operator alert emails (Claude; owner rules of 2026-10-31)
+
+Each protection has a test that fails without it (mutation-checked); forgot/resend are tested end to end through a worker and Mailpit.
+
+1. **forgot-password, resend-verification:** always 204 at once with an empty body. The account lookup, the token and the email run in the background (`BackgroundTasks`), so neither the answer nor its timing reveals whether an account exists. Only an existing, unblocked account gets a reset link; only an existing, unblocked, unverified one gets a verification link. At most `AUTH_LINK_EMAILS_PER_MINUTE` (1) and `AUTH_LINK_EMAILS_PER_HOUR` (5) link emails per address and kind; the answer is the same either way.
+2. **reset-password:** a bad link is refused before argon2 runs. One transaction uses the token, sets the hash, marks the email verified (the link proved the inbox), retires the other reset links and ends every session; only after the commit is the account unlocked everywhere (owner). No automatic login. A password refused by the policy leaves the link usable.
+3. **verify-email:** sets `email_verified_at` in the same transaction that uses the token; never creates a session or sets a cookie (tested). A valid link for an already verified address answers 204 and changes nothing.
+4. **Bad links:** unknown, malformed, used, expired, other-type and blocked-account links all get one 400 ("This link is invalid or has expired"). Exactly one of two simultaneous uses of a link succeeds.
+5. **Throttle tiers** (per route and client IP, on top of the per-address caps): 60/min for the two link requests (sized for a school behind one IP), 30/min for reset and verify.
+6. **Operator alert emails** (owner): the `security.<kind>` audit row and a warn log line marked `alert` come first and are the source of truth. The email to `SECURITY_ALERT_EMAIL` (unset: no email) goes out from the background, so it never slows or blocks a login: at most one per alert kind per 10 minutes and `SECURITY_ALERT_EMAILS_PER_HOUR` (6) in all, through the cache Redis. If that limit cannot be checked, the email is held back. It names the kind, the time, the account id and counts; never an email address or an IP.
+7. **BackgroundTasks:** work after the response logs failures by class only and may finish on SIGTERM (up to 10 s); a crash in between loses that email, and the user asks again.
+
 ## 2026-10-31 — Account limit: only IPs that failed are refused, with alerts (owner)
 
 1. **Approved:** when an account reaches its hourly failure limit (`LOGIN_ACCOUNT_FAILURES_PER_HOUR`, 50), only IPs that failed on that account within the hour are refused; an IP without failures (usually the student's own) can still log in.
@@ -22,7 +34,7 @@ Built against a requirements checklist (seven read-only agents over the docs, DE
 7. **Email tokens:** 32 random bytes as base64url (43 characters), SHA-256 stored, lifetimes from env (24 h verify, 30 min reset); a conditional update makes each token single-use, and a new token retires the older ones of its type.
 8. **Emails:** one bilingual message (Bangla first). Links are `APP_URL/<page>#token=…`: the token never reaches a server, a log or a Referer header, and mail scanners that open links cannot use it up. Names are HTML-escaped. `APP_URL` is required in production.
 9. **Known risks (told to the owner):** students behind one school IP share the account+IP pair, so a classmate can lock a student out *at school*; a completed reset unlocks at once. A script on a school network can trip that IP's failure limit every minute. After a reset, a password change or a block, other devices keep a valid access token for up to 15 min (local JWT verification).
-10. **Not yet:** forgot/reset/verify/resend (they need the email queue of PR #6), the per-email send caps (1 per minute, 5 per hour) and the strict throttle tier for them, the web pages (reset, verify) and the web refresh flow, and the cleanup job for old sessions and tokens.
+10. **Not yet:** the web pages (reset, verify) and the web refresh flow, the first-admin CLI, and the cleanup job for old sessions and tokens. *(forgot/reset/verify/resend and the per-address caps: done, A2.1e.)*
 
 ## 2026-10-31 — Login limits and locks (owner)
 
