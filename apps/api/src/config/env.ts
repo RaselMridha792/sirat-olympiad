@@ -22,6 +22,8 @@ export class EnvVars {
   @IsString() @IsNotEmpty() JWT_ACCESS_SECRET!: string;
   @IsInt() @Min(60) JWT_ACCESS_TTL_SECONDS: number = 900;
   @IsInt() @Min(1) REFRESH_TTL_DAYS: number = 7;
+  /** Session cookies carry `Secure` unless this is 'false' (local plain-http development only; refused in production). */
+  @IsIn(['true', 'false']) COOKIE_SECURE: string = 'true';
   /** Optional override of the pino level (default: info in production, debug elsewhere). */
   @IsOptional()
   @IsIn(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
@@ -56,6 +58,11 @@ export function validateEnv(raw: Record<string, unknown>): EnvVars {
   const problem = secretProblem(env.JWT_ACCESS_SECRET);
   if (problem) {
     throw new Error(`JWT_ACCESS_SECRET ${problem}. Generate one with: openssl rand -base64 48`);
+  }
+  if (env.NODE_ENV === 'production' && env.COOKIE_SECURE === 'false') {
+    throw new Error(
+      'COOKIE_SECURE=false is for local development only, never with NODE_ENV=production',
+    );
   }
   return env;
 }

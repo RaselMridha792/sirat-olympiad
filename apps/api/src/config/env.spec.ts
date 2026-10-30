@@ -55,3 +55,22 @@ describe('validateEnv (A2.0 gate 3: no placeholder or weak signing secrets)', ()
     expect(secretProblem(strongSecret())).toBeNull();
   });
 });
+
+describe('validateEnv: session cookies', () => {
+  it('marks cookies Secure by default', () => {
+    expect(validateEnv(valid()).COOKIE_SECURE).toBe('true');
+  });
+
+  it('allows insecure cookies only outside production', () => {
+    expect(
+      validateEnv({ ...valid(), NODE_ENV: 'development', COOKIE_SECURE: 'false' }),
+    ).toMatchObject({ COOKIE_SECURE: 'false' });
+    expect(() => validateEnv({ ...valid(), COOKIE_SECURE: 'false' })).toThrow(
+      /never with NODE_ENV=production/,
+    );
+  });
+
+  it('rejects anything but true or false', () => {
+    expect(() => validateEnv({ ...valid(), COOKIE_SECURE: 'no' })).toThrow(/COOKIE_SECURE/);
+  });
+});
