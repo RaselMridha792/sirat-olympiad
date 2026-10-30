@@ -1,0 +1,11 @@
+{
+  "rootDir": "..",
+  "roots": ["<rootDir>/test"],
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "testRegex": ".*\\.int-spec\\.ts$",
+  "transform": { "^.+\\.ts$": "ts-jest" },
+  "testEnvironment": "node",
+  "setupFiles": ["<rootDir>/test/load-env.ts"],
+  "maxWorkers": 1,
+  "testTimeout": 30000
+}
