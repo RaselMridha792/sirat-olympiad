@@ -9,12 +9,20 @@ export function NavShell({
   items,
   userName,
   userRole,
+  title,
+  topbar,
+  topbarTone,
+  labels,
   children,
 }: {
   brand: string;
   items: NavItem[];
   userName: string;
   userRole: string;
+  title?: string;
+  topbar?: React.ReactNode;
+  topbarTone?: 'shell' | 'surface';
+  labels?: { nav: string; openMenu: string; closeMenu: string };
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -29,8 +37,14 @@ export function NavShell({
       activeHref={active}
       userName={userName}
       userRole={userRole}
-      renderLink={(item, className, onClick) => (
-        <Link key={item.href} href={item.href} className={className} onClick={onClick}>
+      title={title}
+      topbar={topbar}
+      topbarTone={topbarTone}
+      navLabel={labels?.nav}
+      menuLabel={labels?.openMenu}
+      closeMenuLabel={labels?.closeMenu}
+      renderLink={(item, props) => (
+        <Link key={item.href} href={item.href} {...props}>
           {item.icon}
           <span>{item.label}</span>
         </Link>

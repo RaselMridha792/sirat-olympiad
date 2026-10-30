@@ -1,4 +1,6 @@
 export { cn } from './cn';
+export { initialOf } from './text';
+export { Anchor, type LinkComponent, type LinkLikeProps } from './link';
 export * from './components/Button';
 export * from './components/Card';
 export * from './components/StatCard';
@@ -11,3 +13,8 @@ export * from './components/AuthSplitLayout';
 export * from './components/PageHeader';
 export * from './components/Countdown';
 export * from './components/AppShell';
+export * from './components/Avatar';
+export * from './components/Skeleton';
+export * from './components/Tabs';
+export * from './components/SearchBox';
+export * from './components/Dialog';

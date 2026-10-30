@@ -17,16 +17,33 @@ const sizes: Record<Size, string> = {
   lg: 'px-6 py-3 text-base',
 };
 
+/** Button look for elements that are not <button> (e.g. a next/link that acts as a call to action). */
+export function buttonClasses({
+  variant = 'primary',
+  size = 'md',
+  className,
+}: { variant?: Variant; size?: Size; className?: string } = {}): string {
+  return cn(
+    'inline-flex items-center justify-center gap-2 rounded-control font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60',
+    variants[variant],
+    sizes[size],
+    className,
+  );
+}
+
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   size?: Size;
   loading?: boolean;
+  /** Shown while `loading`; pass a translated string. */
+  loadingLabel?: string;
 }
 
 export function Button({
   variant = 'primary',
   size = 'md',
   loading,
+  loadingLabel = 'Please wait…',
   disabled,
   className,
   children,
@@ -36,14 +53,10 @@ export function Button({
     <button
       {...rest}
       disabled={disabled || loading}
-      className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-control font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60',
-        variants[variant],
-        sizes[size],
-        className,
-      )}
+      aria-busy={loading || undefined}
+      className={buttonClasses({ variant, size, className })}
     >
-      {loading ? 'Please wait…' : children}
+      {loading ? loadingLabel : children}
     </button>
   );
 }
