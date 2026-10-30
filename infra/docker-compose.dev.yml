@@ -25,6 +25,9 @@ services:
       - maintenance_work_mem=128MB
       - -c
       - work_mem=8MB
+      # Dev/test marker: dev fixtures refuse any server without it (production never sets it).
+      - -c
+      - sirat.environment=development
     deploy: { resources: { limits: { cpus: "2", memory: 2G } } }
 
   pgbouncer:

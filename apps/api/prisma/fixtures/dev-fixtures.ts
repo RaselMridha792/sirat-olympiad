@@ -2,15 +2,16 @@
  * DEV/TEST ONLY. Creates verified students that each have a PAID registration, so the exam engine can be
  * exercised before Phase C (registration + payment) exists. Owner decision 2026-10-30 (option a).
  *
- * Guarded by `assertFixturesAllowed` (see guard.ts) and excluded from every Docker image.
+ * Guarded by `assertFixturesAllowed` + a server-side marker check (see guard.ts) and excluded from every Docker image.
  * Users use the reserved `.invalid` TLD: they can never receive mail and are easy to find/delete.
  * The password comes from FIXTURE_PASSWORD (never printed). Idempotent: existing fixture users are skipped.
  *
- * Usage (host): pnpm --filter @sirat/api db:fixtures:dev
+ * Usage (host, dev Postgres started with infra/docker-compose.dev.yml):
+ *   ALLOW_DEV_FIXTURES=yes-this-is-not-production pnpm --filter @sirat/api db:fixtures:dev
  */
 import argon2 from 'argon2';
 import { PaymentStatus, PrismaClient } from '@prisma/client';
-import { assertFixturesAllowed } from './guard';
+import { assertDevServerMarker, assertFixturesAllowed } from './guard';
 
 /** One student per category band (grade sort orders 1, 5, 11 map to activist / ambassador / achiever). */
 const STUDENTS = [
@@ -26,8 +27,11 @@ async function main(): Promise<void> {
   const password = process.env.FIXTURE_PASSWORD ?? '';
   if (password.length < 12) throw new Error('FIXTURE_PASSWORD must be set (at least 12 characters).');
 
-  const prisma = new PrismaClient();
+  // Same (already guarded) URL for every query; the server marker is checked before anything else runs.
+  const prisma = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL });
   try {
+    const [row] = await prisma.$queryRaw<{ marker: string | null }[]>`SELECT current_setting('sirat.environment', true) AS marker`;
+    assertDevServerMarker(row?.marker);
     // A2 (auth) owns the tuned argon2id parameters; library defaults are fine for dev data.
     const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
     let created = 0;
