@@ -1,6 +1,7 @@
 // Sirat Leadership Olympiad — database schema (PostgreSQL behind PgBouncer).
-// Rules: migrations only; UUID PKs; timestamptz; real FKs/uniques; money = integer minor units.
-// DB-level CHECKs that Prisma cannot express (e.g. duration_minutes <= 30) go in a raw SQL migration.
+// Rules: migrations only; UUID (v7) PKs; timestamptz; real FKs/uniques; money = integer minor units.
+// DB-level CHECKs that Prisma cannot express (e.g. duration_minutes <= 30) live in raw SQL migrations.
+// Every FK has an index (Postgres does not create them automatically).
 // Full explanation: docs/05-DATABASE.md
 
 generator client {
@@ -78,8 +79,8 @@ enum TaskStatus {
 // ───────────── Identity & sessions ─────────────
 
 model User {
-  id              String    @id @default(uuid()) @db.Uuid
-  email           String    @unique
+  id              String    @id @default(uuid(7)) @db.Uuid
+  email           String    @unique @db.Citext // case-insensitive: A@x.com and a@x.com are the same account
   passwordHash    String    @map("password_hash")
   name            String
   phone           String?
@@ -96,23 +97,29 @@ model User {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  gradeLevel   GradeLevel?       @relation(fields: [gradeLevelId], references: [id])
-  referredBy   User?             @relation("Referrals", fields: [referredById], references: [id])
-  referrals    User[]            @relation("Referrals")
-  sessions     Session[]
-  authTokens   AuthToken[]
-  payments     Payment[]
-  registration Registration?
-  attempts     Attempt[]
-  ambassador   AmbassadorProfile?
-  pointEntries PointLedger[]     @relation("PointOwner")
-  teamsOwned   Team[]
-  teamMember   TeamMember[]
-  taskAssigns  TaskAssignment[]
-  roundEntries RoundEntry[]
-  certificates Certificate[]
+  gradeLevel          GradeLevel?        @relation(fields: [gradeLevelId], references: [id])
+  referredBy          User?              @relation("Referrals", fields: [referredById], references: [id])
+  referrals           User[]             @relation("Referrals")
+  sessions            Session[]
+  authTokens          AuthToken[]
+  payments            Payment[]
+  registration        Registration?
+  attempts            Attempt[]
+  ambassador          AmbassadorProfile?
+  pointEntries        PointLedger[]      @relation("PointOwner")
+  pointEntriesCreated PointLedger[]      @relation("PointCreatedBy")
+  teamsOwned          Team[]
+  teamMember          TeamMember[]
+  taskAssigns         TaskAssignment[]   @relation("TaskAssignee")
+  taskApprovals       TaskAssignment[]   @relation("TaskApprover")
+  tasksCreated        AdminTask[]
+  roundEntries        RoundEntry[]
+  juryScores          JuryScore[]
+  certificates        Certificate[]
+  announcements       Announcement[]
 
   @@index([referredById])
+  @@index([gradeLevelId])
   @@index([role])
   @@index([createdAt])
   @@map("users")
@@ -121,16 +128,17 @@ model User {
 /// Refresh-token session. Rotation: each refresh creates a new row in the same family and revokes the old one.
 /// Presenting a revoked token = reuse => revoke the whole family.
 model Session {
-  id         String    @id @default(uuid()) @db.Uuid
-  userId     String    @map("user_id") @db.Uuid
-  familyId   String    @map("family_id") @db.Uuid
-  tokenHash  String    @unique @map("token_hash")
-  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
-  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz
-  userAgent  String?   @map("user_agent")
-  ip         String?
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String    @id @default(uuid(7)) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  familyId  String    @map("family_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz
+  userAgent String?   @map("user_agent")
+  ip        String?
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([familyId])
@@ -138,21 +146,24 @@ model Session {
 }
 
 model AuthToken {
-  id        String        @id @default(uuid()) @db.Uuid
+  id        String        @id @default(uuid(7)) @db.Uuid
   userId    String        @map("user_id") @db.Uuid
   type      AuthTokenType
   tokenHash String        @unique @map("token_hash")
   expiresAt DateTime      @map("expires_at") @db.Timestamptz
   usedAt    DateTime?     @map("used_at") @db.Timestamptz
   createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime      @updatedAt @map("updated_at") @db.Timestamptz
   user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, type])
   @@map("auth_tokens")
 }
 
+/// Append-only (created_at only). actor_id is intentionally NOT a foreign key: the audit trail must
+/// outlive the user row it refers to (see DECISIONS.md, 2026-10-30 A1).
 model AuditLog {
-  id         String   @id @default(uuid()) @db.Uuid
+  id         String   @id @default(uuid(7)) @db.Uuid
   actorId    String?  @map("actor_id") @db.Uuid
   action     String // e.g. auth.login_failed, payment.manual_reconcile, role.change
   entityType String?  @map("entity_type")
@@ -170,10 +181,12 @@ model AuditLog {
 
 /// Grade level -> category mapping lives in DATA, not in substring matching on labels.
 model GradeLevel {
-  id        String   @id @default(uuid()) @db.Uuid
+  id        String   @id @default(uuid(7)) @db.Uuid
   label     String   @unique
-  sortOrder Int      @map("sort_order")
+  sortOrder Int      @unique @map("sort_order")
   category  Category
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
   users     User[]
 
   @@map("grade_levels")
@@ -183,6 +196,7 @@ model GradeLevel {
 model Setting {
   key       String   @id
   value     Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   @@map("settings")
@@ -191,10 +205,10 @@ model Setting {
 // ───────────── Payments & registration ─────────────
 
 model Payment {
-  id             String        @id @default(uuid()) @db.Uuid
+  id             String        @id @default(uuid(7)) @db.Uuid
   userId         String?       @map("user_id") @db.Uuid // null until the account exists (pay-then-register)
   invoiceNumber  String        @unique @map("invoice_number")
-  amountMinor    Int           @map("amount_minor") // BDT paisa-style minor unit, integer only
+  amountMinor    Int           @map("amount_minor") // integer minor units only; CHECK (> 0) in raw SQL
   currency       String        @default("BDT")
   status         PaymentStatus @default(initiated)
   trxId          String?       @unique @map("trx_id")
@@ -205,7 +219,7 @@ model Payment {
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz
   updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz
 
-  user         User?               @relation(fields: [userId], references: [id])
+  user         User?                @relation(fields: [userId], references: [id])
   registration Registration?
   pending      PendingRegistration?
 
@@ -216,22 +230,24 @@ model Payment {
 
 /// Registration form data stored SERVER-SIDE against the pending payment, so it survives the PayStation round trip.
 model PendingRegistration {
-  id          String    @id @default(uuid()) @db.Uuid
-  paymentId   String    @unique @map("payment_id") @db.Uuid
-  payload     Json // validated form data (never contains role)
-  consumedAt  DateTime? @map("consumed_at") @db.Timestamptz
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  payment     Payment   @relation(fields: [paymentId], references: [id])
+  id         String    @id @default(uuid(7)) @db.Uuid
+  paymentId  String    @unique @map("payment_id") @db.Uuid
+  payload    Json // validated form data (never contains role or a plain password)
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  payment    Payment   @relation(fields: [paymentId], references: [id])
 
   @@map("pending_registrations")
 }
 
 /// One paid payment <-> one registration. Replaying a callback can never create a second one.
 model Registration {
-  id        String   @id @default(uuid()) @db.Uuid
+  id        String   @id @default(uuid(7)) @db.Uuid
   userId    String   @unique @map("user_id") @db.Uuid
   paymentId String   @unique @map("payment_id") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
   user      User     @relation(fields: [userId], references: [id])
   payment   Payment  @relation(fields: [paymentId], references: [id])
 
@@ -241,59 +257,61 @@ model Registration {
 // ───────────── Exams ─────────────
 
 model Exam {
-  id               String     @id @default(uuid()) @db.Uuid
-  title            String
-  category         Category?
-  roundId          String?    @map("round_id") @db.Uuid
-  windowStart      DateTime   @map("window_start") @db.Timestamptz
-  windowEnd        DateTime   @map("window_end") @db.Timestamptz
-  durationMinutes  Int        @map("duration_minutes") // CHECK (<= 30) added in raw SQL migration
-  questionsPerAttempt Int     @map("questions_per_attempt")
-  graceSeconds     Int        @default(30) @map("grace_seconds")
-  status           ExamStatus @default(draft)
-  resultsPublishedAt DateTime? @map("results_published_at") @db.Timestamptz
-  createdAt        DateTime   @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt        DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+  id                  String     @id @default(uuid(7)) @db.Uuid
+  title               String
+  category            Category?
+  roundId             String?    @map("round_id") @db.Uuid
+  windowStart         DateTime   @map("window_start") @db.Timestamptz
+  windowEnd           DateTime   @map("window_end") @db.Timestamptz // CHECK (> window_start) in raw SQL
+  durationMinutes     Int        @map("duration_minutes") // CHECK (1..30) in raw SQL
+  questionsPerAttempt Int        @map("questions_per_attempt") // CHECK (> 0) in raw SQL
+  graceSeconds        Int        @default(30) @map("grace_seconds") // CHECK (>= 0) in raw SQL
+  status              ExamStatus @default(draft)
+  resultsPublishedAt  DateTime?  @map("results_published_at") @db.Timestamptz
+  createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime   @updatedAt @map("updated_at") @db.Timestamptz
 
   round     Round?     @relation(fields: [roundId], references: [id])
   questions Question[]
   attempts  Attempt[]
 
   @@index([status, windowStart])
+  @@index([roundId])
   @@map("exams")
 }
 
 /// Questions are NEVER deleted/re-created after publish (breaks stored answers). Edit => new version row.
 model Question {
-  id            String   @id @default(uuid()) @db.Uuid
-  examId        String   @map("exam_id") @db.Uuid
-  text          String
-  options       Json // [{ "key": "A", "text": "..." }, ...]
-  correctKey    String   @map("correct_key") // server-only, never serialized to clients before results open
-  explanation   String?
-  version       Int      @default(1)
-  isActive      Boolean  @default(true) @map("is_active")
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
-  exam          Exam     @relation(fields: [examId], references: [id])
+  id          String   @id @default(uuid(7)) @db.Uuid
+  examId      String   @map("exam_id") @db.Uuid
+  text        String
+  options     Json // [{ "key": "A", "text": "..." }, ...]
+  correctKey  String   @map("correct_key") // server-only, never serialized to clients before results open
+  explanation String?
+  version     Int      @default(1)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  exam        Exam     @relation(fields: [examId], references: [id])
 
   @@index([examId, isActive])
   @@map("questions")
 }
 
 model Attempt {
-  id             String        @id @default(uuid()) @db.Uuid
-  userId         String        @map("user_id") @db.Uuid
-  examId         String        @map("exam_id") @db.Uuid
-  startedAt      DateTime      @map("started_at") @db.Timestamptz
-  endsAt         DateTime      @map("ends_at") @db.Timestamptz // = min(startedAt + duration, window_end)
-  status         AttemptStatus @default(in_progress)
+  id               String        @id @default(uuid(7)) @db.Uuid
+  userId           String        @map("user_id") @db.Uuid
+  examId           String        @map("exam_id") @db.Uuid
+  startedAt        DateTime      @map("started_at") @db.Timestamptz
+  endsAt           DateTime      @map("ends_at") @db.Timestamptz // = min(startedAt + duration, window_end)
+  status           AttemptStatus @default(in_progress)
   /// Per-attempt drawn questions + shuffled order + shuffled options, decided on the server.
-  layout         Json
-  submittedAt    DateTime?     @map("submitted_at") @db.Timestamptz
-  timeTakenSeconds Int?        @map("time_taken_seconds") // computed by server, never client-reported
-  score          Int?
-  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  layout           Json
+  submittedAt      DateTime?     @map("submitted_at") @db.Timestamptz
+  timeTakenSeconds Int?          @map("time_taken_seconds") // computed by server, never client-reported
+  score            Int?
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz
 
   user       User        @relation(fields: [userId], references: [id])
   exam       Exam        @relation(fields: [examId], references: [id])
@@ -301,18 +319,20 @@ model Attempt {
 
   @@unique([userId, examId]) // one attempt per student per exam; timer can never be reset
   @@index([examId, status])
+  @@index([examId, score(sort: Desc), timeTakenSeconds(sort: Asc)]) // leaderboard snapshot build
   @@map("attempts")
 }
 
 /// The single final submit. `requestId` makes the request idempotent. Checkpoints live in Redis only.
+/// Append-only (created_at = when the server received it).
 model Submission {
-  id         String   @id @default(uuid()) @db.Uuid
-  attemptId  String   @unique @map("attempt_id") @db.Uuid
-  requestId  String   @unique @map("request_id")
-  answers    Json // { questionId: optionKey }
-  events     Json? // optional focus-loss / tab-switch events
-  receivedAt DateTime @default(now()) @map("received_at") @db.Timestamptz
-  attempt    Attempt  @relation(fields: [attemptId], references: [id])
+  id        String   @id @default(uuid(7)) @db.Uuid
+  attemptId String   @unique @map("attempt_id") @db.Uuid
+  requestId String   @unique @map("request_id")
+  answers   Json // { questionId: optionKey }
+  events    Json? // optional focus-loss / tab-switch events
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  attempt   Attempt  @relation(fields: [attemptId], references: [id])
 
   @@map("submissions")
 }
@@ -320,12 +340,14 @@ model Submission {
 // ───────────── Rounds, jury, certificates ─────────────
 
 model Round {
-  id        String    @id @default(uuid()) @db.Uuid
+  id        String       @id @default(uuid(7)) @db.Uuid
   name      String
-  sortOrder Int       @map("sort_order")
+  sortOrder Int          @map("sort_order")
   type      RoundType
-  opensAt   DateTime? @map("opens_at") @db.Timestamptz
-  closesAt  DateTime? @map("closes_at") @db.Timestamptz
+  opensAt   DateTime?    @map("opens_at") @db.Timestamptz
+  closesAt  DateTime?    @map("closes_at") @db.Timestamptz
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz
   exams     Exam[]
   entries   RoundEntry[]
 
@@ -335,17 +357,17 @@ model Round {
 
 /// One row per (user, round). Promotion creates the NEXT round's row with ON CONFLICT DO NOTHING — never overwrites.
 model RoundEntry {
-  id         String      @id @default(uuid()) @db.Uuid
-  userId     String      @map("user_id") @db.Uuid
-  roundId    String      @map("round_id") @db.Uuid
-  status     EntryStatus @default(pending)
-  score      Decimal?    @db.Decimal(8, 2)
-  videoUrl   String?     @map("video_url")
-  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt  DateTime    @updatedAt @map("updated_at") @db.Timestamptz
-  user       User        @relation(fields: [userId], references: [id])
-  round      Round       @relation(fields: [roundId], references: [id])
-  scores     JuryScore[]
+  id        String      @id @default(uuid(7)) @db.Uuid
+  userId    String      @map("user_id") @db.Uuid
+  roundId   String      @map("round_id") @db.Uuid
+  status    EntryStatus @default(pending)
+  score     Decimal?    @db.Decimal(8, 2)
+  videoUrl  String?     @map("video_url")
+  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime    @updatedAt @map("updated_at") @db.Timestamptz
+  user      User        @relation(fields: [userId], references: [id])
+  round     Round       @relation(fields: [roundId], references: [id])
+  scores    JuryScore[]
 
   @@unique([userId, roundId])
   @@index([roundId, status])
@@ -354,7 +376,7 @@ model RoundEntry {
 
 /// Append-only jury scoring history: who scored, 10 criteria, server-computed total.
 model JuryScore {
-  id        String     @id @default(uuid()) @db.Uuid
+  id        String     @id @default(uuid(7)) @db.Uuid
   entryId   String     @map("entry_id") @db.Uuid
   judgeId   String     @map("judge_id") @db.Uuid
   criteria  Json // { criterionKey: 0..10 } validated server-side
@@ -362,18 +384,22 @@ model JuryScore {
   comment   String?
   createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz
   entry     RoundEntry @relation(fields: [entryId], references: [id])
+  judge     User       @relation(fields: [judgeId], references: [id])
 
   @@index([entryId, createdAt])
+  @@index([judgeId])
   @@map("jury_scores")
 }
 
 model Certificate {
-  id               String   @id @default(uuid()) @db.Uuid
+  id               String   @id @default(uuid(7)) @db.Uuid
   userId           String   @map("user_id") @db.Uuid
   type             String // participation | promotion | winner ...
   serial           String   @unique
   verificationCode String   @unique @map("verification_code")
   issuedAt         DateTime @default(now()) @map("issued_at") @db.Timestamptz
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz
   user             User     @relation(fields: [userId], references: [id])
 
   @@index([userId])
@@ -383,11 +409,12 @@ model Certificate {
 // ───────────── Ambassadors, points, teams, tasks ─────────────
 
 model AmbassadorProfile {
-  id         String    @id @default(uuid()) @db.Uuid
+  id         String    @id @default(uuid(7)) @db.Uuid
   userId     String    @unique @map("user_id") @db.Uuid
   promoCode  String    @unique @map("promo_code")
   approvedAt DateTime? @map("approved_at") @db.Timestamptz // admin approval (to be confirmed with owner)
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz
   user       User      @relation(fields: [userId], references: [id])
 
   @@map("ambassador_profiles")
@@ -395,82 +422,106 @@ model AmbassadorProfile {
 
 /// Append-only. Totals/ranks are derived. Corrections = new compensating rows. eventKey makes awards idempotent.
 model PointLedger {
-  id          String   @id @default(uuid()) @db.Uuid
-  userId      String   @map("user_id") @db.Uuid
-  eventKey    String   @unique @map("event_key") // e.g. "referral_paid:<paymentId>", "task:<assignmentId>"
+  id          String     @id @default(uuid(7)) @db.Uuid
+  userId      String     @map("user_id") @db.Uuid
+  eventKey    String     @unique @map("event_key") // e.g. "referral_paid:<paymentId>", "task:<assignmentId>"
   amount      Int // may be negative for corrections
   reason      String
-  taskId      String?  @map("task_id") @db.Uuid
-  createdById String?  @map("created_by_id") @db.Uuid
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
-  user        User     @relation("PointOwner", fields: [userId], references: [id])
+  taskId      String?    @map("task_id") @db.Uuid
+  createdById String?    @map("created_by_id") @db.Uuid
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  user        User       @relation("PointOwner", fields: [userId], references: [id])
+  createdBy   User?      @relation("PointCreatedBy", fields: [createdById], references: [id])
+  task        AdminTask? @relation(fields: [taskId], references: [id])
 
   @@index([userId, createdAt])
+  @@index([taskId])
+  @@index([createdById])
   @@map("point_ledger")
 }
 
 model RankThreshold {
-  id        String @id @default(uuid()) @db.Uuid
-  name      String @unique // Bronze, Silver, Gold ...
-  minPoints Int    @unique @map("min_points")
+  id        String   @id @default(uuid(7)) @db.Uuid
+  name      String   @unique // Bronze, Silver, Gold ...
+  minPoints Int      @unique @map("min_points")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   @@map("rank_thresholds")
 }
 
 model Team {
-  id        String       @id @default(uuid()) @db.Uuid
+  id        String       @id @default(uuid(7)) @db.Uuid
   name      String       @unique
   ownerId   String       @map("owner_id") @db.Uuid
   createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz
   owner     User         @relation(fields: [ownerId], references: [id])
   members   TeamMember[]
 
+  @@index([ownerId])
   @@map("teams")
 }
 
 model TeamMember {
-  teamId String @map("team_id") @db.Uuid
-  userId String @map("user_id") @db.Uuid
-  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  user   User   @relation(fields: [userId], references: [id])
+  teamId    String   @map("team_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id])
 
   @@id([teamId, userId])
+  @@index([userId])
   @@map("team_members")
 }
 
 model AdminTask {
-  id          String   @id @default(uuid()) @db.Uuid
-  title       String
-  description String
-  points      Int
-  createdById String   @map("created_by_id") @db.Uuid
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
-  assignments TaskAssignment[]
+  id           String           @id @default(uuid(7)) @db.Uuid
+  title        String
+  description  String
+  points       Int
+  createdById  String           @map("created_by_id") @db.Uuid
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+  createdBy    User             @relation(fields: [createdById], references: [id])
+  assignments  TaskAssignment[]
+  pointEntries PointLedger[]
 
+  @@index([createdById])
   @@map("admin_tasks")
 }
 
 model TaskAssignment {
-  id           String     @id @default(uuid()) @db.Uuid
+  id           String     @id @default(uuid(7)) @db.Uuid
   taskId       String     @map("task_id") @db.Uuid
   userId       String     @map("user_id") @db.Uuid
   status       TaskStatus @default(assigned)
   approvedById String?    @map("approved_by_id") @db.Uuid
   approvedAt   DateTime?  @map("approved_at") @db.Timestamptz
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz
   task         AdminTask  @relation(fields: [taskId], references: [id])
-  user         User       @relation(fields: [userId], references: [id])
+  user         User       @relation("TaskAssignee", fields: [userId], references: [id])
+  approvedBy   User?      @relation("TaskApprover", fields: [approvedById], references: [id])
 
   @@unique([taskId, userId])
+  @@index([userId])
+  @@index([approvedById])
   @@map("task_assignments")
 }
 
 model Announcement {
-  id        String   @id @default(uuid()) @db.Uuid
-  title     String
-  body      String
+  id          String   @id @default(uuid(7)) @db.Uuid
+  title       String
+  body        String
   publishedAt DateTime @default(now()) @map("published_at") @db.Timestamptz
-  createdById String @map("created_by_id") @db.Uuid
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  createdBy   User     @relation(fields: [createdById], references: [id])
 
   @@index([publishedAt])
+  @@index([createdById])
   @@map("announcements")
 }
