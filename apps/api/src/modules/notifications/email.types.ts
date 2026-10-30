@@ -11,7 +11,7 @@ export interface EmailJobData {
   message: EmailMessage;
 }
 
-/** Sends one email. `idempotencyKey` makes a retried send deliver once (Resend remembers keys for 24 h). */
+/** Sends one email. `idempotencyKey` is the job id (Mailpit shows it as a header; SES has no idempotency keys). */
 export interface EmailProvider {
   readonly name: string;
   send(message: EmailMessage, idempotencyKey: string): Promise<void>;

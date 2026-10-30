@@ -75,47 +75,26 @@ describe('validateEnv: session cookies', () => {
   });
 });
 
-describe('validateWorkerEnv: email (owner: Resend in production, Mailpit in development)', () => {
-  const resendKey = () => `re_${randomBytes(18).toString('base64url')}`;
+describe('validateWorkerEnv: email (owner: Amazon SES in production, Mailpit in development)', () => {
   const worker = (extra: Record<string, string>) => ({
     ...valid(),
     EMAIL_FROM: 'Sirat Olympiad <no-reply@sirat.test>',
     ...extra,
   });
 
-  it('accepts Resend with a real-looking key, and Mailpit with a URL', () => {
-    expect(() =>
-      validateWorkerEnv(worker({ EMAIL_PROVIDER: 'resend', RESEND_API_KEY: resendKey() })),
-    ).not.toThrow();
+  it('accepts Mailpit with a URL', () => {
     expect(() =>
       validateWorkerEnv(worker({ EMAIL_PROVIDER: 'mailpit', MAILPIT_URL: 'http://mailpit:8025' })),
     ).not.toThrow();
   });
 
-  it.each([
-    ['no provider', {}, /EMAIL_PROVIDER/],
-    ['Resend without a key', { EMAIL_PROVIDER: 'resend' }, /RESEND_API_KEY/],
-    [
-      'Resend with a placeholder',
-      { EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 're_fake_key_for_examples_1234' },
-      /RESEND_API_KEY/,
-    ],
-    [
-      'Resend with a non-Resend key',
-      { EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'sk_live_0123456789abcdef0123' },
-      /RESEND_API_KEY/,
-    ],
-    ['Mailpit without a URL', { EMAIL_PROVIDER: 'mailpit' }, /MAILPIT_URL/],
-  ])('refuses %s, never echoing the key', (_label, extra, reason) => {
-    let message = '';
-    try {
-      validateWorkerEnv(worker(extra as Record<string, string>));
-    } catch (e) {
-      message = (e as Error).message;
-    }
-    expect(message).toMatch(reason);
-    const key = (extra as Record<string, string>).RESEND_API_KEY;
-    if (key) expect(message).not.toContain(key);
+  it('refuses to start without a configured provider', () => {
+    expect(() => validateWorkerEnv(worker({}))).toThrow(/EMAIL_PROVIDER must be ses or mailpit/);
+    expect(() => validateWorkerEnv(worker({ EMAIL_PROVIDER: 'mailpit' }))).toThrow(/MAILPIT_URL/);
+  });
+
+  it('no longer knows Resend', () => {
+    expect(() => validateEnv({ ...valid(), EMAIL_PROVIDER: 'resend' })).toThrow(/EMAIL_PROVIDER/);
   });
 
   it('keeps the API itself free of email settings (only the worker sends)', () => {
@@ -134,7 +113,7 @@ describe('validateEnv: blank values', () => {
       ...valid(),
       EMAIL_PROVIDER: '',
       EMAIL_FROM: '',
-      RESEND_API_KEY: '',
+      SES_ACCESS_KEY_ID: '',
       MAILPIT_URL: '',
       LOG_LEVEL: '',
     });

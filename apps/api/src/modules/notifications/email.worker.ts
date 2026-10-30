@@ -20,7 +20,7 @@ import {
   PermanentEmailError,
 } from './email.types';
 
-/** Jobs sent at the same time per worker process. Resend allows 10 requests/s per team by default. */
+/** Jobs sent at the same time per worker process; below a new SES account's sending rate outside the sandbox. */
 export const EMAIL_CONCURRENCY = 5;
 
 /**
@@ -65,7 +65,7 @@ export class EmailWorker implements OnModuleInit, OnApplicationShutdown {
         final:
           !job || err instanceof UnrecoverableError || job.attemptsMade >= (job.opts.attempts ?? 1),
         errName: err.name,
-        error: err.message.slice(0, 200), // our own messages: status codes and Resend error names only
+        error: err.message.slice(0, 200), // our own messages: status codes and SES error names only
       }),
     );
   }

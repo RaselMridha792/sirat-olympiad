@@ -32,13 +32,11 @@ export class EnvVars {
   @IsIn(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
   LOG_LEVEL?: string;
 
-  // Email: only the worker sends, so only the worker requires these (validateWorkerEnv). Owner: Resend in
+  // Email: only the worker sends, so only the worker requires these (validateWorkerEnv). Owner: Amazon SES in
   // production, Mailpit in development.
-  @IsOptional() @IsIn(['ses', 'resend', 'mailpit']) EMAIL_PROVIDER?: string;
+  @IsOptional() @IsIn(['ses', 'mailpit']) EMAIL_PROVIDER?: string;
   /** `Name <address>` or a bare address. */
   @IsOptional() @Matches(SENDER) EMAIL_FROM?: string;
-  /** Never logged, committed or put in NEXT_PUBLIC_*. */
-  @IsOptional() @IsString() RESEND_API_KEY?: string;
   /** Amazon SES (SESv2), e.g. ap-south-1. The keys belong to an IAM user allowed only ses:SendEmail. Never logged. */
   @IsOptional() @Matches(/^[a-z]{2}(-[a-z]+)+-\d$/) SES_REGION?: string;
   @IsOptional() @IsString() SES_ACCESS_KEY_ID?: string;
@@ -102,11 +100,6 @@ export function emailConfigProblem(env: EnvVars): string | null {
   }
   if (!env.EMAIL_FROM)
     return 'EMAIL_FROM is required, e.g. "Sirat Olympiad <no-reply@your-domain>"';
-  if (env.EMAIL_PROVIDER === 'resend') {
-    const key = env.RESEND_API_KEY ?? '';
-    if (!/^re_\S{16,}$/.test(key) || PLACEHOLDER.test(key))
-      return 'RESEND_API_KEY is missing or is not a Resend API key (re_...)';
-  }
   if (env.EMAIL_PROVIDER === 'mailpit' && !env.MAILPIT_URL)
     return 'MAILPIT_URL is required with EMAIL_PROVIDER=mailpit';
   return null;

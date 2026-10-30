@@ -5,7 +5,6 @@ import { EmailQueue } from './email-queue.service';
 import { EMAIL_PROVIDER, type EmailProvider } from './email.types';
 import { EmailWorker } from './email.worker';
 import { MailpitProvider } from './mailpit.provider';
-import { ResendProvider } from './resend.provider';
 import { SesProvider, createSesClient } from './ses.provider';
 import { WorkerHealthService } from './worker-health.service';
 
@@ -26,8 +25,6 @@ export function createEmailProvider(config: ConfigService<EnvVars, true>): Email
       }),
       from,
     );
-  if (provider === 'resend')
-    return new ResendProvider(config.get('RESEND_API_KEY', { infer: true }) ?? '', from);
   return new MailpitProvider(config.get('MAILPIT_URL', { infer: true }) ?? '', from);
 }
 
