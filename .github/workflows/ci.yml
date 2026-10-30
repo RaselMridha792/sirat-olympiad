@@ -1,0 +1,110 @@
+# CI gates (RULEBOOK §13, §15, §18): no merge with failing checks.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Typecheck, lint, unit tests, build, audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4 # version comes from package.json "packageManager"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @sirat/shared build
+      - run: pnpm db:generate
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
+      - name: Dependency audit (production deps, high and above)
+        run: pnpm audit --prod --audit-level high
+
+  database:
+    name: Migrations, drift check, DB + Redis integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: sirat
+          POSTGRES_PASSWORD: ci-only-password # throwaway CI container, not a secret
+          POSTGRES_DB: sirat_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U sirat -d sirat_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://sirat:ci-only-password@localhost:5432/sirat_test
+      DIRECT_URL: postgresql://sirat:ci-only-password@localhost:5432/sirat_test
+      TEST_DATABASE_URL: postgresql://sirat:ci-only-password@localhost:5432/sirat_test
+      SHADOW_DATABASE_URL: postgresql://sirat:ci-only-password@localhost:5432/sirat_shadow
+      REDIS_CACHE_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @sirat/shared build
+      - run: pnpm db:generate
+      - name: Create shadow database for the drift check
+        run: PGPASSWORD=ci-only-password psql -h localhost -U sirat -d sirat_test -c "CREATE DATABASE sirat_shadow"
+      - name: Migrations match schema.prisma (fails on drift)
+        working-directory: apps/api
+        run: >-
+          pnpm exec prisma migrate diff
+          --from-migrations prisma/migrations
+          --to-schema-datamodel prisma/schema.prisma
+          --shadow-database-url "$SHADOW_DATABASE_URL"
+          --exit-code
+      - name: Apply migrations to a fresh DB, then constraint/seed/rate-limit tests
+        run: pnpm --filter @sirat/api test:int
+
+  docker:
+    name: Docker images and compose config
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose file is valid (with the example env)
+        run: cp .env.example .env && docker compose --env-file .env -f infra/docker-compose.yml config --quiet
+      - name: Build API runtime image
+        run: docker build -f apps/api/Dockerfile --target runtime -t sirat-api:ci .
+      - name: Build migrate image
+        run: docker build -f apps/api/Dockerfile --target migrate -t sirat-migrate:ci .
+      - name: Build web image
+        run: docker build -f apps/web/Dockerfile -t sirat-web:ci .
+      - name: Images contain no .env files, old project or dev fixtures
+        run: |
+          for img in sirat-api:ci sirat-migrate:ci sirat-web:ci; do
+            found=$(docker run --rm --entrypoint sh "$img" -c \
+              'find / \( -path /proc -o -path /sys \) -prune -o \( -name ".env" -o -name "zero-olympiad-*" -o -path "*/prisma/fixtures" \) -print 2>/dev/null')
+            if [ -n "$found" ]; then echo "::error::$img contains forbidden files:"; echo "$found"; exit 1; fi
+            echo "$img clean"
+          done
