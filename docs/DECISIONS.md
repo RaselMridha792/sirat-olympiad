@@ -2,6 +2,17 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — A2.1c email: queue, worker, Resend and Mailpit (Claude; owner's email rules of 2026-10-30)
+
+1. **Only the worker sends.** The API enqueues (`EmailQueue.enqueue`) on the queue Redis; `apps/api/src/worker.ts` (same image, compose service `worker`, 02-SYSTEM-DESIGN) consumes. Only the worker requires the email settings (`validateWorkerEnv`); the API boots without them.
+2. **Never blocks** (owner): `enqueue` never throws. It returns false at once when the queue Redis is not ready and after 2 s when it hangs, and logs kind and key only. Callers carry on either way; the user can ask for the email again.
+3. **Idempotency:** the caller's key (e.g. `verify-email.<token id>`; BullMQ forbids colons) is the job id, so a key still waiting or failed is not queued twice. It is also the provider's idempotency key, so a retry after a lost Resend response does not send twice (Resend remembers keys for 24 h).
+4. **Retries:** 8 attempts, exponential from 30 s (about 2 h in all). Failed jobs are kept 3 days; sent jobs are removed at once, because they hold the address and the link. A permanent provider error fails the job immediately.
+5. **Providers, plain fetch (no SDK):** Resend (`POST https://api.resend.com/emails`: Bearer key, a required `User-Agent`, `Idempotency-Key`). 400/401/403/404/405/422 and a key reused with another body are permanent; 429, 5xx, "request in progress" and network errors are retried; 10 s timeout per call. Mailpit (`POST /api/v1/send`) in development and CI. Errors carry status codes and Resend error names only; the key, the address and the content are never logged.
+6. **Config:** `EMAIL_PROVIDER` (resend|mailpit), `EMAIL_FROM`, `RESEND_API_KEY` (must look like `re_...`, no placeholder), `MAILPIT_URL`. The scaffold's unused `EMAIL_API_KEY` is gone.
+7. **Infra:** the worker publishes no port; its health endpoint (`WORKER_HEALTH_PORT`, 4001) serves only the container healthcheck. Mailpit `v1.32.0` runs in the dev override (UI `http://127.0.0.1:18025`) and in CI's database job.
+8. **Not yet:** the emails themselves (verify, reset, welcome) and their templates arrive with their endpoints; the sending domain (SPF, DKIM, DMARC) before any production sending (RUNBOOK §9).
+
 ## 2026-10-30 — A2.1b passwords and sessions (Claude)
 
 Each item has tests, and each test was checked to fail with its protection removed (20 mutations: 7 password, 13 session).

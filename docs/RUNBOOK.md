@@ -18,7 +18,7 @@ pnpm install
 pnpm --filter @sirat/shared build
 pnpm db:generate
 
-$DCD up -d postgres pgbouncer redis-cache redis-queue   # data services on 127.0.0.1:15432/16432/16379/16380
+$DCD up -d postgres pgbouncer redis-cache redis-queue mailpit   # data services on 127.0.0.1:15432/16432/16379/16380; Mailpit UI http://127.0.0.1:18025
 pnpm db:migrate                                         # prisma migrate dev (host, via DIRECT_URL)
 pnpm --filter @sirat/api db:seed                        # idempotent config seed
 ALLOW_DEV_FIXTURES=yes-this-is-not-production pnpm --filter @sirat/api db:fixtures:dev   # DEV ONLY (see below)
@@ -38,7 +38,7 @@ Fixtures: 3 verified students with paid registrations, `student1@fixtures.invali
 
 ```bash
 $DC ps -a                          # VERIFIED; `migrate` shows "Exited (0)" when healthy
-$DC logs -f --tail=200 api        # also: web nginx postgres pgbouncer redis-cache redis-queue migrate
+$DC logs -f --tail=200 api        # also: worker web nginx postgres pgbouncer redis-cache redis-queue migrate
 $DC restart api                    # restart one service
 scripts/healthcheck.sh https://<domain>
 df -h; free -m; docker stats --no-stream
@@ -124,6 +124,7 @@ Also before launch:
 - [ ] The API connects to Postgres with a **non-superuser runtime role** (OPEN-QUESTIONS #27); the bootstrap superuser is used only for migrations, backup and restore.
 - [ ] PayStation sandbox checklist done (`docs/paystation/SANDBOX-CHECKLIST.md`) and the accepted `trx_status` values confirmed.
 - [ ] Cloudflare real-IP list refreshed (section 10).
+- [ ] Email: `EMAIL_PROVIDER=resend` with the Resend API key in `RESEND_API_KEY`, `EMAIL_FROM` on the verified sending domain (SPF, DKIM, DMARC set up in Resend), and one real test email received. `$DC ps worker` shows it healthy.
 - [ ] The VPS `.env` has its own `JWT_ACCESS_SECRET` (`openssl rand -base64 48`) and no `COOKIE_SECURE=false` (the API refuses it with `NODE_ENV=production`).
 
 ## 10. Cloudflare real-IP list (refresh every few months and before each exam)
