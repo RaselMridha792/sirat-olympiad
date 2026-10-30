@@ -146,3 +146,50 @@ describe('validateEnv: blank values', () => {
     expect(() => validateEnv({ ...valid(), DATABASE_URL: '' })).toThrow(/DATABASE_URL/);
   });
 });
+
+describe('validateWorkerEnv: Amazon SES (owner, 2026-10-31)', () => {
+  const ses = (extra: Record<string, string>) => ({
+    ...valid(),
+    EMAIL_PROVIDER: 'ses',
+    EMAIL_FROM: 'Sirat Olympiad <no-reply@sirat.test>',
+    SES_REGION: 'ap-south-1',
+    SES_ACCESS_KEY_ID: 'AKIA4QWERTYUIOPASDFG',
+    SES_SECRET_ACCESS_KEY: randomBytes(30).toString('base64'),
+    ...extra,
+  });
+
+  it('accepts a region and an IAM user key pair', () => {
+    expect(() => validateWorkerEnv(ses({}))).not.toThrow();
+  });
+
+  it.each([
+    ['no region', { SES_REGION: '' }, /SES_REGION/],
+    ['no access key id', { SES_ACCESS_KEY_ID: '' }, /SES_ACCESS_KEY_ID/],
+    ['a temporary (ASIA) key', { SES_ACCESS_KEY_ID: 'ASIA4QWERTYUIOPASDFG' }, /SES_ACCESS_KEY_ID/],
+    [
+      "AWS's documentation example key",
+      { SES_ACCESS_KEY_ID: 'AKIAIOSFODNN7EXAMPLE' },
+      /SES_ACCESS_KEY_ID/,
+    ],
+    ['no secret', { SES_SECRET_ACCESS_KEY: '' }, /SES_SECRET_ACCESS_KEY/],
+    [
+      "AWS's documentation example secret",
+      { SES_SECRET_ACCESS_KEY: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY' },
+      /SES_SECRET_ACCESS_KEY/,
+    ],
+  ])('refuses %s, never echoing a key', (_label, extra, reason) => {
+    let message = '';
+    try {
+      validateWorkerEnv(ses(extra as Record<string, string>));
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    expect(message).toMatch(reason);
+    for (const value of Object.values(extra as Record<string, string>))
+      if (value) expect(message).not.toContain(value);
+  });
+
+  it('refuses a region that is not an AWS region name', () => {
+    expect(() => validateEnv({ ...valid(), SES_REGION: 'mumbai' })).toThrow(/SES_REGION/);
+  });
+});

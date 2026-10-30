@@ -34,11 +34,15 @@ export class EnvVars {
 
   // Email: only the worker sends, so only the worker requires these (validateWorkerEnv). Owner: Resend in
   // production, Mailpit in development.
-  @IsOptional() @IsIn(['resend', 'mailpit']) EMAIL_PROVIDER?: string;
+  @IsOptional() @IsIn(['ses', 'resend', 'mailpit']) EMAIL_PROVIDER?: string;
   /** `Name <address>` or a bare address. */
   @IsOptional() @Matches(SENDER) EMAIL_FROM?: string;
   /** Never logged, committed or put in NEXT_PUBLIC_*. */
   @IsOptional() @IsString() RESEND_API_KEY?: string;
+  /** Amazon SES (SESv2), e.g. ap-south-1. The keys belong to an IAM user allowed only ses:SendEmail. Never logged. */
+  @IsOptional() @Matches(/^[a-z]{2}(-[a-z]+)+-\d$/) SES_REGION?: string;
+  @IsOptional() @IsString() SES_ACCESS_KEY_ID?: string;
+  @IsOptional() @IsString() SES_SECRET_ACCESS_KEY?: string;
   @IsOptional() @Matches(/^https?:\/\/\S+$/) MAILPIT_URL?: string;
   @IsInt() @Min(1) @Max(65535) WORKER_HEALTH_PORT: number = 4001;
 }
@@ -85,7 +89,17 @@ export function validateEnv(raw: Record<string, unknown>): EnvVars {
 
 /** Why the worker cannot send email with this configuration, or null. Never includes a key. */
 export function emailConfigProblem(env: EnvVars): string | null {
-  if (!env.EMAIL_PROVIDER) return 'EMAIL_PROVIDER must be resend or mailpit';
+  if (!env.EMAIL_PROVIDER) return 'EMAIL_PROVIDER must be ses or mailpit';
+  if (env.EMAIL_PROVIDER === 'ses') {
+    if (!env.SES_REGION) return 'SES_REGION is required with EMAIL_PROVIDER=ses (e.g. ap-south-1)';
+    const id = env.SES_ACCESS_KEY_ID ?? '';
+    const secret = env.SES_SECRET_ACCESS_KEY ?? '';
+    // Long-term IAM user keys only (AKIA...); AWS documentation examples contain "EXAMPLE" and are refused.
+    if (!/^AKIA[A-Z0-9]{16}$/.test(id) || PLACEHOLDER.test(id))
+      return 'SES_ACCESS_KEY_ID is missing or is not an IAM access key id (AKIA...)';
+    if (!/^[A-Za-z0-9/+]{40}$/.test(secret) || PLACEHOLDER.test(secret))
+      return 'SES_SECRET_ACCESS_KEY is missing or is not an IAM secret access key';
+  }
   if (!env.EMAIL_FROM)
     return 'EMAIL_FROM is required, e.g. "Sirat Olympiad <no-reply@your-domain>"';
   if (env.EMAIL_PROVIDER === 'resend') {
