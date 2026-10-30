@@ -19,9 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4 # version comes from package.json "packageManager"
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v4 # version from package.json "packageManager"; v6 requires pnpm 11
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -64,9 +64,9 @@ jobs:
       SHADOW_DATABASE_URL: postgresql://sirat:ci-only-password@localhost:5432/sirat_shadow
       REDIS_CACHE_URL: redis://localhost:6379
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -91,7 +91,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Compose file is valid (with the example env)
         run: cp .env.example .env && docker compose --env-file .env -f infra/docker-compose.yml config --quiet
       - name: Build API runtime image
@@ -101,10 +101,12 @@ jobs:
       - name: Build web image
         run: docker build -f apps/web/Dockerfile -t sirat-web:ci .
       - name: Images contain no .env files, old project or dev fixtures
+        # Scan as root so every directory is readable: as the image's non-root user, find exits 1 on
+        # permission errors and `bash -e` aborts the step without a result.
         run: |
           for img in sirat-api:ci sirat-migrate:ci sirat-web:ci; do
-            found=$(docker run --rm --entrypoint sh "$img" -c \
-              'find / \( -path /proc -o -path /sys \) -prune -o \( -name ".env" -o -name "zero-olympiad-*" -o -path "*/prisma/fixtures" \) -print 2>/dev/null')
+            found=$(docker run --rm --user 0 --entrypoint sh "$img" -c \
+              'find / \( -path /proc -o -path /sys -o -path /dev \) -prune -o \( -name ".env" -o -name "zero-olympiad-*" -o -path "*/prisma/fixtures" \) -print')
             if [ -n "$found" ]; then echo "::error::$img contains forbidden files:"; echo "$found"; exit 1; fi
             echo "$img clean"
           done
