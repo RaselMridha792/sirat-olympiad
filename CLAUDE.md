@@ -70,14 +70,19 @@ Frontend design is NOT final. Build in this order, one phase at a time:
 pnpm install
 pnpm --filter @sirat/shared build     # required once before api/web build (shared is compiled)
 pnpm dev:web                          # http://localhost:3000 (proxies /api -> :4000)
-pnpm dev:api                          # NestJS on :4000 (needs .env, Postgres, Redis)
+pnpm dev:api                          # NestJS on :4000 (needs apps/api/.env, Postgres, Redis)
 pnpm typecheck && pnpm lint && pnpm test && pnpm build
+pnpm --filter @sirat/api test:int     # DB + Redis integration tests (needs the dev data services; uses *_test DB only)
 pnpm db:generate && pnpm db:migrate   # Prisma (needs DATABASE_URL + DIRECT_URL)
-docker compose -f infra/docker-compose.yml up -d --build
+pnpm --filter @sirat/api db:seed      # idempotent config seed (also runs in the compose `migrate` job)
+docker compose --env-file .env -f infra/docker-compose.yml up -d --build                                  # server
+docker compose --env-file .env -f infra/docker-compose.yml -f infra/docker-compose.dev.yml up -d --build  # local only
 ```
+Local setup, fixtures and ports: `docs/RUNBOOK.md` section 0. Git: commits/pushes are authored by the owner only, no AI co-author trailers.
 
 ## 4. Current state (update this when it changes)
 
-- Scaffold only. `apps/web` has UI shells with mock data; `apps/api` has module stubs, env validation, health endpoints, Prisma schema (no migrations yet).
-- Not built yet: auth, payments, exam engine, queues, admin features. Build order and phases: `docs/10-BUILD-PLAN.md`.
-- Auth session in the web app is a **mock** (`apps/web/src/lib/session.ts`). Replace before anything else.
+- **Phase A, step A1 (foundation) built — awaiting owner approval** (2026-10-30). Prisma migrations (init + raw-SQL CHECKs), idempotent config seed, guarded dev fixtures, DB/Redis integration tests, Redis-backed global rate limiter, `/api/ready` (DB + both Redis), working Docker images with a `migrate` job, CI in `.github/workflows/ci.yml`. Details: `docs/DECISIONS.md` (A1).
+- Phase A scope (owner): auth (A2), exam engine, leaderboard/results, admin core. Rounds/jury/certificates/ambassador later; registration + payment is Phase C. Phases: `docs/10-BUILD-PLAN.md`.
+- Not built yet: auth, payments, exam engine, queues/workers, admin features, the "no unguarded route" CI test (A2).
+- Auth session in the web app is a **mock** (`apps/web/src/lib/session.ts`). Replaced in A2.

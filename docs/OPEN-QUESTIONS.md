@@ -2,6 +2,8 @@
 
 Owner = Rasel Mridha. Client = GLTS Leadership × Sirat Olympiad. Add the answer + date, then move it to DECISIONS.md.
 
+**Answered 2026-10-30 (see DECISIONS.md "Owner answers before Phase A"):** email verification is lazy; #3 and #13 defaults accepted as placeholders pending client confirmation; #16 provider still open (dev uses Mailpit); #22 owner will confirm VPS specs later.
+
 ## Blocking for specific modules
 
 | # | Question | Blocks | Default if unanswered |

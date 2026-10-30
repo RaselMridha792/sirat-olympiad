@@ -22,7 +22,7 @@ Source of truth: `apps/api/prisma/schema.prisma` (validated; see note at bottom)
 | Ambassadors | `ambassador_profiles`, `point_ledger`, `teams`, `team_members`, `admin_tasks`, `task_assignments` | Ledger append-only |
 | Content | `announcements` | |
 
-## Constraints that MUST exist (tests should assert them)
+## Constraints that MUST exist (asserted by `apps/api/test/db-constraints.int-spec.ts`)
 
 | Constraint | Why |
 |---|---|
@@ -44,7 +44,8 @@ Source of truth: `apps/api/prisma/schema.prisma` (validated; see note at bottom)
 
 * `grade_levels`: the 17 labels from the old wizard (see `reference/zero-olympiad-ui/app/registration-full/Step2_Auth.jsx`) mapped to categories **Activist / Ambassador / Achiever** (grade bands to confirm with the client; SDG numbers are dropped).
 * `settings`: `registration_open`, `registration_fee_minor`, `currency=BDT`, `leaderboard_public=false`, `payment_expiry_minutes=60`, `submit_grace_seconds=30`.
-* `rank_thresholds`: Bronze/Silver/Gold (values from owner).
+* `rank_thresholds`: Bronze 0 / Silver 100 / Gold 250 (placeholders; owner confirms with the client).
+* Seed code: `apps/api/prisma/seed.ts` (insert-only, never overwrites admin edits; runs in the compose `migrate` job). Dev-only test users: `apps/api/prisma/fixtures` (see RUNBOOK section 0).
 * Rounds: Round 1 (quiz); later rounds when defined.
 
 ## Indexes to review with EXPLAIN ANALYZE
@@ -65,4 +66,4 @@ Supabase password hashes can be exported and verified once on first login, then 
 
 ## Verification note
 
-The schema was validated with Prisma's schema validator. `prisma generate` and `prisma migrate` could not be run in the scaffold sandbox (Prisma engine download blocked). First task on a normal machine: `pnpm db:generate && pnpm --filter @sirat/api exec prisma migrate dev --name init`, then add the raw-SQL CHECK migration.
+Done in A1 (2026-10-30): `prisma/migrations/*_init` (generated, plus a hand-added `CREATE EXTENSION citext`) and `*_db_checks` (hand-written CHECKs). CI fails if `schema.prisma` and the migrations drift (`prisma migrate diff --exit-code`). Prisma ignores CHECK constraints and extensions when diffing, so they are never dropped by later migrations.

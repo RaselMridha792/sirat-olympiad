@@ -20,7 +20,8 @@ sirat-olympiad/
 │  │     └─ i18n/                     en.json, bn.json, t()
 │  └─ api/                    NestJS
 │     ├─ Dockerfile  nest-cli.json  eslint.config.mjs
-│     ├─ prisma/schema.prisma        (migrations/ will appear here)
+│     ├─ prisma/                    schema.prisma, migrations/, seed.ts, fixtures/ (dev-only, excluded from images)
+│     ├─ test/                      DB + Redis integration tests (*.int-spec.ts, test:int)
 │     └─ src/
 │        ├─ main.ts  app.module.ts
 │        ├─ config/env.ts             validated env
@@ -32,7 +33,8 @@ sirat-olympiad/
 ├─ packages/
 │  ├─ ui/                     shared React components + tokens.css (source-consumed by web)
 │  └─ shared/                 types/constants for web+api (compiled to dist; run its build first)
-├─ infra/                     docker-compose.yml, nginx/, postgres/, redis/ (pgbouncer via compose env)
+├─ .github/workflows/ci.yml   CI gates (checks, DB integration tests, Docker images)
+├─ infra/                     docker-compose.yml, docker-compose.dev.yml (local only), nginx/, postgres/, redis/
 ├─ scripts/                   bootstrap.sh backup.sh restore.sh healthcheck.sh
 ├─ loadtests/                 k6 scripts (smoke.js + README)
 ├─ docs/                      this documentation set
