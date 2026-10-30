@@ -146,6 +146,25 @@ describe('RedisThrottlerStorage', () => {
     }
   });
 
+  it('still counts a hit when the event loop stalls after Redis has already answered', async () => {
+    const key = randomUUID();
+    // Run inside setImmediate (check phase): the loop's next phases are timers, then I/O. That is the worst case,
+    // where a due timeout would run before the reply already waiting in the socket buffer.
+    const pending = await new Promise<ReturnType<typeof storage.increment>>((resolve) =>
+      setImmediate(() => {
+        const p = storage.increment(key, 60_000, 10, 0, 'default'); // the command is written now
+        const until = Date.now() + THROTTLE_REDIS_TIMEOUT_MS + 150;
+        while (Date.now() < until) {
+          // Block the event loop past the timeout while Redis answers.
+        }
+        resolve(p);
+      }),
+    );
+    expect(await pending).toMatchObject({ totalHits: 1, isBlocked: false });
+    // Not mistaken for a hung Redis: no breaker, the next hit is counted too.
+    expect((await storage.increment(key, 60_000, 10, 0, 'default')).totalHits).toBe(2);
+  });
+
   it('fails open at once when Redis accepts connections but never answers (production client options)', async () => {
     const hole = await blackHole();
     const client = new Redis({ ...CACHE_REDIS_OPTIONS, host: '127.0.0.1', port: hole.port });
