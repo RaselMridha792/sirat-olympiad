@@ -25,6 +25,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - `users-me.int-spec.ts` (12): own profile, options, roles, blocked, allowed fields and the audit, the phone in all forms, the three phone conflicts, refused fields, the grade correction and its refusals.
    - `profile.dto.spec.ts` (the same rules as registration); web: `profile.test.ts`, `http/profile.test.ts`, `save-problem.test.ts`, `grade-problem.test.ts`.
    - **Mutation checks:** without the open-attempt check, without the unique-violation mapping, and without the attempt check, each makes a test fail.
+
 ## 2026-10-31 — Settle, callback, IPN, reconciliation and admin payments (Claude; payments PR 3, plan 6.2–6.7; reconcile rule: lead)
 
 1. **Only the worker asks PayStation.** One BullMQ queue `payments` on the queue Redis:
