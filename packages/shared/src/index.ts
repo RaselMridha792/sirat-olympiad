@@ -58,5 +58,6 @@ export * from './records';
 export * from './dashboard';
 export * from './phone';
 export * from './registration';
+export * from './book';
 export * from './exam';
 export * from './core';
