@@ -2,6 +2,10 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — DECISIONS.md merges as a union (Lead)
+
+1. Every session adds its entries at the top of this file, which conflicted on every merge that day. `.gitattributes` now gives `docs/DECISIONS.md` git's built-in union merge driver: both sides' added lines are kept, and nobody has to resolve the same conflict again. A union can drop the blank line between two new entries; `pnpm format` restores it, and CI's format check catches it. Only this file: in OPEN-QUESTIONS or other tables, a union could duplicate or garble rows.
+
 ## 2026-10-31 — Who merges pull requests (owner)
 
 1. **Only the lead session merges,** with the owner's GitHub account: `gh pr merge <n> --merge --match-head-commit <reviewed sha>`, a merge commit (no squash, rebase or admin bypass). No other session ever merges.
