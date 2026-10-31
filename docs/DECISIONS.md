@@ -2,6 +2,30 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — Refresh rotation inside a time budget (Lead's order after PR #12; Claude implementation)
+
+1. **The gap:** the API's 25 s request timeout answers 503 but cannot cancel the handler, so a rotation could commit after its answer was gone. The browser kept the retired token, and its next try got 409 (inside the grace) or 401 with the family revoked as reuse. A slow API ended the session.
+2. **Rule:**
+   - A rotation commits only within `REFRESH_ROTATION_BUDGET_MS` (15 s) of the handler's start, well before the 25 s request timeout and nginx's 30 s, so its answer (the only copy of the new cookies) always goes out.
+   - Inside the transaction:
+     - every statement, a wait for a row lock included, is bounded by the time left (`set_config('statement_timeout', …, true)`, transaction-local and safe behind PgBouncer);
+     - the budget is checked again just before commit;
+     - Prisma's transaction timeout refuses a later commit.
+   - Past the budget the transaction is rolled back and the API answers 503 with `Retry-After: 1`. Nothing changed, the old cookies still work, and `/refresh` treats the 503 as "unavailable" and tries again.
+3. **Reuse detection is unchanged:**
+   - Two tabs inside the 10 s grace get 409.
+   - A retired token after the grace still revokes the family and is audited.
+   - The retirement time is now taken inside the transaction, so a slow rotation no longer eats into the grace.
+4. **Not chosen:** keeping the successor token (encrypted) in Redis so a retry gets the same cookies. RULEBOOK §5 stores refresh tokens hashed only, and it would change what a replay inside the window gets.
+5. **Tests** (`auth-refresh-timeout.int-spec.ts`, scaled down: budget 300 ms, request timeout 1 s; another connection holds the session row locked):
+   - the rotation is rolled back: 503, no cookies, and no new row even after the lock is released; the same token then renews and `/auth/me` answers 200;
+   - a short wait inside the budget still rotates;
+   - real reuse after the grace still ends the family and is audited.
+   - **Without the budget**, the first test fails: the rotation commits after the timeout's 503, and a second session row appears.
+6. **Not covered:**
+   - a COMMIT that itself stalls past the 10 s margin;
+   - an answer lost in the network after it was sent. That is not the API being slow.
+
 ## 2026-10-31 — Web session: the real session replaces the mock (Lead approved the plan; Claude implementation)
 
 1. **Server-side lookup:** `getSession()` asks `GET /api/auth/me` straight from the web server to the API inside the stack (`API_INTERNAL_URL`, compose inline `http://api:4000`; required in production, dev default `http://localhost:4000`). Only the access cookie goes along, plus the student's IP and nginx's request id.
@@ -25,7 +49,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - **Answers:** 204 is ok. 409 means another tab just rotated; it waits 300 ms and is ok. 401 goes to `/login`. 429, 5xx, a network error or a stuck lock wait count as "unavailable": the browser backs off (honouring Retry-After) and never goes to `/login`.
    - **A slow API never ends the session (Lead):** the refresh POST has no time limit in the browser and is never aborted. Once the API has rotated the token, the new cookies exist only in its answer; cutting it short would lose them, and the next try would send the retired token, which the API treats as reuse and ends the session. After 10 s without an answer, `/refresh` says the server is slow and keeps waiting (nginx answers within its 30 s `proxy_read_timeout`). A unit test pins that the POST carries no abort signal. An e2e case holds the answer 15 s and checks that the page waits, never offers or goes to `/login`, and lands with a live session (Chrome stores the cookies when the headers arrive, so the case cannot replay the lost-cookie path itself).
    - **No way out while a renewal is in flight:** "Try again now" and "Sign in instead" show only between tries. The POST outlives the page (keepalive), so its late answer would overwrite or clear the cookies of a login made meanwhile; on a shared computer, even another student's.
-   - **Gap left on the API side (follow-up, no API change in this PR):** the API's 25 s request timeout answers 503 while the handler cannot be cancelled, so a rotation that commits after 25 s is still lost. Closing it needs an API change: an idempotent rotation within the reuse grace, or no commit after the timeout.
+   - **Gap on the API side (closed by the next PR):** the API's 25 s request timeout answered 503 while the handler could not be cancelled, so a rotation that committed after it was lost. See "Refresh rotation inside a time budget".
    - **Loop guard:** only renewals that worked count. After 2 within 2 minutes for the same page in one tab, the next arrival goes to `/login`. Reloads while the API is unavailable count nothing, so an outage never sends anyone to `/login`. No storage, or storage that throws even when read, fails closed to `/login`.
    - Every browser POST sends `X-Requested-With`, the refresh included (condition f).
 8. **`next=`:**

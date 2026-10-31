@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { Prisma, Role, Session } from '@prisma/client';
+import { Prisma, type Role, type Session } from '@prisma/client';
 import type { EnvVars } from '../../config/env';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -28,10 +28,21 @@ export interface IssuedSession {
 export type RotateResult =
   | { status: 'rotated'; session: IssuedSession }
   | { status: 'race' } // another request rotated this token a moment ago; the browser holds the new cookies
+  | { status: 'busy' } // could not commit within the rotation budget: rolled back, the old token stays valid
   | { status: 'invalid' }; // unknown, expired, reused, or the user is blocked: log in again
+
+/** Below this much budget left, a rotation is not started at all. */
+const MIN_ROTATION_MS = 50;
 
 /** Only the SHA-256 of a refresh token is stored; the token itself exists only in the user's cookie. */
 const sha256 = (token: string) => createHash('sha256').update(token).digest('hex');
+
+/** Thrown inside the rotation transaction to roll it back when the budget is used up. */
+class OutOfTime extends Error {}
+
+/** P2028: the interactive transaction could not start in time (maxWait) or ran past its timeout; rolled back. */
+const isTransactionTimeout = (error: unknown) =>
+  error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2028';
 
 /**
  * Refresh-token sessions (RULEBOOK §5). One family per login; every refresh retires the presented token and issues a
@@ -40,6 +51,7 @@ const sha256 = (token: string) => createHash('sha256').update(token).digest('hex
 @Injectable()
 export class SessionService {
   private readonly refreshTtlMs: number;
+  private readonly rotationBudgetMs: number;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -48,6 +60,7 @@ export class SessionService {
     config: ConfigService<EnvVars, true>,
   ) {
     this.refreshTtlMs = config.get('REFRESH_TTL_DAYS', { infer: true }) * 86_400_000;
+    this.rotationBudgetMs = config.get('REFRESH_ROTATION_BUDGET_MS', { infer: true });
   }
 
   /** A new session family, after a successful login. */
@@ -55,7 +68,19 @@ export class SessionService {
     return this.issue(this.prisma, user, randomUUID(), client);
   }
 
-  async rotate(refreshToken: string, client: ClientInfo): Promise<RotateResult> {
+  /**
+   * Retires `refreshToken` and issues its successor, or explains why not. The rotation commits only within
+   * REFRESH_ROTATION_BUDGET_MS of `startedAt` (the request reaching the handler): its answer carries the only copy
+   * of the new cookies, so a commit after the answer can no longer go out (the 25 s request timeout, nginx's 30 s)
+   * would retire the token the browser still holds, and its next try would look like reuse. Past the budget the
+   * transaction is rolled back ('busy'): nothing changed, and the browser simply tries again.
+   */
+  async rotate(
+    refreshToken: string,
+    client: ClientInfo,
+    startedAt: number = Date.now(),
+  ): Promise<RotateResult> {
+    const deadline = startedAt + this.rotationBudgetMs;
     const current = await this.prisma.session.findUnique({
       where: { tokenHash: sha256(refreshToken) },
       include: { user: { select: { id: true, role: true, isBlocked: true } } },
@@ -68,14 +93,36 @@ export class SessionService {
       await this.endFamily(current.familyId);
       return { status: 'invalid' };
     }
-    const session = await this.prisma.$transaction(async (tx) => {
-      // Conditional retire: of two requests carrying the same token, exactly one wins.
-      const { count } = await tx.session.updateMany({
-        where: { id: current.id, revokedAt: null },
-        data: { revokedAt: now },
-      });
-      return count === 1 ? this.issue(tx, current.user, current.familyId, client) : null;
-    });
+    const budget = deadline - Date.now();
+    if (budget < MIN_ROTATION_MS) return { status: 'busy' };
+    let session: IssuedSession | null;
+    try {
+      session = await this.prisma.$transaction(
+        async (tx) => {
+          const left = deadline - Date.now(); // waiting for a connection may have used some of it
+          if (left < MIN_ROTATION_MS) throw new OutOfTime();
+          // Every statement, a wait for a row lock included, ends by the deadline (set_config(..., true) is
+          // SET LOCAL: this transaction only, safe behind PgBouncer's transaction pooling).
+          await tx.$queryRaw`SELECT set_config('statement_timeout', ${String(left)}, true)`;
+          // Conditional retire: of two requests carrying the same token, exactly one wins.
+          const { count } = await tx.session.updateMany({
+            where: { id: current.id, revokedAt: null },
+            data: { revokedAt: new Date() },
+          });
+          const issued =
+            count === 1 ? await this.issue(tx, current.user, current.familyId, client) : null;
+          if (Date.now() >= deadline) throw new OutOfTime(); // never commit what can no longer be answered
+          return issued;
+        },
+        // Prisma also refuses to commit once `timeout` has passed since the transaction started.
+        { maxWait: Math.min(2_000, budget), timeout: budget },
+      );
+    } catch (error) {
+      if (error instanceof OutOfTime || isTransactionTimeout(error) || Date.now() >= deadline) {
+        return { status: 'busy' }; // rolled back: nothing changed
+      }
+      throw error;
+    }
     return session ? { status: 'rotated', session } : { status: 'race' };
   }
 
