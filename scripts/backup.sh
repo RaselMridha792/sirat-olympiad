@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Encrypted off-server database backup (LAUNCH-PLAN §4 L6; RULEBOOK §6, §15).
 #
-#   backup.sh            dump, check, encrypt, upload, keep the newest local copies, ping the heartbeat
-#   backup.sh --verify   check the newest local copy against its manifest (sha256) and its age
+#   backup.sh                    dump, check, encrypt, upload, keep the newest local copies, ping the heartbeat
+#   backup.sh --accept-smaller   the same, once, accepting a dump much smaller than the last one (by hand only, after
+#                                a deliberate big delete; logged; the timer never passes it)
+#   backup.sh --verify           check the newest local copy against its manifest (sha256) and its age
 #
 # Run as root by sirat-backup.service (its timer, and deploy.sh before migrate) or by hand. Configuration comes only
 # from /etc/sirat/backup.env (root, 0600; SIRAT_BACKUP_ENV names another file for tests), never from the app's .env,
@@ -11,18 +13,42 @@
 # A run: lock (one at a time; deploy.sh waits on the same lock) -> pg_dump -Fc inside the postgres container
 # (credentials stay in the container) -> read the whole archive back, counting the rows of every table and the
 # applied migrations from the same snapshot -> refuse a dump much smaller than the last one -> encrypt with age to the
-# public keys in the recipients file -> manifest -> upload with rclone (dump first, manifest last) -> keep the newest
-# local copies -> heartbeat. Any failure: no new file appears, the heartbeat gets /fail, the exit status is non-zero.
+# public keys in the recipients file -> manifest -> store locally -> upload with rclone into tier prefixes (hourly/
+# always; daily/ for the first run of the Asia/Dhaka day at or after 03:00; weekly/ for that run on a Sunday; dump first,
+# manifest last) -> keep the newest local copies -> heartbeat.
+# A failure: the heartbeat gets /fail and the exit status is non-zero. Before the store step no new copy appears; a
+# failed upload keeps the local encrypted copy (stored first). A run killed mid-dump leaves its partial plain dump in an
+# owner-only .work.* directory, which the next run removes.
 # The manifest's fields (created_at, sha256, tables, migrations) are read by restore-drill.sh and ops-check: keep them.
 set -euo pipefail
 umask 077   # dumps hold minors' personal data: owner-only (RULEBOOK §15)
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIG="${SIRAT_BACKUP_ENV:-/etc/sirat/backup.env}"
-MODE="${1:-run}"
-case "$MODE" in run | --verify) ;; *) echo "usage: backup.sh [--verify]" >&2; exit 2 ;; esac
+MODE=run
+ACCEPT_SMALLER=0
+for arg in "$@"; do
+  case "$arg" in
+    --verify) MODE=verify ;;
+    --accept-smaller) ACCEPT_SMALLER=1 ;;
+    *) echo "usage: backup.sh [--accept-smaller | --verify]" >&2; exit 2 ;;
+  esac
+done
+if [ "$MODE" = verify ] && [ "$ACCEPT_SMALLER" -eq 1 ]; then
+  echo "usage: backup.sh [--accept-smaller | --verify]" >&2
+  exit 2
+fi
 
 fail() { echo "backup: $*" >&2; exit 1; }
+
+# The clock. SIRAT_BACKUP_NOW (epoch seconds) is for tests only; the timer and deploy.sh never set it.
+NOW="${SIRAT_BACKUP_NOW:-$(date -u +%s)}"
+[[ "$NOW" =~ ^[0-9]+$ ]] || fail "SIRAT_BACKUP_NOW must be epoch seconds"
+# Asia/Dhaka is UTC+6 all year (no daylight saving since 2009), so no time zone database is needed.
+DHAKA=$((NOW + 6 * 3600))
+DHAKA_DATE="$(date -u -d "@$DHAKA" +%F)"
+DHAKA_HOUR="$(date -u -d "@$DHAKA" +%H)"
+DHAKA_WEEKDAY="$(date -u -d "@$DHAKA" +%u)" # 7 = Sunday
 
 # ---- configuration: KEY=VALUE lines only, never executed as shell ----
 [ -f "$CONFIG" ] || fail "no config file at $CONFIG (see infra/backup/backup.env.example)"
@@ -96,7 +122,7 @@ manifest_field() { # $1 = manifest, $2 = a top-level field (two-space indent, on
 }
 
 # ---- --verify: the newest local copy is intact and recent ----
-if [ "$MODE" = --verify ]; then
+if [ "$MODE" = verify ]; then
   STEP=verify
   manifest="$(newest_manifest)"
   [ -n "$manifest" ] || fail "no backup in $DIR"
@@ -106,7 +132,9 @@ if [ "$MODE" = --verify ]; then
     fail "the newest copy does not match its manifest (sha256)"
   head -c 64 "$file" | grep -q '^age-encryption.org/v1' || fail "the newest copy is not an age file"
   created="$(manifest_field "$manifest" created_at)"
-  age_s=$(($(date -u +%s) - $(date -u -d "$created" +%s)))
+  [[ "$created" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] ||
+    fail "the newest manifest has no valid created_at"
+  age_s=$((NOW - $(date -u -d "$created" +%s)))
   [ "$age_s" -le $((MAX_AGE_HOURS * 3600)) ] || fail "the newest copy is older than ${MAX_AGE_HOURS} h"
   echo "backup: verified $(basename "$file") ($((age_s / 60)) min old)"
   exit 0
@@ -128,8 +156,8 @@ grep -Eq '^(age1[0-9a-z]+|ssh-(ed25519|rsa) )' "$RECIPIENTS" || fail "no age pub
 mkdir -p "$DIR" && chmod 700 "$DIR"
 rm -rf "$DIR"/.work.* # left by a run that was killed (we hold the lock, so none is running)
 WORK="$(mktemp -d "$DIR/.work.XXXXXX")"
-STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-CREATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+STAMP="$(date -u -d "@$NOW" +%Y%m%dT%H%M%SZ)"
+CREATED_AT="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ)"
 NAME="sirat-$STAMP"
 
 # ---- dump: credentials are read inside the container, never on this shell or its history ----
@@ -175,7 +203,12 @@ last="$(newest_manifest)"
 if [ -n "$last" ]; then
   last_bytes="$(manifest_field "$last" dump_bytes)"
   if [[ "$last_bytes" =~ ^[0-9]+$ ]] && [ $((DUMP_BYTES * 100)) -lt $((last_bytes * MIN_SIZE_PERCENT)) ]; then
-    fail "the dump is much smaller than the last one ($DUMP_BYTES < ${MIN_SIZE_PERCENT}% of $last_bytes bytes)"
+    if [ "$ACCEPT_SMALLER" -eq 1 ]; then
+      echo "backup: WARNING: --accept-smaller: accepted a dump of $DUMP_BYTES bytes after one of $last_bytes (by hand)" >&2
+    else
+      fail "the dump is much smaller than the last one ($DUMP_BYTES < ${MIN_SIZE_PERCENT}% of $last_bytes bytes;" \
+        "after a deliberate big delete, run it once by hand with --accept-smaller)"
+    fi
   fi
 fi
 
@@ -210,14 +243,26 @@ mv "$WORK/$NAME.dump.age" "$DIR/$NAME.dump.age"
 mv "$WORK/$NAME.manifest.json" "$DIR/$NAME.manifest.json"
 
 # ---- off the server (a put-only key: no listing, reading back or deleting; the bucket keeps versions) ----
+# Tier prefixes let the bucket's lifecycle keep hourly copies 2 days, daily 8 and weekly 35 (RUNBOOK §5, owner Q1).
+# The daily copy is the first run of the Asia/Dhaka day at or after 03:00, so a failed 03:00 run is made up by the
+# next one; on a Sunday that copy is also the weekly one. .last-daily remembers the day it was uploaded for.
 STEP=upload
+TIERS=(hourly)
+if [ "$((10#$DHAKA_HOUR))" -ge 3 ] && [ "$(cat "$DIR/.last-daily" 2>/dev/null || true)" != "$DHAKA_DATE" ]; then
+  TIERS+=(daily)
+  if [ "$DHAKA_WEEKDAY" = 7 ]; then TIERS+=(weekly); fi
+fi
 if [ "$REMOTE" = none ]; then
   echo "backup: WARNING: BACKUP_REMOTE=none: this copy is NOT off the server" >&2
+  TIERS=()
 else
-  for f in "$NAME.dump.age" "$NAME.manifest.json"; do
-    rclone copyto "$DIR/$f" "${REMOTE%/}/$f" --no-check-dest --s3-no-check-bucket --s3-no-head \
-      --retries 3 --low-level-retries 5 --contimeout 30s --timeout 10m
+  for tier in "${TIERS[@]}"; do
+    for f in "$NAME.dump.age" "$NAME.manifest.json"; do
+      rclone copyto "$DIR/$f" "${REMOTE%/}/$tier/$f" --no-check-dest --s3-no-check-bucket --s3-no-head \
+        --retries 3 --low-level-retries 5 --contimeout 30s --timeout 10m
+    done
   done
+  if [[ " ${TIERS[*]} " == *" daily "* ]]; then printf '%s\n' "$DHAKA_DATE" > "$DIR/.last-daily"; fi
 fi
 
 # ---- keep the newest local copies ----
@@ -228,6 +273,6 @@ done
 
 STEP=finish
 if [ "$REMOTE" != none ]; then ping_heartbeat '' ok; fi
-where="uploaded to $REMOTE"
+where="uploaded to $REMOTE (${TIERS[*]})"
 if [ "$REMOTE" = none ]; then where="kept locally only"; fi
 echo "backup: $NAME.dump.age ($AGE_BYTES bytes, sha256 ${SHA256:0:12}...) $where"

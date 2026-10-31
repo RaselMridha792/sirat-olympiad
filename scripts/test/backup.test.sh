@@ -78,10 +78,15 @@ EOF
   for line in "$@"; do printf '%s\n' "$line" >> "$T/backup.env"; done
   chmod 600 "$T/backup.env"
 }
+# A fixed clock: each run is 10 minutes after the last, from Monday 2 Nov 2026 10:00 Asia/Dhaka; `at` jumps to a time.
+CLOCK=$(($(date -u -d '2026-11-02T04:00:00Z' +%s) - 600))
+at() { CLOCK=$(($(date -u -d "$1" +%s) - 600)); }
 run_backup() {
-  SIRAT_BACKUP_ENV="$T/backup.env" PATH="$T/bin:$PATH" PINGS="$T/pings.log" \
+  CLOCK=$((CLOCK + 600))
+  SIRAT_BACKUP_ENV="$T/backup.env" PATH="$T/bin:$PATH" PINGS="$T/pings.log" SIRAT_BACKUP_NOW="$CLOCK" \
     bash "$ROOT/scripts/backup.sh" "$@" > "$T/out.log" 2>&1
 }
+on_remote() { [ -f "$T/remote/$1/$(basename "$2")" ]; }
 copies() { find "$T/backups" -maxdepth 1 -name 'sirat-*.dump.age' 2>/dev/null | wc -l; }
 newest() { find "$T/backups" -maxdepth 1 -name "sirat-*.$1" | sort | tail -n 1; }
 field() { sed -n "s/^  \"$2\": \"\{0,1\}\([^\",]*\)\"\{0,1\},\{0,1\}$/\1/p" "$1"; }
@@ -95,12 +100,11 @@ status=0; run_backup || status=$?
 m="$(newest manifest.json)"
 f="$(newest dump.age)"
 ok=1
-[ "$status" -eq 0 ] && [ "$(copies)" -eq 1 ] && [ -f "$T/remote/$(basename "$f")" ] &&
-  [ -f "$T/remote/$(basename "$m")" ] && ok=0
-result "$ok" "a normal run leaves an encrypted copy and its manifest here and on the remote"
+[ "$status" -eq 0 ] && [ "$(copies)" -eq 1 ] && on_remote hourly "$f" && on_remote hourly "$m" && ok=0
+result "$ok" "a normal run leaves an encrypted copy and its manifest here and on the remote (hourly/)"
 ok=1
 [ "$(field "$m" sha256)" = "$(sha256sum "$f" | cut -d' ' -f1)" ] &&
-  [ "$(sha256sum "$T/remote/$(basename "$f")" | cut -d' ' -f1)" = "$(field "$m" sha256)" ] &&
+  [ "$(sha256sum "$T/remote/hourly/$(basename "$f")" | cut -d' ' -f1)" = "$(field "$m" sha256)" ] &&
   head -c 64 "$f" | grep -q '^age-encryption.org/v1' && ok=0
 result "$ok" "the manifest's sha256 matches the local and the uploaded copy, which is age-encrypted"
 ok=1
@@ -133,8 +137,8 @@ result "$ok" "the throwaway key decrypts the upload and the restored counts matc
 status=0; KILL_DUMP=1 run_backup || status=$?
 ok=1
 [ "$status" -ne 0 ] && [ "$(copies)" -eq 1 ] && [ -z "$(find "$T/backups" -name '.work.*')" ] &&
-  [ "$(find "$T/remote" -type f | wc -l)" -eq 2 ] && last_ping | grep -q '/fail$' && ok=0
-result "$ok" "a dump killed midway leaves no file, exits non-zero and pings /fail"
+  [ "$(find "$T/remote/hourly" -type f | wc -l)" -eq 2 ] && last_ping | grep -q '/fail$' && ok=0
+result "$ok" "a dump killed midway leaves no new copy (nor its .work.* after the next run's start), pings /fail"
 
 # 4. A remote that does not exist.
 config "BACKUP_REMOTE=nosuchremote:somewhere"
@@ -164,6 +168,15 @@ ok=1
 [ "$status" -ne 0 ] && grep -q 'much smaller than the last one' "$T/out.log" && [ "$(copies)" -eq "$before" ] &&
   last_ping | grep -q '/fail$' && ok=0
 result "$ok" "a dump much smaller than the last one fails the run"
+status=0; run_backup --accept-smaller || status=$?
+ok=1
+[ "$status" -eq 0 ] && grep -q 'WARNING: --accept-smaller: accepted a dump of' "$T/out.log" &&
+  [ "$(copies)" -eq $((before + 1)) ] && ok=0
+result "$ok" "--accept-smaller takes that dump once, by hand, and says so"
+status=0; run_backup --accept-smaller --verify || status=$?
+ok=1
+[ "$status" -eq 2 ] && ok=0
+result "$ok" "--accept-smaller cannot be combined with --verify"
 psql -c "INSERT INTO users (email, note) SELECT 'again' || g || '@test.invalid', md5(g::text) FROM generate_series(1, 20000) g" > /dev/null
 
 # 7. Retention: the newest three copies stay.
@@ -177,6 +190,14 @@ status=0; run_backup --verify || status=$?
 ok=1
 [ "$status" -eq 0 ] && grep -q 'backup: verified' "$T/out.log" && ok=0
 result "$ok" "--verify passes on the newest copy"
+cp "$(newest manifest.json)" "$T/manifest.bak"
+sed -i 's/^  "created_at": "[^"]*",$/  "created_at": "",/' "$(newest manifest.json)"
+: > "$T/pings.log"
+status=0; run_backup --verify || status=$?
+ok=1
+[ "$status" -ne 0 ] && grep -q 'no valid created_at' "$T/out.log" && last_ping | grep -q '/fail$' && ok=0
+result "$ok" "--verify fails on a manifest without a valid created_at"
+cp "$T/manifest.bak" "$(newest manifest.json)"
 printf 'x' >> "$(newest dump.age)"
 : > "$T/pings.log"
 status=0; run_backup --verify || status=$?
@@ -184,7 +205,28 @@ ok=1
 [ "$status" -ne 0 ] && grep -q 'does not match its manifest' "$T/out.log" && last_ping | grep -q '/fail$' && ok=0
 result "$ok" "--verify fails on a changed copy and pings /fail"
 
-# 9. A local-only run.
+# 9. Tier prefixes (owner Q1 lifecycle): the first run of the Dhaka day at or after 03:00 is also the daily copy, and
+#    on a Sunday also the weekly one; other runs are hourly only.
+tiers_of() { # the prefixes that hold the newest copy
+  local name t out=""
+  name="$(basename "$(newest dump.age)")"
+  for t in hourly daily weekly; do [ -f "$T/remote/$t/$name" ] && [ -f "$T/remote/$t/${name%.dump.age}.manifest.json" ] && out="$out$t "; done
+  printf '%s' "${out% }"
+}
+at 2026-11-07T21:10:00Z # Sunday 8 Nov, 03:10 Dhaka
+run_backup || true
+result "$([ "$(tiers_of)" = 'hourly daily weekly' ] && echo 0 || echo 1)" "the 03:xx run on a Sunday lands in hourly/, daily/ and weekly/"
+at 2026-11-07T22:10:00Z # Sunday, 04:10 Dhaka: today's daily copy exists
+run_backup || true
+result "$([ "$(tiers_of)" = hourly ] && echo 0 || echo 1)" "a later run the same day lands in hourly/ only"
+at 2026-11-08T20:10:00Z # Monday 9 Nov, 02:10 Dhaka: before 03:00
+run_backup || true
+result "$([ "$(tiers_of)" = hourly ] && echo 0 || echo 1)" "a run before 03:00 Dhaka lands in hourly/ only"
+at 2026-11-08T23:10:00Z # Monday, 05:10 Dhaka: no daily copy yet today (the 03:00 run failed)
+run_backup || true
+result "$([ "$(tiers_of)" = 'hourly daily' ] && echo 0 || echo 1)" "the first run after a missed 03:00 makes the daily copy (not weekly on a Monday)"
+
+# 10. A local-only run.
 config "BACKUP_REMOTE=none"
 : > "$T/pings.log"
 status=0; run_backup || status=$?
@@ -192,7 +234,7 @@ ok=1
 [ "$status" -eq 0 ] && grep -q 'NOT off the server' "$T/out.log" && [ ! -s "$T/pings.log" ] && ok=0
 result "$ok" "BACKUP_REMOTE=none keeps a local copy, says it is not off the server, and pings nothing"
 
-# 10. The configuration.
+# 11. The configuration.
 config
 chmod 644 "$T/backup.env"
 status=0; run_backup || status=$?

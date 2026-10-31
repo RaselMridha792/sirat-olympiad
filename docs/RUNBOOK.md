@@ -119,6 +119,7 @@ TODO: Nginx `maintenance.html` toggle (return 503 with a friendly page for `/` a
 
 ```bash
 sudo systemctl start sirat-backup.service          # a backup now; a failure exits non-zero (and stops a deploy)
+sudo /srv/sirat/scripts/backup.sh --accept-smaller # once, by hand, after a deliberate big delete (see below)
 sudo journalctl -u sirat-backup.service -n 30      # what the last runs did
 sudo systemctl start sirat-backup-verify.service   # newest local copy: sha256 vs manifest, an age file, < 26 h old
 sudo ls -l /var/backups/sirat                      # the newest 3 encrypted copies (.dump.age) and their manifests
@@ -132,10 +133,17 @@ bash scripts/test/run-backup-test.sh               # the tests (own compose proj
   3. reads the whole archive back, counting every table's rows and the applied migrations;
   4. refuses a dump under half the size of the last one;
   5. encrypts it to the public keys in `infra/backup/recipients.txt`, and writes a manifest (`created_at`, `sha256` of the encrypted file, `tables`, `migrations`);
-  6. uploads the dump, then the manifest, and keeps the newest 3 locally;
-  7. pings the heartbeat.
+  6. stores the copy locally, then uploads the dump and then the manifest into tier prefixes:
+     - every run → `hourly/`;
+     - the first run of the Asia/Dhaka day at or after 03:00 → also `daily/` (a failed 03:00 run is made up by the next one);
+     - that run on a Sunday → also `weekly/`;
+  7. keeps the newest 3 locally;
+  8. pings the heartbeat.
 
-  Any failure leaves no new file, pings the heartbeat's `/fail` with the failed step's name, and exits non-zero.
+  A failure pings the heartbeat's `/fail` with the failed step's name and exits non-zero:
+  - before the store step it leaves no new copy;
+  - a failed upload keeps the local encrypted copy, which was stored first;
+  - a run killed mid-dump leaves its partial plain dump in an owner-only `.work.*` directory under `/var/backups/sirat` until the next run removes it.
 - **Setup on the VPS (root, once):**
   1. `apt install age rclone`.
   2. `/etc/sirat/backup.env` from `infra/backup/backup.env.example`, `chmod 600` (refused otherwise); `BACKUP_PROJECT=sirat`.
@@ -147,7 +155,14 @@ bash scripts/test/run-backup-test.sh               # the tests (own compose proj
 - **Until the bucket exists:** `BACKUP_REMOTE=none` keeps local copies only, warns "NOT off the server" and pings nothing. Launch needs the off-server copy (LAUNCH-PLAN §7).
 - **After registration closes, go daily:** `systemctl edit sirat-backup.timer` with `[Timer]`, `OnCalendar=`, `OnCalendar=*-*-* 03:30 Asia/Dhaka`. Then set the heartbeat's expected period to about 26 h.
 - **Decrypt** (a key holder, never on the server): `age -d -i <key file> sirat-<stamp>.dump.age > sirat.dump`. Compare `sha256sum` of the `.age` file with the manifest first.
-- **Retention off the server:** the bucket's versioning and lifecycle rules (Q1), not the script; the put-only key cannot delete.
+- **Retention off the server (Q1):** the bucket's versioning and lifecycle rules, not the script (the put-only key cannot delete). Three lifecycle rules:
+  - prefix `hourly/`: expire objects 2 days after creation;
+  - prefix `daily/`: expire after 8 days;
+  - prefix `weekly/`: expire after 35 days;
+  - on all three, delete noncurrent versions after 1 day.
+
+  That keeps 7 daily and 4 weekly copies (RULEBOOK §6) plus 2 days of hourly ones.
+- **"The dump is much smaller than the last one":** the run stops when a dump is under half the size of the last one, because a sudden drop usually means lost data. After a deliberate big delete (the first run of the session and token cleanup job, a test-data wipe), check that the drop is expected, then run `sudo /srv/sirat/scripts/backup.sh --accept-smaller` once by hand. It logs that it was used; the timer never passes it, and the next timed runs compare with that copy.
 
 **Restore** (until L7): stop traffic first, restore a decrypted dump (refuses a truncated dump; one transaction), then migrate and start again.
 
