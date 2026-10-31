@@ -79,6 +79,7 @@ LOCK_WAIT="$(cfg BACKUP_LOCK_WAIT_SECONDS 900)"
 RECIPIENTS="$(cfg BACKUP_RECIPIENTS infra/backup/recipients.txt)"
 REMOTE="$(cfg BACKUP_REMOTE)"
 HEARTBEAT="$(cfg BACKUP_HEARTBEAT_URL)"
+STATUS_FILE="$(cfg BACKUP_STATUS_FILE /var/lib/sirat/last-backup)"
 MIN_SIZE_PERCENT="$(cfg BACKUP_MIN_SIZE_PERCENT 50)"
 MAX_AGE_HOURS="$(cfg BACKUP_MAX_AGE_HOURS 26)"
 PG_LOCK_WAIT="$(cfg BACKUP_PG_LOCK_WAIT 60s)"
@@ -286,7 +287,15 @@ find "$DIR" -maxdepth 1 -name 'sirat-*.manifest.json' | sort | head -n -"$KEEP" 
 done
 
 STEP=finish
-if [ "$REMOTE" != none ]; then ping_heartbeat '' ok; fi
+# For monitor.sh (L11), which cannot read the root-only backup directory: the created_at and sha256 of the newest
+# copy that is off the server, written only after its upload worked (a failed run never makes the check look fresh),
+# root-owned and world-readable, nothing else. A local-only run does not count.
+if [ "$REMOTE" != none ]; then
+  mkdir -p "$(dirname "$STATUS_FILE")"
+  printf 'created_at=%s\nsha256=%s\n' "$CREATED_AT" "$SHA256" > "$STATUS_FILE.tmp"
+  chmod 644 "$STATUS_FILE.tmp" && mv "$STATUS_FILE.tmp" "$STATUS_FILE"
+  ping_heartbeat '' ok
+fi
 where="uploaded to $REMOTE (${TIERS[*]})"
 if [ "$REMOTE" = none ]; then where="kept locally only"; fi
 echo "backup: $NAME.dump.age ($AGE_BYTES bytes, sha256 ${SHA256:0:12}...) $where"
