@@ -2,6 +2,17 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — Who merges pull requests (owner)
+
+1. **Only the lead session merges,** with the owner's GitHub account: `gh pr merge <n> --merge --match-head-commit <reviewed sha>`, a merge commit (no squash, rebase or admin bypass). No other session ever merges.
+2. **Conditions:**
+   - CI 4/4 green on the head commit;
+   - the lead's own review;
+   - the PR description lists every local check and ends with one line `Ready to merge: <sha>`.
+   A push after that means a new review.
+3. **Never during a live exam window.** The owner is told after each merge.
+4. **The owner can hold any PR, or merge one themselves.**
+
 ## 2026-10-31 — Refresh rotation inside a time budget (Lead's order after PR #12; Claude implementation)
 
 1. **The gap:** the API's 25 s request timeout answers 503 but cannot cancel the handler, so a rotation could commit after its answer was gone. The browser kept the retired token, and its next try got 409 (inside the grace) or 401 with the family revoked as reuse. A slow API ended the session.

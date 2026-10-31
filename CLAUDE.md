@@ -79,7 +79,7 @@ pnpm --filter @sirat/api db:seed      # idempotent config seed (also runs in the
 docker compose --env-file .env -f infra/docker-compose.yml up -d --build                                  # server
 docker compose --env-file .env -f infra/docker-compose.yml -f infra/docker-compose.dev.yml up -d --build  # local only
 ```
-Local setup, fixtures and ports: `docs/RUNBOOK.md` section 0. Git: commits/pushes are authored by the owner only, no AI co-author trailers; no direct pushes to `main` (branch + pull request, the owner merges) until OPEN-QUESTIONS #25 is decided.
+Local setup, fixtures and ports: `docs/RUNBOOK.md` section 0. Git: commits/pushes are authored by the owner only, no AI co-author trailers; no direct pushes to `main` (branch + pull request; pull requests are merged only by the lead session (owner decision 2026-10-31, DECISIONS)) until OPEN-QUESTIONS #25 is decided.
 
 ## 4. Current state (update this when it changes)
 
