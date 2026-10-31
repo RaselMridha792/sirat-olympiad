@@ -2,6 +2,17 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — Gateway charge: the merchant pays it, `pay_with_charge = 0` (owner)
+
+1. The student pays exactly the fee (400 BDT); the merchant bears PayStation's charge: `pay_with_charge = 0` (OPEN-QUESTIONS P6, plan Q1). This replaces the default `pay_with_charge=1` in OPEN-QUESTIONS #1.
+2. **Only this path is built.** `PAYSTATION_PAY_WITH_CHARGE` must be `0`; any other value stops the API at boot (fail closed). The v2-based amount rule and the charge calculation for `1` are not built, which saves time and tests. `payments` gets no `charge_minor` column; `paid_amount_minor` records what PayStation reported.
+3. **Amount rule:** paid only when v1 `payment_amount` equals the payment's `amount_minor` exactly. A lower or higher amount is never paid: `rejected_amount` and a critical alert.
+4. Still verified in the sandbox (S10): with `0`, `payment_amount` is exactly 400 and the checkout shows the student 400.
+
+## 2026-10-31 — Registration form fields (owner)
+
+The plan's default is approved (plan Q2): name, phone (BD mobile), district, institution, education type, grade level (one of the 17), email, password, and an optional promo code. All are required except the promo code. No date of birth, gender, guardian or photo (minimum personal data for minors).
+
 ## 2026-10-31 — First release: registration and payment by 15 November 2026 (owner, via the lead)
 
 1. **Target 15 November 2026.** The first release is registration and payment only. It ends when a student logs in and sees their own registration and payment status on the dashboard. No part of the exam engine is needed.

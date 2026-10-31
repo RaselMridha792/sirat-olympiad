@@ -22,18 +22,23 @@ The five questions that block code are in section 2. Everything else uses the de
 
 1. **Fee in the database** (Rasel): `settings.registration_fee_minor = 40000` (400 BDT in paisa, an integer). A migration sets it; only an admin can change it, after a confirmation, and every change is audit-logged. This replaces the same-day idea of `REGISTRATION_FEE_BDT` in `.env`, which was never built.
 2. **Snapshot:** when a payment starts, the server copies the fee into the payment row. The server never accepts an amount from the client. The amount PayStation reports must match the row.
-3. **`pay_with_charge` is open** (Q1). The code supports both values; when the student pays the charge, the fee and the charge are stored separately.
+3. **`pay_with_charge = 0`** (Rasel, Q1): the student pays exactly 400 BDT and the merchant bears PayStation's charge. Only this path is built. Any other configured value stops the API at boot (fail closed). There is no charge column and no v2 amount rule.
 4. **PayStation account settings from `.env`**: credentials, account label, invoice prefix, callback URL and IPN URL. Rasel's own test account (sandbox) now; the client's account later (checklist in section 13). **The host comes from a two-entry allow-list** in `payment.config.ts` (sandbox, live), picked by `PAYSTATION_ENV`. A free URL is accepted only for the fake server (section 3.5).
 5. **First release before the exam engine** (section 0).
+6. **Form fields** (Rasel, Q2): the default in section 2 is approved.
 
 ## 2. Questions that block code (owner)
 
-Status (lead, 2026-10-31): Q1 and Q2 have been put to Rasel. Q3–Q5 are needed before day 4. Any question still unanswered when its day comes uses the default below.
+Status (lead, 2026-10-31):
+- **Q1 and Q2 are answered** by Rasel (DECISIONS "Gateway charge" and "Registration form fields").
+- Q3 and Q4 answers are on their way.
+- Q5 keeps its default.
+- Any question still unanswered when its day comes uses the default below.
 
 | # | Question | Default if unanswered | Blocks |
 |---|---|---|---|
-| Q1 | **`pay_with_charge` (P6):** does the student (1) or the merchant (0) pay PayStation's charge? | `1`, as in OPEN-QUESTIONS #1. Both are coded. Note: `0` removes the biggest sandbox unknown (S10: which amount the status API reports). | Day 6 (final amount rule), day 12 |
-| Q2 | **Registration form fields:** which fields, which required? | The old wizard's set (07-UI-MIGRATION): name, phone (BD mobile, `01XXXXXXXXX`), district, institution, education type, grade level (the 17 rows of `grade_levels`), email, password (8–128), promo code (optional). All required except the promo code. Nothing else: no date of birth, gender, guardian or photo (minimum data for minors). | Day 4 |
+| Q1 | ~~**`pay_with_charge` (P6):** does the student (1) or the merchant (0) pay PayStation's charge?~~ | **Answered (Rasel, 2026-10-31): `0`.** The student pays only 400 BDT; the merchant bears the charge. Only `0` is built; any other value stops the API at boot. Still verified in the sandbox (S10). | Day 1 (config), day 3 (amount rule), day 12 (S10) |
+| Q2 | ~~**Registration form fields:** which fields, which required?~~ | **Answered (Rasel, 2026-10-31): the default is approved.** The old wizard's set (07-UI-MIGRATION): name, phone (BD mobile, `01XXXXXXXXX`), district, institution, education type, grade level (the 17 rows of `grade_levels`), email, password (8–128), promo code (optional). All required except the promo code. Nothing else: no date of birth, gender, guardian or photo (minimum data for minors). | Day 4 |
 | Q3 | **Duplicate email/phone messages (DoD #4):** what does the student see? | (a) The email already has an account: "This email is already registered. Log in, or reset your password." This reveals that the account exists; rate-limited per IP and per email. (b) The same email has a payment in progress from another browser: "A payment for this email is already in progress. Continue in the browser where you started, or try again after it expires (at most 60 minutes)." The same browser resumes automatically. (c) Phone numbers are not unique (siblings often share a parent's phone): no message. | Day 4 |
 | Q4 | **Refund → access (P8):** what happens to a refunded student? | The payment becomes `refunded`; the account stays and can log in; the dashboard shows "Payment refunded: registration cancelled". The registration counts as inactive, so the exam engine will refuse it later (access needs a `paid` payment). No second registration on the same account (`registrations UNIQUE(user_id)`); an admin handles exceptions. | Day 9, day 11 |
 | Q5 | **Checkout expiry:** after how long is an unpaid payment given up? | 60 minutes (`settings.payment_expiry_minutes`, already seeded), raised to PayStation's link lifetime once the sandbox shows it (S12). Expired and failed payments keep being re-checked for 48 h for a late success. | Day 8 |
@@ -134,7 +139,7 @@ Why it is not free in `.env` (lead review): with a free URL, a dev machine with 
 | `PAYSTATION_INVOICE_PREFIX` | `T` | Required, 1–3 uppercase letters or digits. Starts every invoice number, so test invoices stand out in our database and in PayStation's panel (`T` test, `S` client live). |
 | `PAYSTATION_CALLBACK_URL` | `http://localhost:8080/api/payments/paystation/callback` | Required (the name already exists). The code appends `/<invoice>`. Boot fails if the longest possible URL is over 200 characters, if it is not `https://` (except `fake`), or if its path is not our callback route. It may differ from `APP_URL` (a tunnel). |
 | `PAYSTATION_IPN_URL` | `https://<public-host>/api/payments/paystation/ipn` | Required unless `fake`. Not sent to PayStation: the IPN URL is registered by hand in PayStation's merchant panel. Checked at boot (https, our route), logged at boot, used by the fake server and by the switch checklist. |
-| `PAYSTATION_PAY_WITH_CHARGE` | `1` | Required, `0` or `1` (Q1). Copied into each payment. Lives with the account because it follows the account's contract. |
+| `PAYSTATION_PAY_WITH_CHARGE` | `0` | Required, and only `0` is accepted (Q1); any other value stops the API at boot (fail closed). It stays a variable so that a client contract with another value fails loudly instead of being ignored. Sent to PayStation and copied into each payment (`pay_with_charge` false). |
 | `PAYSTATION_TIMEOUT_MS` | `10000` | Per gateway call. |
 | `PAYMENT_RECONCILE_EVERY_SECONDS` | `120` | Repeatable job interval (RULEBOOK: 2–5 min). |
 | `PAYMENT_RECONCILE_MIN_AGE_SECONDS` | `120` | Younger payments are not queried. |
@@ -168,16 +173,16 @@ Why it is not free in `.env` (lead review): with a free URL, a dev machine with 
   - add `status`, `email` citext NOT NULL, `phone` NOT NULL (normalised), `name` NOT NULL, `payload` jsonb NULL (rest of the form, including the argon2id `password_hash`; never the plain password), `payload_version` int, `start_request_id` uuid UNIQUE (double-click idempotency), `resume_token_hash` UNIQUE (SHA-256 of the `sirat_reg` cookie token), `referred_by_id` NULL (FK users RESTRICT), `user_id` NULL UNIQUE (FK users RESTRICT), `completed_at` NULL;
   - indexes on `email`, `phone`, `referred_by_id`, `(status, updated_at)`.
 - `payments`:
-  - add `pending_registration_id` NOT NULL (FK RESTRICT, indexed), `gateway_account` text NOT NULL (with `status` in an index), `charge_minor` NULL, `paid_amount_minor` NULL, `payment_url` NULL, `gateway_status` NULL, `last_checked_at` NULL, `check_count` default 0, `review_reason` NULL;
+  - add `pending_registration_id` NOT NULL (FK RESTRICT, indexed), `gateway_account` text NOT NULL (with `status` in an index), `paid_amount_minor` NULL (the amount PayStation reported, kept as a record), `payment_url` NULL, `gateway_status` NULL, `last_checked_at` NULL, `check_count` default 0, `review_reason` NULL;
   - drop `gateway_payload` (replaced by `payment_events`);
   - drop the defaults of `currency` and `pay_with_charge` (always set explicitly).
-- New `payment_events` (append-only): `id`, `created_at`, `payment_id` NULL (FK RESTRICT; NULL for an unknown invoice), `source` (`initiate`, `callback`, `ipn`, `status_v1`, `status_v2`, `admin`), `invoice_number`, `trx_id` (as received), `outcome` (`applied_paid`, `applied_failed`, `applied_expired`, `applied_refunded`, `no_change`, `duplicate`, `rejected_amount`, `rejected_invoice`, `unknown_invoice`, `not_found_2001`, `unknown_status`, `unavailable`, `account_mismatch`), `status_code`, `trx_status`, `payload` jsonb (redacted: no merchant credentials, payer phone masked; at most 16 KB), `actor_id` NULL. Indexes `(payment_id, created_at)`, `trx_id`, `invoice_number`.
+- New `payment_events` (append-only): `id`, `created_at`, `payment_id` NULL (FK RESTRICT; NULL for an unknown invoice), `source` (`initiate`, `callback`, `ipn`, `status_v1`, `admin`), `invoice_number`, `trx_id` (as received), `outcome` (`applied_paid`, `applied_failed`, `applied_expired`, `applied_refunded`, `no_change`, `duplicate`, `rejected_amount`, `rejected_invoice`, `unknown_invoice`, `not_found_2001`, `unknown_status`, `unavailable`, `account_mismatch`), `status_code`, `trx_status`, `payload` jsonb (redacted: no merchant credentials, payer phone masked; at most 16 KB), `actor_id` NULL. Indexes `(payment_id, created_at)`, `trx_id`, `invoice_number`.
 - `User` gets only back-relation fields in Prisma; no SQL change to `users`.
 
 **M2 `<ts>_registration_fee_400`** (hand-written data migration): the upsert in section 3.3.
 
 **M3 `<ts>_payments_checks`** (hand-written SQL, kept apart from M1 so regenerating M1 never loses it; enum CHECKs compare `::text`):
-- `payments`: `amount_minor % 100 = 0`; `currency = 'BDT'`; `charge_minor >= 0`; `status = 'paid'` requires `paid_amount_minor = amount_minor + coalesce(charge_minor, 0)`; `invoice_number ~ '^[A-Z0-9]{10,20}$'`; `trx_id <> ''`.
+- `payments`: `amount_minor % 100 = 0`; `currency = 'BDT'`; `status = 'paid'` requires `paid_amount_minor = amount_minor`; `invoice_number ~ '^[A-Z0-9]{10,20}$'`; `trx_id <> ''`.
 - `pending_registrations`: `status = 'completed'` exactly when `user_id` and `completed_at` are set.
 - Partial unique indexes: `payments (pending_registration_id) WHERE status IN ('initiated','pending')` (one active payment per attempt); `pending_registrations (email) WHERE status = 'open'` (one attempt in progress per email, Q3 b).
 - Triggers: `payments_status_transition` (a new row must be `initiated`; refuses any status change not in section 5); `registrations_payment_paid` (a registration's payment must be `paid`; the Phase C item deferred in the A1 review); append-only on `payment_events` (UPDATE, DELETE, TRUNCATE refused, like `audit_logs`).
@@ -266,10 +271,10 @@ Check the invoice format, find the payment, record the event (query string kept,
 0. `payments.gateway_account` differs from `PAYSTATION_ACCOUNT_LABEL` → no call, `account_mismatch`, alert.
 1. v1 status by invoice; record the event.
 2. Classify: `"200"` with lowercased `trx_status` `success`/`successful` → **paid** only if `trx_id` is non-empty and unused, `data.invoice_number` is ours, `reference` is our payment id (when echoed, S19) and the amount rule passes. `failed` → failed. `refund` on a paid row → refunded. `processing`/other → no change (alert if unknown). 2001 → no change (alert if it repeats). Timeout, 5xx, bad JSON → no change, retry with backoff.
-3. Amount rule (strings parsed to paisa, never floats: `"400"`, `"400.00"`, `400` → 40000):
-   - `pay_with_charge = 0`: v1 `payment_amount` equals `amount_minor` exactly; `charge_minor` NULL; `paid_amount_minor = amount_minor`.
-   - `pay_with_charge = 1` (S10): v2 by `trx_id`; `request_amount` equals `amount_minor` and `payment_amount ≥ amount_minor`; `charge_minor = payment − request`; `paid_amount_minor = payment`. v2 unavailable → no change. Simplified if the sandbox shows v1 reports only our amount.
-   - Anything else → never paid: `rejected_amount`, critical alert, an admin decides.
+3. Amount rule (`pay_with_charge = 0` only, Q1; strings parsed to paisa, never floats: `"400"`, `"400.00"`, `400` → 40000):
+   - **paid only if** v1 `payment_amount` equals the payment's own `amount_minor` exactly; then `paid_amount_minor` = that reported amount.
+   - Lower, higher or missing → never paid: `rejected_amount`, critical alert, an admin decides.
+   - v2 (`/v2/transaction-status`) is not used.
 4. Transaction: lock the payment `FOR UPDATE`, re-read, apply the transition (already paid with this `trx_id` → `duplicate`). On paid, consume the attempt atomically (RULEBOOK §18): `UPDATE pending_registrations SET status = 'completed', … WHERE id = $1 AND status = 'open' RETURNING payload`.
    - One row → create the user (role always `student`, category from `grade_levels`, `referred_by_id`), the registration, `payments.user_id`, `payload` NULL, an audit row.
    - No row → another payment completed the attempt: paid with `duplicate_payment`, alert.
@@ -297,8 +302,8 @@ Up to 100 payments per run, least recently checked first: `initiated`/`pending` 
 
 ### 6.7 What the student and the admin see
 
-- **Before an account exists** (cookie `sirat_reg`; public routes, ownership = the token): `GET /registrations/current` (`awaiting_payment | confirming | completed | failed | expired`, invoice, amount, charge, `canResume`, `canRetry`; no personal data; polled 2 s → 10 s, stops after 2 min, then the "Check my payment status" button), `POST /registrations/current/resume` (the stored URL while valid), `/retry` (new payment, new invoice, only while open: D7), `/recheck` (enqueue a verify, once per 10 s), `/cancel` (abandon, only if nothing is active or a re-check shows unpaid). After completion the cookie is cleared (D2).
-- **Logged in (end of the first release):** `GET /registrations/me` (registration status, category, date, payment status incl. refunded) and `GET /payments/mine` (paginated: invoice, amount, charge, status, dates) feed the dashboard; `GET /payments/:id/status` and `POST /payments/:id/recheck` (owner, throttled).
+- **Before an account exists** (cookie `sirat_reg`; public routes, ownership = the token): `GET /registrations/current` (`awaiting_payment | confirming | completed | failed | expired`, invoice, amount, `canResume`, `canRetry`; no personal data; polled 2 s → 10 s, stops after 2 min, then the "Check my payment status" button), `POST /registrations/current/resume` (the stored URL while valid), `/retry` (new payment, new invoice, only while open: D7), `/recheck` (enqueue a verify, once per 10 s), `/cancel` (abandon, only if nothing is active or a re-check shows unpaid). After completion the cookie is cleared (D2).
+- **Logged in (end of the first release):** `GET /registrations/me` (registration status, category, date, payment status incl. refunded) and `GET /payments/mine` (paginated: invoice, amount, status, dates) feed the dashboard; `GET /payments/:id/status` and `POST /payments/:id/recheck` (owner, throttled).
 - **Admin:** `GET /admin/payments?invoice=|trx=|phone=|review=1` (paginated, filter by `gateway_account`), `POST /admin/payments/:id/recheck`, `POST /admin/payments/:id/reconcile` `{ to, trxId?, reason, refundRef? }` (audit-logged), `GET/PUT /admin/settings/:key` (3.4).
 - **06-API changes (owner review):** `GET /payments/paystation/callback` becomes `/callback/:invoice`; new public routes `GET /registrations/info`, `GET /registrations/current`, `POST /registrations/current/{resume,retry,recheck,cancel}`.
 
@@ -307,14 +312,13 @@ Up to 100 payments per run, least recently checked first: `initiated`/`pending` 
 ```ts
 interface PaymentGateway {
   initiate(req: InitiateRequest): Promise<InitiateResult>;
-  statusByInvoice(invoiceNumber: string): Promise<StatusResult>; // v1
-  statusByTrxId(trxId: string): Promise<StatusResult>; // v2
+  statusByInvoice(invoiceNumber: string): Promise<StatusResult>; // v1; v2 is not used (Q1 = 0)
 }
 type InitiateRequest = {
   invoiceNumber: string;
   amountTaka: number; // integer: amount_minor / 100
   currency: 'BDT';
-  payWithCharge: 0 | 1;
+  payWithCharge: 0; // Q1: the merchant bears the charge; config refuses anything else
   reference: string; // our payment id
   customer: { name: string; phone: string; email: string };
   callbackUrl: string;
@@ -329,7 +333,7 @@ type StatusResult =
       invoiceNumber: string;
       trxStatus: string; // lowercased raw value; the decision maps it
       trxId: string | null; // '' becomes null
-      amounts: { paymentMinor?: number; requestMinor?: number; trxMinor?: number };
+      paymentMinor: number | null; // v1 payment_amount in paisa; null if missing or unparsable
       reference?: string;
       paymentMethod?: string;
     }
@@ -343,33 +347,33 @@ Adapters only translate HTTP. The decision (6.3) is a pure function `decide(paym
 
 - **`PayStationGateway` (real):** `fetch` with an AbortSignal timeout; initiate form-encoded with `merchantId` and `password`; status calls send only the `merchantId` header. Everything from `PaymentConfig`; the adapter itself holds no host name (only the allow-list in `payment.config.ts` does). Logs carry the error class and status code only.
 - **`FakeGateway` (in-memory, unit tests):** scripted answers per invoice.
-- **Fake PayStation server** (`tools/fake-paystation`, D5): plain Node HTTP with the official response shapes for initiate, v1 and v2; a checkout page with Pay / Fail / Cancel / Close (redirects to the callback with plugin-style `status`, `invoice_number`, `trx_id`, and can POST the IPN); a control endpoint for test scenarios (delay, timeout, 2001, `Successful`/`Success`, `"400.00"`, a charge, a late success, a duplicate IPN). The real adapter runs against it in integration tests and in local dev. Never in a production image; `PAYSTATION_ENV=fake` is refused in production.
+- **Fake PayStation server** (`tools/fake-paystation`, D5): plain Node HTTP with the official response shapes for initiate and v1; a checkout page with Pay / Fail / Cancel / Close (redirects to the callback with plugin-style `status`, `invoice_number`, `trx_id`, and can POST the IPN); a control endpoint for test scenarios (delay, timeout, 2001, `Successful`/`Success`, `"400.00"`, an amount above or below the fee, a late success, a duplicate IPN). The real adapter runs against it in integration tests and in local dev. Never in a production image; `PAYSTATION_ENV=fake` is refused in production.
 - **`paystation:selfcheck` CLI:** one initiate with an `X…` invoice that is never stored or paid; expects `"200"`. Proves credentials and host (a status query cannot: 2001 means "not found" or "wrong credentials").
 - **Contract tests:** the same suite runs against the fake server and, by hand, against the sandbox; results go into `SANDBOX-CHECKLIST.md`.
 
 ## 8. VERIFY: needs the sandbox
 
-S1–S17 exist in `SANDBOX-CHECKLIST.md`; S18–S30 are added there on day 2. If Rasel's sandbox credentials are in the local `.env` on day 2, the API-only checks (S1–S3, S6, S7, S10, S11, S15, S17, S21) run then through the contract suite, to settle S10 before the amount rule is written on day 6. The full browser flow stays on day 12.
+S1–S17 exist in `SANDBOX-CHECKLIST.md`; S18–S30 are added there on day 2. If Rasel's sandbox credentials are in the local `.env` on day 2, the API-only checks (S1–S3, S6, S7, S11, S15, S17, S21) run then through the contract suite. S10 needs one sandbox checkout in a browser; it is done by hand on day 2 if possible, so the amount rule (day 3) is confirmed early, and again in the full browser flow on day 12.
 
 | # | Question | Affects |
 |---|---|---|
-| S10 / P6 | With `pay_with_charge=1`, does v1 `payment_amount` hold the fee or fee + charge? Meaning of v2 `request_amount`/`payment_amount` | amount rule, `charge_minor` |
+| S10 / P6 | With `pay_with_charge=0` (Q1): is v1 `payment_amount` exactly 400, and does the checkout show the student 400 (not 400 plus a charge)? If not, every payment fails closed (`rejected_amount`): stop and ask the owner | amount rule |
 | S4, S5, S16 / P1 | Callback method and parameters; do cancel and failure return? | callback route |
 | S12 | Checkout link lifetime | Q5 |
-| S15 | Exact `trx_status` strings, v1 and v2 | accepted list |
+| S15 | Exact `trx_status` strings on v1 | accepted list |
 | S17 | 2001: unknown invoice vs wrong `merchantId` | alerting |
 | S11 | Sandbox host | one line of the allow-list in `payment.config.ts` (3.5) |
 | S1, S2 | Invoice length and characters | invoice format |
 | S9 | IPN sent in the sandbox at all? | IPN tests |
 | S18 | After a failed try, can the student retry on the same invoice (failed, then success)? | `failed` not final |
-| S19 | Does v2 return `invoice_number` and `reference`? Does v1 echo our `reference`? | cross-checks |
+| S19 | Does v1 echo our `reference`? | cross-checks |
 | S20 | IPN content type, timing vs the callback, retries (answer 500 once) | IPN handler |
 | S21 | Amount formats (`"400"`, `"400.00"`, number, separators?) | parser |
 | S22 | What the checkout shows the payer (name, phone, email; whose merchant name) | privacy, section 13 |
 | S23 | Accepted `cust_name` (Bangla?), `cust_phone` format, email rules | Q2 normalisation |
 | S24 | A `callback_url` with the invoice in its path: accepted, parameters appended correctly? | callback URL |
 | S25 | Rate limits on the status APIs | verify concurrency |
-| S26 | Refund visible as `trx_status = refund` on v1 and v2 | refund sync |
+| S26 | Refund visible as `trx_status = refund` on v1 | refund sync |
 | S27 | Can a `payment_url` be opened again after closing the tab? | resume |
 | S28 | Time zone of `order_date_time` | admin display |
 | S29 | Where the IPN URL is registered for a test account; more than one allowed? | 3.5, section 13 |
@@ -404,7 +408,7 @@ The staging stack in D8 needs a VPS, and the client has not delivered one yet (O
 Each protection is mutation-checked as in A2: its test fails with the protection removed. File names are proposals.
 
 **Unit:**
-- `payment-decision.spec.ts`: every `status_code` × `trx_status` casing × amount equal/lower/higher × invoice match × `trx_id` empty/used × `pay_with_charge` 0/1.
+- `payment-decision.spec.ts`: every `status_code` × `trx_status` casing × amount equal/lower/higher × invoice match × `trx_id` empty/used; amount equal, 1 paisa lower, 1 paisa higher, 400 plus a typical charge, missing.
 - `payment-state.spec.ts`: the full from × to matrix.
 - `amount.spec.ts`: `"400"`, `"400.00"`, `400`, `400.0`, `"400.5"` → 40050, `"400.123"`, `""`, `null`, `"4,00"`, `"1e3"`.
 - `invoice.spec.ts`: format, ≤ 20, 100,000 unique, collision retry.
@@ -414,6 +418,7 @@ Each protection is mutation-checked as in A2: its test fails with the protection
   - any other host for `sandbox`/`live` refused; `fake` with a free URL accepted;
   - placeholder credentials, non-https URLs, wrong route paths, callback over 200;
   - bad label or prefix, including the reserved `FX` and `X`;
+  - `PAYSTATION_PAY_WITH_CHARGE` other than `0` (`1`, blank, `true`) refused;
   - the source scan: a PayStation host only in `payment.config.ts`.
 - `paystation.gateway.spec.ts`, against a stub server with the official samples: encodings, headers, password only on initiate, timeouts and non-JSON → `unavailable`, no secrets in logs.
 - `fee.spec.ts`: the fee validity rules.
@@ -536,7 +541,7 @@ Now: Rasel's test account (sandbox), label `rasel-sandbox`, invoice prefix `T`. 
 ### 13.2 Before the switch (with the client)
 
 - [ ] The client's merchant account is approved for live, with the wanted methods enabled (OPEN-QUESTIONS #1).
-- [ ] Q1 (`pay_with_charge`) is decided for the client's contract; charge rates known.
+- [ ] The client's contract has the merchant bearing the charge (`pay_with_charge = 0`, Q1). If the client wants the student to pay it, stop: `1` is not built, and the API refuses to boot with it.
 - [ ] The client's panel has exactly the production `PAYSTATION_IPN_URL` registered (S29); the callback domain is whitelisted if required (S30).
 - [ ] Credentials delivered as in D9.
 - [ ] Registration closed, or no payment `initiated`/`pending` (query in RUNBOOK): payments in flight on the old account cannot be verified after the switch.
@@ -551,7 +556,7 @@ Change `PAYSTATION_ENV` (`live`: the host comes from the allow-list; `PAYSTATION
 | Check | Why | How |
 |---|---|---|
 | `paystation:selfcheck` | Credentials and host work | One initiate with an `X…` invoice, never stored or paid; expects `"200"`. Leaves one unpaid invoice in the client's panel. |
-| S10 / Q1 amounts | Charge settings are per account | One small real payment; compare v1/v2 amounts with 6.3. |
+| S10 / Q1 amount | Charge settings are per account | One small real payment: v1 `payment_amount` equals the fee exactly, and the checkout shows the fee with no charge added. |
 | S12 | Link lifetime may be per account | `payment_expiry_minutes` ≥ it. |
 | S15, S16, S20 | Status strings, callback, IPN on live | From the real payment (its IPN appears in `payment_events`). |
 | S22 | Checkout shows the client's merchant name, not Rasel's | Look. |
@@ -574,7 +579,7 @@ Results go into `SANDBOX-CHECKLIST.md` (a "client account" column) and DECISIONS
 
 1. **15 days is tight.** Days 12–14 are the only buffer. If late, cut in this order: the admin payments page (the API stays; RUNBOOK SQL lookups meanwhile), the fake-server checkout page polish, then k6 scale (never the correctness tests).
 2. **A2's web session is a dependency** for days 10–11. If it is not merged by day 9, the web steps slip.
-3. **The amount rule for `pay_with_charge=1` is unknown (S10).** Fails closed: payments stay pending and alert, never wrongly paid. Early sandbox checks on day 2 if credentials exist.
+3. **S10 with `pay_with_charge=0` is not yet seen in the sandbox.** If PayStation reports an amount other than exactly 400 (for example, the charge added anyway), every payment fails closed (`rejected_amount`, critical alert); none is ever wrongly marked paid. The owner is asked before anything changes. Checked early on day 2 if credentials exist.
 4. **DoD #16 needs the client's live account.** If it is not ready by 15 November, the release is ready but registration stays closed.
 5. **A late payment after our expiry** → duplicate payments and refunds. Expiry ≥ PayStation's link lifetime (S12); late watch.
 6. **The worker is the only path to confirmation.** Health and queue-depth alerts; two worker replicas are safe with BullMQ.
