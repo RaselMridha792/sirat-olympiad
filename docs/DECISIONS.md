@@ -49,6 +49,38 @@ One short entry per non-obvious technical or product decision. Newest first. For
     - **Web logs (condition e):** no cookie, token, `#token`, `next` value or `/me` body; server-side fetch errors carry class and status only. A CI step greps the production log.
 13. **Per-user API limits (Lead):** not an open question; DECISIONS A1 #8 and 06-API already settle it. It follows as its own small API PR before 2026-11-15: the key is the user id when a verified session exists, otherwise the IP. nginx's `api` zone stays per IP (30 r/s, burst 60); that PR records it as a risk to measure in the load test.
 
+## 2026-10-31 — Gateway charge: the merchant pays it, `pay_with_charge = 0` (owner)
+
+1. The student pays exactly the fee (400 BDT); the merchant bears PayStation's charge: `pay_with_charge = 0` (OPEN-QUESTIONS P6, plan Q1). This replaces the default `pay_with_charge=1` in OPEN-QUESTIONS #1.
+2. **Only this path is built.** `PAYSTATION_PAY_WITH_CHARGE` must be `0`; any other value stops the API at boot (fail closed). The v2-based amount rule and the charge calculation for `1` are not built, which saves time and tests. `payments` gets no `charge_minor` column; `paid_amount_minor` records what PayStation reported.
+3. **Amount rule:** paid only when v1 `payment_amount` equals the payment's `amount_minor` exactly. A lower or higher amount is never paid: `rejected_amount` and a critical alert.
+4. Still verified in the sandbox (S10): with `0`, `payment_amount` is exactly 400 and the checkout shows the student 400.
+
+## 2026-10-31 — Registration form fields (owner)
+
+The plan's default is approved (plan Q2): name, phone (BD mobile), district, institution, education type, grade level (one of the 17), email, password, and an optional promo code. All are required except the promo code. No date of birth, gender, guardian or photo (minimum personal data for minors).
+
+## 2026-10-31 — First release: registration and payment by 15 November 2026 (owner, via the lead)
+
+1. **Target 15 November 2026.** The first release is registration and payment only. It ends when a student logs in and sees their own registration and payment status on the dashboard. No part of the exam engine is needed.
+2. **Order change:** this release comes before the exam engine. For it, the phase order of `10-BUILD-PLAN.md` (A backend → B dashboards → C registration/payment) is replaced: the registration and payment API, the web wizard, the payment result page and the dashboard status are built now. The public marketing site stays Phase D. The Phase C Definition of Done (17 points) applies in full.
+3. Plan, day-by-day order and the proof for each DoD point: `docs/plans/PAYMENTS-PLAN.md`. The plan and these decisions reach `main` in a docs-only pull request before any code (lead review, 2026-10-31); the code pull requests follow the split in the plan's section 10.
+
+## 2026-10-31 — Registration fee: 400 BDT, stored in settings (owner)
+
+1. **The fee is 400 BDT**, stored as `settings.registration_fee_minor = 40000` (paisa, integer), not in `.env`. Replaces the same day's `REGISTRATION_FEE_BDT` idea (never built) and the placeholder 0 of A1 #6.
+2. **Set by a migration** that inserts the key when it is missing and changes it only while it is still the placeholder 0. Why: the `migrate` job runs migrations before the seed and the seed only inserts missing keys, so an UPDATE alone does nothing on an empty database and the seed would then write 0. The seed default becomes 40000 too.
+3. **Only an admin changes it**, after a confirmation: a dialog shows the old and new value, and the server requires the value the form showed and answers 409 if it changed in the meantime, so an old form never overwrites someone else's change. Every change is audit-logged with the old value, the new value and a reason.
+4. **Snapshot:** a payment copies the fee when it starts. An amount from the client is never accepted. The amount PayStation reports must match the payment row.
+5. **A fee of 0 or less, or not whole taka, stops payments:** the server does not start one, and a DB CHECK refuses such a value.
+6. The currency stays BDT (`settings.currency`); a payment refuses to start with anything else.
+
+## 2026-10-31 — PayStation account settings from env (owner)
+
+1. Sandbox work uses the owner's own PayStation test account now; the client's account replaces it later. Credentials, account label, invoice prefix, callback URL and IPN URL come from `.env`, so switching accounts changes `.env` only.
+2. **The host is not free in `.env`** (lead review, 2026-10-31). PayStation's host is the same for every merchant, so `payment.config.ts` holds a two-entry allow-list (sandbox, live) and `PAYSTATION_ENV` picks the entry, as decided on 2026-10-30. `live` is refused unless `NODE_ENV=production`. If `PAYSTATION_BASE_URL` is set for `sandbox` or `live`, it must equal that label's host or the API does not boot. Only `fake` (the dev/CI fake server, never in production) accepts any URL. Why: with a free base URL, a dev machine with `PAYSTATION_ENV=sandbox`, the live host and live credentials would take real money, and no guard would notice. No other source file contains a PayStation host (a source scan checks this). If the sandbox shows a different host (S11), one line of the allow-list changes. This replaces the same day's first idea of a free base URL from `.env`, which was never built.
+3. Each payment records the account it belongs to, and invoice numbers carry an account prefix, so test data never mixes with live data. The switch checklist (what to re-verify, how test data stays apart): `docs/plans/PAYMENTS-PLAN.md` section 13.
+
 ## 2026-10-31 — Launch target and how the next work is split (Lead, through the owner)
 
 1. **Launch on 2026-11-15 with registration and payment only.** Students log in after paying, so the first-admin CLI and the web session are on the critical path.
