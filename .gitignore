@@ -19,6 +19,9 @@ docs/paystation/*.pdf
 # TLS material and DB dumps never go into git.
 infra/nginx/certs/*
 !infra/nginx/certs/.gitkeep
+# The maintenance flag (scripts/maintenance.sh); the folder stays in git so compose's folder mount always has it.
+infra/nginx/maintenance/*
+!infra/nginx/maintenance/.gitkeep
 *.pem
 *.key
 *.dump

@@ -1,4 +1,4 @@
-import type { Category } from './index';
+import type { Category, Role } from './index';
 import type { AdminUserQuery, AnnouncementItem, PageQuery } from './dashboard';
 import type { AnnouncementRecord } from './records';
 
@@ -85,3 +85,22 @@ export const ANNOUNCEMENT_REFUSALS = [
   'nothing_to_update',
 ] as const;
 export type AnnouncementRefusal = (typeof ANNOUNCEMENT_REFUSALS)[number];
+
+// ───────────── Ambassadors (core C5a; 06-API "Ambassadors") ─────────────
+
+/** Refusal codes in ApiError.details for approving and revoking an ambassador. */
+export const AMBASSADOR_REFUSALS = [
+  'not_paid_student',
+  'blocked',
+  'wrong_role',
+  'not_ambassador',
+] as const;
+export type AmbassadorRefusal = (typeof AMBASSADOR_REFUSALS)[number];
+
+/** POST /admin/ambassadors/:userId/{approve,revoke} answer: the ambassador's state after the change. */
+export interface AmbassadorState {
+  userId: string;
+  promoCode: string;
+  approvedAt: string | null;
+  role: Role;
+}

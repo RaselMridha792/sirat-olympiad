@@ -61,7 +61,7 @@ pnpm --filter @sirat/api db:fixtures:dev                   # 4. the same three s
 Web session: the dashboards read the real session (`GET /api/auth/me` from the web server; `API_INTERNAL_URL`, default `http://localhost:4000`, compose sets `http://api:4000`), so `pnpm dev:web` needs `pnpm dev:api` running (the stack's API is not published on :4000; with the full stack, use its own web through nginx at http://127.0.0.1:8080). Log in at `/login` as a fixture student; the admin pages need an admin from the create-admin CLI. Without a session a dashboard page goes to `/refresh`, then `/login`; with the API down it shows the error page, never `/login`. Dashboard data comes from the mock in development; `DATA_SOURCE=http pnpm dev:web` reads the local API instead (methods not connected yet show the error state, as in production).
 
 Page checks and e2e (`apps/web/scripts`; Node and a local Chrome or Edge, no other tool):
-- `check:leak` (dev server) and `check:prod` / `check:api-down` (`next start` with `API_INTERNAL_URL`): set `CHECK_STUDENT_EMAIL`/`CHECK_STUDENT_PASSWORD` (a fixture student) and `CHECK_ADMIN_EMAIL`/`CHECK_ADMIN_PASSWORD`; CI runs all three (job "Dashboard pages").
+- `check:leak` (dev server) and `check:prod` / `check:api-down` (`next start` with `API_INTERNAL_URL`): set `CHECK_STUDENT_EMAIL`/`CHECK_STUDENT_PASSWORD` (a fixture student) and `CHECK_ADMIN_EMAIL`/`CHECK_ADMIN_PASSWORD`; `check:leak` also needs `CHECK_AMBASSADOR_EMAIL`/`CHECK_AMBASSADOR_PASSWORD` (a fixture student an admin approved as an ambassador, only in a throwaway database: CI approves `student2@fixtures.invalid` through the API). CI runs all three (job "Dashboard pages").
 - `pnpm --filter @sirat/web e2e [http://127.0.0.1:8080]` runs against the whole local stack with `E2E_STUDENT_PASSWORD` (the fixture password) and optionally `E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD`; it reads the reset email from Mailpit. The local stack (project `sirat`, same ports) is shared between sessions: announce `up -d --build`, smoke tests and e2e runs before starting and when done. The reset case sets the student's password to the same value again and ends that student's sessions. It refuses a base URL or `MAILPIT_URL` that is not 127.0.0.1, localhost or ::1.
 - `pnpm --filter @sirat/web e2e:exam [http://127.0.0.1:8080]` (exam room): needs `E2E_STUDENT_PASSWORD` and an admin (`E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD`). The admin publishes a 15-minute exam for all categories through the API (`E2E exam <time>`; it stays published, closed after its 15-minute window, because an exam is archived only after its results are published); a fixture student takes it in the browser up to the 6th violation, and every response, the HTML and localStorage are searched for explanations, correct keys, scores and question ids. Same stack rules as `e2e`; loopback URLs only.
 - `pnpm --filter @sirat/web e2e:exam-admin [http://127.0.0.1:8080]` (exam authoring, E5b): needs an admin (`E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD`). In the browser: the settings form's own checks, a draft, questions through the dialog (checks, add, edit, delete), a refused and then a successful publish, a published edit that becomes version 2, a refused unpublish, a published exam's settings (frozen fields, a later close with a reason), a stale save refused, an archive; the settings page must carry no question or answer key. It leaves one published exam (`E2E authoring <time>`, open for about 90 minutes) and one archived draft. Same stack rules as `e2e`; loopback URLs only.
@@ -130,7 +130,31 @@ $DC up -d --no-recreate --scale api=6 api   # VERIFIED (1 -> 2): nginx picks up 
 
 ## 4. Maintenance mode
 
-TODO: Nginx `maintenance.html` toggle (return 503 with a friendly page for `/` and `/api`). Document the exact commands here when built.
+**The switch (L5):** while the flag file `infra/nginx/maintenance/on` exists (in the clone, git-ignored), nginx answers the public site with a 503:
+- pages, whatever the method: the bilingual page `infra/nginx/pages/maintenance.html` ("we'll be right back", and "if you just paid, your payment is safe; we confirm it automatically");
+- other `/api` calls: JSON `{"statusCode":503,"code":"MAINTENANCE",...}`;
+- both with `Cache-Control: no-store` (Cloudflare keeps neither), `Retry-After: 120` and the security headers.
+
+**Still passing:** `/healthz`, the PayStation IPN (it records and queues; PayStation retries) and the callback (it records the return; the result page it leads to shows the maintenance page). The worker keeps confirming payments. nginx looks for the file on every request: no reload, no restart.
+
+```bash
+scripts/maintenance.sh on        # maintenance: on (since <UTC time>)
+scripts/maintenance.sh status    # maintenance: on (since ...) | maintenance: off
+scripts/maintenance.sh off
+# Checks from the server go through the internal listener, which the switch never affects:
+$DC exec -T nginx wget -qO- http://127.0.0.1:8081/api/ready   # {"status":"ready"} while visitors see the page
+curl -s -o /dev/null -w '%{http_code}\n' https://<domain>/    # 503 while on, 200 after off
+```
+
+- **The script** touches only the flag file and never runs up, down or restart. It refuses `on` while the page is not world-readable: nginx's workers read it, so keep the clone at umask 022.
+- **The same page replaces nginx's own 502/504** on pages and on the PayStation callback (the status stays 502/504), so a deploy gap or a stopped web shows it too. Other `/api` calls keep their JSON errors.
+- **When:**
+  - the kill switches, in order: `registration_open=false`, then maintenance on, then `deploy.sh --rollback` (L9);
+  - a restore (section 5);
+  - a critical fix during an incident.
+
+  Not during a live exam window without the owner: students keep answering in the browser, but their final submit would get the MAINTENANCE answer.
+- **Tests:** `infra/nginx/test/check-maintenance.sh` (its own containers and fake upstreams; CI's docker job), and a CI step on the stack.
 
 ## 5. Backup and restore
 
@@ -183,13 +207,17 @@ bash scripts/test/run-backup-test.sh               # the tests (own compose proj
   That keeps 7 daily and 4 weekly copies (RULEBOOK §6) plus 2 days of hourly ones.
 - **"The dump is much smaller than the last one":** the run stops when a dump is under half the size of the last one, because a sudden drop usually means lost data. After a deliberate big delete (the first run of the session and token cleanup job, a test-data wipe), check that the drop is expected, then run `sudo /srv/sirat/scripts/backup.sh --accept-smaller` once by hand. It logs that it was used; the timer never passes it, and the next timed runs compare with that copy.
 
-**Restore** (until L7): stop traffic first, restore a decrypted dump (refuses a truncated dump; one transaction), then migrate and start again.
+**Restore** (until L7): maintenance on, stop the app (nginx keeps running and shows the page), restore a decrypted dump (refuses a truncated dump; one transaction), migrate, start the app, check it through the internal listener, then maintenance off.
 
 ```bash
-$DC stop nginx web api
+scripts/maintenance.sh on                 # section 4; visitors get the maintenance page
+$DC stop web api worker                   # the worker too: no job writes during the restore
 scripts/restore.sh <decrypted>.dump  # DESTRUCTIVE, asks for YES (truncated-dump refusal VERIFIED; full restore not yet rehearsed)
-$DC run --rm migrate && $DC exec redis-cache redis-cli FLUSHALL && $DC up -d && scripts/healthcheck.sh https://<domain>
+$DC run --rm --no-deps migrate && $DC exec redis-cache redis-cli FLUSHALL && $DC up -d --no-deps api worker web
+$DC exec -T nginx wget -qO- http://127.0.0.1:8081/api/ready   # {"status":"ready"}
+scripts/maintenance.sh off && scripts/healthcheck.sh https://<domain>
 ```
+While the API is stopped, PayStation's IPN gets nginx's JSON 502 and is retried; reconciliation catches anything missed once the worker is back.
 After a restore drill, also check the free book's cover: `GET /api/book/cover/<id>` (the id is `settings.book_cover_image_id`) returns the image. Covers live in Postgres (`book_images`), so the dump carries them; there is no file directory to restore.
 
 Credentials are read inside the postgres container; nothing secret is typed on the host. Hardening (L7): restore into a fresh database instead of `--clean` over the live schema, and a scripted drill. Before every exam: a fresh backup and a **restore drill on another machine**.

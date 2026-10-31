@@ -92,7 +92,12 @@ export const studentHomeMessages = defineMessages({
       registeredOn: 'Registered on',
       payment: 'Payment',
       none: 'No registration is linked to this account yet.',
+      unavailable:
+        'Your registration status cannot be shown right now. Reload the page in a moment.',
       register: 'Register now',
+    },
+    book: {
+      unavailable: 'Your book order cannot be shown right now. Reload the page in a moment.',
     },
   },
   bn: {
@@ -178,7 +183,12 @@ export const studentHomeMessages = defineMessages({
       registeredOn: 'রেজিস্ট্রেশনের তারিখ',
       payment: 'পেমেন্ট',
       none: 'এই অ্যাকাউন্টের সাথে এখনো কোনো রেজিস্ট্রেশন যুক্ত নেই।',
+      unavailable:
+        'এই মুহূর্তে রেজিস্ট্রেশনের অবস্থা দেখানো যাচ্ছে না। একটু পরে পাতাটি আবার খুলুন।',
       register: 'এখনই রেজিস্ট্রেশন করুন',
+    },
+    book: {
+      unavailable: 'এই মুহূর্তে বইয়ের অর্ডার দেখানো যাচ্ছে না। একটু পরে পাতাটি আবার খুলুন।',
     },
   },
 });

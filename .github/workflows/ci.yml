@@ -64,6 +64,7 @@ jobs:
       CHECK_API_URL: http://localhost:4000
       CHECK_STUDENT_EMAIL: student1@fixtures.invalid
       CHECK_ADMIN_EMAIL: pages-admin@ci.invalid
+      CHECK_AMBASSADOR_EMAIL: student2@fixtures.invalid # approved by the admin through the API (step below)
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
@@ -81,7 +82,10 @@ jobs:
             echo "::add-mask::$value"
             echo "$name=$value" >> "$GITHUB_ENV"
             # An if, not `[ ... ] && ...`: that list ends the loop, and so the step, with status 1.
-            if [ "$name" = FIXTURE_PASSWORD ]; then echo "CHECK_STUDENT_PASSWORD=$value" >> "$GITHUB_ENV"; fi
+            if [ "$name" = FIXTURE_PASSWORD ]; then
+              echo "CHECK_STUDENT_PASSWORD=$value" >> "$GITHUB_ENV"
+              echo "CHECK_AMBASSADOR_PASSWORD=$value" >> "$GITHUB_ENV"
+            fi
           done
       - name: Postgres with the dev/test marker (fixtures refuse a server without it; services cannot pass -c)
         run: |
@@ -103,6 +107,23 @@ jobs:
           (cd apps/api && setsid node dist/main.js > /tmp/api.log 2>&1 &)
           for _ in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:4000/api/ready && break; sleep 1; done
           curl -fsS http://localhost:4000/api/ready
+      - name: The admin approves a fixture student as an ambassador (the real endpoint, this throwaway DB only)
+        run: |
+          api=http://localhost:4000/api
+          jq -n --arg email "$CHECK_ADMIN_EMAIL" --arg password "$CHECK_ADMIN_PASSWORD" '{email: $email, password: $password}' |
+            curl -fsS -o /dev/null -c /tmp/admin.jar -H 'content-type: application/json' -H 'x-requested-with: sirat-web' \
+              --data-binary @- "$api/auth/login" || { echo "::error::admin login for the ambassador approval failed"; exit 1; }
+          id=$(curl -fsS -b /tmp/admin.jar "$api/admin/users?q=$CHECK_AMBASSADOR_EMAIL" |
+            jq -r --arg email "$CHECK_AMBASSADOR_EMAIL" '.items[] | select(.email == $email) | .id') ||
+            { echo "::error::the admin students list did not answer"; exit 1; }
+          if [ -z "$id" ]; then echo "::error::fixture student $CHECK_AMBASSADOR_EMAIL not found in the admin list"; exit 1; fi
+          status=$(curl -sS -o /tmp/approve.json -w '%{http_code}' -b /tmp/admin.jar -H 'content-type: application/json' \
+            -H 'x-requested-with: sirat-web' --data '{"reason":"CI page check"}' "$api/admin/ambassadors/$id/approve")
+          rm -f /tmp/admin.jar
+          if [ "$status" != 200 ]; then
+            echo "::error::approving $CHECK_AMBASSADOR_EMAIL as an ambassador answered HTTP $status: $(jq -c '{code, details}' /tmp/approve.json)"
+            exit 1
+          fi
       - name: Student pages show no scores, times, emails or answer keys (dev server, ?mock=leak, a student session)
         run: |
           setsid pnpm --filter @sirat/web exec next dev -p 3100 > /tmp/next-dev.log 2>&1 &
@@ -277,6 +298,29 @@ jobs:
           if $DCD logs web 2>&1 | grep -E 'EACCES|Failed to update prerender cache'; then
             echo "::error::the web cannot write its cache"; exit 1
           fi
+      - name: Maintenance switch (L5) - nginx in its own containers with fake upstreams; pages, API, IPN, callback, deploy gap
+        run: infra/nginx/test/check-maintenance.sh
+      - name: Maintenance switch on the stack - the page and MAINTENANCE through nginx; the IPN and callback reach the API
+        # Through the published port (the plain site). The internal listener keeps serving and no data service restarts.
+        run: |
+          data() { docker inspect -f '{{.Name}} {{.State.StartedAt}}' $($DCD ps -q postgres pgbouncer redis-cache redis-queue) | sort; }
+          before=$(data)
+          scripts/maintenance.sh on
+          code=$(curl -s -o /tmp/page.html -w '%{http_code}' http://127.0.0.1:8080/)
+          [ "$code" = 503 ] && grep -q 'data-sirat-page="maintenance"' /tmp/page.html || { echo "::error::no maintenance page ($code)"; exit 1; }
+          ready=$(curl -s -w ' %{http_code}' http://127.0.0.1:8080/api/ready)
+          echo "$ready" | grep -q '"code":"MAINTENANCE".* 503$' || { echo "::error::/api/ready while on: $ready"; exit 1; }
+          [ "$(curl -s http://127.0.0.1:8080/healthz)" = ok ] || { echo "::error::/healthz while on"; exit 1; }
+          ipn=$(curl -s -w ' %{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8080/api/payments/paystation/ipn)
+          [ "$ipn" = '{"received":true} 200' ] || { echo "::error::the IPN did not reach the API: $ipn"; exit 1; }
+          callback=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' http://127.0.0.1:8080/api/payments/paystation/callback/not-an-invoice)
+          echo "$callback" | grep -q '^303 .*/register/result$' || { echo "::error::the callback did not reach the API: $callback"; exit 1; }
+          inner=$($DCD exec -T nginx wget -qO- http://127.0.0.1:8081/api/ready)
+          [ "$inner" = '{"status":"ready"}' ] || { echo "::error::the internal listener while on: $inner"; exit 1; }
+          scripts/maintenance.sh off
+          curl -fsS http://127.0.0.1:8080/api/ready
+          curl -fsS -o /dev/null http://127.0.0.1:8080/
+          [ "$(data)" = "$before" ] || { echo "::error::a data service restarted"; exit 1; }
       - name: Backups are encrypted, checked and uploaded; a killed dump, a bad remote or a shrunken dump fails (L6)
         # Its own compose project (sirat-backup-test), a throwaway age key and an rclone local remote; see the script.
         run: bash scripts/test/run-backup-test.sh
