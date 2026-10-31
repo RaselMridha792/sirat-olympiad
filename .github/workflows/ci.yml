@@ -286,6 +286,18 @@ jobs:
             if [ -n "$found" ]; then echo "::error::$img contains forbidden files:"; echo "$found"; exit 1; fi
             echo "$img clean"
           done
+      - name: The web can store regenerated pages (no EACCES after an ISR revalidation)
+        # The public pages revalidate every 60 s. The first request after that regenerates the page, and Next writes it
+        # to .next/server/route-cache and its fetch results to .next/cache, as the runtime user (apps/web/Dockerfile).
+        run: |
+          curl -fsS -o /dev/null http://127.0.0.1:8080/
+          sleep 65
+          curl -fsS -o /dev/null http://127.0.0.1:8080/
+          curl -fsS -o /dev/null http://127.0.0.1:8080/bn
+          sleep 5
+          if $DCD logs web 2>&1 | grep -E 'EACCES|Failed to update prerender cache'; then
+            echo "::error::the web cannot write its cache"; exit 1
+          fi
       - name: Backups are encrypted, checked and uploaded; a killed dump, a bad remote or a shrunken dump fails (L6)
         # Its own compose project (sirat-backup-test), a throwaway age key and an rclone local remote; see the script.
         run: bash scripts/test/run-backup-test.sh
