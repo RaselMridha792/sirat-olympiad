@@ -13,7 +13,8 @@ export type SecurityAlertKind =
   | 'login.distributed' // more distinct IPs than the threshold failed on one account within the hour
   | 'payments.disabled_in_production' // PAYSTATION_ENV is blank on a production server (lead, 2026-10-31)
   | 'payments.fee_invalid' // settings.registration_fee_minor is not a valid fee: no payment can start
-  | 'payments.credentials_rejected'; // PayStation answered "1001": payments paused (lead, 2026-10-31)
+  | 'payments.credentials_rejected' // PayStation answered "1001": payments paused (lead, 2026-10-31)
+  | 'payments.needs_review'; // money taken but set aside for an admin (amount, invoice, duplicate, account conflict)
 
 export interface SecurityAlertEvent {
   actorId: string | null;
@@ -32,6 +33,8 @@ const TITLES: Record<SecurityAlertKind, string> = {
     'Registration payments stopped: the registration fee setting is not valid',
   'payments.credentials_rejected':
     'PayStation refused the merchant credentials (1001): payments are paused for 10 minutes',
+  'payments.needs_review':
+    'A payment needs an admin: see the admin payments review list (reason below)',
 };
 
 /** The operator email: kind, time, account id and counts. No email address and no IP (those stay in the audit log). */

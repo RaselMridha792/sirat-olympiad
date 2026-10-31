@@ -46,7 +46,10 @@ const PUBLIC_ROUTES = new Set([
   'POST /api/registrations/current/resume',
   'POST /api/registrations/current/retry',
   'POST /api/registrations/current/cancel',
-  'GET /api/payments/paystation/callback',
+  'POST /api/registrations/current/recheck', // payments PR 3: asks for a status check, at most once per 10 s
+  // Payments PR 3 (plan 6.2, 6.4): PayStation's two signals. Neither is trusted; each only records and asks the worker
+  // for a status check. The callback carries our invoice in the path (plan 6.7, "06-API changes").
+  'GET /api/payments/paystation/callback/:invoice',
   'POST /api/payments/paystation/ipn',
   'GET /api/content/*',
   'GET /api/certificates/verify/:code',
