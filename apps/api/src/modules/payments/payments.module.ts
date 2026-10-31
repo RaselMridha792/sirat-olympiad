@@ -4,6 +4,7 @@ import { BackgroundModule } from '../../common/background/background-tasks';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { REDIS_CACHE, RedisModule } from '../../redis/redis.module';
 import { AuthModule } from '../auth/auth.module';
+import { BookModule } from '../book/book.module';
 import {
   AdminPaymentsController,
   AdminSettingsController,
@@ -35,7 +36,7 @@ const ATTEMPTS_PER_HOUR = 10;
  * worker's queue (PaymentsWorkerModule). Everything lives in this module, so app.module.ts does not change (plan D10).
  */
 @Module({
-  imports: [PaymentsCoreModule, AuthModule],
+  imports: [PaymentsCoreModule, AuthModule, BookModule],
   controllers: [
     RegistrationController,
     MyPaymentsController,
