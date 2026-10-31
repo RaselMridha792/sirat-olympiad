@@ -6,7 +6,7 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 
 ## Public allow-list (reviewed)
 
-`GET /health`, `GET /ready`, `POST /auth/login`, `POST /auth/refresh` (cookie), `POST /auth/forgot-password`, `POST /auth/reset-password`, `POST /auth/verify-email`, `POST /auth/resend-verification`, `POST /registrations/start`, `GET /registrations/info`, `GET /registrations/current`, `POST /registrations/current/{resume,retry,cancel}` (the `sirat_reg` cookie; no id, no personal data), `GET /payments/paystation/callback`, `POST /payments/paystation/ipn`, `GET /content/*` (public site content), `GET /certificates/verify/:code`.
+`GET /health`, `GET /ready`, `POST /auth/login`, `POST /auth/refresh` (cookie), `POST /auth/forgot-password`, `POST /auth/reset-password`, `POST /auth/verify-email`, `POST /auth/resend-verification`, `POST /registrations/start`, `GET /registrations/info`, `GET /registrations/current`, `POST /registrations/current/{resume,retry,recheck,cancel}` (the `sirat_reg` cookie; no id, no personal data), `GET /payments/paystation/callback/:invoice`, `POST /payments/paystation/ipn` (the only CSRF-exempt route; neither is trusted, see below), `GET /content/*` (public site content), `GET /certificates/verify/:code`.
 
 ## Endpoints
 
@@ -46,8 +46,8 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `POST /admin/users/:id/grade-level` | admin | Student profile (below). Built (core C3) |
 | | `PATCH /admin/users/:id`, `POST /admin/users/:id/role` | admin | Audited. Not built (role change and block are later admin writes) |
 | | `GET /admin/exams?page=&pageSize=&q=&status=`, `GET /admin/exams/:id`, `POST /admin/exams`, `PATCH /admin/exams/:id`, `POST /admin/exams/:id/{publish,unpublish,archive}`, `POST /admin/exams/:id/questions`, `PUT`/`DELETE /admin/exams/:id/questions/:questionId`, `GET /admin/exams/:id/questions/:questionId/versions` | admin | Exam admin (below). Lock after publish; questions versioned, never deleted once published. Built (E1) |
-| | `GET/PUT /admin/settings` | admin | Single writer |
-| | `GET /admin/payments`, `POST /admin/payments/:id/reconcile` | admin | Audited |
+| | `GET /admin/settings`, `PUT /admin/settings/:key` | admin | Single writer (`expected`), audited. Built (payments PR 3) |
+| | `GET /admin/payments`, `GET /admin/payments/:id`, `POST /admin/payments/:id/{recheck,reconcile}` | admin | Audited. Built (payments PR 3), below |
 | | `GET /admin/stats` | admin/manager | Cached |
 | | `POST /admin/rounds/:id/promote` | admin | Idempotent, audited |
 | | `GET/POST /admin/jury/*` | jury/admin | Judge recorded |
@@ -55,9 +55,9 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `POST /admin/points/adjust` | admin | Compensating ledger entry |
 | | `GET /admin/audit` | admin | |
 
-## Registration and payment (payments PR 2; plan: `docs/plans/PAYMENTS-PLAN.md` 6.1, 6.7)
+## Registration and payment (payments PR 2 and 3; plan: `docs/plans/PAYMENTS-PLAN.md` 6.1–6.7)
 
-Pay first, account second: the form waits server-side in a registration attempt; the account is created when a payment is verified paid (PR 3). Errors carry a machine code in `ApiError.code` (`RegistrationErrorCode` in `@sirat/shared`; the owner's bn/en texts in `REGISTRATION_MESSAGES`). No route takes an amount, a fee, a role or a status from the browser.
+Pay first, account second: the form waits server-side in a registration attempt; the account is created when a payment is verified paid (by the worker, below). Errors carry a machine code in `ApiError.code` (`RegistrationErrorCode` in `@sirat/shared`; the owner's bn/en texts in `REGISTRATION_MESSAGES`). No route takes an amount, a fee, a role or a status from the browser.
 
 | Method + path | Guard | Request → response |
 |---|---|---|
@@ -67,9 +67,11 @@ Pay first, account second: the form waits server-side in a registration attempt;
 | `POST /registrations/current/resume` | Public (cookie) | → 200 `{ paymentUrl }` while the checkout is valid; 409 `NOTHING_TO_RESUME` for a finished attempt or a checkout no longer valid |
 | `POST /registrations/current/retry` | Public (cookie); limits as start | After the last payment failed or expired, while registration is open: a new payment with a new invoice → 201 as start; 409 `RETRY_NOT_ALLOWED` while one is active |
 | `POST /registrations/current/cancel` | Public (cookie) | 204 and the cookie cleared, only while no payment is active (409 `CANNOT_CANCEL`) |
+| `POST /registrations/current/recheck` | Public (cookie); 3,000/min per IP | "Check my payment status": **202** `{ requested }`. Asks the worker to ask PayStation about the latest payment, at most once per 10 s; `requested: false` when throttled or nothing is left to check. The page keeps polling `current`. 404 `NO_REGISTRATION` as above |
 | `GET /registrations/me` | Auth | `{ registered: false }` or `{ registered: true, registeredAt, category, gradeLevel, payment: { invoiceNumber, amountMinor, currency, status, paidAt } }` |
 | `GET /payments/mine` | Auth | `?page&pageSize` (≤ 50) → `Paginated<{ id, invoiceNumber, amountMinor, currency, status, createdAt, paidAt }>`, only the session user's |
 | `GET /payments/:id/status` | Owner | The same item; another user's payment is 404, never 403 |
+| `POST /payments/:id/recheck` | Owner | **202** `{ requested }`, as `current/recheck`; another user's payment is 404 |
 
 **The `sirat_reg` cookie** proves "my attempt" before an account exists:
 - 32 random bytes; only its SHA-256 is stored, on exactly one attempt;
@@ -92,6 +94,36 @@ Without it, or with one that matches no attempt (forged, or one the browser expi
 - **429 `TOO_MANY_ATTEMPTS`:** over 10 an hour for one email or phone.
 - **502 `PAYMENT_START_FAILED`:** PayStation refused or did not answer. The payment is `failed`; the cookie is set, so `retry` works.
 - **The payment row** is written before PayStation is called. It snapshots the fee from `settings` (`amount_minor`), the currency, `pay_with_charge = false` and the account label. Its invoice is `PREFIX + yymmdd + 10 random`. The password is stored only as argon2id inside the attempt and cleared at completion.
+
+## PayStation signals and the verify job (payments PR 3; plan 6.2–6.6)
+
+Only the worker asks PayStation (v1 transaction status by invoice), and only its verify job, through one settlement transaction, marks a payment paid or failed. The callback and the IPN are unsigned, so each only records what arrived and asks for a check; neither is ever read as a result.
+
+| Method + path | Guard | Behaviour |
+|---|---|---|
+| `GET /payments/paystation/callback/:invoice` | Public; 3,000/min per IP | The student's browser back from PayStation (GET, with `status`, `invoice_number`, `trx_id`, `message` appended). Records the query (≤ 10 keys, ≤ 200 characters each) and asks for a check while the payment is watched. Always **303** to `APP_URL/register/result`. An unknown invoice is recorded; a malformed one is only redirected |
+| `POST /payments/paystation/ipn` | Public, **CSRF-exempt**; 600/min per IP | JSON, at most 16 KB (413). **200** `{ received: true }` for a processed, duplicate (paid with the same `trx_id`) or unknown invoice; **503** when the database cannot record it, so PayStation retries. Anything else for our invoice asks for a check, even outside the late watch |
+
+**Checks:** one per payment at a time (queue job id); the callback and the IPN share a 30 s window per payment; rechecks have 10 s. Reconciliation runs every 2 minutes for payments older than 2 minutes and for failed/expired checkouts until 48 h after expiry (back-off 2, 2, 5, 10, 30 minutes).
+
+**Outcomes** (in `payment_events`; review reasons on the payment, for the admin list):
+- paid only when PayStation reports success with our invoice, our reference (when echoed), a `trx_id` no other payment holds, and exactly our amount;
+- money taken always wins: `email_taken`, `phone_taken`, `duplicate_payment`, `abandoned_attempt_paid` are paid but set aside, with a critical alert;
+- never paid: `amount_mismatch`, `invoice_mismatch`, `trx_id_reused`, `success_without_trx_id` (critical or warning alert);
+- a refund reported for a paid payment changes nothing: `refund_reported`, critical alert (no refund handling).
+
+## Admin payments and settings (payments PR 3; plan 3.4, 6.7)
+
+Role `admin` only (not manager). Writes: 20/min per IP, besides the per-user limit; each is audited.
+
+| Method + path | Request → response |
+|---|---|
+| `GET /admin/payments` | `?invoice&trx&phone&email&status&review=1&account&page&pageSize` (≤ 50; phone in any Bangladeshi form) → `Paginated<{ id, invoiceNumber, amountMinor, currency, status, trxId, paidAmountMinor, gatewayStatus, gatewayAccount, reviewReason, checkCount, lastCheckedAt, expiresAt, paidAt, createdAt, userId, pendingRegistration: { id, status, email, phone, name } }>`, newest first |
+| `GET /admin/payments/:id` | `{ payment, events }`: the last 100 events (source, outcome, status code, trx status, trx id, actor, the stored answer redacted) |
+| `POST /admin/payments/:id/recheck` | **202** `{ requested }`: the worker asks PayStation now (any status, e.g. to see a refund). Audit `payments.recheck_requested` |
+| `POST /admin/payments/:id/reconcile` | `{ trxId (as PayStation shows it), reason (10–200) }` → 200 `{ applied, payment }`. Only for a pending, failed or expired payment whose automatic check stopped on `success_without_trx_id` **and** whose latest status answer shows a success with our invoice, reference and exactly our amount but no trx_id (lead, 2026-10-31). Then the same settlement as the automatic path. 409 `RECONCILE_NOT_ALLOWED` otherwise; 409 `TRX_ID_IN_USE` for a trx_id another payment holds; a paid payment answers `applied: false` (never a second settle). Audit `payments.reconciled` |
+| `GET /admin/settings` | `[{ key, value, updatedAt }]` for the editable keys |
+| `PUT /admin/settings/:key` | `{ value, expected, reason? }`. Keys: `registration_fee_minor` (10–10,000 BDT in whole taka, as paisa; `reason` 3–200 required), `registration_open` (boolean), `registration_opens_at` / `registration_closes_at` (ISO UTC or null; opens before closes), `payment_expiry_minutes` (5–1,440). 409 `SETTING_CHANGED` when the value is no longer `expected`; 400 `SETTING_INVALID` / `REASON_REQUIRED`; 404 for any other key. Audit `settings.changed` (old, new, reason); the registration info cache is cleared. Payments already started keep their amount |
 
 ## Exam engine (E2; plan: `docs/plans/EXAM-PLAN.md` §1.1, §3, §3.15)
 

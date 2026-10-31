@@ -7,10 +7,11 @@ import { pinoHttpOptions } from './common/logging/pino-http.options';
 import { validateWorkerEnv } from './config/env';
 import { ExamWorkerModule } from './modules/attempts/attempts.module';
 import { NotificationsWorkerModule } from './modules/notifications/notifications.module';
+import { PaymentsWorkerModule } from './modules/payments/payments.module';
 
 /**
  * Queue workers (02-SYSTEM-DESIGN): same image as the API, separate `worker` service, so job load never slows the
- * HTTP path. No HTTP server apart from the container health endpoint. Today: email and the exam engine.
+ * HTTP path. No HTTP server apart from the container health endpoint. Today: email, the exam engine and payment checks.
  */
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { NotificationsWorkerModule } from './modules/notifications/notifications
     LoggerModule.forRoot({ pinoHttp: pinoHttpOptions() }),
     NotificationsWorkerModule,
     ExamWorkerModule,
+    PaymentsWorkerModule,
   ],
 })
 export class WorkerModule {}

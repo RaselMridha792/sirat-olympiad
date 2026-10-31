@@ -277,6 +277,10 @@ export async function startFakePaystation(options: FakeOptions = {}): Promise<Fa
       checkouts.clear();
       for (const key of Object.keys(scenario)) delete scenario[key as keyof FakeScenario];
     },
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.close(() => resolve());
+        server.closeAllConnections(); // idle keep-alive sockets would otherwise hold the close open
+      }),
   };
 }
