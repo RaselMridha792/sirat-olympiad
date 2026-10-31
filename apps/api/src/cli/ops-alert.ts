@@ -18,19 +18,20 @@ import { BackgroundTasks } from '../common/background/background-tasks';
 import { validateEnv } from '../config/env';
 import { AlertEmailLimiter } from '../modules/audit/alert-email-limiter';
 import { AuditService } from '../modules/audit/audit.service';
-import {
-  ALERT_CATEGORY,
-  SecurityAlerts,
-  type SecurityAlertKind,
-} from '../modules/audit/security-alerts.service';
+import { SecurityAlerts, type SecurityAlertKind } from '../modules/audit/security-alerts.service';
 import { EmailQueue } from '../modules/notifications/email-queue.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import { CACHE_REDIS_OPTIONS, QUEUE_REDIS_OPTIONS } from '../redis/redis.module';
 
-/** The kinds this command may raise: the `ops` category, and nothing else. */
-export const OPS_ALERT_KINDS: readonly SecurityAlertKind[] = (
-  Object.keys(ALERT_CATEGORY) as SecurityAlertKind[]
-).filter((kind) => ALERT_CATEGORY[kind] === 'ops');
+/**
+ * The kinds a script may raise: three ops kinds, nothing of another category. The server checks raise their own
+ * kinds inside ops-check, so a script can neither forge a security or payments alert nor fake a check's state.
+ */
+export const OPS_ALERT_KINDS = [
+  'ops.backup_failed',
+  'ops.monitor_failed',
+  'ops.alert_test',
+] as const satisfies readonly SecurityAlertKind[];
 
 const MAX_META = 10;
 const META_KEY = /^[a-z][A-Za-z0-9_]{0,31}$/;
