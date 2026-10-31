@@ -65,6 +65,7 @@ export const authMessages = defineMessages({
     },
     refresh: {
       title: 'Signing you in again…',
+      slow: 'The server is slow to answer. Still waiting…',
       unavailable: 'Connection problem. Trying again…',
       retry: 'Try again now',
       loginInstead: 'Sign in instead',
@@ -133,6 +134,7 @@ export const authMessages = defineMessages({
     },
     refresh: {
       title: 'আবার লগইন করানো হচ্ছে…',
+      slow: 'সার্ভার উত্তর দিতে দেরি করছে। অপেক্ষা চলছে…',
       unavailable: 'সংযোগে সমস্যা। আবার চেষ্টা হচ্ছে…',
       retry: 'এখনই আবার চেষ্টা করুন',
       loginInstead: 'বরং লগইন করুন',

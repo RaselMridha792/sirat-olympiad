@@ -94,10 +94,10 @@ async function loggedInContext(browser, user = STUDENT, landing = '/dashboard') 
 
 const hasCookie = async (context, name) => (await context.cookies()).some((c) => c.name === name);
 
-/** Pauses this page's refresh requests; `onPaused` decides what to do with each. */
-async function interceptRefresh(page, onPaused) {
+/** Pauses this page's refresh requests (or their answers); `onPaused` decides what to do with each. */
+async function interceptRefresh(page, onPaused, requestStage = 'Request') {
   await page.send('Fetch.enable', {
-    patterns: [{ urlPattern: '*/api/auth/refresh', requestStage: 'Request' }],
+    patterns: [{ urlPattern: '*/api/auth/refresh', requestStage }],
   });
   return page.onEvent('Fetch.requestPaused', onPaused);
 }
@@ -219,6 +219,43 @@ try {
       await page.send('Fetch.disable');
       await page.evaluate(`${buttonWith('Try again now')}.click(), true`);
       await page.waitFor(shows('/dashboard/leaderboard'));
+      await context.close();
+    },
+  );
+
+  await step(
+    'a slow API: the refresh answer held 15 s after the rotation still lands on the page, never on /login',
+    async () => {
+      const { context, page } = await loggedInContext(browser);
+      await context.deleteCookie('sirat_access');
+      const answers = watchRefreshAnswers(page);
+      const visited = [];
+      const offNav = page.onEvent('Page.frameNavigated', ({ frame }) => {
+        if (!frame.parentId) visited.push(new URL(frame.url).pathname);
+      });
+      // The API has already rotated the token; only its answer (with the new cookies) is late.
+      const offHold = await interceptRefresh(
+        page,
+        ({ requestId }) =>
+          setTimeout(() => {
+            page.send('Fetch.continueRequest', { requestId }).catch(() => {});
+          }, 15_000),
+        'Response',
+      );
+      const started = Date.now();
+      await page.goto(`${BASE}/dashboard/profile`);
+      await page.waitFor(hasText('The server is slow to answer'), { timeout: 14_000 });
+      await page.waitFor(shows('/dashboard/profile'), { timeout: 40_000 });
+      check(Date.now() - started >= 15_000, 'the answer was not held');
+      check(!visited.includes('/login'), `went to /login (${visited.join(' > ')})`);
+      check(answers.join() === '204', `refresh answers were ${answers.join(', ')}, want one 204`);
+      offHold();
+      await page.send('Fetch.disable');
+      // The session lives on: the next page needs no other renewal.
+      await page.goto(`${BASE}/dashboard/exam`);
+      await page.waitFor(shows('/dashboard/exam'));
+      check(answers.length === 1, 'the next page needed another refresh');
+      offNav();
       await context.close();
     },
   );

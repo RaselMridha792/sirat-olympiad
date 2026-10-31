@@ -11,12 +11,15 @@ import { refreshSession } from '@/lib/auth/refresh-browser';
 
 /** Counted once per page load (React's dev mode runs effects twice). */
 let visitAllowed: boolean | null = null;
+/** A renewal still unanswered after this is shown as slow; the request itself keeps going (refresh-browser.ts). */
+const SLOW_AFTER_MS = 10_000;
 
 /**
  * /refresh: renews the session in the browser and goes back to `next` (a dashboard page, checked by safeNext).
  * The server sends people here when the access cookie is missing or expired; it cannot renew the session itself
- * because the refresh cookie is only sent to /api/auth. Expired: /login. Unavailable (network, rate limit,
- * server): keeps trying with a growing pause, never to /login on its own.
+ * because the refresh cookie is only sent to /api/auth. Expired: /login. Slow: says so and keeps waiting for the
+ * answer. Unavailable (network, rate limit, server): keeps trying (after Retry-After when the server sends one,
+ * else with a growing pause), never to /login on its own.
  */
 /** Where to go back to: `next` when it is a safe dashboard page, else the student home. */
 function target(): string {
@@ -26,7 +29,7 @@ function target(): string {
 
 export function RefreshScreen({ locale }: { locale: Locale }) {
   const m = pick(authMessages, locale);
-  const [unavailable, setUnavailable] = useState(false);
+  const [state, setState] = useState<'working' | 'slow' | 'unavailable'>('working');
   const wake = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -37,13 +40,19 @@ export function RefreshScreen({ locale }: { locale: Locale }) {
       return;
     }
     let stopped = false;
+    let slow: ReturnType<typeof setTimeout> | undefined;
     void (async () => {
       for (let attempt = 0; !stopped; attempt += 1) {
+        slow = setTimeout(
+          () => setState((now) => (now === 'working' ? 'slow' : now)),
+          SLOW_AFTER_MS,
+        );
         const result = await refreshSession();
+        clearTimeout(slow);
         if (stopped) return;
         if (result.outcome === 'ok') return window.location.replace(next);
         if (result.outcome === 'expired') return window.location.replace(loginUrl(next));
-        setUnavailable(true);
+        setState('unavailable');
         await new Promise<void>((resolve) => {
           const timer = setTimeout(resolve, retryDelayMs(attempt, result.retryAfterMs));
           wake.current = () => {
@@ -55,9 +64,23 @@ export function RefreshScreen({ locale }: { locale: Locale }) {
     })();
     return () => {
       stopped = true;
+      clearTimeout(slow);
       wake.current?.();
     };
   }, []);
+
+  const loginInstead = (
+    <a
+      href="/login"
+      onClick={(event) => {
+        event.preventDefault();
+        window.location.assign(loginUrl(target()));
+      }}
+      className="block text-sm font-semibold text-secondary hover:underline"
+    >
+      {m.refresh.loginInstead}
+    </a>
+  );
 
   return (
     <div className="space-y-5 text-center">
@@ -68,22 +91,18 @@ export function RefreshScreen({ locale }: { locale: Locale }) {
         </a>
       </noscript>
       <div role="status" aria-live="polite" className="space-y-4">
-        {unavailable ? (
+        {state === 'unavailable' ? (
           <>
             <p className="text-sm text-ink-muted">{m.refresh.unavailable}</p>
             <Button type="button" onClick={() => wake.current?.()}>
               {m.refresh.retry}
             </Button>
-            <a
-              href="/login"
-              onClick={(event) => {
-                event.preventDefault();
-                window.location.assign(loginUrl(target()));
-              }}
-              className="block text-sm font-semibold text-secondary hover:underline"
-            >
-              {m.refresh.loginInstead}
-            </a>
+            {loginInstead}
+          </>
+        ) : state === 'slow' ? (
+          <>
+            <p className="text-sm text-ink-muted">{m.refresh.slow}</p>
+            {loginInstead}
           </>
         ) : null}
       </div>

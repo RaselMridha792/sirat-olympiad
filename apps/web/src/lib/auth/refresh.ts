@@ -14,7 +14,7 @@ export type RefreshResult =
   | { outcome: 'unavailable'; retryAfterMs: number | null };
 
 export interface RefreshDeps {
-  /** The POST itself: resolves to the status and Retry-After (seconds), rejects on a network error or timeout. */
+  /** The POST itself: resolves to the status and Retry-After (seconds), rejects on a network error. */
   post: () => Promise<{ status: number; retryAfter: number | null }>;
   /** Runs `fn` while holding the cross-tab lock; absent when the browser has no Web Locks. */
   withLock?: (fn: () => Promise<RefreshResult>) => Promise<RefreshResult>;
