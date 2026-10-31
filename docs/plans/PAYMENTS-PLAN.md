@@ -569,7 +569,7 @@ Each PR is opened as soon as its steps are done and its checks pass:
 | #11 | 0 | This plan, the DECISIONS entries, OPEN-QUESTIONS #1, #2, P6 (docs only; merged 31 Oct) |
 | 1a | 1 | Foundation (lead, 19:26: split so the schema reaches `main` first; the exam session's migrations build on it): this schedule, the owner's answers, migrations M1–M3 with the phone rules, seed, fixtures and `--clean`, `prepare-test-db`, `PaymentConfig` |
 | 1b | 2–3 | Gateway client, fake server, `paystation:selfcheck` (one line in `apps/api/package.json`: Rasel is told before the push), state machine, invoice |
-| 2 | 4–5 | Start and status: `registrations/start`, `info`, `current/*`, `registrations/me`, `payments/mine` |
+| 2 | 4–5 | Start and status: `registrations/start`, `info`, `current/{resume,retry,cancel}`, `registrations/me`, `payments/mine`, `payments/:id/status`, and the sandbox checklist (S10 done). **Recheck moves to PR 3** with the verify job (DECISIONS "Registration start and status") |
 | 3 | 6–9 | Money flow: settle, callback, IPN, reconciliation, admin payments and settings. Kept apart from PR 2, so the review of the paths that mark a payment paid stays readable |
 | 4 | 10–11 | Web: wizard, result page, dashboard status, admin fee dialog and payments page |
 | 5 | 12–14 | Sandbox fixes, local k6, docs |

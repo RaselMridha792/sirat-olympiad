@@ -1,4 +1,4 @@
-import { ArgumentsHost, Logger, NotFoundException } from '@nestjs/common';
+import { ArgumentsHost, ConflictException, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 
@@ -117,5 +117,57 @@ describe('AllExceptionsFilter', () => {
     expect(res.status).toHaveBeenCalledWith(404);
     expect(body).toMatchObject({ statusCode: 404, code: 'NOT_FOUND', requestId: 'req-123' });
     expect(error).not.toHaveBeenCalled();
+  });
+
+  it('passes on an application code a service set on purpose, so the web can pick a bn/en text', () => {
+    const { res, body } = run(
+      new ConflictException({
+        code: 'EMAIL_REGISTERED',
+        message: 'Already registered. Please log in.',
+      }),
+    );
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(body).toMatchObject({
+      statusCode: 409,
+      code: 'EMAIL_REGISTERED',
+      message: 'Already registered. Please log in.',
+    });
+  });
+
+  it('ignores a code that is not an application code, and keeps the status name', () => {
+    for (const code of ['email registered', 'x', 42, '<script>', 'A'.repeat(50)]) {
+      const { body } = run(new ConflictException({ code, message: 'Conflict' }));
+      expect(body).toMatchObject({ code: 'CONFLICT' });
+    }
+  });
+
+  it('never takes a code from anything but an HttpException our code built: Prisma, driver or plain errors', () => {
+    const prisma = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+      code: 'P2002',
+      clientVersion: '6.19.3',
+      meta: { target: ['email'], code: 'EMAIL_REGISTERED' },
+    });
+    const plain = Object.assign(new Error('EMAIL_REGISTERED'), { code: 'EMAIL_REGISTERED' });
+    const driver = Object.assign(new Error('connection refused'), { code: 'ECONNREFUSED' });
+    for (const e of [prisma, plain, driver]) {
+      const { res, body } = run(e);
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(body).toMatchObject({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Internal server error',
+      });
+    }
+    // A client error from the body parser keeps its fixed message and status name, whatever it carries.
+    const parser = Object.assign(new Error('Unexpected token'), {
+      status: 400,
+      expose: true,
+      type: 'entity.parse.failed',
+      code: 'EMAIL_REGISTERED',
+    });
+    expect(run(parser).body).toMatchObject({
+      statusCode: 400,
+      code: 'BAD_REQUEST',
+      message: 'Bad request',
+    });
   });
 });
