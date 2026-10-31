@@ -177,22 +177,38 @@ Then confirm the running nginx sees the new list (a deploy that replaced the fil
 The script refuses (exit non-zero, live file untouched) when a download fails, returns anything that is not a CIDR, or has fewer than 10 IPv4 / 5 IPv6 ranges. Never edit `infra/nginx/cloudflare-realip.conf` by hand and never paste the old one-liner: it wrote an empty list when the download failed, which made every student behind a Cloudflare edge share one rate-limit bucket.
 After go-live, confirm in the nginx access log that client addresses are real users, not Cloudflare edges. If Cloudflare reaches the origin over IPv6 while the compose network has none, Docker replaces the source address and real-IP restore cannot work: keep the origin A-record-only.
 
-## 11. Payments: refunds and manual reconciliation (PayStation has no refund API)
+## 11. Payments: the review list, refunds and manual reconciliation (PayStation has no refund API)
 
-The admin payments screen (look up by invoice / PayStation `trx_id` / phone, re-check, manual reconcile; every action audit-logged with a reason) arrives with the payments module. Until then, this is the procedure.
+**Where to look:** `GET /admin/payments?review=1` (admin only) lists every payment set aside for a person; `GET /admin/payments/:id` shows its events (every PayStation answer, callback and IPN, stored redacted). Look up by `invoice`, `trx`, `phone` (any Bangladeshi form) or `email`. Every admin action is in the audit log with the admin's id and IP. A critical case also raises `security.payments.needs_review` (audit log, and the operator email when `SECURITY_ALERT_EMAIL` is set).
 
-**Refund a payment**
-1. Find the payment by invoice number, `trx_id` or phone; its status must be `paid`.
+**First step for any case: re-check.** `POST /admin/payments/:id/recheck` asks PayStation now (the worker; usually a few seconds); reload the payment and read the newest `status_v1` event.
+
+**By review reason** (no refund handling in the app, owner 2026-10-31: refunds are done outside it):
+
+| Reason | What it means | What to do |
+|---|---|---|
+| `success_without_trx_id` | PayStation said success with our invoice and amount, but no `trx_id` | Find the transaction in PayStation's merchant panel. If it is there and paid, `POST /admin/payments/:id/reconcile { trxId, reason }` (the only manual "paid"; it refuses anything else). The account is made as usual |
+| `email_taken`, `phone_taken` | Paid, but an account got that email or phone meanwhile; no account was made, the attempt is `conflict` | Contact the student (the attempt's email/phone in the payment view). If the existing account is theirs, the money is a duplicate: refund it outside the app (below). Otherwise ask the owner |
+| `duplicate_payment` | A second paid payment for an attempt that already has an account (same user) | Refund the second payment outside the app (below) |
+| `abandoned_attempt_paid` | A late success on an attempt the student gave up (they may have started again) | Look up the student's other attempts by email/phone. If they have an account now, refund this payment; if not, ask the owner before anything else |
+| `amount_mismatch`, `invoice_mismatch` | PayStation reported another amount or another invoice | Never mark it paid. Contact PayStation support with the invoice number and `trx_id`; record the case |
+| `trx_id_reused` | The `trx_id` already belongs to another payment | A fraud or mix-up signal. Do not reconcile. Compare both payments in PayStation's panel; contact PayStation support |
+| `refund_reported` | PayStation reports `refund` for a paid payment | The payment stays `paid` (the app has no refund state). Confirm in the panel; what happens to the student's access follows the owner's policy (OPEN-QUESTIONS P8): ask the owner |
+| `late_success` | Paid after its checkout expired; the account was made normally | Nothing, unless the student also paid again (then `duplicate_payment` appears) |
+| `account_mismatch` (event, no review reason) | The payment was started on another PayStation account (after a switch, PAYMENTS-PLAN §13) | Check it in that account's panel; handle by hand |
+
+**Refund a payment (outside the app)**
+1. Find the payment by invoice number, `trx_id` or phone; its status is `paid`.
 2. Refund it in the PayStation merchant panel, or ask PayStation support. Keep their refund reference.
-3. Re-check (transaction status v1 by invoice). When PayStation reports `trx_status = refund`, the system moves the payment `paid → refunded` and audit-logs it.
-4. If PayStation does not show `refund` yet, reconcile it manually to `refunded` with the reason and PayStation's refund reference (audit-logged). Never delete the payment or the registration row.
-5. What happens to the student's registration and exam access follows the owner's policy (OPEN-QUESTIONS P8). Until it is decided, ask the owner before changing access.
+3. Re-check: the event shows `refund_reported`; the payment stays `paid`. Never delete the payment, its events or the registration row.
+4. Record the refund reference and the reason with the case (audit log / support notes).
 
-**Money taken but our DB says unpaid (the worst case)**
-1. Look up the payment; read `gateway_payload` and the stored IPN bodies.
-2. Re-check. If `status_code` is `"200"`, `trx_status` is success/successful and amount + invoice match, the re-check marks it paid; nothing else to do.
-3. If the gateway reports success but the amount or invoice does not match, or `2001` keeps coming back: do **not** mark it paid. Contact PayStation support with the invoice number and `trx_id`, and record the case in the audit log.
-4. If a student paid twice for one registration: refund the second payment (steps above).
+**Money taken but the payment still shows unpaid**
+1. Re-check. If PayStation now reports success with our invoice and exactly our amount, the re-check marks it paid and makes the account; nothing else to do.
+2. If it reports success without a `trx_id`: the reconcile row above.
+3. If the amount or the invoice does not match, or `2001` keeps coming back: do **not** mark it paid. Contact PayStation support with the invoice number and `trx_id`.
+
+**Changing the fee or the registration window:** `PUT /admin/settings/:key` with the value the form showed as `expected` (409 if someone changed it meanwhile); the fee needs a reason. Payments already started keep their amount.
 
 ## 12. Email (Amazon SES)
 

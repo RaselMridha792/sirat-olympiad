@@ -16,6 +16,8 @@ export type DecisionAction = 'mark_paid' | 'mark_failed' | 'mark_expired' | 'non
 
 export type DecisionOutcome =
   | 'applied_paid'
+  /** Only from the admin reconcile (AdminPaymentsService), never from decide(). */
+  | 'manual_paid'
   | 'applied_failed'
   | 'applied_expired'
   | 'refund_reported'

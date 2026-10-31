@@ -40,6 +40,8 @@ import { newInvoiceNumber } from '../invoice';
 import type { PaymentConfig } from '../payment.config';
 import { PAYMENT_CONFIG } from '../payments-boot-check';
 import { isActive } from '../payment-state';
+import { isWatched } from '../verify/payment-timing';
+import { VerifyRequests } from '../verify/verify-requests';
 import type { StartRegistrationDto } from './dto/start-registration.dto';
 import { RegistrationGuards } from './registration-guards';
 import {
@@ -120,6 +122,7 @@ export class RegistrationService {
     private readonly passwords: PasswordService,
     private readonly alerts: SecurityAlerts,
     private readonly guards: RegistrationGuards,
+    private readonly verifies: VerifyRequests,
   ) {}
 
   // ───────────── public info (cached 30 s) ─────────────
@@ -259,6 +262,23 @@ export class RegistrationService {
     return { paymentUrl: latest?.paymentUrl as string };
   }
 
+  /**
+   * "Check my payment status": asks the worker to ask PayStation about this browser's latest payment, at most once
+   * per 10 s. The page then polls `current`; this answer only says whether a check was asked for.
+   */
+  async recheck(browserToken: string | null, now = new Date()): Promise<{ requested: boolean }> {
+    const attempt = browserToken ? await this.attemptByToken(browserToken) : null;
+    if (!attempt || attempt.status === RegistrationAttemptStatus.abandoned)
+      throw error(
+        NotFoundException,
+        'NO_REGISTRATION',
+        'No registration in progress in this browser',
+      );
+    const latest = attempt.payments[0];
+    if (!latest || !isWatched(latest, now)) return { requested: false };
+    return { requested: (await this.verifies.request(latest.id, 'recheck')) === 'requested' };
+  }
+
   /** A new payment (new invoice) for the same attempt, after the last one failed or expired. */
   async retry(browserToken: string | null, now = new Date()): Promise<StartResponse> {
     const attempt = browserToken ? await this.attemptByToken(browserToken) : null;
@@ -387,6 +407,17 @@ export class RegistrationService {
     });
     if (!payment) throw new NotFoundException('Payment not found');
     return paymentView(payment);
+  }
+
+  /** The logged-in owner's "check again"; another user's payment is 404. Once per 10 s per payment. */
+  async recheckMine(userId: string, id: string, now = new Date()): Promise<{ requested: boolean }> {
+    const payment = await this.prisma.payment.findFirst({
+      where: { id, userId },
+      select: { id: true, status: true, expiresAt: true, paymentUrl: true },
+    });
+    if (!payment) throw new NotFoundException('Payment not found');
+    if (!isWatched(payment, now)) return { requested: false };
+    return { requested: (await this.verifies.request(payment.id, 'recheck')) === 'requested' };
   }
 
   // ───────────── internals ─────────────
