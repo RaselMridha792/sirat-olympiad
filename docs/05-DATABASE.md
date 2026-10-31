@@ -74,6 +74,21 @@ Source of truth: `apps/api/prisma/schema.prisma` (validated; see note at bottom)
 
 Leaderboard query form (index verified): `WHERE exam_id = $1 AND score IS NOT NULL ORDER BY score DESC, time_taken_seconds ASC` (never omit the NULL filter, never add NULLS LAST). `payments(status, created_at)` (reconciliation) · `attempts(exam_id, status)` · `exams(status, window_start)` · `round_entries(round_id, status)` · `point_ledger(user_id, created_at)` · `users(referred_by_id)` · add for leaderboard snapshot build: `(exam_id, score DESC, time_taken_seconds ASC)` on `attempts` · `attempts (ends_at) WHERE status = 'in_progress'` (finalize sweep; queries must repeat that predicate; an enum literal, because index predicates need IMMUTABLE expressions: recreating `AttemptStatus` must drop and recreate it) · `leaderboard_entries (exam_id, generation, rank)`.
 
+## Roles (OPEN-QUESTIONS #27, LAUNCH-PLAN L2 and L8)
+
+| Role | Who uses it | Rights |
+|---|---|---|
+| The bootstrap superuser (`POSTGRES_USER`, `sirat`) | The migrate job, backup and restore, psql | Owns every object and runs every migration |
+| `sirat_app` | The API, the worker, the seed and the CLI, from L8 (today the app still connects as the owner) | `SELECT`, `INSERT`, `UPDATE`, `DELETE` on every table; only `SELECT` and `INSERT` on the append-only `audit_logs`, `payment_events` and `submissions`; nothing on `_prisma_migrations`; no `TRUNCATE`, DDL, trigger switches, `session_replication_role` or `COPY … TO PROGRAM` |
+
+- **The migration `*_runtime_role`** creates `sirat_app` (NOLOGIN) and its grants. `ALTER DEFAULT PRIVILEGES` gives every table a later migration creates the same data rights. A new append-only table needs its own `REVOKE UPDATE, DELETE`, and `test/db-runtime-role.int-spec.ts` finds such tables by their `*_append_only` trigger.
+- **`prisma/runtime-role.ts`** runs in the migrate job after `migrate deploy`:
+  - it sets the login and password from `POSTGRES_APP_PASSWORD`, sending a SCRAM verifier, never the plaintext;
+  - it re-applies the database timeouts (statement 10 s, lock 5 s, idle in transaction 60 s), which a restore into a fresh database loses;
+  - `--ensure` only creates the role, for a restore on a fresh cluster before `pg_restore`.
+- **One password per cluster:** roles are cluster-wide. On the cluster marked `sirat.environment=development`, the script sets the password only while the role has none.
+- **The boot line** `database role=<name> superuser=<bool>` (API and worker) shows which role is in use. In production it warns while that is a superuser.
+
 ## PgBouncer + Prisma
 
 Runtime `DATABASE_URL` → pgbouncer:6432 with `?pgbouncer=true&connection_limit=5`. `DIRECT_URL` → postgres:5432 (migrations only). No session-level features (advisory locks across statements, `LISTEN`) on the runtime connection. Use `SELECT … FOR UPDATE` inside a transaction (works in transaction mode).

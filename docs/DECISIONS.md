@@ -2,6 +2,36 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-01 — The runtime database role sirat_app (Claude; LAUNCH-PLAN L2, OPEN-QUESTIONS #27)
+
+1. **Two roles:**
+   - The bootstrap superuser stays the owner of every object and runs the migrations, backups and restores.
+   - `sirat_app` (no superuser, createdb, createrole, replication or bypassrls) gets data rights only:
+     - `SELECT`, `INSERT`, `UPDATE` and `DELETE` on every table;
+     - only `SELECT` and `INSERT` on the append-only `audit_logs`, `payment_events` and `submissions`;
+     - nothing on `_prisma_migrations`;
+     - no `TRUNCATE`, `REFERENCES`, `TRIGGER` or `CREATE`.
+   - So an injected statement can no longer switch off the append-only triggers, set `session_replication_role`, truncate, change the schema or run `COPY … TO PROGRAM`. Every app row lock (`FOR UPDATE`) is on a table with full data rights.
+   - Nothing switches yet. L8 points `DATABASE_URL` at the role and takes the superuser's password out of the app containers.
+2. **The migration and the script:**
+   - The migration `*_runtime_role` creates the role NOLOGIN and the grants, with `ALTER DEFAULT PRIVILEGES` for every later table.
+   - `prisma/runtime-role.ts` runs in the migrate job between `migrate deploy` and the seed. It manages only the fixed name `sirat_app`.
+   - It gives the role its login from `POSTGRES_APP_PASSWORD` as a SCRAM-SHA-256 verifier computed in Node, so the plaintext never reaches Postgres or its log. The derivation reproduces RFC 7677's client proof and server signature.
+   - It re-applies the database timeouts that a restore into a fresh database loses. `--ensure` creates the role before a restore on a fresh cluster (L7). It prints one line, never a value.
+3. **One password per cluster:**
+   - On the dev cluster (`sirat.environment=development`) the password is set only while the role has none, so no worktree can reset another's.
+   - Until L8, an empty `POSTGRES_APP_PASSWORD` only skips the login step. Test preparation never changes the password; it checks the login and explains a failure. CI creates the role with its own throwaway password.
+4. **Tests:**
+   - With `TEST_APP_DATABASE_URL` (CI always sets it) the whole integration suite runs the app as `sirat_app`, so a missing grant fails in CI, not in production.
+   - `test/db-runtime-role.int-spec.ts` covers:
+     - the role attributes;
+     - every table's privileges, with the append-only set found from the triggers;
+     - the default privileges;
+     - the timeout re-apply;
+     - a SCRAM login on a scratch role that is dropped after;
+     - eleven statements `sirat_app` must not run (each fails with 42501).
+5. **The boot line** `database role=<name> superuser=<bool>` in the API and the worker makes the RUNBOOK §9 item readable from the logs. In production it warns while the role is a superuser; from L8 a superuser is refused.
+
 ## 2026-11-01 — Next's runtime caches are writable by the web's runtime user (Claude; lead's bug report)
 
 1. **The bug:**
