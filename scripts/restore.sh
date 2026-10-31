@@ -13,4 +13,5 @@ read -r -p "This OVERWRITES the database in the postgres container. Type YES to 
 # Credentials are read from the postgres container's own environment.
 # shellcheck disable=SC2016
 $DC exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --single-transaction --exit-on-error' < "$FILE"
-echo "restore finished. Next: $DC run --rm migrate, flush redis-cache, then $DC up -d and scripts/healthcheck.sh"
+echo "restore finished. Next: $DC run --rm migrate, flush redis-cache, then $DC up -d and scripts/healthcheck.sh https://<domain>"
+echo "From the server itself: $DC exec -T nginx wget -qO- http://127.0.0.1:8081/api/ready (the internal listener)"

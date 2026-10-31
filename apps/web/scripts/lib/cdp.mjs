@@ -99,8 +99,23 @@ export async function launchBrowser() {
     });
   });
   const conn = await connect(wsUrl);
+  // Content-Security-Policy, seen by every page: the violations (enforced or Report-Only) and which documents carried
+  // nginx's page policy. e2e.mjs and e2e-exam.mjs check both once at the end (cspReport below, LAUNCH-PLAN §3).
+  const cspViolations = [];
+  const cspDocuments = []; // { origin, path, hasPolicy } for every http(s) document
+  const onDocument = (doc) => cspDocuments.push(doc);
 
   return {
+    /** The CSP violations recorded so far, across every page of this browser. */
+    cspViolations: () => [...cspViolations],
+    /** How many documents (of `origin`, or all) carried the page CSP, and the paths of those that did not. */
+    cspDocuments: (origin) => {
+      const docs = cspDocuments.filter((d) => !origin || d.origin === origin);
+      return {
+        withPolicy: docs.filter((d) => d.hasPolicy).length,
+        withoutPolicy: docs.filter((d) => !d.hasPolicy).map((d) => d.path),
+      };
+    },
     /** A separate cookie jar. */
     async newContext() {
       const { browserContextId } = await conn.send('Target.createBrowserContext', {
@@ -108,7 +123,7 @@ export async function launchBrowser() {
       });
       return {
         id: browserContextId,
-        newPage: () => openPage(conn, browserContextId),
+        newPage: () => openPage(conn, browserContextId, (v) => cspViolations.push(v), onDocument),
         /** Sets a cookie for `url`'s host (host-only, like the API's cookies). */
         setCookie: (url, name, value, extra = {}) =>
           conn.send('Storage.setCookies', {
@@ -166,7 +181,54 @@ function hostOf(url) {
   return { domain: u.hostname, path: '/', secure: u.protocol === 'https:' };
 }
 
-async function openPage(conn, browserContextId) {
+const CSP_BINDING = '__siratCspViolation';
+
+/**
+ * The end-of-run CSP verdict for e2e scripts. It fails when a document of the site (`base`) lacked nginx's page
+ * policy, when none had it (a run against a bare Next or an nginx without security-headers.conf would otherwise pass
+ * without testing anything), or when any violation was seen.
+ */
+export function cspReport(browser, base) {
+  const violations = browser.cspViolations();
+  // Only the site's own documents must carry it: a payment gateway page is another origin with its own headers.
+  const { withPolicy, withoutPolicy } = browser.cspDocuments(
+    base ? new URL(base).origin : undefined,
+  );
+  if (withPolicy === 0) {
+    return {
+      ok: false,
+      line: "  FAIL  no document carried the page Content-Security-Policy (not behind nginx's site?)",
+    };
+  }
+  if (withoutPolicy.length) {
+    return {
+      ok: false,
+      line: `  FAIL  ${withoutPolicy.length} documents without the page Content-Security-Policy: ${JSON.stringify(withoutPolicy.slice(0, 5))}`,
+    };
+  }
+  if (violations.length) {
+    return {
+      ok: false,
+      line: `  FAIL  ${violations.length} Content-Security-Policy violations: ${JSON.stringify(violations.slice(0, 5))}`,
+    };
+  }
+  return {
+    ok: true,
+    line: `  ok    the page Content-Security-Policy on all ${withPolicy} documents, no violations`,
+  };
+}
+
+/** nginx's page policy: the Report-Only header, or an enforced one with script/default rules (Next's own header has only frame-ancestors). */
+function hasPagePolicy(headers) {
+  const lower = Object.fromEntries(
+    Object.entries(headers ?? {}).map(([k, v]) => [k.toLowerCase(), String(v)]),
+  );
+  if ('content-security-policy-report-only' in lower) return true;
+  const enforced = lower['content-security-policy'] ?? '';
+  return enforced.includes('script-src') || enforced.includes('default-src');
+}
+
+async function openPage(conn, browserContextId, onCspViolation = () => {}, onDocument = () => {}) {
   const { targetId } = await conn.send('Target.createTarget', {
     url: 'about:blank',
     browserContextId,
@@ -176,6 +238,42 @@ async function openPage(conn, browserContextId) {
   await send('Page.enable');
   await send('Runtime.enable');
   await send('Network.enable');
+  // Each new document reports its CSP violations through a binding, before any page script runs.
+  await send('Runtime.addBinding', { name: CSP_BINDING });
+  await send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `document.addEventListener('securitypolicyviolation', (e) => {
+      try {
+        ${CSP_BINDING}(JSON.stringify({ directive: e.violatedDirective, blocked: e.blockedURI,
+          source: e.sourceFile, line: e.lineNumber, page: location.pathname }));
+      } catch {}
+    });`,
+  });
+  conn.on((msg) => {
+    if (
+      msg.sessionId === sessionId &&
+      msg.method === 'Runtime.bindingCalled' &&
+      msg.params.name === CSP_BINDING
+    ) {
+      try {
+        onCspViolation(JSON.parse(msg.params.payload));
+      } catch {
+        onCspViolation({ directive: 'unreadable report' });
+      }
+    }
+    if (
+      msg.sessionId === sessionId &&
+      msg.method === 'Network.responseReceived' &&
+      msg.params.type === 'Document' &&
+      /^https?:/.test(msg.params.response.url)
+    ) {
+      const url = new URL(msg.params.response.url);
+      onDocument({
+        origin: url.origin,
+        path: url.pathname,
+        hasPolicy: hasPagePolicy(msg.params.response.headers),
+      });
+    }
+  });
 
   const page = {
     send,

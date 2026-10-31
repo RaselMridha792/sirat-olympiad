@@ -170,8 +170,12 @@ export interface AnnouncementRecord {
   id: string;
   title: string;
   body: string;
+  /** null = everyone */
+  category: Category | null;
   publishedAt: string;
+  archivedAt: string | null;
   createdAt: string;
+  updatedAt: string;
 }
 
 /** Mirrored fields per Prisma model: 'req' = NOT NULL, 'opt' = nullable (`?` in schema.prisma). */
@@ -267,7 +271,16 @@ export const RECORD_FIELDS = {
   Team: { id: 'req', name: 'req', ownerId: 'req', createdAt: 'req' },
   AdminTask: { id: 'req', title: 'req', description: 'req', points: 'req', createdAt: 'req' },
   TaskAssignment: { id: 'req', taskId: 'req', userId: 'req', status: 'req', approvedAt: 'opt' },
-  Announcement: { id: 'req', title: 'req', body: 'req', publishedAt: 'req', createdAt: 'req' },
+  Announcement: {
+    id: 'req',
+    title: 'req',
+    body: 'req',
+    category: 'opt',
+    publishedAt: 'req',
+    archivedAt: 'opt',
+    createdAt: 'req',
+    updatedAt: 'req',
+  },
 } as const;
 
 /** Prisma enums mirrored above and in index.ts, by schema.prisma enum name. */

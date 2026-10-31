@@ -1,0 +1,12 @@
+#!/bin/sh
+# Sourced by the nginx image's entrypoint before it renders the templates (/docker-entrypoint.d, in name order).
+# The public host name comes from APP_URL, the one source of truth (email links and the payment return use it too).
+# Only a template that needs it makes it required: the dev and CI site has no variables.
+if grep -qs 'PUBLIC_HOST' /etc/nginx/templates/*.template; then
+  PUBLIC_HOST=$(printf '%s' "${APP_URL:-}" | sed -n 's#^https://\([A-Za-z0-9.-]\{1,253\}\)$#\1#p')
+  if [ -z "$PUBLIC_HOST" ]; then
+    echo "15-public-host.envsh: the TLS site needs APP_URL=https://<host name> (no port, no path); got '${APP_URL:-}'" >&2
+    exit 1
+  fi
+  export PUBLIC_HOST
+fi

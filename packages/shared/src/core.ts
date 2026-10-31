@@ -1,4 +1,6 @@
-import type { AdminUserQuery } from './dashboard';
+import type { Category } from './index';
+import type { AdminUserQuery, AnnouncementItem, PageQuery } from './dashboard';
+import type { AnnouncementRecord } from './records';
 
 /*
  * Shapes of the core session's endpoints that are not dashboard reads (docs/plans/CORE-PLAN.md). Dashboard read
@@ -38,3 +40,48 @@ export const PROFILE_REFUSALS = [
   'not_a_student',
 ] as const;
 export type ProfileRefusal = (typeof PROFILE_REFUSALS)[number];
+
+// ───────────── Announcements (core C4; 06-API "Announcements") ─────────────
+
+export const ANNOUNCEMENT_LIMITS = {
+  title: { min: 3, max: 150 },
+  body: { min: 1, max: 5000 },
+} as const;
+
+/** Derived by the server from archived_at and published_at (never stored). */
+export const ANNOUNCEMENT_STATUSES = ['scheduled', 'published', 'archived'] as const;
+export type AnnouncementStatus = (typeof ANNOUNCEMENT_STATUSES)[number];
+
+/** The admin view of one announcement. */
+export type AdminAnnouncement = AnnouncementItem &
+  Pick<AnnouncementRecord, 'category' | 'archivedAt' | 'createdAt' | 'updatedAt'> & {
+    status: AnnouncementStatus;
+    authorName: string | null;
+  };
+
+/** GET /admin/announcements */
+export interface AdminAnnouncementQuery extends PageQuery {
+  status?: AnnouncementStatus;
+}
+
+/** POST /admin/announcements; `publishAt` (ISO) defaults to now, at most 1 minute in the past. */
+export interface AnnouncementInput {
+  title: string;
+  body: string;
+  /** null = everyone */
+  category: Category | null;
+  publishAt?: string;
+}
+
+/** PATCH /admin/announcements/:id: `expectedUpdatedAt` is the value the form showed (409 `stale` otherwise). */
+export type AnnouncementPatch = Partial<AnnouncementInput> & { expectedUpdatedAt: string };
+
+/** Refusal codes in ApiError.details. */
+export const ANNOUNCEMENT_REFUSALS = [
+  'stale',
+  'archived',
+  'not_archived',
+  'publish_in_past',
+  'nothing_to_update',
+] as const;
+export type AnnouncementRefusal = (typeof ANNOUNCEMENT_REFUSALS)[number];
