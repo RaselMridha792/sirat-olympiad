@@ -1,8 +1,10 @@
 import {
   Award,
+  CreditCard,
   FileText,
   LayoutDashboard,
   Megaphone,
+  Settings,
   Trophy,
   Users,
   type LucideIcon,
@@ -21,7 +23,7 @@ import { requireArea } from '@/lib/session';
 /**
  * Sidebar links, shown to the roles that may open them (lib/access.ts). Hiding a link only shapes the UI: each
  * admin page checks access itself and each API endpoint has its own server guard. Screens that are not
- * built yet (jury, payments, audit log) are not linked at all.
+ * built yet (jury, audit log) are not linked at all.
  */
 const NAV: ReadonlyArray<{
   key: keyof AdminShellMessages['nav'];
@@ -34,6 +36,8 @@ const NAV: ReadonlyArray<{
   { key: 'leaderboard', href: '/admin/leaderboard', Icon: Trophy },
   { key: 'ambassadors', href: '/admin/ambassadors', Icon: Award },
   { key: 'announcements', href: '/admin/announcements', Icon: Megaphone },
+  { key: 'payments', href: '/admin/payments', Icon: CreditCard },
+  { key: 'settings', href: '/admin/settings', Icon: Settings },
 ];
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {

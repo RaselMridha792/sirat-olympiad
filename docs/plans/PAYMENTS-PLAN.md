@@ -539,8 +539,8 @@ The dates assume each PR is reviewed and merged within about half a day. While a
 | **Sandbox access:** Rasel's PayStation sandbox credentials typed into this worktree's `.env` (section 15); a test IPN URL can be registered in his panel (S29) | Rasel | Sun 1 Nov (S10 and S11 checked while steps 2–3 are written) | Thu 5 Nov | Steps 2, 12 |
 | **Sandbox session with Rasel present** (about 2–3 hours): checkout in a browser and on a phone, the IPN through a tunnel (`cloudflared` installed on his PC), the S-list | Rasel | Fri 6 Nov | Mon 9 Nov (leaves time for fixes and a second session) | Step 12; the sandbox part of DoD #6, #7, #9–#11, #14, #16 |
 | **Domain** (with DNS access), separate from the VPS (lead, 2026-10-31) | client, through Rasel | **Mon 2 Nov** | **Wed 4 Nov** | Both slow approvals below need it: SES verifies the sending domain, and the live merchant registers the IPN URL and the callback domain on it. SES approval can take several days, so the domain comes first |
-| **VPS** (the domain pointed at it, TLS) | client, through Rasel | Sat 7 Nov | Tue 10 Nov | Deployment; the IPN through nginx and TLS; S29/S30 for the production domain; k6 on the target hardware (DoD #17) |
-| **Live merchant:** the client's PayStation account approved for live, methods enabled, credentials to Rasel (D9), the production IPN URL registered, the callback domain whitelisted (S30) | client, PayStation; needs the domain | Tue 10 Nov | Thu 12 Nov | `paystation:selfcheck`, the re-verification in 13.4, one real small payment (DoD #16) |
+| **VPS** (the domain pointed at it, TLS) | client, through Rasel | **Thu 5 Nov** (lead asked Rasel, 2026-11-01: the live review below needs the site live) | Sat 7 Nov | Deployment; the IPN through nginx and TLS; S29/S30 for the production domain; k6 on the target hardware (DoD #17) |
+| **Live merchant:** the client's PayStation account approved for live, methods enabled, credentials to Rasel (D9), the production IPN URL registered, the callback domain whitelisted (S30) | client, PayStation; needs **the site live on the domain** (A2's launch plan, 2026-11-01): the VPS, the first deploy, TLS and core's public pages with the client's texts, not only the domain | Tue 10 Nov | Thu 12 Nov | `paystation:selfcheck`, the re-verification in 13.4, one real small payment (DoD #16) |
 | **SES production access:** sending domain verified (SPF, DKIM, DMARC) and the account out of the SES sandbox (OPEN-QUESTIONS #16) | Rasel (AWS); needs the domain | **Requested the day the domain arrives** (target Mon 2 Nov); granted by Wed 11 Nov | Fri 13 Nov | Completion and verification emails to real students (DoD #13 in production). If late, registration and login still work, but no email reaches students, and the owner decides whether to open registration |
 
 **Team dependencies** (ours, but not this session's):
@@ -548,9 +548,9 @@ The dates assume each PR is reviewed and merged within about half a day. While a
 - Q3 and Q4 are answered, final (section 2).
 - PR reviews by the lead and merges by Rasel, about half a day each.
 
-### 10.3 Buffer: Sun 8 (midday) – Sat 14 November (about 6½ days)
+### 10.3 Buffer: Sun 8 (midday) – Thu 12 November (about 4½ days)
 
-It was 8 days. The free book (steps 15–16, section 16.8) takes about 1½ of them.
+It was 8 days. The free book (steps 15–16, section 16.8) takes about 1½ of them. **Freeze** (LAUNCH-PLAN, lead 2026-11-01): non-critical deploys end Thu 12 Nov; from Fri 13 Nov 00:00 only critical fixes are deployed.
 
 The days saved by the measured pace are kept at the end for what cannot be compressed or predicted:
 - **Sandbox problems:** S10 showing an amount other than 400, callback or IPN behaving unlike the docs, a second sandbox session.
@@ -686,7 +686,7 @@ Results go into `SANDBOX-CHECKLIST.md` (a "client account" column) and DECISIONS
 1. **The outside items decide the date, not the code** (10.2). The code dates are estimates at the measured pace. Delays go into the 8-day buffer (10.3). No DoD point, test or security check is cut to win time. If the buffer runs out, the owner decides the date.
 2. **A2's web session is a dependency** for steps 10–11. If it is not merged by Wed 4 Nov, the web steps move into the buffer.
 3. **S10 with `pay_with_charge=0` is not yet seen in the sandbox.** If PayStation reports an amount other than exactly 400 (for example, the charge added anyway), every payment fails closed (`rejected_amount`, critical alert); none is ever wrongly marked paid. The owner is asked before anything changes. Checked early on step 2 if credentials exist.
-4. **DoD #16 needs the client's live account** (by Thu 12 Nov, 10.2). If it is not ready by 15 November, the release is ready but registration stays closed.
+4. **DoD #16 needs the client's live account** (by Thu 12 Nov, 10.2). PayStation's live review needs the site live on the domain (VPS, first deploy, TLS, core's public pages with the client's texts), so a late VPS delays it too. If it is not ready by 15 November, the release is ready but registration stays closed.
 5. **A double charge** (a second or late payment). We do not return money (Q4), so prevention matters more: one attempt in progress per email and per phone, one active payment per attempt, expiry ≥ PayStation's link lifetime (S12), and the late watch. Any duplicate is a critical alert and shows in the admin list (D3).
 6. **The worker is the only path to confirmation.** Health and queue-depth alerts; two worker replicas are safe with BullMQ.
 7. **Unsigned IPNs and callbacks can be spammed.** Per-invoice verify throttle, body limit, nginx limit; unknown invoices never cause a gateway call.
@@ -917,7 +917,7 @@ DTOs use `whitelist` + `forbidNonWhitelisted`. Every route has an explicit guard
 | 15 | Sat 7 Nov | 06-API contract; M4; `book-image.ts`; student and admin endpoints; CSV; tests | 6 |
 | 16 | Sat 7 – Sun 8 Nov | Web: the result page's login button, `/dashboard/book`, the dashboard card, the admin book and orders pages | 6 |
 
-- **About one and a half days, taken from the buffer.** It shrinks from 8 days (7–14 Nov) to about 6½ (8 Nov midday – 14 Nov).
+- **About one and a half days, taken from the buffer.** It shrinks from 8 days (7–14 Nov) to about 6½ (8 Nov midday – 14 Nov); with the freeze from Fri 13 Nov (lead, 2026-11-01), the room for non-critical work ends Thu 12 Nov.
 - The book needs no PayStation, so the sandbox session on 6 Nov is not affected. One end-to-end walk (payment → login → book) is added to the buffer's real-payment day.
 
 ### 16.9 Files this touches (conflict list; Rasel is told before each push)
@@ -929,7 +929,7 @@ DTOs use `whitelist` + `forbidNonWhitelisted`. Every route has an explicit guard
 | `packages/shared/src/index.ts` | one line (`districts`, book types) |
 | `packages/ui` | possibly a file-input component (shared; the UI session is told) |
 | `apps/web`: login `next` handling | **Not touched.** A2's merged `safeNext` already allows `/dashboard/book` |
-| `apps/web`: student dashboard home (the card), new `/dashboard/book`, admin book and orders pages | New pages are our own files. The dashboard home card is a small edit in a file A2 owns: merge `origin/main` right before the push |
+| `apps/web`: student dashboard home (the card), new `/dashboard/book`, admin book and orders pages | New pages are our own files. The student dashboard home is **core's** (C4, lead 2026-11-01): core composes the registration card from `GET /registrations/me`; a book card or link there is agreed with core first |
 | `test/app-routes.int-spec.ts` | the public cover route |
 | `docs/06-API.md`, `05-DATABASE.md`, `RUNBOOK.md` (restore check, CSV handling), `DECISIONS.md` | |
 | Not touched | `app.module.ts`, `package.json`, `pnpm-lock.yaml`, `infra/nginx/*`, `scripts/backup.sh` |
