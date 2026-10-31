@@ -10,8 +10,8 @@ Status as of 2026-10-31 (UI port on the dev-only mock data layer; see "Data laye
 
 | Screen | Old file(s) | New file(s) | Status | What to keep | What to change |
 |---|---|---|---|---|---|
-| Login | `login/page.jsx` | `(auth)/login/page.tsx`, `components/LoginForm.tsx`, `AuthSplitLayout` | **Built (layout + form)** | Split panel (dark brand left, form right), icon inputs, "Back to home", forgot link, 15 s timeout + "try again" on slow networks | No token in localStorage/cookie/Redux; call `/api/auth/login`, server sets cookie. Rate-limit feedback from API. i18n |
-| Forgot password | `Components/ForgotPasswordModal.js`, `update-password/page.jsx` | `(auth)/forgot-password/page.tsx` (+ reset page TODO) | Form shell | Simple email form | No direct Supabase call; own reset token flow; identical response |
+| Login | `login/page.jsx` | `(auth)/login/page.tsx`, `components/LoginForm.tsx`, `AuthSplitLayout` | **Built, real session** (bn/en, errors by status, safe `next`) | Split panel (dark brand left, form right), icon inputs, "Back to home", forgot link, 15 s timeout + "try again" on slow networks | No token in localStorage/cookie/Redux; call `/api/auth/login`, server sets cookie. Rate-limit feedback from API. i18n |
+| Forgot password | `Components/ForgotPasswordModal.js`, `update-password/page.jsx` | `(auth)/forgot-password`, `(auth)/reset-password`, `(auth)/verify-email`, `components/auth/*` | **Built** (token from the `#` fragment, button press only) | Simple email form | No direct Supabase call; own reset token flow; identical response |
 | Registration wizard | `registration-full/*` (`Step1_Auth`, `Step2_Auth`, `Step_Payment`, `Step3_Auth`, `page.jsx`) | `(auth)/register/page.tsx`, `components/RegisterForm.tsx` | **Step 1 shell only** | 3-step flow, field set (name, promo code, phone, district, institution, education type, 17 grade levels, email, password), payment step | Step data stored server-side; no `role`; no SDG; category from grade table; register/payment order per HOW-IT-WORKS §1; phone input lib optional |
 | Registration closed page | `registration/page.jsx` | `(marketing)/registration-closed` (TODO) | — | Message | Driven by `registration_open` setting |
 | Payment result pages | `payment-failed/page.jsx`, `successful-registration/page.jsx` | `(auth)/payment/status` (TODO) | — | Friendly states | Poll our status API; "Check my payment status"; resume/restart |
@@ -63,10 +63,13 @@ Pages never fetch on their own. Server Components call `getData()` from `apps/we
 ## Checks for the UI
 
 - `pnpm -F web test` (`node --test`, no extra dependencies): schema mirror, mock gate, students-get-no-scores, leak harness, WCAG AA contrast of every tone and every bg+text pair in the code, rank states, profile validation, URL parsing, i18n formatting.
+- Every check runs with real sessions: it logs in through the API as a fixture student and an admin (RUNBOOK §0); without a cookie a page must go to `/refresh`.
 - `pnpm -F web check:leak` against a dev server on port 3100: every student page is rendered with canary data (scores, times, other people's emails, answer keys) and the HTML, including the inline RSC payload, must contain none of it.
-- `pnpm -F web check:prod` against a production server (`next build && next start -p 3100`): every dashboard page, opened in headless Chrome/Edge, shows the shell and a heading (pages that read data show their polite error state, because production has no data source yet), never a blank page or raw error text.
+- `pnpm -F web check:prod` against a production server (`next build && next start -p 3100`): every dashboard page, opened in headless Chrome/Edge, shows the shell and a heading (pages that read data show their polite error state, because production has no data source yet), never a blank page or raw error text. Each page is opened with the role that may open it (`src/lib/access.ts`) and must end on the URL asked for; the other area must redirect home and a restricted page must show not found.
+- `pnpm -F web check:api-down` against the production server with the API stopped: pages show the error page and stay put, never `/login`.
+- `pnpm -F web e2e` against the whole local stack: the session flows in a real browser (refresh, logout, two tabs, reset email); the same CDP driver (`scripts/lib/cdp.mjs`) as the checks.
 - Routes are discovered from `src/app` (every `page.tsx` under `/dashboard` and `/admin`); a new dynamic segment needs a sample value in `SAMPLE` in `scripts/check-pages.mjs`.
-- CI runs both in the `web-pages` job of `.github/workflows/ci.yml` (dev server on :3100, production server on :3101).
+- CI runs leak, prod and api-down in the `web-pages` job of `.github/workflows/ci.yml` (API on :4000 with its own Postgres and Redis, dev server on :3100, production server on :3101).
 
 ## Remaining work (owner decisions, 2026-10-31)
 
@@ -74,10 +77,9 @@ Pages never fetch on their own. Server Components call `getData()` from `apps/we
 |---|---|
 | `<html lang>` | Stays `en` in the static root layout (shared with the auth pages). It follows the locale together with the public pages; dashboard content already carries `lang` on its wrapper. |
 | nginx access log | The default `combined` format logs `$request`, so admin search terms (names, emails) in the URL reach the logs. A separate infra commit drops the query string; the UI work does not touch nginx. |
-| `LoginForm.tsx` contrast | Its error text uses `text-danger` (below AA). Small follow-up after the student PR merges (auth files are owned by the auth work). |
-| CI | The `web-pages` job runs `check:leak` and `check:prod`. Make it a required check once branch protection is available (OPEN-QUESTIONS #25). |
+| CI | The `web-pages` job runs `check:leak`, `check:prod` and `check:api-down` with real sessions. Make it a required check once branch protection is available (OPEN-QUESTIONS #25). |
 | Unknown exam id | `/admin/exams/:id` calls `notFound()` and shows the translated not-found card with `noindex`, but answers HTTP 200: the `loading.tsx` boundaries above it start the stream first (Next 16 `loading.md`, "Status codes"). The skeletons stay; a real 404 needs a Proxy check once the exams API exists. |
-| HTTP data source | `data/http/` implementing `DataSource`, calling the API server-side with the session cookie; dashboard route guards come from the auth team's session helper, not from this UI code. |
+| HTTP data source | `data/http/` implementing `DataSource`, calling the API server-side with the session cookie (`lib/server-api.ts`, as `lib/session.ts` does for `/auth/me`). The route guards are in place (`requireAccess`, `lib/access.ts`). |
 | API contract | Add `GET /dashboard/home`, `GET /content/profile-options` and `GET /admin/leaderboard` to `06-API.md`; decide the leaderboard tie rule (the mock shares a rank: 1, 2, 2, 4). |
 | Later screens | Exam player, results/review, certificates, payment history, video submission, jury evaluation, promotion, admin create/edit flows, the ambassador panel (branch `feat/ui-ambassador`). |
 
