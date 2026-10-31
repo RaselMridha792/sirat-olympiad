@@ -15,6 +15,7 @@
     "prisma:deploy": "prisma migrate deploy",
     "admin:create": "tsx --env-file-if-exists=.env src/cli/create-admin.ts",
     "paystation:selfcheck": "tsx --env-file-if-exists=.env src/cli/paystation-selfcheck.ts",
+    "ops:alert": "tsx --env-file-if-exists=.env src/cli/ops-alert.ts",
     "db:seed": "tsx --env-file-if-exists=.env prisma/seed.ts",
     "db:fixtures:dev": "tsx --env-file-if-exists=.env prisma/fixtures/dev-fixtures.ts"
   },

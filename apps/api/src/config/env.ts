@@ -66,7 +66,10 @@ export class EnvVars {
 
   /** Operator inbox for security alerts. Unset: alerts go to the audit log and the log only. */
   @IsOptional() @IsEmail() SECURITY_ALERT_EMAIL?: string;
-  /** Owner: at most one alert email per kind per 10 minutes, and at most this many alert emails per hour. */
+  /**
+   * Owner: at most one alert email per kind per 10 minutes, and at most this many alert emails per hour in each
+   * category (security, payments, ops; owner Q2: 6 each), so a flood of one never silences another.
+   */
   @IsInt() @Min(1) @Max(60) SECURITY_ALERT_EMAILS_PER_HOUR: number = 6;
   /** Optional override of the pino level (default: info in production, debug elsewhere). */
   @IsOptional()
