@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Eye, Search, ShieldCheck, Users } from 'lucide-react';
-import { ROLES, type AdminUserDetail, type Role } from '@sirat/shared';
+import { CATEGORIES, ROLES, type AdminUserDetail, type Role } from '@sirat/shared';
 import {
   Avatar,
   Badge,
@@ -12,9 +12,11 @@ import {
   EmptyState,
   LinkPagination,
   SearchBox,
+  SelectField,
   Tabs,
   type DetailItem,
 } from '@sirat/ui';
+import { ExportUsersButton } from '@/components/admin/ExportUsersButton';
 import { LinkPendingIcon } from '@/components/LinkPendingIcon';
 import { RouteDialog } from '@/components/RouteDialog';
 import { paymentStatusTone, roleTone } from '@/components/status';
@@ -46,6 +48,15 @@ const ROLE_TABS = [
   'admin',
 ] as const satisfies readonly Role[];
 
+/** `?registered=true|false`: true, false, or no filter. */
+function parseFlag(value: string | string[] | undefined): boolean | undefined {
+  const raw = first(value);
+  return raw === 'true' ? true : raw === 'false' ? false : undefined;
+}
+
+/** Booleans travel as text in the URL; hrefWith would drop a plain `false`. */
+const flagParam = (value: boolean | undefined) => (value === undefined ? undefined : String(value));
+
 export async function generateMetadata(): Promise<Metadata> {
   const { m } = await getMessages(adminUsersMessages);
   return { title: m.title };
@@ -71,7 +82,17 @@ export default async function AdminUsersPage({
   ]);
   const role = parseEnum(params.role, ROLES);
   const blocked = first(params.blocked) === '1' ? true : undefined;
-  const query = { ...parsePageQuery(params, PAGE_SIZE), role, blocked };
+  const category = parseEnum(params.category, CATEGORIES);
+  const registered = parseFlag(params.registered);
+  const verified = parseFlag(params.verified);
+  const query = {
+    ...parsePageQuery(params, PAGE_SIZE),
+    role,
+    blocked,
+    category,
+    registered,
+    verified,
+  };
   const userId = parseId(params.user);
   const [list, detail] = await Promise.all([
     data.admin.listUsers(query),
@@ -79,16 +100,28 @@ export default async function AdminUsersPage({
   ]);
   const pages = totalPages(list.total, list.pageSize);
   // The current filters as URL params (`blocked` travels as "1"); page links and the dialog keep them.
-  const filters = { q: query.q, role, blocked: blocked ? '1' : undefined };
-  const filtered = Boolean(query.q || role || blocked);
+  const extra = {
+    category,
+    registered: flagParam(registered),
+    verified: flagParam(verified),
+  };
+  const filters = { q: query.q, role, blocked: blocked ? '1' : undefined, ...extra };
+  const filtered =
+    Boolean(query.q || role || blocked || category) ||
+    registered !== undefined ||
+    verified !== undefined;
   const tabs = [
-    { key: 'all', label: m.tabs.all, href: hrefWith(PATH, { q: query.q }) },
+    { key: 'all', label: m.tabs.all, href: hrefWith(PATH, { q: query.q, ...extra }) },
     ...ROLE_TABS.map((r) => ({
       key: r,
       label: m.tabs[r],
-      href: hrefWith(PATH, { q: query.q, role: r }),
+      href: hrefWith(PATH, { q: query.q, role: r, ...extra }),
     })),
-    { key: 'blocked', label: m.tabs.blocked, href: hrefWith(PATH, { q: query.q, blocked: '1' }) },
+    {
+      key: 'blocked',
+      label: m.tabs.blocked,
+      href: hrefWith(PATH, { q: query.q, blocked: '1', ...extra }),
+    },
   ];
 
   return (
@@ -104,16 +137,22 @@ export default async function AdminUsersPage({
               {m.count(formatNumber(locale, list.total), list.total)}
             </p>
           </div>
-          <SearchBox
-            id="user-search"
-            action={PATH}
-            defaultValue={query.q}
-            label={m.search.label}
-            placeholder={m.search.placeholder}
-            submitLabel={c.search.submit}
-            preserve={{ role, blocked: filters.blocked }}
-            icon={<Search aria-hidden="true" size={16} />}
-          />
+          <div className="flex flex-col gap-3 md:flex-row md:items-start">
+            <SearchBox
+              id="user-search"
+              action={PATH}
+              defaultValue={query.q}
+              label={m.search.label}
+              placeholder={m.search.placeholder}
+              submitLabel={c.search.submit}
+              preserve={{ role, blocked: filters.blocked, ...extra }}
+              icon={<Search aria-hidden="true" size={16} />}
+            />
+            <ExportUsersButton
+              locale={locale}
+              filters={{ q: query.q, role, blocked, category, registered, verified }}
+            />
+          </div>
         </div>
         <Tabs
           items={tabs}
@@ -121,6 +160,50 @@ export default async function AdminUsersPage({
           label={m.tabs.label}
           linkAs={Link}
         />
+        {/* Works without JavaScript: a GET form that keeps the search, the role tab and the blocked view. */}
+        <form
+          method="get"
+          action={PATH}
+          aria-label={m.filters.label}
+          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:items-end"
+        >
+          {query.q ? <input type="hidden" name="q" value={query.q} /> : null}
+          {role ? <input type="hidden" name="role" value={role} /> : null}
+          {blocked ? <input type="hidden" name="blocked" value="1" /> : null}
+          <SelectField
+            id="filter-category"
+            name="category"
+            label={m.filters.category}
+            placeholder={m.filters.any}
+            defaultValue={category ?? ''}
+            options={CATEGORIES.map((value) => ({ value, label: c.categories[value] }))}
+          />
+          <SelectField
+            id="filter-registered"
+            name="registered"
+            label={m.filters.registered}
+            placeholder={m.filters.any}
+            defaultValue={flagParam(registered) ?? ''}
+            options={[
+              { value: 'true', label: m.filters.registeredYes },
+              { value: 'false', label: m.filters.registeredNo },
+            ]}
+          />
+          <SelectField
+            id="filter-verified"
+            name="verified"
+            label={m.filters.verified}
+            placeholder={m.filters.any}
+            defaultValue={flagParam(verified) ?? ''}
+            options={[
+              { value: 'true', label: m.filters.verifiedYes },
+              { value: 'false', label: m.filters.verifiedNo },
+            ]}
+          />
+          <button type="submit" className={buttonClasses({ variant: 'outline' })}>
+            {m.filters.apply}
+          </button>
+        </form>
       </Card>
 
       {list.items.length === 0 ? (
@@ -151,6 +234,9 @@ export default async function AdminUsersPage({
                   <div className="min-w-0">
                     <p className="font-semibold text-ink">{u.name}</p>
                     <p className="text-xs text-ink-muted">{u.email}</p>
+                    {u.phoneLast3 ? (
+                      <p className="text-xs text-ink-muted">{m.phoneEnding(u.phoneLast3)}</p>
+                    ) : null}
                   </div>
                 </div>
               ),
@@ -169,6 +255,32 @@ export default async function AdminUsersPage({
                 ) : (
                   <span className="text-ink-muted">{c.notProvided}</span>
                 ),
+            },
+            {
+              key: 'registration',
+              header: m.table.registration,
+              render: (u) =>
+                u.registration ? (
+                  <div className="flex flex-col items-start gap-1">
+                    <Badge tone={paymentStatusTone[u.registration.paymentStatus]}>
+                      {c.paymentStatus[u.registration.paymentStatus]}
+                    </Badge>
+                    {u.needsPaymentReview ? (
+                      <Badge tone="danger">{m.registration.review}</Badge>
+                    ) : null}
+                  </div>
+                ) : (
+                  <span className="text-ink-muted">{m.registration.none}</span>
+                ),
+            },
+            {
+              key: 'verified',
+              header: m.table.verified,
+              render: (u) => (
+                <Badge tone={u.emailVerified ? 'success' : 'neutral'}>
+                  {u.emailVerified ? m.verified.yes : m.verified.no}
+                </Badge>
+              ),
             },
             {
               key: 'status',
@@ -295,6 +407,24 @@ function UserDetails({
       ),
     },
     ...paymentItems,
+    ...(user.referredBy
+      ? [
+          {
+            label: d.referredBy,
+            value: user.referredBy.promoCode
+              ? `${user.referredBy.name} (${user.referredBy.promoCode})`
+              : user.referredBy.name,
+          },
+        ]
+      : []),
+    ...(user.ambassador
+      ? [
+          {
+            label: d.ambassadorCode,
+            value: <span className="font-mono">{user.ambassador.promoCode}</span>,
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -309,6 +439,11 @@ function UserDetails({
           </span>
         </div>
       </div>
+      {user.needsPaymentReview ? (
+        <p role="note" className="text-sm font-medium text-danger-strong">
+          {d.review}
+        </p>
+      ) : null}
       <DetailList items={items} />
     </div>
   );

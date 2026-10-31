@@ -5,6 +5,9 @@ import type { Locale } from '@/i18n';
 import { pick } from '@/i18n/messages';
 import { authMessages } from '@/i18n/messages/auth';
 import { api, SessionExpiredError } from '@/lib/api';
+import { playerApi } from '@/components/exam/exam-api';
+import { sendPendingSubmits } from '@/components/exam/exam-logout';
+import { browserStore, clearAllExams } from '@/components/exam/exam-storage';
 
 /** Tabs of this browser tell each other about a logout (shared school computers). */
 const CHANNEL = 'sirat-auth';
@@ -57,6 +60,8 @@ export function LogoutButton({ locale, tone }: { locale: Locale; tone: keyof typ
     if (pending) return;
     setPending(true);
     setFailed(false);
+    // An exam's unsent final submit gets one bounded try while the session still works (exam session, E4).
+    await sendPendingSubmits(browserStore(), playerApi.submit);
     try {
       await api('/auth/logout', { method: 'POST', onExpired: 'throw' });
     } catch (error) {
@@ -66,6 +71,7 @@ export function LogoutButton({ locale, tone }: { locale: Locale; tone: keyof typ
         return;
       }
     }
+    clearAllExams(browserStore()); // no exam answers stay on a shared device
     announceLogout();
     window.location.replace('/login');
   }

@@ -2,6 +2,39 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — Admin students list and CSV export (core C1; plan `docs/plans/CORE-PLAN.md` section 2)
+
+1. **Read only, admins only,** and the acting admin is re-read on every call, reads included: a demoted or blocked admin stops at once, not after the token's 15 minutes, because these pages show minors' data. Lives in `UsersModule`, so `admin.module.ts` (payments' admin routes) and `app.module.ts` do not change.
+2. **Search:** name or email contains the term (case-insensitive), plus the phone exactly when the term reads as a Bangladeshi mobile in any form, plus the registration's invoice exactly when the term has the invoice shape with a digit (a long name never counts as an invoice). `q` is 1–100 characters, as the web's search box sends it. **Measured** (`EXPLAIN ANALYZE`, 35,157 users in `sirat_core_test`, 25,000 of them generated): a term that matches nothing 40 ms (sequential scan, the worst case), its count 35 ms, a term matching 5,000 rows 6 ms for page 1, page 1,250 without a filter 18 ms, not-registered 5 ms, one export batch of 1,000 rows 5 ms. All under the 50 ms target, so no `pg_trgm` index.
+3. **Phone masked in the list** (`phoneLast3`), full in the detail and in the CSV (core plan D2).
+4. **Export is a POST** with a reason (3–200 characters), so neither the reason nor the search reaches a URL (nginx logs query strings) and the CSRF header applies.
+   - **Audit before the first byte:** `users.exported` with the admin, IP, filters (the search term only as its kind), row count and reason. If it cannot be written, 503 and no file.
+   - **Only students and ambassadors** are exported; at most 50,000 rows (400 `too_many_rows`); 5 per admin per hour. The throttler runs before validation, so refused requests count too.
+   - **Rows in keyset batches of 1,000** (`created_at`, `id`): a fixed number of queries per batch, far below the 10 s statement timeout. The id breaks ties, so equal timestamps neither repeat nor drop a row (tested with 2,500 rows of one timestamp).
+   - **Nest's `StreamableFile` logger is replaced,** not its handler. Nest still cuts a download short when a batch fails after the headers went out, but its default logger printed the error's message, and a Prisma message quotes query values (A2.0 gate 1).
+   - **CSV rules** (`common/csv.ts`, for every export): UTF-8 BOM, CRLF rows, quotes for commas/quotes/line breaks, a `'` before a cell starting with `=`, `+`, `-`, `@`, tab or CR. Times in Asia/Dhaka.
+5. **Web:**
+   - **The page:** `data/http/users.ts` reads the list and the detail with a shape check and an explicit pick. A detail id that is not a UUID is "not found" without a call.
+   - **Filters:** a GET form (works without JavaScript). Booleans travel as `true`/`false` in the URL, because `hrefWith` drops a plain `false`.
+   - **The export:** it goes from the browser through `lib/api.ts`, which gains `as: 'blob'` (DECISIONS "Web data layer over HTTP" rule 5). `Blob.text()` drops the BOM while the bytes keep it, so the test compares bytes.
+6. **Tests:**
+   - unit: `csv.spec.ts`; `admin-users.service.spec.ts` (search kinds, filters, the row limit before any write, no file without the audit row and no error message in the log, only the term's kind audited);
+   - web: `users.test.ts`, `export-problem.test.ts`, the blob case in `api.test.ts`;
+   - integration: `admin-users.int-spec.ts` (roles, a blocked or demoted admin, every search kind and filter, paging bounds, masked phone, detail, CSV content and escaping, audit row, batches, the hourly limit).
+   - **Mutation checks:** without the explicit pick, a hash canary reaches the page; without the formula prefix, the CSV test fails.
+
+## 2026-10-31 — Exam player in the browser (E4; exam session, lead's rules)
+
+1. **Logic without React:** `components/exam/exam-controller.ts` (state, local copy, checkpoints, the one submit), `violations.ts` (leave and return, DevTools keys), `exam-storage.ts`, `exam-api.ts` (browser calls), `exam-logout.ts`. The plan named state/storage/sync/time modules; one controller with an injected clock, timers and API keeps every rule in one place, and `node --test` drives it with a fake clock.
+2. **Reads and writes (lead):** the waiting room is a server read (`data/http/exams.ts` `getExam`: shape check, explicit pick, null for 404 and for a malformed id, which sends no request). Start, resume, checkpoint and submit go from the browser through `lib/api.ts` ("Web data layer over HTTP" 5). Checkpoint and submit use `onExpired: 'throw'`: an ended session keeps the answers and the pending submit on the device, and the page asks for a login.
+   - **Client props are picked by name:** the page hands `ExamRoom` only `toRoomExam(exam)`, because everything given to a client component is serialized into the page. CI's `?mock=leak` page check found the whole object there; a unit test now fails without the pick.
+3. **Local and server copies:** the newer answers win by `seq`; the violation count is the higher of both; a pending submit is sent again after a reload with its request id. Time-up locks the answers and submits them after a 0–20 s spread. The countdown is display only and re-syncs when the server's remaining seconds differ by more than 1.5 s.
+4. **The violation rule as built (owner Q4):** a leave counts once until the page has focus again; a warning on screen does not pause counting; reloading or closing the page (`beforeunload`, `pagehide`) and network changes do not count. The DevTools keys are F12, Ctrl+Shift+I/J/C and Cmd+Opt+I/J/C. Opening the tools from the browser menu cannot be seen, and the rules text claims nothing about it.
+5. **Logout on shared devices (lead):** before the logout request, an unsent final submit gets one try of at most 3 s; after a logout that worked, every `sirat.exam.v1.*` key is removed and no other key (A2's `LogoutButton.tsx`, lead's approval).
+6. **Start waits for hydration**, like the auth forms: a click before React ran did nothing (found by the e2e).
+7. **Proof:** `scripts/e2e-exam.mjs`. An admin publishes a 15-minute exam; a fixture student takes it up to the 6th violation, with a reload in between; every response, the HTML and localStorage are searched for explanations, correct keys, scores and question or lineage ids. On a throwaway Postgres with the exam session's own API: 6/6. With the API changed to add `correctKey` and the question id to the start answer, the leak step fails.
+8. `Countdown` shows h:mm:ss from one hour on (`formatCountdown`, unit-tested); `@sirat/ui` gets a `test` script (lead's approval).
+
 ## 2026-10-31 — Public entry page and legal pages (core C2; plan `docs/plans/CORE-PLAN.md` section 3)
 
 1. **Why now, before Phase D:** PayStation's merchant review asks for a live site with an about page, terms, a privacy policy, contact details (one email and at least one phone number) and the registered business name; a refund policy depends on the business. So only these five pages are built (entry, about, privacy, terms, refund policy): no design work, no other marketing sections.

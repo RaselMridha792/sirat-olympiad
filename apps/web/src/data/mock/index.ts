@@ -1,15 +1,17 @@
-import type {
-  AdminLeaderboardRow,
-  AdminUserDetail,
-  AdminUserRow,
-  AmbassadorOverview,
-  AnnouncementItem,
-  LeaderboardRound,
-  LeaderboardRow,
-  ProfileOptions,
-  StudentExamCard,
-  StudentExamState,
-  StudentProfile,
+import {
+  EXAM_VIOLATION_WARNINGS,
+  type AdminLeaderboardRow,
+  type AdminUserDetail,
+  type AdminUserRow,
+  type AmbassadorOverview,
+  type AnnouncementItem,
+  type LeaderboardRound,
+  type LeaderboardRow,
+  type ProfileOptions,
+  type StudentExamCard,
+  type StudentExamDetail,
+  type StudentExamState,
+  type StudentProfile,
 } from '@sirat/shared';
 import type { MockState } from '../mode';
 import type { DataSource } from '../source';
@@ -93,22 +95,29 @@ function resolveRound(w: MockWorld, roundId: string | undefined): LeaderboardRou
   return published.at(-1) ?? rounds[0] ?? null;
 }
 
-const userRow = ({
-  id,
-  name,
-  email,
-  role,
-  isBlocked,
-  category,
-  createdAt,
-}: MockUser): AdminUserRow => ({
-  id,
-  name,
-  email,
-  role,
-  isBlocked,
-  category,
-  createdAt,
+const userRow = (u: MockUser): AdminUserRow => ({
+  id: u.id,
+  name: u.name,
+  email: u.email,
+  role: u.role,
+  isBlocked: u.isBlocked,
+  category: u.category,
+  district: u.district,
+  createdAt: u.createdAt,
+  phoneLast3: u.phone ? u.phone.slice(-3) : null,
+  gradeLabel: gradeOf(u.gradeLevelId)?.label ?? null,
+  emailVerified: u.emailVerifiedAt !== null,
+  // A registration exists only for a paid payment (payments' trigger), so only those carry one here.
+  registration:
+    u.payment?.status === 'paid'
+      ? {
+          registeredAt: u.payment.paidAt ?? u.createdAt,
+          invoiceNumber: u.payment.invoiceNumber,
+          paymentStatus: u.payment.status,
+          paidAt: u.payment.paidAt,
+        }
+      : null,
+  needsPaymentReview: false,
 });
 
 export function createMockSource(state: MockState | null): DataSource {
@@ -237,6 +246,52 @@ export function createMockSource(state: MockState | null): DataSource {
               }),
             ),
           () => [],
+        ),
+
+      getExam: (id) =>
+        run(
+          (): StudentExamDetail | null => {
+            const exam = studentExams(getWorld()).find((e) => e.id === id);
+            if (!exam) return null;
+            const now = Date.now();
+            const attempt: StudentExamDetail['attempt'] =
+              exam.state === 'submitted'
+                ? {
+                    phase: 'submitted',
+                    endsAt: exam.windowEnd,
+                    receipt: {
+                      receiptId: `00000000-0000-4000-8000-${exam.id
+                        .replace(/[^0-9a-f]/g, '0')
+                        .padEnd(12, '0')
+                        .slice(0, 12)}`,
+                      submittedAt: exam.windowStart,
+                      endReason: 'submitted',
+                    },
+                  }
+                : exam.state === 'in_progress'
+                  ? {
+                      phase: 'in_progress',
+                      endsAt: new Date(now + exam.durationMinutes * 60_000).toISOString(),
+                      receipt: null,
+                    }
+                  : null;
+            return {
+              id: exam.id,
+              title: exam.title,
+              category: exam.category,
+              durationMinutes: exam.durationMinutes,
+              questionsPerAttempt: exam.questionsPerAttempt,
+              windowStart: exam.windowStart,
+              windowEnd: exam.windowEnd,
+              state: exam.state,
+              resultsPublished: false,
+              graceSeconds: exam.graceSeconds,
+              violationWarnings: EXAM_VIOLATION_WARNINGS,
+              serverNow: new Date(now).toISOString(),
+              attempt,
+            };
+          },
+          () => null,
         ),
 
       listAnnouncements: (query) =>
@@ -389,7 +444,13 @@ export function createMockSource(state: MockState | null): DataSource {
               .users.filter((u) => matches(u.name, query.q) || matches(u.email, query.q))
               .filter((u) => !query.role || u.role === query.role)
               .filter((u) => query.blocked === undefined || u.isBlocked === query.blocked)
-              .map(userRow);
+              .filter((u) => !query.category || u.category === query.category)
+              .map(userRow)
+              .filter(
+                (r) =>
+                  query.registered === undefined || (r.registration !== null) === query.registered,
+              )
+              .filter((r) => query.verified === undefined || r.emailVerified === query.verified);
             return paginate(rows, query);
           },
           () => emptyPage<AdminUserRow>(query),
@@ -404,12 +465,13 @@ export function createMockSource(state: MockState | null): DataSource {
             return {
               ...userRow(user),
               phone: user.phone,
-              district: user.district,
               institution: user.institution,
               educationType: user.educationType,
               emailVerifiedAt: user.emailVerifiedAt,
               gradeLevel: grade ? { id: grade.id, label: grade.label } : null,
               payment: user.payment,
+              referredBy: null,
+              ambassador: null,
             };
           },
           () => null,

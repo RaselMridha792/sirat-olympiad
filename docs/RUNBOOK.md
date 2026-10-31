@@ -58,6 +58,7 @@ Web session: the dashboards read the real session (`GET /api/auth/me` from the w
 Page checks and e2e (`apps/web/scripts`; Node and a local Chrome or Edge, no other tool):
 - `check:leak` (dev server) and `check:prod` / `check:api-down` (`next start` with `API_INTERNAL_URL`): set `CHECK_STUDENT_EMAIL`/`CHECK_STUDENT_PASSWORD` (a fixture student) and `CHECK_ADMIN_EMAIL`/`CHECK_ADMIN_PASSWORD`; CI runs all three (job "Dashboard pages").
 - `pnpm --filter @sirat/web e2e [http://127.0.0.1:8080]` runs against the whole local stack with `E2E_STUDENT_PASSWORD` (the fixture password) and optionally `E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD`; it reads the reset email from Mailpit. The local stack (project `sirat`, same ports) is shared between sessions: announce `up -d --build`, smoke tests and e2e runs before starting and when done. The reset case sets the student's password to the same value again and ends that student's sessions. It refuses a base URL or `MAILPIT_URL` that is not 127.0.0.1, localhost or ::1.
+- `pnpm --filter @sirat/web e2e:exam [http://127.0.0.1:8080]` (exam room): needs `E2E_STUDENT_PASSWORD` and an admin (`E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD`). The admin publishes a 15-minute exam for all categories through the API (`E2E exam <time>`; it stays published, closed after its 15-minute window, because an exam is archived only after its results are published); a fixture student takes it in the browser up to the 6th violation, and every response, the HTML and localStorage are searched for explanations, correct keys, scores and question ids. Same stack rules as `e2e`; loopback URLs only.
 
 ## 1. Status and logs
 
@@ -250,3 +251,13 @@ pnpm --filter @sirat/api admin:create --email ops@example.org --name "Ops Admin"
 - Without a terminal (for example with `-T`) it stops at once with exit code 2. `--password-stdin` (first line of piped stdin) exists for the automated tests only: a piped password usually ends up in shell history.
 - Exit codes: 0 created, 1 refused (password policy, existing email, invalid email or name), 2 usage (any `--password` argument, no terminal), 130 cancelled (Ctrl+C).
 - Blocking an admin or changing a role: not built yet (admin features, later in Phase A).
+
+## 14. Students list export (admin CSV)
+
+The students' personal data (many are minors) leaves the system only through this export. Admins only.
+
+- **Where:** `/admin/users` → set the search and filters → "Export CSV" → write the reason (3–200 characters) → "Download CSV". The file holds the rows the page shows, students and ambassadors only, never staff.
+- **On the record:** every export writes the audit row `users.exported` before the file starts: admin, IP, the filters (a search term only as its kind: name, email, phone or invoice), the row count and the reason. No audit row, no file (503).
+- **Limits:** 5 exports per admin per hour (429 after that, refused requests count too); at most 50,000 rows (400 `too_many_rows`: narrow the filter).
+- **Handling the file:** keep it on the admin's own computer only, never in a shared drive, chat or email; hand it over in person or through the client's agreed channel; delete it (and empty the bin) once the task is done. The CSV opens in Excel with Bangla intact (UTF-8 with a BOM); cells starting with `=`, `+`, `-` or `@` carry a leading `'` on purpose (formula injection).
+- **Who exported what:** `SELECT created_at, actor_id, ip, meta FROM audit_logs WHERE action = 'users.exported' ORDER BY created_at DESC LIMIT 50;`
