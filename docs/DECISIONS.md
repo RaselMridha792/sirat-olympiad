@@ -18,6 +18,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    The server still decides, and a refusal lists every reason it gave (publish can fail several checks at once).
 5. **No round field** until rounds have an API (core C6): a new exam has none.
 6. **A browser e2e, `e2e:exam-admin`,** run on the exam session's own throwaway database. Like `e2e:exam`, it is a by-hand stack test, not a CI step.
+
 ## 2026-11-01 — Ambassadors: admin approval, server promo codes and the panel (core C5a; plan `docs/plans/CORE-PLAN.md` section 6, Q2 default)
 
 1. **A promo code is attribution only** (lead, owner decision). It records who brought a registration and changes no fee, amount or payment. Anything that would make it a discount goes to the lead and the owner first.
