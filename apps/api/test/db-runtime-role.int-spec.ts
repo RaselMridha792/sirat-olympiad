@@ -86,7 +86,9 @@ describe('the runtime role sirat_app', () => {
   });
 
   it('runtime-role.ts puts the database timeouts back after a restore lost them', async () => {
-    const [{ db } = { db: '' }] = await owner.$queryRaw<{ db: string }[]>`SELECT current_database() AS db`;
+    const [{ db } = { db: '' }] = await owner.$queryRaw<
+      { db: string }[]
+    >`SELECT current_database() AS db`;
     expect(db).toMatch(/_test$/);
     await owner.$executeRawUnsafe(`ALTER DATABASE "${db}" RESET statement_timeout`);
     await owner.$executeRawUnsafe(`ALTER DATABASE "${db}" RESET lock_timeout`);
@@ -105,7 +107,9 @@ describe('the runtime role sirat_app', () => {
   it('writes a SCRAM verifier that PostgreSQL accepts for the right password only (a scratch role, dropped after)', async () => {
     const name = `sirat_scram_probe_${randomBytes(4).toString('hex')}`;
     const password = randomBytes(24).toString('hex');
-    await owner.$executeRawUnsafe(`CREATE ROLE ${name} LOGIN PASSWORD '${scramVerifier(password)}'`);
+    await owner.$executeRawUnsafe(
+      `CREATE ROLE ${name} LOGIN PASSWORD '${scramVerifier(password)}'`,
+    );
     try {
       const url = new URL(process.env.TEST_DATABASE_URL ?? '');
       url.username = name;
@@ -134,7 +138,9 @@ describe('the runtime role sirat_app', () => {
 });
 
 (appUrl ? describe : describe.skip)('connected as sirat_app', () => {
-  const app = new PrismaClient({ datasourceUrl: appUrl || 'postgresql://unused@127.0.0.1/unused_test' });
+  const app = new PrismaClient({
+    datasourceUrl: appUrl || 'postgresql://unused@127.0.0.1/unused_test',
+  });
   afterAll(async () => {
     await app.$disconnect();
   });

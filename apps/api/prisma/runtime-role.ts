@@ -42,7 +42,11 @@ export function passwordProblem(password: string): string | null {
 export type PasswordStep = 'skip-empty' | 'keep-dev' | 'set';
 
 /** Whether to set the password now. The development cluster keeps the first value it was given. */
-export function passwordStep(input: { password: string; development: boolean; hasPassword: boolean }): PasswordStep {
+export function passwordStep(input: {
+  password: string;
+  development: boolean;
+  hasPassword: boolean;
+}): PasswordStep {
   if (!input.password) return 'skip-empty';
   if (input.development && input.hasPassword) return 'keep-dev';
   return 'set';
@@ -121,11 +125,15 @@ async function main(): Promise<number> {
       hasPassword: state?.hasPassword ?? false,
     });
     if (step === 'skip-empty') {
-      console.log(`runtime role ready: ${RUNTIME_ROLE} (no login yet: POSTGRES_APP_PASSWORD is empty)`);
+      console.log(
+        `runtime role ready: ${RUNTIME_ROLE} (no login yet: POSTGRES_APP_PASSWORD is empty)`,
+      );
       return 0;
     }
     if (step === 'keep-dev') {
-      console.log(`runtime role ready: ${RUNTIME_ROLE} (development cluster: password already set, kept)`);
+      console.log(
+        `runtime role ready: ${RUNTIME_ROLE} (development cluster: password already set, kept)`,
+      );
       return 0;
     }
     const verifier = scramVerifier(password);

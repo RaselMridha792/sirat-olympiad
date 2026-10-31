@@ -26,6 +26,8 @@ process.env.DATABASE_URL = testUrl;
 const appUrl = process.env.TEST_APP_DATABASE_URL ?? '';
 if (appUrl) {
   if (!TEST_DB_URL.test(appUrl) || new URL(appUrl).username !== 'sirat_app')
-    throw new Error('TEST_APP_DATABASE_URL must be sirat_app on a database whose name ends with _test');
+    throw new Error(
+      'TEST_APP_DATABASE_URL must be sirat_app on a database whose name ends with _test',
+    );
   process.env.DATABASE_URL = appUrl;
 }

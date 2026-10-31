@@ -13,8 +13,12 @@ describe('runtime-role: the password rules', () => {
   });
 
   it('skips an empty key, keeps the first password on the development cluster, sets it anywhere else', () => {
-    expect(passwordStep({ password: '', development: true, hasPassword: false })).toBe('skip-empty');
-    expect(passwordStep({ password: '', development: false, hasPassword: true })).toBe('skip-empty');
+    expect(passwordStep({ password: '', development: true, hasPassword: false })).toBe(
+      'skip-empty',
+    );
+    expect(passwordStep({ password: '', development: false, hasPassword: true })).toBe(
+      'skip-empty',
+    );
     expect(passwordStep({ password: 'x', development: true, hasPassword: true })).toBe('keep-dev');
     expect(passwordStep({ password: 'x', development: true, hasPassword: false })).toBe('set');
     expect(passwordStep({ password: 'x', development: false, hasPassword: true })).toBe('set');
@@ -25,7 +29,9 @@ describe('runtime-role: the SCRAM-SHA-256 verifier', () => {
   it("has PostgreSQL's stored format and never contains the password", () => {
     const password = '0123456789abcdef0123456789abcdef';
     const v = scramVerifier(password);
-    expect(v).toMatch(/^SCRAM-SHA-256\$4096:[A-Za-z0-9+/=]{24}\$[A-Za-z0-9+/=]{44}:[A-Za-z0-9+/=]{44}$/);
+    expect(v).toMatch(
+      /^SCRAM-SHA-256\$4096:[A-Za-z0-9+/=]{24}\$[A-Za-z0-9+/=]{44}:[A-Za-z0-9+/=]{44}$/,
+    );
     expect(v).not.toContain(password);
   });
 
@@ -35,7 +41,7 @@ describe('runtime-role: the SCRAM-SHA-256 verifier', () => {
     expect(scramVerifier('p'.repeat(40))).not.toBe(scramVerifier('p'.repeat(40)));
   });
 
-  it("reproduces RFC 7677's example exchange (password \"pencil\"): its client proof and server signature", () => {
+  it('reproduces RFC 7677\'s example exchange (password "pencil"): its client proof and server signature', () => {
     // RFC 7677 section 3 publishes the messages, the client proof (p=) and the server signature (v=). Both follow
     // from the stored key and server key in our verifier, so a wrong derivation cannot pass.
     const v = scramVerifier('pencil', Buffer.from('W22ZaJ0SNY7soEsUEjb6gQ==', 'base64'));
