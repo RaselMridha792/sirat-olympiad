@@ -4,9 +4,10 @@
 #  2. The production site answering:
 #     - https /healthz with exactly one HSTS header and the security headers;
 #     - nginx's own JSON errors with the same headers;
-#     - the http redirect, http /healthz, and the refusal of any other name;
-#     - the internal listener;
-#     - no query string or Referer in nginx's logs, even for an error-level event (an upstream that is down).
+#     - port 80: /healthz for any name, the redirect for the site's own name only, no host name for an IP;
+#     - the refusal of any other name on 443, and the internal listener;
+#     - no query string or Referer in nginx's logs: for a 200, an upstream that is down (error level) and a full temp
+#       disk (crit level: a second container with a 64 KB tmpfs).
 # Usage: infra/nginx/test/check-sites.sh   (CI's docker job runs it; needs docker, openssl and curl)
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
@@ -19,7 +20,7 @@ host=sirat.test
 name="sirat-nginx-check-$$"
 tmp=$(mktemp -d)
 cleanup() {
-  dk rm -f "$name" >/dev/null 2>&1 || true
+  dk rm -f "$name" "$name-disk" >/dev/null 2>&1 || true
   rm -rf "$tmp"
 }
 trap cleanup EXIT
@@ -84,10 +85,15 @@ echo "$error" | grep -q 'BAD_GATEWAY' && pass "nginx's own 502 is JSON" || fail 
   echo "$error" | grep -qi '^content-security-policy-report-only:' &&
   pass "nginx's own errors keep the security headers" || fail "nginx's own errors keep the security headers"
 
-redirect=$(curl -s --max-time 10 -D - -o /dev/null "http://127.0.0.1:$p80/some/page?x=1")
+redirect=$(curl -s --max-time 10 -D - -o /dev/null -H "Host: $host" "http://127.0.0.1:$p80/some/page?x=1")
 echo "$redirect" | grep -q '^HTTP/[0-9.]* 301' &&
   echo "$redirect" | grep -qi "^location: https://$host/some/page?x=1" &&
-  pass "http redirects to https://$host" || fail "http redirects to https://$host"
+  pass "http redirects the site's own name to https://$host" || fail "http redirects the site's own name to https://$host"
+if curl -s --max-time 10 -D - -o /dev/null -H 'Host: 203.0.113.10' "http://127.0.0.1:$p80/" | grep -qi '^location:'; then
+  fail "http on the bare IP does not show the host name"
+else
+  pass "http on the bare IP does not show the host name"
+fi
 [ "$(curl -s --max-time 10 "http://127.0.0.1:$p80/healthz")" = ok ] &&
   pass "http /healthz answers without a redirect" || fail "http /healthz answers without a redirect"
 if curl -sk --max-time 10 --resolve "other.test:$p443:127.0.0.1" -o /dev/null "https://other.test:$p443/"; then
@@ -108,6 +114,31 @@ if echo "$logs" | grep -q -e "$q" -e "$r"; then
   fail "no query string or Referer in nginx's logs"
 else
   pass "no query string or Referer in nginx's logs"
+fi
+
+# 3. A full temp disk: nginx cannot buffer a 512 KB body and logs a crit line, which would carry the request line and
+#    the referrer. Only the access log (path only) may mention the request.
+q2="q$RANDOM$RANDOM$RANDOM"
+r2="r$RANDOM$RANDOM$RANDOM"
+dk run -d --name "$name-disk" --tmpfs /var/cache/nginx:size=64k "${opts[@]}" \
+  "$image" nginx -c /etc/nginx/sirat/nginx.conf -g 'daemon off;' >/dev/null
+for _ in $(seq 1 30); do
+  dk exec "$name-disk" wget -qO- http://127.0.0.1:8081/healthz >/dev/null 2>&1 && break
+  sleep 1
+done
+status=$(dk exec "$name-disk" sh -c "head -c 524288 /dev/zero > /tmp/body && curl -sk -o /dev/null -w '%{http_code}' \
+  --resolve $host:443:127.0.0.1 -H 'Referer: https://$host/admin/users?q=$r2' --data-binary @/tmp/body \
+  'https://$host/api/auth/login?q=$q2'")
+[ "$status" = 500 ] && pass "a full temp disk answers 500 (the crit path ran)" ||
+  fail "a full temp disk answers 500 (the crit path ran; got $status)"
+sleep 1
+disklogs=$(dk logs "$name-disk" 2>&1)
+echo "$disklogs" | grep -q '"POST /api/auth/login HTTP' && pass "the full-disk request is in the access log, path only" ||
+  fail "the full-disk request is in the access log, path only"
+if echo "$disklogs" | grep -q -e "$q2" -e "$r2"; then
+  fail "no query string or Referer in nginx's logs at crit level"
+else
+  pass "no query string or Referer in nginx's logs at crit level"
 fi
 
 if [ "$failures" -gt 0 ]; then

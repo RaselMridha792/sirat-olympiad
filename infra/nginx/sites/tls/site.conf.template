@@ -2,10 +2,17 @@
 # "TLS behind Cloudflare"). Rendered at container start by the nginx image: only ${PUBLIC_HOST} is substituted
 # (NGINX_ENVSUBST_FILTER), taken from APP_URL by entrypoint/15-public-host.envsh. nginx's own variables stay as written.
 
-# Port 80: the Docker healthcheck, and a redirect for everything else.
+# Port 80: /healthz for any name (the Docker healthcheck sends Host 127.0.0.1). Only the site's own name is redirected;
+# any other name (a scanner on the server's IP) has the connection closed, so port 80 never shows the host name either.
 server {
   listen 80 default_server;
   server_name _;
+  location = /healthz { return 200 "ok"; }
+  location / { return 444; }
+}
+server {
+  listen 80;
+  server_name ${PUBLIC_HOST};
   location = /healthz { return 200 "ok"; }
   location / { return 301 https://${PUBLIC_HOST}$request_uri; }
 }
