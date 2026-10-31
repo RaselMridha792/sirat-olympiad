@@ -5,7 +5,6 @@ import type { Category, Prisma, PrismaClient } from '@prisma/client';
 import { Queue } from 'bullmq';
 import type Redis from 'ioredis';
 import { CHECKPOINT_MIN_INTERVAL_MS } from '../src/modules/attempts/attempt-store';
-import { ExamQueue } from '../src/modules/attempts/exam-queue';
 import { ACCESS_COOKIE } from '../src/modules/auth/access-token.service';
 import { SessionService } from '../src/modules/auth/session.service';
 import { PrismaService } from '../src/prisma/prisma.service';
@@ -43,19 +42,16 @@ export interface EngineApp {
 
 export async function bootEngineApp(checkpointIntervalMs: number): Promise<EngineApp> {
   process.env.LOG_LEVEL = 'silent';
+  // Before AppModule is imported: its ConfigModule validates and reads the environment then.
+  const examQueueName = `exam-test-${randomUUID()}`;
+  process.env.EXAM_QUEUE_NAME = examQueueName; // read by ExamQueue through the config (env.ts)
   const { AppModule } = await import('../src/app.module');
   const { configureApp } = await import('../src/configure-app');
-  const examQueueName = `exam-test-${randomUUID()}`;
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(PrismaService)
     .useValue(new QueryCountingPrisma())
     .overrideProvider(CHECKPOINT_MIN_INTERVAL_MS)
     .useValue(checkpointIntervalMs)
-    .overrideProvider(ExamQueue)
-    .useFactory({
-      factory: (redis: Redis) => new ExamQueue(redis, examQueueName),
-      inject: [REDIS_QUEUE],
-    })
     .compile();
   const app = moduleRef.createNestApplication<NestExpressApplication>({ logger: false });
   configureApp(app);

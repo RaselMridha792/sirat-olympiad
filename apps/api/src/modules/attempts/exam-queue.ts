@@ -1,17 +1,21 @@
-import { Inject, Injectable, Logger, OnApplicationShutdown, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnApplicationShutdown } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { type JobsOptions, Queue } from 'bullmq';
 import type Redis from 'ioredis';
 import { errorLogFields } from '../../common/all-exceptions.filter';
 import { withTimeout } from '../../common/with-timeout';
+import type { EnvVars } from '../../config/env';
 import { REDIS_QUEUE } from '../../redis/redis.module';
 
 /** The exam engine's queue on the queue Redis (EXAM-PLAN 3.9, 3.10, 3.12). Jobs run only in the worker. */
 export const EXAM_QUEUE = 'exam';
 /**
- * Injection token for another queue name. Tests give each run its own, so a host test never shares a queue with the
- * dev stack's worker on the same Redis database (as EMAIL_QUEUE_NAME does for email).
+ * The queue's name: EXAM_QUEUE, or EXAM_QUEUE_NAME. Tests give each run its own, so a host test never shares a queue
+ * with a dev stack worker on the same Redis database (as PAYMENTS_QUEUE_NAME does for payments). The API and the
+ * worker read it from the same config, so the two never disagree.
  */
-export const EXAM_QUEUE_NAME = Symbol('EXAM_QUEUE_NAME');
+export const examQueueName = (config: ConfigService<EnvVars, true>): string =>
+  config.get('EXAM_QUEUE_NAME', { infer: true }) || EXAM_QUEUE;
 export const EXAM_JOBS = {
   score: 'score-attempt',
   sweep: 'sweep',
@@ -43,9 +47,9 @@ export class ExamQueue implements OnApplicationShutdown {
 
   constructor(
     @Inject(REDIS_QUEUE) private readonly redis: Redis,
-    @Optional() @Inject(EXAM_QUEUE_NAME) name: string = EXAM_QUEUE,
+    config: ConfigService<EnvVars, true>,
   ) {
-    this.queue = new Queue<ExamJobData>(name, { connection: redis });
+    this.queue = new Queue<ExamJobData>(examQueueName(config), { connection: redis });
   }
 
   /** Job id `score.<attemptId>`: one scoring job per attempt while it waits. */

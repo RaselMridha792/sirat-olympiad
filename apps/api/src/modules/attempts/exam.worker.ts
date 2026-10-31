@@ -1,11 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  OnApplicationShutdown,
-  OnModuleInit,
-  Optional,
-} from '@nestjs/common';
+import { Injectable, Logger, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { type Job, Queue, Worker } from 'bullmq';
 import Redis from 'ioredis';
@@ -13,13 +6,7 @@ import { errorLogFields } from '../../common/all-exceptions.filter';
 import type { EnvVars } from '../../config/env';
 import { QUEUE_REDIS_OPTIONS } from '../../redis/redis.module';
 import { ExamJobs } from './exam-jobs';
-import {
-  EXAM_JOBS,
-  EXAM_JOB_OPTIONS,
-  EXAM_QUEUE,
-  EXAM_QUEUE_NAME,
-  type ExamJobData,
-} from './exam-queue';
+import { EXAM_JOBS, EXAM_JOB_OPTIONS, examQueueName, type ExamJobData } from './exam-queue';
 
 /** Jobs at the same time per worker process: scoring is two reads and one update each. */
 export const EXAM_CONCURRENCY = 4;
@@ -41,7 +28,6 @@ export class ExamWorker implements OnModuleInit, OnApplicationShutdown {
   constructor(
     private readonly jobs: ExamJobs,
     private readonly config: ConfigService<EnvVars, true>,
-    @Optional() @Inject(EXAM_QUEUE_NAME) private readonly queueName: string = EXAM_QUEUE,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -49,13 +35,14 @@ export class ExamWorker implements OnModuleInit, OnApplicationShutdown {
       ...QUEUE_REDIS_OPTIONS,
     });
     this.connection.on('error', () => undefined); // BullMQ reconnects; job failures are logged below
-    this.queue = new Queue<ExamJobData>(this.queueName, { connection: this.connection });
+    const queueName = examQueueName(this.config);
+    this.queue = new Queue<ExamJobData>(queueName, { connection: this.connection });
     await this.queue.upsertJobScheduler(
       SWEEP_SCHEDULER_ID,
       { every: SWEEP_EVERY_MS },
       { name: EXAM_JOBS.sweep, opts: { ...EXAM_JOB_OPTIONS, attempts: 1 } },
     );
-    this.worker = new Worker<ExamJobData>(this.queueName, (job) => this.process(job), {
+    this.worker = new Worker<ExamJobData>(queueName, (job) => this.process(job), {
       connection: this.connection,
       concurrency: EXAM_CONCURRENCY,
     });
