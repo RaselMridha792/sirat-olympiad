@@ -10,6 +10,7 @@ import {
   type ExamLeaderboardExam,
   type LeaderboardRow,
   type ProfileOptions,
+  type ReviewView,
   type StudentExamListItem,
   type StudentExamDetail,
   type StudentExamState,
@@ -317,6 +318,42 @@ export function createMockSource(state: MockState | null): DataSource {
               violationWarnings: EXAM_VIOLATION_WARNINGS,
               serverNow: new Date(now).toISOString(),
               attempt,
+            };
+          },
+          () => null,
+        ),
+
+      getReview: (attemptId) =>
+        run(
+          (): ReviewView | null => {
+            const w = getWorld();
+            const exam = w.exams.find((e) => `att-${e.id}` === attemptId);
+            if (!exam?.resultsPublishedAt) return null;
+            if (studentExams(w).find((e) => e.id === exam.id)?.state !== 'submitted') return null;
+            // A fixed pattern of right, wrong and skipped answers, so every look of the page shows.
+            const questions = exam.questions.map((q, i) => {
+              const correct = q.options.findIndex((o) => o.key === q.correctKey);
+              const chosen =
+                i % 4 === 3 ? null : i % 3 === 2 ? (correct + 1) % q.options.length : correct;
+              return {
+                text: q.text,
+                options: q.options.map((o) => o.text),
+                chosen,
+                correct,
+                explanation: q.explanation,
+              };
+            });
+            const mine = examStandings(w, exam).find((s) => s.user.id === w.me.id);
+            return {
+              attemptId,
+              examId: exam.id,
+              title: exam.title,
+              endReason: 'submitted',
+              score: questions.filter((q) => q.chosen === q.correct).length,
+              questionCount: questions.length,
+              rank: mine?.rank ?? null,
+              timeTakenSeconds: mine?.timeTakenSeconds ?? null,
+              questions,
             };
           },
           () => null,

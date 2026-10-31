@@ -17,6 +17,7 @@ import type {
   ProfileOptions,
   ProfileUpdate,
   ProfileUpdateResult,
+  ReviewView,
   StudentExamListItem,
   StudentExamDetail,
   StudentHome,
@@ -45,6 +46,11 @@ export interface DataSource {
     listExams(): Promise<StudentExamListItem[]>;
     /** GET /exams/:id: the waiting room (never questions); null = not found or not visible to this student */
     getExam(id: string): Promise<StudentExamDetail | null>;
+    /**
+     * GET /attempts/:id/review: the student's own attempt with the correct options, explanations, score and rank,
+     * only after the exam's results are published; null = not found, not theirs, or not published yet
+     */
+    getReview(attemptId: string): Promise<ReviewView | null>;
     /** GET /announcements */
     listAnnouncements(query: PageQuery): Promise<Paginated<AnnouncementItem>>;
     /** GET /ambassador/me (role ambassador) */

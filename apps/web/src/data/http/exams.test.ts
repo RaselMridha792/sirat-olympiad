@@ -89,3 +89,53 @@ test('student.getExam refuses an unknown phase or end reason and passes refusals
   const blocked = fakeApi({ [`/exams/${ID}`]: { status: 403, body: null } });
   await assert.rejects(createHttpSource(blocked).student.getExam(ID), DataRequestError);
 });
+
+const ATTEMPT = 'a7f3c9d2-1b4e-4c8a-9f6d-2e5b8c1a7d40';
+const review = {
+  attemptId: ATTEMPT,
+  examId: ID,
+  title: 'Round 1',
+  endReason: 'time_up' as const,
+  score: 1,
+  questionCount: 2,
+  rank: 14,
+  timeTakenSeconds: 1200,
+  questions: [
+    { text: 'Q1', options: ['a', 'b'], chosen: 1, correct: 1, explanation: 'Because.' },
+    { text: 'Q2', options: ['a', 'b', 'c'], chosen: null, correct: 0, explanation: null },
+  ],
+};
+
+test('student.getReview reads the own attempt and passes on only the review fields', async () => {
+  const body = {
+    ...review,
+    userId: 'someone',
+    questions: review.questions.map((q) => ({ ...q, questionId: 'q-1', optionKeys: ['A', 'B'] })),
+  };
+  const get = fakeApi({ [`/attempts/${ATTEMPT}/review`]: { status: 200, body } });
+  assert.deepEqual(await createHttpSource(get).student.getReview(ATTEMPT), review);
+});
+
+test('student.getReview: no review for not found, not theirs, not published or a malformed id', async () => {
+  for (const status of [404, 403]) {
+    const get = fakeApi({ [`/attempts/${ATTEMPT}/review`]: { status, body: null } });
+    assert.equal(await createHttpSource(get).student.getReview(ATTEMPT), null);
+  }
+  const get = fakeApi({});
+  assert.equal(await createHttpSource(get).student.getReview('att-ex-1'), null);
+  assert.deepEqual(get.calls, [], 'a malformed id sends no request');
+});
+
+test('student.getReview refuses other failures and unexpected shapes', async () => {
+  const failing = fakeApi({ [`/attempts/${ATTEMPT}/review`]: { status: 500, body: null } });
+  await assert.rejects(createHttpSource(failing).student.getReview(ATTEMPT), DataRequestError);
+  for (const bad of [
+    { ...review, endReason: 'quit' },
+    { ...review, rank: '14' },
+    { ...review, questions: [{ ...review.questions[0], correct: null }] },
+    { ...review, questions: [{ ...review.questions[0], options: [1, 2] }] },
+  ]) {
+    const get = fakeApi({ [`/attempts/${ATTEMPT}/review`]: { status: 200, body: bad } });
+    await assert.rejects(createHttpSource(get).student.getReview(ATTEMPT), DataRequestError);
+  }
+});

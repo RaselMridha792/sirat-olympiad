@@ -42,6 +42,7 @@ test('the exam room gets only the fields it uses, at every level (nothing else i
     durationMinutes: 30,
     questionsPerAttempt: 20,
     violationWarnings: 5,
+    resultsPublished: false,
     attempt: {
       phase: 'submitted',
       receipt: {

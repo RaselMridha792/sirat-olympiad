@@ -90,6 +90,7 @@ export const examPlayerMessages = defineMessages({
       },
       results:
         'Results appear after the exam has closed for everyone and the results are published.',
+      seeResults: 'See your results',
       back: 'Back to my exams',
     },
     closed: {
@@ -192,6 +193,7 @@ export const examPlayerMessages = defineMessages({
         server_empty: 'সময় শেষ হওয়ার আগে কোনো উত্তর সার্ভারে পৌঁছায়নি।',
       },
       results: 'সবার জন্য পরীক্ষা শেষ হওয়ার পরে ফলাফল প্রকাশিত হলে দেখা যাবে।',
+      seeResults: 'আপনার ফলাফল দেখুন',
       back: 'আমার পরীক্ষায় ফিরুন',
     },
     closed: {

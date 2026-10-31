@@ -25,6 +25,7 @@ export const unavailableSource: DataSource = {
     updateProfile: fail,
     listExams: fail,
     getExam: fail,
+    getReview: fail,
     listAnnouncements: fail,
     getAmbassador: fail,
   },

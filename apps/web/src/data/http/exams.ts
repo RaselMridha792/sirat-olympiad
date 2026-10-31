@@ -5,11 +5,12 @@ import {
   STUDENT_EXAM_STATES,
   type StudentExamCard,
   type StudentExamDetail,
+  type ReviewView,
   type StudentExamListItem,
   type SubmissionReceipt,
 } from '@sirat/shared';
 import type { DataSource } from '../source.ts';
-import { getJson, getJsonOrNull, isRecord, type ApiGet } from './request.ts';
+import { DataRequestError, getJson, getJsonOrNull, isRecord, type ApiGet } from './request.ts';
 
 /*
  * Exam reads (owned by the exam session after the skeleton; docs/plans/EXAM-PLAN.md). The example area of the
@@ -102,7 +103,55 @@ const pickExamDetail = (exam: StudentExamDetail): StudentExamDetail => ({
   },
 });
 
-export function studentExams(get: ApiGet): Pick<DataSource['student'], 'listExams' | 'getExam'> {
+function isReviewQuestion(value: unknown): value is ReviewView['questions'][number] {
+  return (
+    isRecord(value) &&
+    isText(value.text) &&
+    Array.isArray(value.options) &&
+    value.options.every(isText) &&
+    (value.chosen === null || isCount(value.chosen)) &&
+    isCount(value.correct) &&
+    (value.explanation === null || isText(value.explanation))
+  );
+}
+
+function isReview(value: unknown): value is ReviewView {
+  return (
+    isRecord(value) &&
+    isText(value.attemptId) &&
+    isText(value.examId) &&
+    isText(value.title) &&
+    oneOf(END_REASONS, value.endReason) &&
+    typeof value.score === 'number' &&
+    isCount(value.questionCount) &&
+    (value.rank === null || isCount(value.rank)) &&
+    (value.timeTakenSeconds === null || isCount(value.timeTakenSeconds)) &&
+    Array.isArray(value.questions) &&
+    value.questions.every(isReviewQuestion)
+  );
+}
+
+const pickReview = (review: ReviewView): ReviewView => ({
+  attemptId: review.attemptId,
+  examId: review.examId,
+  title: review.title,
+  endReason: review.endReason,
+  score: review.score,
+  questionCount: review.questionCount,
+  rank: review.rank,
+  timeTakenSeconds: review.timeTakenSeconds,
+  questions: review.questions.map((q) => ({
+    text: q.text,
+    options: [...q.options],
+    chosen: q.chosen,
+    correct: q.correct,
+    explanation: q.explanation,
+  })),
+});
+
+export function studentExams(
+  get: ApiGet,
+): Pick<DataSource['student'], 'listExams' | 'getExam' | 'getReview'> {
   return {
     /** GET /exams: the student's exams, state from the server clock (E2). */
     async listExams() {
@@ -117,6 +166,19 @@ export function studentExams(get: ApiGet): Pick<DataSource['student'], 'listExam
       if (!UUID.test(id)) return null;
       const exam = await getJsonOrNull(get, `/exams/${encodeURIComponent(id)}`, isExamDetail);
       return exam && pickExamDetail(exam);
+    },
+
+    /**
+     * GET /attempts/:id/review (E3): only the student's own attempt, only once the results are published. Not found,
+     * not theirs (404) and not published yet (403) are all "no review" here; anything else is an error.
+     */
+    async getReview(attemptId) {
+      if (!UUID.test(attemptId)) return null;
+      const { status, body } = await get(`/attempts/${encodeURIComponent(attemptId)}/review`);
+      if (status === 404 || status === 403) return null;
+      if (status !== 200) throw new DataRequestError('Data request refused', status);
+      if (!isReview(body)) throw new DataRequestError('Unexpected data shape', status);
+      return pickReview(body);
     },
   };
 }
