@@ -607,7 +607,7 @@ The docs-only pull request of this plan adds `docs/plans/EXAM-PLAN.md`, one entr
 
 ### 8.1 Pull requests
 
-Each starts from `main` after the previous one merges. If one must wait, the next is stacked on it and the PR body says so.
+**Branches (lead, 2026-10-31 20:10):** the PRs are built one after the other locally, each branch from the previous one (`feat/exam-engine` from `feat/exam-schema`, `feat/exam-results` from `feat/exam-engine`, …), without waiting for merges. Before its PR opens, each branch runs `git merge origin/main` (never a rebase) and the full checks; the PR body says what it is stacked on. E1's PR opens once payments PR #14 has merged.
 
 | PR | Branch | Content | Needs |
 |---|---|---|---|
@@ -622,39 +622,37 @@ Each starts from `main` after the previous one merges. If one must wait, the nex
 
 ### 8.2 Schedule (estimate, at the measured pace)
 
-**Measured from git:**
-- All of `main` up to PR #10 (foundation, auth, CLI, 18 pages, tests) took about 22 hours with 2–3 sessions in parallel.
-- Auth PRs #3–#7 took about 4–5 hours of commit time (evening of 30 October into the night).
-- The web session (#12) took about 4 hours of commit time, review fixes included.
+Rewritten on 2026-10-31 at the pace this work measured (lead, 20:10). The first version said 27–33 hours and E1 on 1–2 November; E1 was committed the same evening.
 
-**This work, coding time (estimate):**
+**Measured from git (this work, 31 October):**
+- E0, the plan, with two review rounds: about 1 hour.
+- E1 (contract, schema, two migrations with five triggers, 13 admin endpoints, unit and integration tests, 10 mutation checks): written between #13's merge (19:16) and its commit (19:56). Part of that was waiting for the database password.
 
-| PR | Estimate |
+**Coding time still ahead (estimate):**
+
+| PR | Estimate | Without cutting |
+|---|---|---|
+| E2 | 1–1.5 h | the leak test, the violation tests, mutation checks |
+| E3 | 1–1.5 h | the worker jobs' idempotency tests, results timing tests |
+| E4 | 1.5–2 h | the player's state tests (auto-submit with real answers, the violation rules), the e2e script |
+| E5 | 1–1.5 h | the page and leak checks |
+| E6 | 0.5–1 h | k6 locally, RUNBOOK |
+| **Total** | **about 5–7.5 h** | |
+
+**Order and dates (estimate).** Every PR merges, as the lead assumes, within about an hour of a green CI, but only after the launch PRs (payments, A2's refresh fix) have been reviewed and merged.
+
+| When (estimate) | Work |
 |---|---|
-| E1 | 5–6 h |
-| E2 | 6–7 h |
-| E3 | 5–6 h |
-| E4 | 6–7 h (with the violation rule) |
-| E5 | 4–5 h |
-| E6 | 2–3 h |
-| **Total** | **28–34 h** |
-
-| Date (estimate) | Work |
-|---|---|
-| Sat 31 Oct | E0: this plan, the lead's review, the docs-only PR |
-| Sun 1 – Mon 2 Nov | E1 (code after E0 merges; the PR opens after payments PR 1 merges) |
-| Mon 2 – Tue 3 Nov | E2 |
-| Wed 4 Nov | E3 |
-| Thu 5 – Fri 6 Nov | E4 |
-| Sat 7 Nov | E5 |
-| Sun 8 Nov | E6: k6 locally, docs |
-| 9–14 Nov | Review fixes and buffer. The launch has priority: no shared-stack runs, no deploy |
-| After 15 Nov | Merges still open; k6 on the VPS once it exists |
+| Sat 31 Oct, evening | E2 locally (branch from E1), then E3 locally (branch from E2) |
+| Sun 1 Nov | E4, E5, E6 locally. E1's PR right after payments PR #14 merges: `git merge origin/main`, the six steps (2.3, section 7), full checks |
+| Sun 1 – Mon 2 Nov | E2 to E6 as PRs one after the other, each after the previous one merged and `main` merged into it. E2 gets the paid-registration check before its PR opens (payments PR 1 is on `main` by then) |
+| by Mon 2 Nov | E1–E6 on `main`, if the launch reviews leave the slots |
+| later | k6 on the VPS (OPEN-QUESTIONS #22); the first real exam only after RULEBOOK §13 |
 
 **What does not compress** (waits, not coding):
-- Payments PR 1's merge (E1 opens, E2's access check).
-- The lead's reviews and Rasel's merges, which come after the launch work.
-- Shared-stack slots for smoke and e2e ("stack তোমার").
+- Payments PR #14's merge (E1's PR, E2's access check).
+- The launch PRs' reviews and merges, which come first; then the lead's review of each exam PR and Rasel's merge.
+- Shared-stack slots for smoke and e2e (Rasel says "stack তোমার"; `main` merged first, because the shared database will carry payments' migrations).
 - The VPS for the real k6 numbers.
 - The client's exam content and dates.
 
