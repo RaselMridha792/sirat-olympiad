@@ -25,6 +25,17 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - This also fixes L10's `ops-alert`, whose `main()` failed on every numeric setting; its integration test called `raiseOpsAlert` directly and never ran `main()`. Both commands now ran end to end against the test database and Redis.
    - Their email queue is created after the Redis clients connect: BullMQ connected the client itself first, so `connect()` threw.
 9. **`healthcheck.sh`'s exact 200** came with L3 (#37), so L11 leaves it alone.
+## 2026-11-01 — Next's runtime caches are writable by the web's runtime user (Claude; lead's bug report)
+
+1. **The bug:**
+   - Since #25 the public pages revalidate every 60 s, so Next regenerates them at runtime. It writes the pages to `.next/server/route-cache` and fetch results to `.next/cache`.
+   - The image copied `.next` as root and runs as `node`.
+   - So every regeneration logged `Failed to update prerender cache … EACCES` and stored nothing. The pages still answered 200, but every request after the 60 s tried to regenerate again.
+2. **The fix:** the image creates only those two folders and gives them to `node`. The rest of `.next` stays root-owned, so a compromised server process cannot rewrite the built app.
+3. **Proof:**
+   - CI's docker job requests a public page, waits past the 60 s revalidation, requests it again, and fails on any EACCES in the web log.
+   - A/B with the same image: with the two folders handed back to root (main's state), 6 EACCES lines; with this change none, and the regenerated pages appear under `route-cache/APP_PAGE`.
+   - No write was attempted anywhere else in `.next`.
 
 ## 2026-11-01 — Alert categories, their own caps, and the ops-alert command (L10; exam session, A2's plan and handover)
 
