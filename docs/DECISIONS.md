@@ -33,6 +33,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 7. **Limits to remember on the VPS:**
    - Through nginx the generator's single address meets the start limit (300/min per IP). Keep `RATE` at 4 or less per generator machine.
    - PayStation's IPNs come from a few addresses, and the IPN limit is 600/min per IP. Above 10 payments/s per PayStation address, IPNs get 429. They are only a hint: the callback and reconciliation still settle the payment. The VPS run checks this with the real nginx.
+
 ## 2026-11-01 — Maintenance switch: a flag file nginx checks on every request (L5; exam session, LAUNCH-PLAN §7)
 
 1. **The flag** is `infra/nginx/maintenance/on`, inside the folder compose already mounts at `/etc/nginx/sirat`: no compose change and no reload, because nginx looks for the file on every request. The folder stays in git (`.gitkeep`), so the mount always has it; the flag itself is ignored. `scripts/maintenance.sh on|off|status` touches only that file.
