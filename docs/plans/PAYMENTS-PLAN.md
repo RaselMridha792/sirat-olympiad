@@ -4,7 +4,7 @@ Written on 2026-10-31 on branch `feat/payments-plan` and revised the same day af
 
 Sources: RULEBOOK §7.1, §8, §18; `10-BUILD-PLAN.md` Phase C Definition of Done; `05-DATABASE.md`; `06-API.md`; `paystation/PAYSTATION-NOTES.md`; `paystation/SANDBOX-CHECKLIST.md`; DECISIONS (A1, PayStation 2026-10-30, A2.1d/e and the 2026-10-31 entries this plan adds). Nothing is copied from `reference/` (the old code had an unauthenticated refund endpoint, among other bugs): ideas are ported, never code. No PayStation credential appears in any file, note or log.
 
-The five questions that block code are in section 2. Q1 and Q2 are answered and Q5 keeps its default. Q3 and Q4 need answers: if they are still open before step 4, the lead is asked. The smaller choices D1–D10 there use their defaults; the owner can override any of them at review.
+The five questions that block code are in section 2. Q1–Q4 are answered by the owner, and Q5 keeps its default. The smaller choices D1–D10 there use their defaults; the owner can override any of them at review.
 
 ## 0. Scope of the first release
 
@@ -30,18 +30,17 @@ The five questions that block code are in section 2. Q1 and Q2 are answered and 
 ## 2. Questions that block code (owner)
 
 Status (lead, 2026-10-31):
-- **Q1 and Q2 are answered** by Rasel (DECISIONS "Gateway charge" and "Registration form fields").
-- Q3 and Q4 answers are on their way. Step 4 needs them (Mon 2 Nov, section 10).
-- **If Q3 or Q4 is still open before step 4 starts, ask the lead.** Their defaults below are proposals only and are never taken as final without an answer (lead, 2026-10-31).
+- **Q1–Q4 are answered** by Rasel: DECISIONS "Gateway charge", "Registration form fields", "Duplicate email and phone at registration" and "No refund handling".
 - Q5 keeps its default (lead, 2026-10-31).
+- Still open, nothing is built for it now: what happens when a student types another person's phone number (there is no OTP).
 
 | # | Question | Answer, or proposed default | Blocks |
 |---|---|---|---|
 | Q1 | ~~**`pay_with_charge` (P6):** does the student (1) or the merchant (0) pay PayStation's charge?~~ | **Answered (Rasel, 2026-10-31): `0`.** The student pays only 400 BDT; the merchant bears the charge. Only `0` is built; any other value stops the API at boot. Still verified in the sandbox (S10). | Step 1 (config), step 3 (amount rule), step 12 (S10) |
 | Q2 | ~~**Registration form fields:** which fields, which required?~~ | **Answered (Rasel, 2026-10-31): the default is approved.** The old wizard's set (07-UI-MIGRATION): name, phone (BD mobile, `01XXXXXXXXX`), district, institution, education type, grade level (the 17 rows of `grade_levels`), email, password (8–128), promo code (optional). All required except the promo code. Nothing else: no date of birth, gender, guardian or photo (minimum data for minors). | Step 4 |
-| Q3 | **Duplicate email/phone messages (DoD #4):** what does the student see? | (a) The email already has an account: "This email is already registered. Log in, or reset your password." This reveals that the account exists; rate-limited per IP and per email. (b) The same email has a payment in progress from another browser: "A payment for this email is already in progress. Continue in the browser where you started, or try again after it expires (at most 60 minutes)." The same browser resumes automatically. (c) Phone numbers are not unique (siblings often share a parent's phone): no message. | Step 4 |
-| Q4 | **Refund → access (P8):** what happens to a refunded student? | The payment becomes `refunded`; the account stays and can log in; the dashboard shows "Payment refunded: registration cancelled". The registration counts as inactive, so the exam engine will refuse it later (access needs a `paid` payment). No second registration on the same account (`registrations UNIQUE(user_id)`); an admin handles exceptions. | Step 9, step 11 |
-| Q5 | **Checkout expiry:** after how long is an unpaid payment given up? | 60 minutes (`settings.payment_expiry_minutes`, already seeded), raised to PayStation's link lifetime once the sandbox shows it (S12). Expired and failed payments keep being re-checked for 48 h for a late success. | Step 8 |
+| Q3 | ~~**Duplicate email/phone messages (DoD #4):** what does the student see?~~ | **Answered (Rasel, 2026-10-31):**<br>(a) **The email already has an account:** bn "এই email দিয়ে আগেই রেজিস্ট্রেশন হয়েছে। অনুগ্রহ করে login করুন।", en "Already registered. Please log in." No password-reset wording; the login page link stays as it is. Rate-limited per IP and per email, as planned.<br>(b) **The same email has a payment in progress** from another browser: the default stays. "A payment for this email is already in progress. Continue in the browser where you started, or try again after it expires (at most 60 minutes)." The same browser resumes automatically.<br>(c) **Phone numbers are unique:** one number, one student. Stored in one form `01XXXXXXXXX`; the server normalises `017…`, `+88017…` and `88017…` to it. Message: bn "এই ফোন নম্বর দিয়ে আগেই রেজিস্ট্রেশন হয়েছে। অন্য নম্বর দিন।", en "This phone number is already registered. Please use another number." Rate-limited like the email.<br>(d) **The same phone has a payment in progress** under another email. Proposed text, to confirm before step 4: (b) with "this phone number" in place of "this email". | Step 1 (constraints), step 4 |
+| Q4 | ~~**Refund → access (P8):** what happens to a refunded student?~~ | **Answered (Rasel, 2026-10-31): no refund handling.**<br>- No code moves a payment to `refunded`, no admin reconcile to it, no refund text on the dashboard, and no tests for them. The enum value stays (no migration), and the transition trigger never allows it.<br>- When PayStation reports a refund for a paid payment (status API or IPN), the status does not change: `payment_events` gets `refund_reported` and a critical alert is raised (tested). | Step 3, step 6 |
+| Q5 | **Checkout expiry:** after how long is an unpaid payment given up? | 60 minutes (`settings.payment_expiry_minutes`, already seeded), raised to PayStation's link lifetime once the sandbox shows it (S12); never shorter than that lifetime (D3). Expired and failed payments keep being re-checked for 48 h for a late success. | Step 8 |
 
 **Defaults taken in this plan (not blocking; say if you disagree):**
 
@@ -49,7 +48,7 @@ Status (lead, 2026-10-31):
 |---|---|
 | D1 | Payments point to the registration attempt (N payments : 1 attempt), so "try again" needs no new form and "one active payment per attempt" is a DB constraint (changes 05-DATABASE's `pending_registrations UNIQUE(payment_id)`). |
 | D2 | No automatic login after payment: the student logs in with the password they chose. |
-| D3 | A second paid payment (duplicate or late) is flagged and refunded by an admin, never kept as credit. |
+| D3 | **Changed by the owner (Q4):** a second or late paid payment (`duplicate_payment`) is still detected, raises a critical alert and shows in the admin review list. Whether the money is returned is outside our system (client, PayStation panel). So the paths to a double charge stay closed: at most one attempt in progress per email and per phone, and the checkout expiry is never shorter than PayStation's link lifetime (S12). |
 | D4 | An invalid or unapproved promo code is a field error; the student can remove it. |
 | D5 | A fake PayStation server lives in `tools/fake-paystation` for dev and CI, never in a production image. |
 | D6 | Retention: a completed attempt's form data is cleared at once; an abandoned attempt's after 30 days; stored gateway payloads keep only the last 3 digits of the payer's phone. |
@@ -176,19 +175,23 @@ Why it is not free in `.env` (lead review): with a free URL, a dev machine with 
   - add `pending_registration_id` NOT NULL (FK RESTRICT, indexed), `gateway_account` text NOT NULL (with `status` in an index), `paid_amount_minor` NULL (the amount PayStation reported, kept as a record), `payment_url` NULL, `gateway_status` NULL, `last_checked_at` NULL, `check_count` default 0, `review_reason` NULL;
   - drop `gateway_payload` (replaced by `payment_events`);
   - drop the defaults of `currency` and `pay_with_charge` (always set explicitly).
-- New `payment_events` (append-only): `id`, `created_at`, `payment_id` NULL (FK RESTRICT; NULL for an unknown invoice), `source` (`initiate`, `callback`, `ipn`, `status_v1`, `admin`), `invoice_number`, `trx_id` (as received), `outcome` (`applied_paid`, `applied_failed`, `applied_expired`, `applied_refunded`, `no_change`, `duplicate`, `rejected_amount`, `rejected_invoice`, `unknown_invoice`, `not_found_2001`, `unknown_status`, `unavailable`, `account_mismatch`), `status_code`, `trx_status`, `payload` jsonb (redacted: no merchant credentials, payer phone masked; at most 16 KB), `actor_id` NULL. Indexes `(payment_id, created_at)`, `trx_id`, `invoice_number`.
-- `User` gets only back-relation fields in Prisma; no SQL change to `users`.
+- New `payment_events` (append-only): `id`, `created_at`, `payment_id` NULL (FK RESTRICT; NULL for an unknown invoice), `source` (`initiate`, `callback`, `ipn`, `status_v1`, `admin`), `invoice_number`, `trx_id` (as received), `outcome` (`applied_paid`, `applied_failed`, `applied_expired`, `refund_reported`, `no_change`, `duplicate`, `rejected_amount`, `rejected_invoice`, `unknown_invoice`, `not_found_2001`, `unknown_status`, `unavailable`, `account_mismatch`), `status_code`, `trx_status`, `payload` jsonb (redacted: no merchant credentials, payer phone masked; at most 16 KB), `actor_id` NULL. Indexes `(payment_id, created_at)`, `trx_id`, `invoice_number`.
+- `users`: `phone` becomes UNIQUE (Q3 c; `phone @unique` in Prisma). NULL stays allowed and does not collide, e.g. admins made by the CLI. Otherwise `User` gets only back-relation fields. A database that already holds two users with one phone fails this step with a clear error; ask the owner before cleaning anything. Production has no users yet.
 
 **M2 `<ts>_registration_fee_400`** (hand-written data migration): the upsert in section 3.3.
 
 **M3 `<ts>_payments_checks`** (hand-written SQL, kept apart from M1 so regenerating M1 never loses it; enum CHECKs compare `::text`):
 - `payments`: `amount_minor % 100 = 0`; `currency = 'BDT'`; `status = 'paid'` requires `paid_amount_minor = amount_minor`; `invoice_number ~ '^[A-Z0-9]{10,20}$'`; `trx_id <> ''`.
 - `pending_registrations`: `status = 'completed'` exactly when `user_id` and `completed_at` are set.
-- Partial unique indexes: `payments (pending_registration_id) WHERE status IN ('initiated','pending')` (one active payment per attempt); `pending_registrations (email) WHERE status = 'open'` (one attempt in progress per email, Q3 b).
+- Partial unique indexes:
+  - `payments (pending_registration_id) WHERE status IN ('initiated','pending')`: one active payment per attempt;
+  - `pending_registrations (email) WHERE status = 'open'`: one attempt in progress per email (Q3 b);
+  - `pending_registrations (phone) WHERE status = 'open'`: one attempt in progress per phone (Q3 d).
+- Phone format (Q3 c): `users.phone IS NULL OR users.phone ~ '^01[3-9][0-9]{8}$'`, and the same pattern on `pending_registrations.phone`. One stored form makes the uniqueness real: `017…`, `+88017…` and `88017…` can never sit side by side.
 - Triggers: `payments_status_transition` (a new row must be `initiated`; refuses any status change not in section 5); `registrations_payment_paid` (a registration's payment must be `paid`; the Phase C item deferred in the A1 review); append-only on `payment_events` (UPDATE, DELETE, TRUNCATE refused, like `audit_logs`).
 - `settings`: the fee CHECK from section 3.2.
 
-**Deliberately not unique:** "paid" per attempt. A late success on an expired payment is real money; it is recorded as `paid` and flagged `duplicate_payment` for a refund. One payment ↔ one registration stays on `registrations` (`UNIQUE(user_id)`, `UNIQUE(payment_id)`).
+**Deliberately not unique:** "paid" per attempt. A late success on an expired payment is real money; it is recorded as `paid`, flagged `duplicate_payment` with a critical alert, and listed for admins. Returning the money is outside our system (D3). One payment ↔ one registration stays on `registrations` (`UNIQUE(user_id)`, `UNIQUE(payment_id)`).
 
 **Invoice number:** `PAYSTATION_INVOICE_PREFIX` + `yymmdd` (Dhaka date) + 10 random Crockford base32 characters (50 bits): 17–19 uppercase letters and digits. A collision (P2002) generates a new one, at most 3 times. Never reused.
 
@@ -212,8 +215,8 @@ On completion `payload` becomes NULL at once (the account holds the data now; th
 
 **New version**, one transaction per student, in the same order the real flow uses:
 
-1. Create the user, as today.
-2. Create a `completed` attempt: the fixture email, phone `0170000000n`, name, `user_id`, `completed_at`, `payload` NULL.
+1. Create the user, as today, now with a distinct phone `0170000000n` (`01700000001`…`01700000003`; `users.phone` is UNIQUE).
+2. Create a `completed` attempt: the fixture email, the same phone, name, `user_id`, `completed_at`, `payload` NULL.
 3. Insert the payment as `initiated`:
    - invoice `FX` + 14 digits;
    - `gateway_account = 'dev-fixture'`;
@@ -245,10 +248,11 @@ On completion `payload` becomes NULL at once (the account holds the data now; th
 | `pending → paid` | verified success (6.3) | Account created in the same transaction. |
 | `pending → failed` | verified `trx_status` `failed` | Not final while the checkout may still be retried (S18); re-checked until `expires_at` plus the late watch. |
 | `pending → expired` | past `expires_at`, the gateway reports no success | Alert when the last answers were 2001 or unknown. |
-| `failed → paid`, `expired → paid` | verified success arrives late | Money taken wins: `late_success`; if another payment already completed the attempt, `duplicate_payment` (refund, D3). |
-| `paid → refunded` | `trx_status` `refund`, or an admin reconcile with PayStation's refund reference | Q4. |
+| `failed → paid`, `expired → paid` | verified success arrives late | Money taken wins: `late_success`; if another payment already completed the attempt, `duplicate_payment` (critical alert, admin list, D3). |
 | `pending/failed/expired → paid` (admin) | manual reconcile: `trx_id` and reason required, audit-logged, only after a re-check shows success the automatic rule could not apply | RUNBOOK §11 |
 | anything else | refused by the app and by the trigger | Example: a stale "failed" never downgrades `paid` (recorded `no_change`, alerted). |
+
+**`refunded` is never entered** (Q4, no refund handling). The enum value stays; the app has no path to it and the trigger refuses it. A refund that PayStation reports for a paid payment is recorded as `refund_reported` with a critical alert; the payment stays `paid`.
 
 **No transition** for 2001, unknown or empty `trx_status`, `processing`, timeouts/5xx, or an amount/invoice mismatch: the event is recorded and alerted (critical for a mismatch).
 
@@ -261,10 +265,14 @@ Rules: never hold a DB transaction across an HTTP call to PayStation. Every stat
 ### 6.1 Start: `POST /registrations/start` (public, rate-limited per IP and per email)
 
 1. DTO with the Q2 fields; no `role`, no amount; unknown fields → 400. Registration must be open (403). The fee and currency must be valid (503 + alert).
-2. Email with an account → 409 (Q3 a). A promo code must belong to an approved ambassador, otherwise a 400 field error (D4).
+2. The phone is normalised on the server to `01XXXXXXXXX` (`normalizeBdMobile` in `packages/shared`, used by the DTO; the web uses it only for hints). Then:
+   - email with an account → 409 with the Q3 a text;
+   - phone with an account → 409 with the Q3 c text;
+   - a promo code that does not belong to an approved ambassador → 400 field error (D4).
+   Rate limits per IP, per email and per phone.
 3. The same `start_request_id` again → the same result. The same browser (live `sirat_reg` cookie) with an active payment for this email → that payment's URL (resume).
 4. argon2id on the password.
-5. Transaction 1: lock any open attempt for this email. Active, unexpired payment → 409 (Q3 b). All its payments final → mark it `abandoned`. Insert the attempt (`open`) and the payment (`initiated`, new invoice, fee and currency snapshot from `settings`, `pay_with_charge` and `gateway_account` snapshots, `expires_at` from `payment_expiry_minutes`). Commit.
+5. Transaction 1: lock any open attempt for this email or this phone. Active, unexpired payment → 409 (Q3 b for the email, Q3 d for the phone). All its payments final → mark it `abandoned`. Insert the attempt (`open`) and the payment (`initiated`, new invoice, fee and currency snapshot from `settings`, `pay_with_charge` and `gateway_account` snapshots, `expires_at` from `payment_expiry_minutes`). Commit.
 6. `gateway.initiate` outside the transaction; record the event.
    - Created → transaction 2: `pending` + `payment_url`. Answer 201 `{ paymentUrl }` and set `sirat_reg` (httpOnly, Secure, SameSite=Lax so it returns on PayStation's top-level redirect, Path `/api/registrations`, 7 days).
    - Refused or timed out → `failed`, 502 "The payment could not start. Please try again."
@@ -277,7 +285,7 @@ Check the invoice format, find the payment, record the event (query string kept,
 
 0. `payments.gateway_account` differs from `PAYSTATION_ACCOUNT_LABEL` → no call, `account_mismatch`, alert.
 1. v1 status by invoice; record the event.
-2. Classify: `"200"` with lowercased `trx_status` `success`/`successful` → **paid** only if `trx_id` is non-empty and unused, `data.invoice_number` is ours, `reference` is our payment id (when echoed, S19) and the amount rule passes. `failed` → failed. `refund` on a paid row → refunded. `processing`/other → no change (alert if unknown). 2001 → no change (alert if it repeats). Timeout, 5xx, bad JSON → no change, retry with backoff.
+2. Classify: `"200"` with lowercased `trx_status` `success`/`successful` → **paid** only if `trx_id` is non-empty and unused, `data.invoice_number` is ours, `reference` is our payment id (when echoed, S19) and the amount rule passes. `failed` → failed. `refund` on a paid row → no change: `refund_reported`, critical alert (Q4). `processing`/other → no change (alert if unknown). 2001 → no change (alert if it repeats). Timeout, 5xx, bad JSON → no change, retry with backoff.
 3. Amount rule (`pay_with_charge = 0` only, Q1; strings parsed to paisa, never floats: `"400"`, `"400.00"`, `400` → 40000):
    - **paid only if** v1 `payment_amount` equals the payment's own `amount_minor` exactly; then `paid_amount_minor` = that reported amount.
    - Lower, higher or missing → never paid: `rejected_amount`, critical alert, an admin decides.
@@ -285,12 +293,12 @@ Check the invoice format, find the payment, record the event (query string kept,
 4. Transaction: lock the payment `FOR UPDATE`, re-read, apply the transition (already paid with this `trx_id` → `duplicate`). On paid, consume the attempt atomically (RULEBOOK §18): `UPDATE pending_registrations SET status = 'completed', … WHERE id = $1 AND status = 'open' RETURNING payload`.
    - One row → create the user (role always `student`, category from `grade_levels`, `referred_by_id`), the registration, `payments.user_id`, `payload` NULL, an audit row.
    - No row → another payment completed the attempt: paid with `duplicate_payment`, alert.
-   - `users.email` UNIQUE hit → roll back; a second transaction marks the payment paid with `email_taken`, the attempt `conflict`, alert.
+   - `users.email` or `users.phone` UNIQUE hit (an account was made meanwhile) → roll back. A second transaction marks the payment paid with `email_taken` or `phone_taken`, sets the attempt to `conflict`, and raises a critical alert (money taken, no account).
 5. After the commit: enqueue "registration complete, please verify your email" (A2's email queue; `enqueue` never throws; verification stays lazy).
 
 ### 6.4 IPN: `POST /payments/paystation/ipn` (public, CSRF-exempt)
 
-JSON, at most 16 KB. 1) Store the event (redacted) first; database down → 503 so PayStation retries. 2) Unknown invoice → `unknown_invoice`, alert, 200. 3) Already paid with the same `trx_id` → `duplicate`, 200. 4) Otherwise enqueue a verify, 200. The IPN never marks anything itself. At most one verify per invoice per 30 s (cache Redis) plus a per-IP limit, so unsigned spam cannot become a flood of status calls.
+JSON, at most 16 KB. 1) Store the event (redacted) first; database down → 503 so PayStation retries. 2) Unknown invoice → `unknown_invoice`, alert, 200. 3) A success `trx_status` for a payment already paid with the same `trx_id` → `duplicate`, 200. 4) Otherwise enqueue a verify, 200. An IPN that shows a refund for a paid payment therefore reaches the verify job, which records `refund_reported` with a critical alert (Q4). The IPN never marks anything itself. At most one verify per invoice per 30 s (cache Redis) plus a per-IP limit, so unsigned spam cannot become a flood of status calls.
 
 ### 6.5 Reconciliation (repeatable job; one run at a time across workers)
 
@@ -310,8 +318,8 @@ Up to 100 payments per run, least recently checked first: `initiated`/`pending` 
 ### 6.7 What the student and the admin see
 
 - **Before an account exists** (cookie `sirat_reg`; public routes, ownership = the token): `GET /registrations/current` (`awaiting_payment | confirming | completed | failed | expired`, invoice, amount, `canResume`, `canRetry`; no personal data; polled 2 s → 10 s, stops after 2 min, then the "Check my payment status" button), `POST /registrations/current/resume` (the stored URL while valid), `/retry` (new payment, new invoice, only while open: D7), `/recheck` (enqueue a verify, once per 10 s), `/cancel` (abandon, only if nothing is active or a re-check shows unpaid). After completion the cookie is cleared (D2).
-- **Logged in (end of the first release):** `GET /registrations/me` (registration status, category, date, payment status incl. refunded) and `GET /payments/mine` (paginated: invoice, amount, status, dates) feed the dashboard; `GET /payments/:id/status` and `POST /payments/:id/recheck` (owner, throttled).
-- **Admin:** `GET /admin/payments?invoice=|trx=|phone=|review=1` (paginated, filter by `gateway_account`), `POST /admin/payments/:id/recheck`, `POST /admin/payments/:id/reconcile` `{ to, trxId?, reason, refundRef? }` (audit-logged), `GET/PUT /admin/settings/:key` (3.4).
+- **Logged in (end of the first release):** `GET /registrations/me` (registration status, category, date, payment status) and `GET /payments/mine` (paginated: invoice, amount, status, dates) feed the dashboard; `GET /payments/:id/status` and `POST /payments/:id/recheck` (owner, throttled).
+- **Admin:** `GET /admin/payments?invoice=|trx=|phone=|review=1` (paginated, filter by `gateway_account`), `POST /admin/payments/:id/recheck`, `POST /admin/payments/:id/reconcile` `{ trxId, reason }` (to `paid` only, section 5; audit-logged; no refund option, Q4); the review list shows `duplicate_payment`, `refund_reported`, `email_taken` and `phone_taken`, `GET/PUT /admin/settings/:key` (3.4).
 - **06-API changes (owner review):** `GET /payments/paystation/callback` becomes `/callback/:invoice`; new public routes `GET /registrations/info`, `GET /registrations/current`, `POST /registrations/current/{resume,retry,recheck,cancel}`.
 
 ## 7. Gateway interface and adapters
@@ -366,7 +374,7 @@ S1–S17 exist in `SANDBOX-CHECKLIST.md`; S18–S30 are added there on step 2. I
 |---|---|---|
 | S10 / P6 | With `pay_with_charge=0` (Q1): is v1 `payment_amount` exactly 400, and does the checkout show the student 400 (not 400 plus a charge)? If not, every payment fails closed (`rejected_amount`): stop and ask the owner | amount rule |
 | S4, S5, S16 / P1 | Callback method and parameters; do cancel and failure return? | callback route |
-| S12 | Checkout link lifetime | Q5 |
+| S12 | Checkout link lifetime | Q5: `payment_expiry_minutes` is never below it (D3) |
 | S15 | Exact `trx_status` strings on v1 | accepted list |
 | S17 | 2001: unknown invoice vs wrong `merchantId` | alerting |
 | S11 | Sandbox host | one line of the allow-list in `payment.config.ts` (3.5) |
@@ -380,7 +388,7 @@ S1–S17 exist in `SANDBOX-CHECKLIST.md`; S18–S30 are added there on step 2. I
 | S23 | Accepted `cust_name` (Bangla?), `cust_phone` format, email rules | Q2 normalisation |
 | S24 | A `callback_url` with the invoice in its path: accepted, parameters appended correctly? | callback URL |
 | S25 | Rate limits on the status APIs | verify concurrency |
-| S26 | Refund visible as `trx_status = refund` on v1 | refund sync |
+| S26 | Only if it is easy in the sandbox: a refund in the panel shows as `trx_status = refund` on v1 | to see the `refund_reported` alert (Q4); no refund handling is built |
 | S27 | Can a `payment_url` be opened again after closing the tab? | resume |
 | S28 | Time zone of `order_date_time` | admin display |
 | S29 | Where the IPN URL is registered for a test account; more than one allowed? | 3.5, section 13 |
@@ -415,7 +423,7 @@ The staging stack in D8 needs a VPS, and the client has not delivered one yet (O
 Each protection is mutation-checked as in A2: its test fails with the protection removed. File names are proposals.
 
 **Unit:**
-- `payment-decision.spec.ts`: every `status_code` × `trx_status` casing × amount equal/lower/higher × invoice match × `trx_id` empty/used; amount equal, 1 paisa lower, 1 paisa higher, 400 plus a typical charge, missing.
+- `payment-decision.spec.ts`: every `status_code` × `trx_status` casing × amount equal/lower/higher × invoice match × `trx_id` empty/used; amount equal, 1 paisa lower, 1 paisa higher, 400 plus a typical charge, missing; `refund` on a paid payment → no change, `refund_reported`, critical (Q4).
 - `payment-state.spec.ts`: the full from × to matrix.
 - `amount.spec.ts`: `"400"`, `"400.00"`, `400`, `400.0`, `"400.5"` → 40050, `"400.123"`, `""`, `null`, `"4,00"`, `"1e3"`.
 - `invoice.spec.ts`: format, ≤ 20, 100,000 unique, collision retry.
@@ -429,18 +437,22 @@ Each protection is mutation-checked as in A2: its test fails with the protection
   - the source scan: a PayStation host only in `payment.config.ts`.
 - `paystation.gateway.spec.ts`, against a stub server with the official samples: encodings, headers, password only on initiate, timeouts and non-JSON → `unavailable`, no secrets in logs.
 - `fee.spec.ts`: the fee validity rules.
+- `phone.spec.ts` (Q3 c): `01712345678`, `+8801712345678`, `8801712345678`, with spaces or hyphens → `01712345678`. Refused: `01212345678` (no such operator), 10 or 12 digits, letters, empty.
 
 **Integration** (database, Redis, fake server):
-- `db-constraints.int-spec.ts`: unique invoice and `trx_id`, `registrations UNIQUE(user_id)`/`UNIQUE(payment_id)`, one active payment per attempt, one open attempt per email, every CHECK in M3, the two triggers, `payment_events` append-only, the settings fee CHECK.
+- `db-constraints.int-spec.ts`: unique invoice and `trx_id`, `registrations UNIQUE(user_id)`/`UNIQUE(payment_id)`, one active payment per attempt, one open attempt per email and per phone, `users.phone` UNIQUE (two NULLs allowed), the phone format CHECKs, every CHECK in M3, the two triggers, `payment_events` append-only, the settings fee CHECK.
 - `settings-fee.int-spec.ts`: the three migration cases; seed after migration keeps 40000.
 - `dev-fixtures.int-spec.ts`: section 4.4 (new schema, legal transitions, idempotent, fixture login works).
-- `registration-start.int-spec.ts`: closed (flag, before `opens_at`, after `closes_at`) → 403, nothing written; fee 0/invalid → 503, PayStation never called; `role`, `amount`, `fee`, `payment_amount` in the body → 400; the snapshot equals the settings fee; after an admin fee change, an old pending payment still verifies against its own snapshot; the payment row exists before initiate reaches the fake server; password only as argon2id; Q3 messages; promo validation.
+- `registration-start.int-spec.ts`: closed (flag, before `opens_at`, after `closes_at`) → 403, nothing written; fee 0/invalid → 503, PayStation never called; `role`, `amount`, `fee`, `payment_amount` in the body → 400; the snapshot equals the settings fee; after an admin fee change, an old pending payment still verifies against its own snapshot; the payment row exists before initiate reaches the fake server; password only as argon2id; promo validation; Q3:
+  - each answer's exact bn and en text: email taken, phone taken, email in progress, phone in progress;
+  - the phone is normalised before the checks (`+8801…` finds an account stored as `01…`);
+  - rate limits per email and per phone.
 - `payments-callback.int-spec.ts`: **double callback** (twice, and 10 in parallel) → one transition, one user, one registration; callback with `status=success` while the status API says failed → not paid; redirect `Location` = `APP_URL` + `PAYMENT_RESULT_PATH` from config, also when registration closed after start.
-- `payments-ipn.int-spec.ts`: IPN + callback together; IPN before callback; replay ×5; unknown invoice (200, alert); wrong amount (never paid); forged IPN (the status API decides).
-- `payments-settle.int-spec.ts`: role `student`, category from `grade_levels`, referrer set, `payload` NULL afterwards, email enqueued after commit, failed enqueue does not roll back; **two payments**: two starts with one email in parallel (one 409), same `start_request_id` twice (same payment), retry after failure (new invoice), late success after a second payment completed (`duplicate_payment`, no second account), email taken (`email_taken`, `conflict`); `account_mismatch`.
+- `payments-ipn.int-spec.ts`: IPN + callback together; IPN before callback; replay ×5; unknown invoice (200, alert); wrong amount (never paid); forged IPN (the status API decides); **a refund reported for a paid payment**, by the IPN and by the status API: the payment stays `paid`, `refund_reported` is recorded and a critical alert is raised (Q4).
+- `payments-settle.int-spec.ts`: role `student`, category from `grade_levels`, referrer set, `payload` NULL afterwards, email enqueued after commit, failed enqueue does not roll back; **two payments**: two starts with one email in parallel (one 409), same `start_request_id` twice (same payment), retry after failure (new invoice), late success after a second payment completed (`duplicate_payment`, no second account), email taken (`email_taken`, `conflict`); phone taken (`phone_taken`, `conflict`); two starts with one phone and different emails in parallel (one 409); `account_mismatch`.
 - `registration-current.int-spec.ts`: **tab closed**: resume within expiry returns the same URL; after expiry a retry gets a new invoice; another attempt's cookie sees nothing; recheck throttle.
 - `payments-reconcile.int-spec.ts`: start then nothing → `processing` stays pending, then `expired` + alert; paid at the gateway with no callback/IPN → account completed; 2001 never failed; timeout unchanged; unknown status unchanged + alert; backoff; batch limit; race with a callback (one transition); two workers → one run per interval; late-watch window.
-- `admin-payments.int-spec.ts` / `admin-settings.int-spec.ts`: non-admin (incl. manager) → 403; lookup by invoice/trx/phone, paginated; reconcile needs a reason, writes an audit row, illegal transitions refused; settings PUT with a stale `expected` → 409, nothing written; every change audited with old and new value.
+- `admin-payments.int-spec.ts` / `admin-settings.int-spec.ts`: non-admin (incl. manager) → 403; lookup by invoice/trx/phone, paginated; reconcile needs a reason, writes an audit row, goes to `paid` only (anything else, `refunded` included, refused); settings PUT with a stale `expected` → 409, nothing written; every change audited with old and new value.
 - `app-routes.int-spec.ts`: the new public routes are in the allow-list; only the IPN is CSRF-exempt.
 - Logs: captured logs of a full flow contain no password, merchant credentials, raw payload, email or phone.
 
@@ -465,7 +477,7 @@ Checks, unchanged:
 | Step | Date (estimate) | Work | Commits | PR |
 |---|---|---|---|---|
 | 0 | Sat 31 Oct | This plan and its decisions; the lead's reviews | `docs:` | #11 (merged) |
-| 1 | Sat 31 Oct – Sun 1 Nov | On `feat/payments-foundation` from `main`. Foundation every later step needs:<br>- M1–M3 and the seed default 40000;<br>- dev fixtures on the new schema (4.4): `student1..3@fixtures.invalid` keep logging in with `FIXTURE_PASSWORD`, `ALLOW_DEV_FIXTURES` and the server-marker guard stay unchanged, and after `git merge origin/main` the CI "Dashboard pages" job stays green;<br>- `PaymentConfig` (env, host allow-list);<br>- helpers and constraint tests, 05-DATABASE | `docs: payments plan at the measured pace` · `feat(db): registration attempts, payment columns, payment events` · `feat(db): registration fee 400 BDT in settings` · `feat(db): payment checks and triggers` · `fix(db): dev fixtures on the new payment schema` · `feat(api): PayStation account settings from env` | 1 |
+| 1 | Sat 31 Oct – Sun 1 Nov | On `feat/payments-foundation` from `main`. Foundation every later step needs:<br>- M1–M3 and the seed default 40000;<br>- the owner's phone rules (Q3 c): `users.phone` UNIQUE, one open attempt per phone, the format CHECKs, `normalizeBdMobile` with `phone.spec`;<br>- dev fixtures on the new schema (4.4), each student with a distinct phone: `student1..3@fixtures.invalid` keep logging in with `FIXTURE_PASSWORD`, `ALLOW_DEV_FIXTURES` and the server-marker guard stay unchanged, and after `git merge origin/main` the CI "Dashboard pages" job stays green;<br>- `PaymentConfig` (env, host allow-list);<br>- helpers and constraint tests, 05-DATABASE | `docs: payments plan at the measured pace` · `feat(db): registration attempts, payment columns, payment events` · `feat(db): registration fee 400 BDT in settings` · `feat(db): payment checks and triggers` · `fix(db): dev fixtures on the new payment schema` · `feat(api): PayStation account settings from env` | 1 |
 | 2 | Sun 1 Nov | **PayStation client:**<br>- interface, real adapter, in-memory fake, stub-server tests;<br>- fake PayStation server (+ dev compose service), `paystation:selfcheck`;<br>- early sandbox checks (S10, S11) if credentials are there;<br>- S18–S30 into the checklist | `feat(api): PaymentGateway and the PayStation adapter` · `chore(tools): fake PayStation server` | 1 |
 | 3 | Sun 1 Nov | **Payment state machine and invoice:** transitions, `decide()`, amount parser, invoice generator | `feat(api): payment state machine and decision rules` · `feat(api): invoice numbers` | 1 |
 | 4 | Mon 2 Nov | **`registrations/start` and `pending_registrations`:** 06-API first, then:<br>- DTO (Q2), open check, fee snapshot, idempotency, cookie;<br>- Q3, promo;<br>- `GET /registrations/info` | `docs: registration and payment API contract` · `feat(api): registration start and info` | 2 |
@@ -488,13 +500,14 @@ The dates assume each PR is reviewed and merged within about half a day. While a
 |---|---|---|---|---|
 | **Sandbox access:** Rasel's PayStation sandbox credentials typed into this worktree's `.env` (section 15); a test IPN URL can be registered in his panel (S29) | Rasel | Sun 1 Nov (S10 and S11 checked while steps 2–3 are written) | Thu 5 Nov | Steps 2, 12 |
 | **Sandbox session with Rasel present** (about 2–3 hours): checkout in a browser and on a phone, the IPN through a tunnel (`cloudflared` installed on his PC), the S-list | Rasel | Fri 6 Nov | Mon 9 Nov (leaves time for fixes and a second session) | Step 12; the sandbox part of DoD #6, #7, #9–#11, #14, #16 |
-| **VPS and domain** (DNS, TLS) | client, through Rasel | Sat 7 Nov | Tue 10 Nov | Deployment; the IPN through nginx and TLS; S29/S30 for the production domain; k6 on the target hardware (DoD #17); SES domain verification |
-| **Live merchant:** the client's PayStation account approved for live, methods enabled, credentials to Rasel (D9), the production IPN URL registered, the callback domain whitelisted (S30) | client, PayStation | Tue 10 Nov | Thu 12 Nov | `paystation:selfcheck`, the re-verification in 13.4, one real small payment (DoD #16) |
-| **SES production access:** sending domain verified (SPF, DKIM, DMARC) and the account out of the SES sandbox (OPEN-QUESTIONS #16) | Rasel (AWS); needs the domain | Requested the day the domain exists; granted by Wed 11 Nov | Fri 13 Nov | Completion and verification emails to real students (DoD #13 in production). If late, registration and login still work, but no email reaches students, and the owner decides whether to open registration |
+| **Domain** (with DNS access), separate from the VPS (lead, 2026-10-31) | client, through Rasel | **Mon 2 Nov** | **Wed 4 Nov** | Both slow approvals below need it: SES verifies the sending domain, and the live merchant registers the IPN URL and the callback domain on it. SES approval can take several days, so the domain comes first |
+| **VPS** (the domain pointed at it, TLS) | client, through Rasel | Sat 7 Nov | Tue 10 Nov | Deployment; the IPN through nginx and TLS; S29/S30 for the production domain; k6 on the target hardware (DoD #17) |
+| **Live merchant:** the client's PayStation account approved for live, methods enabled, credentials to Rasel (D9), the production IPN URL registered, the callback domain whitelisted (S30) | client, PayStation; needs the domain | Tue 10 Nov | Thu 12 Nov | `paystation:selfcheck`, the re-verification in 13.4, one real small payment (DoD #16) |
+| **SES production access:** sending domain verified (SPF, DKIM, DMARC) and the account out of the SES sandbox (OPEN-QUESTIONS #16) | Rasel (AWS); needs the domain | **Requested the day the domain arrives** (target Mon 2 Nov); granted by Wed 11 Nov | Fri 13 Nov | Completion and verification emails to real students (DoD #13 in production). If late, registration and login still work, but no email reaches students, and the owner decides whether to open registration |
 
 **Team dependencies** (ours, but not this session's):
 - A2's web session merged by Wed 4 Nov (step 10 needs the real login).
-- Q3 and Q4 answered by Sun 1 Nov evening (step 4 starts Mon 2 Nov). If they are still open, ask the lead; the defaults are not taken as final (section 2).
+- Q3 and Q4 are answered (section 2). The Q3 d text (the same phone in progress under another email) is confirmed before step 4 (Mon 2 Nov).
 - PR reviews by the lead and merges by Rasel, about half a day each.
 
 ### 10.3 Buffer: Sat 7 – Sat 14 November (8 days)
@@ -502,7 +515,7 @@ The dates assume each PR is reviewed and merged within about half a day. While a
 The days saved by the measured pace are kept at the end for what cannot be compressed or predicted:
 - **Sandbox problems:** S10 showing an amount other than 400, callback or IPN behaving unlike the docs, a second sandbox session.
 - **Deployment on the VPS** with registration closed, and the IPN through the real nginx and TLS.
-- **The switch to the client's account** (section 13) and **one real small payment** (DoD #16), then its refund (S26).
+- **The switch to the client's account** (section 13) and **one real small payment** (DoD #16). Whether it is refunded is outside our system (Q4).
 - **k6 on the VPS** (DoD #17) and any fixes it shows.
 
 **Sun 15 Nov, target:** the release is deployed. Registration opens after the client account's checks and the real payment pass (section 13).
@@ -514,7 +527,7 @@ Each PR is opened as soon as its steps are done and its checks pass:
 | PR | Steps | Content |
 |---|---|---|
 | #11 | 0 | This plan, the DECISIONS entries, OPEN-QUESTIONS #1, #2, P6 (docs only; merged 31 Oct) |
-| 1 | 1–3 | Foundation: this schedule, migrations, fixtures, config, gateway client, fake server, state machine, invoice. Small and early, so the conflict window with A2 stays short |
+| 1 | 1–3 | Foundation: this schedule and the owner's Q3/Q4 answers, migrations (with the phone rules), fixtures, config, gateway client, fake server, state machine, invoice. Small and early, so the conflict window with A2 stays short |
 | 2 | 4–5 | Start and status: `registrations/start`, `info`, `current/*`, `registrations/me`, `payments/mine` |
 | 3 | 6–9 | Money flow: settle, callback, IPN, reconciliation, admin payments and settings. Kept apart from PR 2, so the review of the paths that mark a payment paid stays readable |
 | 4 | 10–11 | Web: wizard, result page, dashboard status, admin fee dialog and payments page |
@@ -527,7 +540,7 @@ Each PR is opened as soon as its steps are done and its checks pass:
 | 1 | Form stored server-side; survives PayStation round trip, other device, cleared browser | 4, 6 | `registration-start` (payload stored before redirect); `payments-settle` (account built from the DB payload by a request without cookies); other device: the completion email and login work anywhere; sandbox S13 |
 | 2 | Open/closed, fee, currency from `settings`, enforced by the API | 1, 4, 9 | `registration-start` (closed → 403; fee 0 → 503; currency ≠ BDT refused; snapshot = setting); `settings-fee`; `admin-settings` |
 | 3 | No `role`; unknown fields rejected; category from `grade_levels` | 4, 6 | `registration-start` (`role`, `amount` → 400); `payments-settle` (role `student`, category from the table) |
-| 4 | Duplicate email/phone: clear message, enumeration acceptable to the owner | 4 | `registration-start` (Q3 texts, rate limits) |
+| 4 | Duplicate email/phone: clear message, enumeration acceptable to the owner | 1, 4 | `registration-start` (the owner's Q3 texts in bn and en, phone normalisation, rate limits per email and per phone); `db-constraints` (`users.phone` UNIQUE, one open attempt per email and per phone); `phone.spec` |
 | 5 | Payment row before redirect; unique invoice; no reuse | 1, 4 | `db-constraints`; `registration-start` (the fake server sees the row exist when initiate arrives; retry gets a new invoice) |
 | 6 | Callback a hint; paid only after transaction status + amount + invoice | 3, 6, 7 | `payment-decision` matrix; `payments-callback` (success params, failed status → not paid); sandbox S4, S6, S15 |
 | 7 | IPN idempotent and re-verified | 7 | `payments-ipn`; sandbox S9, S20 |
@@ -550,7 +563,7 @@ State on 2026-10-31 (lead): the first-admin CLI (PR #10, `admin:create`) is merg
 
 | File | When this work changes it | Handling |
 |---|---|---|
-| `apps/api/prisma/schema.prisma` | Step 1 only, one commit | Our edit to `User` is back-relation lines at the end of its relation list. If A2 later changes the schema (e.g. admin 2FA), whoever merges second regenerates (next row). |
+| `apps/api/prisma/schema.prisma` | Step 1 only, one commit | Our edit to `User` is `phone @unique` (Q3 c) and back-relation lines at the end of its relation list. Any later code that writes `users.phone` (e.g. a profile edit) must use the same `normalizeBdMobile`, or the format CHECK refuses it. If A2 later changes the schema (e.g. admin 2FA), whoever merges second regenerates (next row). |
 | `apps/api/prisma/migrations/*` | Step 1 only (M1–M3) | Whoever merges second follows these steps:<br>1. `git merge origin/main`.<br>2. Delete its own not-yet-merged generated migration (M1).<br>3. Regenerate it on a fresh local DB (`prisma migrate dev --create-only` against `sirat_pay`, section 15), so its timestamp is the newest.<br>4. Commit that as a new commit.<br>The hand-written M2 and M3, also not yet merged, are renamed to timestamps after M1 in the same commit; their SQL does not change. A migration on `main` is never edited. The CI drift check must be green. |
 | `apps/api/prisma/seed.ts` | Step 1 | Fee placeholder 40000, two new keys. |
 | `apps/api/prisma/fixtures/dev-fixtures.ts`, new `test/dev-fixtures.int-spec.ts` | Step 1 (4.4) | **Conflict point with A2:** on A2's web-session branch, the CI "Dashboard pages" job and the e2e log in for real as `student1@fixtures.invalid`, so A2 may change the fixtures or the CI step that loads them. The fixture emails, `FIXTURE_PASSWORD` and the guards do not change (4.4), and "Dashboard pages" must be green after the merge. Whoever merges second adapts to the other's version after `git merge origin/main`:<br>- If A2 merges first, our PR 1 runs A2's page check against the new fixtures before it opens.<br>- If we merge first, A2's page check runs on the new fixtures as they are. |
@@ -579,7 +592,7 @@ Now: Rasel's test account (sandbox), label `rasel-sandbox`, invoice prefix `T`. 
 
 1. **Sandbox payments never touch the production database.** They run locally (this worktree's `sirat_pay`, section 15) or on the staging stack (D8), with its own compose project, database, volumes and `.env`. The production database meets PayStation first on the day it gets the client's account.
 2. **Every payment is labelled:** `gateway_account` plus the account's invoice prefix (`T…` on test accounts). Admin lists, KPIs and reports filter on the current label.
-3. **Test students stand out everywhere:** addresses the owner controls (e.g. `owner+t01@…`) and names starting with `TEST`. Real students' data is never used in tests.
+3. **Test students stand out everywhere:** addresses the owner controls (e.g. `owner+t01@…`), names starting with `TEST`, and a distinct phone number each (phones are unique, Q3 c) from a list agreed with Rasel. Real students' data is never used in tests.
 4. **No copying between environments:** a test database never goes into production; production data never goes to staging without its personal data scrubbed.
 5. **Rasel's account sends IPNs only to a test URL**, never to production.
 6. **The two accounts' credentials never share an `.env` file.** Rasel's in the local or staging `.env`; the client's only in the production `.env` (mode 600). Never in git, chat, email, logs, notes or `NEXT_PUBLIC_*`.
@@ -609,7 +622,7 @@ Change `PAYSTATION_ENV` (`live`: the host comes from the allow-list; `PAYSTATION
 | S22 | Checkout shows the client's merchant name, not Rasel's | Look. |
 | S17 | 2001 with the new merchant id | Status of an unknown invoice. |
 | S25 | Rate limits on live | Ask PayStation. |
-| S26 | Refund visible to us | Refund the small payment in the panel; a re-check moves it to `refunded`. |
+| S26 | A refund shows up as an alert, nothing more (Q4) | Only if the client refunds the small payment in the panel anyway: a re-check records `refund_reported` with a critical alert, and the payment stays `paid`. |
 | Full flow | End to end on live | Register → pay → account → login → dashboard; close the tab → reconciliation settles it (DoD #16). |
 
 Results go into `SANDBOX-CHECKLIST.md` (a "client account" column) and DECISIONS.
@@ -628,20 +641,21 @@ Results go into `SANDBOX-CHECKLIST.md` (a "client account" column) and DECISIONS
 2. **A2's web session is a dependency** for steps 10–11. If it is not merged by Wed 4 Nov, the web steps move into the buffer.
 3. **S10 with `pay_with_charge=0` is not yet seen in the sandbox.** If PayStation reports an amount other than exactly 400 (for example, the charge added anyway), every payment fails closed (`rejected_amount`, critical alert); none is ever wrongly marked paid. The owner is asked before anything changes. Checked early on step 2 if credentials exist.
 4. **DoD #16 needs the client's live account** (by Thu 12 Nov, 10.2). If it is not ready by 15 November, the release is ready but registration stays closed.
-5. **A late payment after our expiry** → duplicate payments and refunds. Expiry ≥ PayStation's link lifetime (S12); late watch.
+5. **A double charge** (a second or late payment). We do not return money (Q4), so prevention matters more: one attempt in progress per email and per phone, one active payment per attempt, expiry ≥ PayStation's link lifetime (S12), and the late watch. Any duplicate is a critical alert and shows in the admin list (D3).
 6. **The worker is the only path to confirmation.** Health and queue-depth alerts; two worker replicas are safe with BullMQ.
 7. **Unsigned IPNs and callbacks can be spammed.** Per-invoice verify throttle, body limit, nginx limit; unknown invoices never cause a gateway call.
 8. **PayStation rate limits unknown (S25).** Concurrency cap and batch size from config.
 9. **Personal data of minors** in attempts and gateway payloads: minimum fields (Q2), scrubbing, masked payer phone, never logged.
 10. **Someone registers with another person's email.** They pay for nothing they can use: the inbox owner can reset the password, and lazy verification keeps the exam closed without the inbox.
-11. **Account enumeration at start (Q3 a).** Rate limits per IP and per email.
-12. **argon2 at start during a surge.** Measured with k6.
-13. **A wrong fee by an admin.** Bounds, the confirmation dialog, `expected`, the audit row; already-started payments keep their snapshot.
-14. **Account switch with payments in flight** (13.2) and **Rasel's account sending IPNs to production** (13.1 #5).
-15. **Two code paths create users** until unified (section 12).
-16. **SES production sending is not set up yet** (OPEN-QUESTIONS #16): the completion email is the signal for another device.
-17. **No VPS yet** (OPEN-QUESTIONS #22). The IPN is tested through a tunnel (8.1), k6 numbers stay provisional, and nothing can be deployed on 15 November until the VPS exists.
-18. **Two sessions on one machine** (section 15): one Postgres, one Redis, one docker stack. Mixing them up would migrate the wrong database or let one session's worker take the other's jobs. Separate database names and Redis DBs, and the shared stack only after telling Rasel.
+11. **Account enumeration at start (Q3 a, c).** The owner accepts it. Rate limits per IP, per email and per phone.
+12. **A student types another person's phone number.** That number is then blocked for its real owner (Q3 c), and there is no OTP. Waiting for the owner's answer; nothing is built for it now.
+13. **argon2 at start during a surge.** Measured with k6.
+14. **A wrong fee by an admin.** Bounds, the confirmation dialog, `expected`, the audit row; already-started payments keep their snapshot.
+15. **Account switch with payments in flight** (13.2) and **Rasel's account sending IPNs to production** (13.1 #5).
+16. **Two code paths create users** until unified (section 12).
+17. **SES production sending is not set up yet** (OPEN-QUESTIONS #16): the completion email is the signal for another device.
+18. **No VPS yet** (OPEN-QUESTIONS #22). The IPN is tested through a tunnel (8.1), k6 numbers stay provisional, and nothing can be deployed on 15 November until the VPS exists.
+19. **Two sessions on one machine** (section 15): one Postgres, one Redis, one docker stack. Mixing them up would migrate the wrong database or let one session's worker take the other's jobs. Separate database names and Redis DBs, and the shared stack only after telling Rasel.
 
 ## 15. Local environment: working next to the A2 session
 

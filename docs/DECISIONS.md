@@ -2,6 +2,25 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — No refund handling (owner)
+
+1. **The system has no refund flow** (OPEN-QUESTIONS P8, plan Q4). No code moves a payment to `refunded`, the admin reconcile has no refund option, and the dashboard has no refund text; none of this gets tests. The enum value `refunded` stays (no migration), and the status-transition trigger never allows it.
+2. **A refund reported by PayStation** for a paid payment (status API or IPN) does not change the status. `payment_events` records `refund_reported` and a critical alert is raised, with a test. S26 is tried only if it is easy in the sandbox, to see this alert.
+3. **Duplicate payments:** a second or late paid payment (`duplicate_payment`) is still detected, raises a critical alert and shows in the admin list. Whether money is returned is outside our system (client, PayStation panel). This replaces the plan's D3 (refund by an admin).
+4. **So preventing a double charge matters more:** at most one attempt in progress per email and per phone, and the checkout expiry is never shorter than PayStation's link lifetime (S12).
+
+## 2026-10-31 — Duplicate email and phone at registration (owner)
+
+1. **Email with an account:** bn "এই email দিয়ে আগেই রেজিস্ট্রেশন হয়েছে। অনুগ্রহ করে login করুন।", en "Already registered. Please log in." No password-reset wording; the login page link stays as it is. Rate limits as planned (per IP and per email).
+2. **A payment in progress for the same email:** the plan's default stays (plan Q3 b).
+3. **Phone numbers are unique:** one number, one student. This replaces the plan's "phone not unique".
+   - Stored in one form, `01XXXXXXXXX`. The server normalises `017…`, `+88017…` and `88017…` to it, with tests.
+   - `users.phone` is UNIQUE; NULL stays allowed, e.g. admins made by the CLI.
+   - One attempt in progress per phone, via a partial unique index like the email one. Both are in the first payments PR's migrations.
+   - Message: bn "এই ফোন নম্বর দিয়ে আগেই রেজিস্ট্রেশন হয়েছে। অন্য নম্বর দিন।", en "This phone number is already registered. Please use another number." Rate limits as for the email.
+   - The fixture students get distinct phone numbers.
+4. **No phone verification (OTP).** What happens when someone enters another person's number awaits the owner's answer; nothing is built for it now.
+
 ## 2026-10-31 — Gateway charge: the merchant pays it, `pay_with_charge = 0` (owner)
 
 1. The student pays exactly the fee (400 BDT); the merchant bears PayStation's charge: `pay_with_charge = 0` (OPEN-QUESTIONS P6, plan Q1). This replaces the default `pay_with_charge=1` in OPEN-QUESTIONS #1.
