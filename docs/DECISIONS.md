@@ -2,6 +2,27 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — Admin students list and CSV export (core C1; plan `docs/plans/CORE-PLAN.md` section 2)
+
+1. **Read only, admins only,** and the acting admin is re-read on every call, reads included: a demoted or blocked admin stops at once, not after the token's 15 minutes, because these pages show minors' data. Lives in `UsersModule`, so `admin.module.ts` (payments' admin routes) and `app.module.ts` do not change.
+2. **Search:** name or email contains the term (case-insensitive), plus the phone exactly when the term reads as a Bangladeshi mobile in any form, plus the registration's invoice exactly when the term has the invoice shape with a digit (a long name never counts as an invoice). `q` is 1–100 characters, as the web's search box sends it. A sequential scan of `users` is expected at 25,000 rows; `EXPLAIN ANALYZE` on generated users decides whether a `pg_trgm` index is needed (its own migration, told to the lead first).
+3. **Phone masked in the list** (`phoneLast3`), full in the detail and in the CSV (core plan D2).
+4. **Export is a POST** with a reason (3–200 characters), so neither the reason nor the search reaches a URL (nginx logs query strings) and the CSRF header applies.
+   - **Audit before the first byte:** `users.exported` with the admin, IP, filters (the search term only as its kind), row count and reason. If it cannot be written, 503 and no file.
+   - **Only students and ambassadors** are exported; at most 50,000 rows (400 `too_many_rows`); 5 per admin per hour. The throttler runs before validation, so refused requests count too.
+   - **Rows in keyset batches of 1,000** (`created_at`, `id`): a fixed number of queries per batch, far below the 10 s statement timeout. The id breaks ties, so equal timestamps neither repeat nor drop a row (tested with 2,500 rows of one timestamp).
+   - **Nest's `StreamableFile` logger is replaced,** not its handler. Nest still cuts a download short when a batch fails after the headers went out, but its default logger printed the error's message, and a Prisma message quotes query values (A2.0 gate 1).
+   - **CSV rules** (`common/csv.ts`, for every export): UTF-8 BOM, CRLF rows, quotes for commas/quotes/line breaks, a `'` before a cell starting with `=`, `+`, `-`, `@`, tab or CR. Times in Asia/Dhaka.
+5. **Web:**
+   - **The page:** `data/http/users.ts` reads the list and the detail with a shape check and an explicit pick. A detail id that is not a UUID is "not found" without a call.
+   - **Filters:** a GET form (works without JavaScript). Booleans travel as `true`/`false` in the URL, because `hrefWith` drops a plain `false`.
+   - **The export:** it goes from the browser through `lib/api.ts`, which gains `as: 'blob'` (DECISIONS "Web data layer over HTTP" rule 5). `Blob.text()` drops the BOM while the bytes keep it, so the test compares bytes.
+6. **Tests:**
+   - unit: `csv.spec.ts`; `admin-users.service.spec.ts` (search kinds, filters, the row limit before any write, no file without the audit row and no error message in the log, only the term's kind audited);
+   - web: `users.test.ts`, `export-problem.test.ts`, the blob case in `api.test.ts`;
+   - integration: `admin-users.int-spec.ts` (roles, a blocked or demoted admin, every search kind and filter, paging bounds, masked phone, detail, CSV content and escaping, audit row, batches, the hourly limit).
+   - **Mutation checks:** without the explicit pick, a hash canary reaches the page; without the formula prefix, the CSV test fails.
+
 ## 2026-10-31 — Web data layer over HTTP (Lead's order; core session implementation)
 
 1. **Production reads the API:** `getData()` returns the HTTP source (`apps/web/src/data/http/`). Development keeps the mock unless `DATA_SOURCE=http` (a local web against a local API). The literal `NODE_ENV` check still drops the mock from production builds (`assert-no-mock.mjs`).
