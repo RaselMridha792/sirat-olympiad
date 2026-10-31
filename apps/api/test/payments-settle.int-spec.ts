@@ -9,6 +9,9 @@ import { randomUUID } from 'node:crypto';
 import { PaymentStatus, RegistrationAttemptStatus } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import type { Prisma } from '@prisma/client';
+import { Queue } from 'bullmq';
+import { EMAIL_TOKEN_TTLS } from '../src/modules/auth/email-tokens.service';
+import { EMAIL_QUEUE, type EmailJobData } from '../src/modules/notifications/email.types';
 import { PaymentsWorker } from '../src/modules/payments/verify/payments.worker';
 import { makePaidPayment, makeRegistrationAttempt, makeUser, paymentData } from './helpers';
 import {
@@ -117,6 +120,34 @@ describe('verify: a confirmed success', () => {
       canResume: false,
       canRetry: false,
     });
+  });
+
+  it("sends A2's verification link: one token store, AuthModule's lifetimes, accepted by /auth/verify-email", async () => {
+    // EmailTokenService is provided again in PaymentsCoreModule (the worker has no AuthModule): stateless, the same
+    // auth_tokens table through the one PrismaService, and the same TTL factory. This proves the last two.
+    const { AuthModule } = await import('../src/modules/auth/auth.module');
+    const { PaymentsCoreModule } = await import('../src/modules/payments/payments-core.module');
+    expect(env.app.select(PaymentsCoreModule).get(EMAIL_TOKEN_TTLS)).toEqual(
+      env.app.select(AuthModule).get(EMAIL_TOKEN_TTLS),
+    );
+    const s = await startRegistration(env);
+    await env.fake.pay(s.invoiceNumber);
+    await env.verifier.verify(s.paymentId, 'callback');
+    const user = await env.prisma.user.findUniqueOrThrow({ where: { email: s.email } });
+    const issued = await env.prisma.authToken.findFirstOrThrow({
+      where: { userId: user.id, type: 'email_verify' },
+    });
+    const emails = new Queue<EmailJobData>(EMAIL_QUEUE, { connection: env.queueRedis });
+    const job = await emails.getJob(`verify-email.${issued.id}`);
+    expect(job?.data.message.to).toBe(s.email);
+    const token = /#token=([A-Za-z0-9_-]{43})/.exec(job?.data.message.text ?? '')?.[1];
+    expect(token).toBeDefined();
+    await job?.remove();
+    const res = await caller(env.base)('POST', '/auth/verify-email', { body: { token } });
+    expect(res.status).toBe(204);
+    expect(
+      (await env.prisma.user.findUniqueOrThrow({ where: { id: user.id } })).emailVerifiedAt,
+    ).toBeInstanceOf(Date);
   });
 
   it('is idempotent: a second check is a duplicate, and two checks at once make one account', async () => {
