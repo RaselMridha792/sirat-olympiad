@@ -505,7 +505,7 @@ Checks, unchanged:
 | 13 | Fri 6 Nov | **k6** registration surge + callback/IPN bursts, locally against the fake server (regressions; numbers provisional until the VPS run in 10.3) | `test(load): registration surge` | 5 |
 | 14 | Fri 6 Nov | RUNBOOK (payments, settings changes, account switch), docs 03/06/10, CLAUDE.md state | `docs:` | 5 |
 | 15 | Sat 7 Nov | **Free book, API** (section 16): 06-API contract, M4, cover upload, student and admin endpoints, CSV, tests | `docs: book API contract` · `feat(db): book orders and cover images` · `feat(api): free book orders and admin book` | 6 |
-| 16 | Sat 7 – Sun 8 Nov | **Free book, web**: result-page login button, `/student/book`, dashboard card, admin book and orders pages | `feat(web): free book page and dashboard card` · `feat(web): admin book and orders` | 6 |
+| 16 | Sat 7 – Sun 8 Nov | **Free book, web**: result-page login button, `/dashboard/book`, dashboard card, admin book and orders pages | `feat(web): free book page and dashboard card` · `feat(web): admin book and orders` | 6 |
 
 The dates assume each PR is reviewed and merged within about half a day. While a PR waits, the next step continues on a branch made from it. That branch opens as a PR after the previous one merges, with `git merge origin/main` first.
 
@@ -798,11 +798,10 @@ DTOs use `whitelist` + `forbidNonWhitelisted`. Every route has an explicit guard
 
 ### 16.4 Flow
 
-1. **After payment:** the result page polls `/registrations/current` until `completed` (section 6.7). The payment browser has **no session** (D2: no automatic login), so the page says "Payment confirmed. Log in to get your free book." The button goes to `/login?next=/student/book`.
-2. **Login:** the student logs in with the password they chose in the form (A2's login).
-   - Dependency on A2: the login page must accept `next` only as a same-origin path from an allow-list (`/student/…`), never a full URL.
-   - If A2's login has no `next` yet, the student lands on the dashboard, and the reminder card leads to the book.
-3. **`/student/book`** (protected, own session only):
+1. **After payment:** the result page polls `/registrations/current` until `completed` (section 6.7). The payment browser has **no session** (D2: no automatic login), so the page says "Payment confirmed. Log in to get your free book." The button goes to `/login?next=/dashboard/book`. The student may also skip it (B4).
+2. **Login:** the student logs in with the password they chose in the form (A2's login, merged in PR #12).
+   - A2's `safeNext` (`apps/web/src/lib/auth/next-param.ts`) already accepts only same-origin paths under `/dashboard` and `/admin`. The book page therefore lives at **`/dashboard/book`**, and A2's login code does not change.
+3. **`/dashboard/book`** (protected, own session only):
    - shows the title and cover;
    - the form is pre-filled from the student's account: name, phone, district;
    - the student checks it and confirms (`PUT`), and sees "Order confirmed".
@@ -879,7 +878,7 @@ DTOs use `whitelist` + `forbidNonWhitelisted`. Every route has an explicit guard
 - the book page's states: no session → login; not eligible; the form's errors in bn and en; confirmed;
 - the dashboard card's three states;
 - the admin pages' confirmations;
-- `next` only from the allow-list.
+- the result page links to `/login?next=/dashboard/book`, which A2's `safeNext` accepts.
 
 ### 16.7 Definition of Done: new point 18
 
@@ -892,7 +891,7 @@ DTOs use `whitelist` + `forbidNonWhitelisted`. Every route has an explicit guard
 | Step | Date (estimate) | Work | PR |
 |---|---|---|---|
 | 15 | Sat 7 Nov | 06-API contract; M4; `book-image.ts`; student and admin endpoints; CSV; tests | 6 |
-| 16 | Sat 7 – Sun 8 Nov | Web: the result page's login button, `/student/book`, the dashboard card, the admin book and orders pages | 6 |
+| 16 | Sat 7 – Sun 8 Nov | Web: the result page's login button, `/dashboard/book`, the dashboard card, the admin book and orders pages | 6 |
 
 - **About one and a half days, taken from the buffer.** It shrinks from 8 days (7–14 Nov) to about 6½ (8 Nov midday – 14 Nov).
 - The book needs no PayStation, so the sandbox session on 6 Nov is not affected. One end-to-end walk (payment → login → book) is added to the buffer's real-payment day.
@@ -905,8 +904,8 @@ DTOs use `whitelist` + `forbidNonWhitelisted`. Every route has an explicit guard
 | `apps/api/src/modules/payments/*`, new `apps/api/src/modules/book/*` | `BookModule` is imported by `PaymentsModule`, and admin routes go in `AdminModule`, so `app.module.ts` does not change |
 | `packages/shared/src/index.ts` | one line (`districts`, book types) |
 | `packages/ui` | possibly a file-input component (shared; the UI session is told) |
-| `apps/web`: login `next` handling | **A2's file.** The allow-list is agreed with A2 first; the dashboard card is the fallback |
-| `apps/web`: student dashboard home (the card), new `/student/book`, admin book and orders pages | The dashboard home also changes in A2's web-session work: whoever merges second resolves it |
+| `apps/web`: login `next` handling | **Not touched.** A2's merged `safeNext` already allows `/dashboard/book` |
+| `apps/web`: student dashboard home (the card), new `/dashboard/book`, admin book and orders pages | New pages are our own files. The dashboard home card is a small edit in a file A2 owns: merge `origin/main` right before the push |
 | `test/app-routes.int-spec.ts` | the public cover route |
 | `docs/06-API.md`, `05-DATABASE.md`, `RUNBOOK.md` (restore check, CSV handling), `DECISIONS.md` | |
 | Not touched | `app.module.ts`, `package.json`, `pnpm-lock.yaml`, `infra/nginx/*`, `scripts/backup.sh` |
