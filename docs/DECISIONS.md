@@ -22,6 +22,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - web: `users.test.ts`, `export-problem.test.ts`, the blob case in `api.test.ts`;
    - integration: `admin-users.int-spec.ts` (roles, a blocked or demoted admin, every search kind and filter, paging bounds, masked phone, detail, CSV content and escaping, audit row, batches, the hourly limit).
    - **Mutation checks:** without the explicit pick, a hash canary reaches the page; without the formula prefix, the CSV test fails.
+
 ## 2026-10-31 — Exam player in the browser (E4; exam session, lead's rules)
 
 1. **Logic without React:** `components/exam/exam-controller.ts` (state, local copy, checkpoints, the one submit), `violations.ts` (leave and return, DevTools keys), `exam-storage.ts`, `exam-api.ts` (browser calls), `exam-logout.ts`. The plan named state/storage/sync/time modules; one controller with an injected clock, timers and API keeps every rule in one place, and `node --test` drives it with a fake clock.
