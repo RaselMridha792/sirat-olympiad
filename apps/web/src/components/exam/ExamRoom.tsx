@@ -17,7 +17,7 @@ import {
   ListChecks,
   ShieldAlert,
 } from 'lucide-react';
-import type { AttemptView, StudentExamDetail, SubmissionReceipt } from '@sirat/shared';
+import type { AttemptView, SubmissionReceipt } from '@sirat/shared';
 import { Badge, Button, buttonClasses, Card, cn, Countdown, Dialog } from '@sirat/ui';
 import { useHydrated } from '@/components/auth/useHydrated';
 import type { Locale } from '@/i18n';
@@ -33,6 +33,7 @@ import {
   type PlayerState,
 } from './exam-controller';
 import { browserStore } from './exam-storage';
+import type { RoomExam } from './room-exam';
 import { isDevtoolsKey, LeaveTracker, type PageSignal } from './violations';
 
 /*
@@ -63,7 +64,7 @@ function browserDeps(): ExamDeps {
   };
 }
 
-export function ExamRoom({ locale, exam }: { locale: Locale; exam: StudentExamDetail }) {
+export function ExamRoom({ locale, exam }: { locale: Locale; exam: RoomExam }) {
   const m = pick(examPlayerMessages, locale);
   const resuming = exam.attempt?.phase === 'in_progress';
   const [stage, setStage] = useState<Stage>(resuming ? { kind: 'loading' } : { kind: 'waiting' });
@@ -168,7 +169,7 @@ function WaitingRoom({
   m,
   onEnter,
 }: {
-  exam: StudentExamDetail;
+  exam: RoomExam;
   locale: Locale;
   m: ExamPlayerMessages;
   onEnter: (how: 'start' | 'resume') => void;

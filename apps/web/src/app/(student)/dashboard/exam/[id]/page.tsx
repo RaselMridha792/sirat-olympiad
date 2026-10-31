@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { PageHeader } from '@sirat/ui';
 import { ExamRoom } from '@/components/exam/ExamRoom';
+import { toRoomExam } from '@/components/exam/room-exam';
 import { getData } from '@/data';
 import type { SearchParams } from '@/data/query';
 import { studentExamsMessages } from '@/i18n/messages/student-exams';
@@ -34,7 +35,7 @@ export default async function ExamPage({
   return (
     <>
       <PageHeader title={exam.title} />
-      <ExamRoom locale={locale} exam={exam} />
+      <ExamRoom locale={locale} exam={toRoomExam(exam)} />
     </>
   );
 }
