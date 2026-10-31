@@ -48,7 +48,8 @@ export type AnswerList = Array<number | null>;
  * `time_over`: the time and the grace are over but no submission has arrived yet; the server submits the last
  * checkpoint (EXAM-PLAN 3.9).
  */
-export type AttemptPhase = 'in_progress' | 'submitted' | 'time_over';
+export const ATTEMPT_PHASES = ['in_progress', 'submitted', 'time_over'] as const;
+export type AttemptPhase = (typeof ATTEMPT_PHASES)[number];
 
 export interface SubmissionReceipt {
   receiptId: string;

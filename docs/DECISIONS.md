@@ -2,6 +2,18 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — Exam player in the browser (E4; exam session, lead's rules)
+
+1. **Logic without React:** `components/exam/exam-controller.ts` (state, local copy, checkpoints, the one submit), `violations.ts` (leave and return, DevTools keys), `exam-storage.ts`, `exam-api.ts` (browser calls), `exam-logout.ts`. The plan named state/storage/sync/time modules; one controller with an injected clock, timers and API keeps every rule in one place, and `node --test` drives it with a fake clock.
+2. **Reads and writes (lead):** the waiting room is a server read (`data/http/exams.ts` `getExam`: shape check, explicit pick, null for 404 and for a malformed id, which sends no request). Start, resume, checkpoint and submit go from the browser through `lib/api.ts` ("Web data layer over HTTP" 5). Checkpoint and submit use `onExpired: 'throw'`: an ended session keeps the answers and the pending submit on the device, and the page asks for a login.
+   - **Client props are picked by name:** the page hands `ExamRoom` only `toRoomExam(exam)`, because everything given to a client component is serialized into the page. CI's `?mock=leak` page check found the whole object there; a unit test now fails without the pick.
+3. **Local and server copies:** the newer answers win by `seq`; the violation count is the higher of both; a pending submit is sent again after a reload with its request id. Time-up locks the answers and submits them after a 0–20 s spread. The countdown is display only and re-syncs when the server's remaining seconds differ by more than 1.5 s.
+4. **The violation rule as built (owner Q4):** a leave counts once until the page has focus again; a warning on screen does not pause counting; reloading or closing the page (`beforeunload`, `pagehide`) and network changes do not count. The DevTools keys are F12, Ctrl+Shift+I/J/C and Cmd+Opt+I/J/C. Opening the tools from the browser menu cannot be seen, and the rules text claims nothing about it.
+5. **Logout on shared devices (lead):** before the logout request, an unsent final submit gets one try of at most 3 s; after a logout that worked, every `sirat.exam.v1.*` key is removed and no other key (A2's `LogoutButton.tsx`, lead's approval).
+6. **Start waits for hydration**, like the auth forms: a click before React ran did nothing (found by the e2e).
+7. **Proof:** `scripts/e2e-exam.mjs`. An admin publishes a 15-minute exam; a fixture student takes it up to the 6th violation, with a reload in between; every response, the HTML and localStorage are searched for explanations, correct keys, scores and question or lineage ids. On a throwaway Postgres with the exam session's own API: 6/6. With the API changed to add `correctKey` and the question id to the start answer, the leak step fails.
+8. `Countdown` shows h:mm:ss from one hour on (`formatCountdown`, unit-tested); `@sirat/ui` gets a `test` script (lead's approval).
+
 ## 2026-10-31 — Public entry page and legal pages (core C2; plan `docs/plans/CORE-PLAN.md` section 3)
 
 1. **Why now, before Phase D:** PayStation's merchant review asks for a live site with an about page, terms, a privacy policy, contact details (one email and at least one phone number) and the registered business name; a refund policy depends on the business. So only these five pages are built (entry, about, privacy, terms, refund policy): no design work, no other marketing sections.
