@@ -98,6 +98,16 @@ function RegistrationCard({
   copy: Copy;
 }) {
   const r = m.registration;
+  if (!registration) {
+    return (
+      <Card className="mb-6">
+        <h2 className="text-lg font-bold text-ink">{r.title}</h2>
+        <p role="status" className="mt-1 text-sm text-ink-muted">
+          {r.unavailable}
+        </p>
+      </Card>
+    );
+  }
   if (!registration.registered) {
     return (
       <Card className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

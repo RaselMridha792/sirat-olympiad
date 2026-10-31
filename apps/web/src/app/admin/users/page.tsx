@@ -22,6 +22,7 @@ import {
   Tabs,
   type DetailItem,
 } from '@sirat/ui';
+import { AmbassadorButton } from '@/components/admin/AmbassadorButton';
 import { CorrectGradeButton } from '@/components/admin/CorrectGradeButton';
 import { ExportUsersButton } from '@/components/admin/ExportUsersButton';
 import { LinkPendingIcon } from '@/components/LinkPendingIcon';
@@ -462,6 +463,16 @@ function UserDetails({
         </p>
       ) : null}
       <DetailList items={items} />
+      {/* A paid student can become an ambassador; an approved one can be revoked (core C5a). */}
+      {user.ambassador?.approvedAt ? (
+        <div>
+          <AmbassadorButton locale={locale} userId={user.id} action="revoke" />
+        </div>
+      ) : user.role === 'student' && user.registration && !user.isBlocked ? (
+        <div>
+          <AmbassadorButton locale={locale} userId={user.id} action="approve" />
+        </div>
+      ) : null}
       {(user.role === 'student' || user.role === 'ambassador') && gradeLevels.length > 0 ? (
         <div>
           <CorrectGradeButton
