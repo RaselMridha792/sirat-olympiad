@@ -6,7 +6,11 @@ One short entry per non-obvious technical or product decision. Newest first. For
 
 1. Every student who pays gets one free book. After a successful payment the student confirms a delivery address. The admin can change the book's title and cover later.
 2. It is part of the 15 November release unless the owner says otherwise. It gets its own migration and PR after the payments work, not PR 1's migrations.
-3. The plan is in `docs/plans/PAYMENTS-PLAN.md` section 16. Its defaults (fields, Bangladesh only, one per student) are not final. Two questions wait for the owner: (ক) skip the page and confirm later from the dashboard; (খ) change the address after confirming, until shipped.
+3. The plan is in `docs/plans/PAYMENTS-PLAN.md` section 16.
+   - **Owner's answers (18:17):**
+     - (ক) Yes: the student may skip the book page after payment and give the address later from the dashboard, which reminds them until they do.
+     - (খ) Yes: the address can change after confirming, until an admin marks the order shipped; after that it cannot.
+   - The other defaults are accepted: the fields, Bangladesh only, one book per student, the admin list and the courier CSV.
 4. **The cover is the system's first upload** (Claude's proposal, in the plan): bytes in Postgres, not on disk or in a pay-per-request service.
    - The API runs as 4 replicas, which do not share a disk.
    - `pg_dump` and the restore drill already cover the database.

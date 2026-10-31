@@ -739,15 +739,15 @@ Every student who pays gets one free book. After a successful payment the studen
 
 ### 16.1 Questions and defaults
 
-The defaults below were put to Rasel and are **not final**:
+**All answered by Rasel (owner, 2026-10-31 18:17).** B1–B3 and the admin list with the CSV were accepted as proposed; B4 and B5 are "yes" (DECISIONS "Free book after payment").
 
-| # | Question | Default |
+| # | Question | Answer |
 |---|---|---|
 | B1 | Order fields | recipient name; recipient phone (pre-filled with the student's phone, may differ, **not unique here**); district (one of the 64); upazila/thana; address line; optional note |
 | B2 | Where the book can go | Bangladesh only |
 | B3 | How many books | one per student (`UNIQUE(user_id)`) |
-| B4 | **(ক) Waiting for Rasel:** may the student skip the book page and confirm later from the dashboard? | Yes. The dashboard shows a reminder card until an order exists |
-| B5 | **(খ) Waiting for Rasel:** may the address change after confirming? | Yes, until an admin marks the order shipped. After that the DB refuses changes (trigger) |
+| B4 | (ক) May the student skip the book page and confirm later from the dashboard? | **Yes (owner).** Until an address is given, the dashboard keeps reminding |
+| B5 | (খ) May the address change after confirming? | **Yes (owner)**, until an admin marks the order shipped. After that it cannot change; the DB refuses it (trigger) |
 
 Smaller choices, made here (say if you disagree):
 
