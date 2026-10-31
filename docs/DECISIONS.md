@@ -78,6 +78,18 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - a COMMIT that stalls for more than the margin before the request timeout (over 10 s);
    - an answer lost in the network after it was sent. That is not the API being slow.
 
+## 2026-10-31 — E1: exam schema and exam admin (Claude; plan `docs/plans/EXAM-PLAN.md`, owner's exam rules)
+
+1. **One row per question version.** A question's versions share a `lineage_id` (a random UUID); a partial unique index allows one active version per lineage. Once the exam has left draft, a trigger refuses any change to a question except its deactivation, and refuses DELETE: an edit inserts version + 1 and deactivates the old row, so an attempt that was given the old version keeps it. In a draft, questions are edited and deleted in place (no attempt can exist: `attempts_guard` only accepts attempts for a published exam).
+2. **The lock is in the database, not only in the API:** `exams_frozen_after_publish` (timing, count, grace, category, round and pool rule frozen; the window only grows while open; back to draft only without attempts; archived never changes), `attempts_guard` (timer and layout never change, status only forward, never deleted), `submissions` append-only. The API checks the same rules first and answers 409 with reason codes; if a trigger still refuses (a race), the admin gets the same 409.
+3. **Results cannot leak early by construction:** a CHECK refuses `results_published_at` before `window_end + grace`.
+4. **`submissions` refuses TRUNCATE except in a `*_test` database.** `truncateAll` empties users with CASCADE, which reaches attempts and submissions; `audit_logs` can simply be skipped (no foreign keys), `submissions` cannot. A production database is never named `*_test`.
+5. **Every admin write** runs in one transaction that locks the exam row (a publish and a question edit cannot interleave), re-reads the acting user (a demoted or blocked admin gets 403 within the token's 15 minutes), checks `expectedUpdatedAt` (409 `stale`), and writes its audit row in the same transaction: no change without its record.
+6. **Owner Q2 in code:** publish needs exactly `questions_per_attempt` active questions, or at least that many with `random_draw`; a published fixed pool takes no new question and retires none (versions only).
+7. **Refusal codes** travel in `ApiError.details` (a list), so the exception filter stays unchanged.
+8. **`leaderboard_entries` ships now** (empty until E3), so the exam schema lands in one migration pair (`*_exam_engine`, generated, with a guard that stops on existing exam rows; `*_exam_checks`, hand-written).
+9. **Old test databases** (lead review): main's earlier constraint tests left attempts and submissions (`answers: {}`) in every `*_test` database. `prepare-test-db.mjs` now runs payments' cleanup as a list of guarded migrations (payments, then exam): while `*_exam_engine` is not applied, it empties `submissions`, `attempts` and `questions` of a `*_test` database. Payments' log line and counts are unchanged (their migration test still passes). Test: `prepare-test-db.int-spec.ts` builds a scratch `*_prep_test` database at the state before the exam migration with such rows and runs the real script. Development databases need nothing (main's fixtures create no exam rows).
+
 ## 2026-10-31 — PayStation settings at boot, and the sandbox host check S11 (Claude; plan section 3.5)
 
 1. **S11 (Rasel's sandbox account, 10 BDT `XS11…` invoices, never paid):**

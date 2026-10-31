@@ -141,15 +141,4 @@ export async function makePaidPayment(prisma: PrismaClient, userId: string | nul
   });
 }
 
-export function makeAttempt(prisma: PrismaClient, userId: string, examId: string) {
-  const startedAt = new Date();
-  return prisma.attempt.create({
-    data: {
-      userId,
-      examId,
-      startedAt,
-      endsAt: new Date(startedAt.getTime() + 30 * 60 * 1000),
-      layout: [],
-    },
-  });
-}
+// Exam helpers (published exams, questions, attempts, submissions): test/exam-helpers.ts.
