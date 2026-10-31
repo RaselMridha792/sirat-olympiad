@@ -44,6 +44,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 12. **Checks (Lead):**
     - **CI page checks:** real sessions (option A). The API runs in the job with a fixture student and an admin made with the create-admin CLI. The fixtures guard is unchanged; the CI Postgres runs with `-c sirat.environment=test`.
     - **Browser driver:** one CDP driver (`scripts/lib/cdp.mjs`, option A, no dependency) serves both `check-pages` and `e2e.mjs`.
+    - **e2e only on this machine (Lead):** it changes a student's password, so a base URL or `MAILPIT_URL` whose host is not 127.0.0.1, localhost or ::1 stops it before any request, the same idea as the fixtures guard (tested).
     - **Web logs (condition e):** no cookie, token, `#token`, `next` value or `/me` body; server-side fetch errors carry class and status only. A CI step greps the production log.
 13. **Per-user API limits (Lead):** not an open question; DECISIONS A1 #8 and 06-API already settle it. It follows as its own small API PR before 2026-11-15: the key is the user id when a verified session exists, otherwise the IP. nginx's `api` zone stays per IP (30 r/s, burst 60); that PR records it as a risk to measure in the load test.
 

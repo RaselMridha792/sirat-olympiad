@@ -7,12 +7,25 @@
 //
 // The local stack is shared: say so before running this (RUNBOOK §0). The reset case sets the student's password
 // to the same value again (so the next run still works) and, like every reset, ends that student's sessions; the
-// API allows one reset email per address per minute and five per hour.
+// API allows one reset email per address per minute and five per hour. It runs only against this machine: a base
+// URL or MAILPIT_URL that is not 127.0.0.1, localhost or ::1 stops it before any request.
 import { randomBytes } from 'node:crypto';
 import { launchBrowser } from './lib/cdp.mjs';
+import { isLoopbackUrl } from './lib/local-only.mjs';
 
 const BASE = process.argv[2] ?? process.env.APP_URL ?? 'http://127.0.0.1:8080';
 const MAILPIT = process.env.MAILPIT_URL ?? 'http://127.0.0.1:18025';
+for (const [name, url] of [
+  ['the base URL', BASE],
+  ['MAILPIT_URL', MAILPIT],
+]) {
+  if (!isLoopbackUrl(url)) {
+    console.error(
+      `e2e: ${name} is not on this machine (only 127.0.0.1, localhost or ::1); nothing was sent`,
+    );
+    process.exit(2);
+  }
+}
 const STUDENT = {
   email: process.env.E2E_STUDENT_EMAIL ?? 'student1@fixtures.invalid',
   password: process.env.E2E_STUDENT_PASSWORD ?? '',
