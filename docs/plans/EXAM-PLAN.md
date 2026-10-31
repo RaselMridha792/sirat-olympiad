@@ -1,6 +1,6 @@
 # Exam engine, exam admin and results: plan
 
-Plan only, no product code (2026-10-31, branch `feat/exam-plan`, worktree `G:\sirat-exam`). It reaches `main` in a docs-only pull request after the lead's review; Rasel merges it. Code starts only after that, on new branches from `main` (section 8).
+Plan only, no product code (2026-10-31, branch `feat/exam-plan`, worktree `G:\sirat-exam`). Revised the same day after the lead's review: old rows in `*_test` databases (2.3), no refunds (D3), the same questions for everyone by default (Q2). It reaches `main` in a docs-only pull request; Rasel merges it. Code starts only after that, on new branches from `main` (section 8).
 
 **Priority:** the 15 November launch (registration + payment, A2's login) comes first. The exam pull requests may be reviewed and merged after it. This work never touches the A2, payments or lead worktrees or branches.
 
@@ -43,7 +43,7 @@ Roles: `student`, `ambassador` (an ambassador is a student with an extra panel).
 |---|---|---|---|
 | `GET /exams` | Exams the session user may see: `published`, category `null` or equal to the user's | `StudentExamCard[]`, the state from the server clock (section 3.11), `resultsPublished`. Never questions | E2 |
 | `GET /exams/:id` | Same visibility; otherwise 404 | Card + rules (`durationMinutes`, `questionsPerAttempt`, `graceSeconds`, `focusPolicy`) + `serverNow` + the user's attempt summary (status, `endsAt`, receipt). Never questions | E2 |
-| `POST /exams/:id/attempts` | Start or resume. Body `{}`. Email verified (lazy verification, DECISIONS 2026-10-30), active paid registration (after payments PR 1), not blocked, category match, `published`, window open | 201 new / 200 existing: `AttemptView` (1.3). 403 `email_unverified` · 403 `registration_required` · 404 not visible · 409 `not_open_yet` · 409 `window_closed` · 409 `already_submitted` (with the receipt) | E2 |
+| `POST /exams/:id/attempts` | Start or resume. Body `{}`. Email verified (lazy verification, DECISIONS 2026-10-30), paid registration (after payments PR 1; D3), not blocked, category match, `published`, window open | 201 new / 200 existing: `AttemptView` (1.3). 403 `email_unverified` · 403 `registration_required` · 404 not visible · 409 `not_open_yet` · 409 `window_closed` · 409 `already_submitted` (with the receipt) | E2 |
 | `GET /attempts/me?exam=:id` | The session user's attempt for that exam (`WHERE user_id = sub`) | `AttemptView` in progress; receipt only once submitted; 404 when none | E2 |
 | `PUT /attempts/:id/checkpoint` | Owner. Body `{ seq, answers, events? }` | Redis only. 200 `{ savedSeq, remainingSeconds, serverNow }` · 409 `time_over` · 409 `already_submitted` · 429 + `Retry-After` below the minimum interval | E2 |
 | `POST /attempts/:id/submit` | Owner. Body `{ requestId (uuid), answers, events? }` | Idempotent. 200 `{ receiptId, submittedAt, alreadySubmitted }` · 409 `time_over` · 409 `request_id_conflict` (the id belongs to another attempt) | E2 |
@@ -57,13 +57,13 @@ All rows: `@Roles('admin')` unless noted, every write audit-logged (`exam.*`, `q
 | Method + path | Rules | PR |
 |---|---|---|
 | `GET /admin/exams?page=&q=&status=` | `AdminExamCard` (paged) | E1 |
-| `POST /admin/exams` | Creates a `draft`. Fields: title, category (or all), round, window start/end, duration (1–30), questions per attempt, grace seconds (form pre-filled from `SUBMIT_GRACE_SECONDS_DEFAULT`), focus policy. The window must be at least one duration long | E1 |
+| `POST /admin/exams` | Creates a `draft`. Fields: title, category (or all), round, window start/end, duration (1–30), questions per attempt, grace seconds (form pre-filled from `SUBMIT_GRACE_SECONDS_DEFAULT`), focus policy, `randomDraw` (default false, Q2). The window must be at least one duration long | E1 |
 | `GET /admin/exams/:id` | `AdminExamDetail`: active questions **with** correct keys and explanations, version numbers. Admin only, never manager | E1 |
 | `PATCH /admin/exams/:id` | Draft: every config field. Published: only `title`, and `windowEnd` extended (never shortened, only before the window has ended; reason required) | E1 |
 | `POST /admin/exams/:id/publish` | Checks in 4.2; then the questions are warmed into Redis (E2 adds the warm-up job) | E1 |
 | `POST /admin/exams/:id/unpublish` | Only while `now < window_start − 5 min` and no attempt exists | E1 |
 | `POST /admin/exams/:id/archive` | A draft, or a published exam whose results are published | E1 |
-| `POST /admin/exams/:id/questions` | Adds a question (draft or published; not archived) | E1 |
+| `POST /admin/exams/:id/questions` | Adds a question: draft; published only with `random_draw`; never archived | E1 |
 | `PUT /admin/exams/:id/questions/:questionId` | Draft: edit in place. Published: a **new version** (new row, same lineage, version + 1); the old one is deactivated; returns the new id | E1 |
 | `DELETE /admin/exams/:id/questions/:questionId` | Draft: delete. Published: **retire** (`is_active = false`); never a delete | E1 |
 | `GET /admin/exams/:id/questions/:questionId/versions` | Version history of the question's lineage | E1 |
@@ -121,6 +121,7 @@ No enum changes: `ExamStatus` and `AttemptStatus` stay as they are.
 **`exams`**
 - add `content_version int NOT NULL DEFAULT 1`: raised by every question write (trigger), so caches and attempts know which pool they used;
 - add `focus_policy` (new enum `FocusPolicy`: `off`, `log`; default `log`, Q4);
+- add `random_draw boolean NOT NULL DEFAULT false` (Q2): false = everyone gets the same questions (pool = questions per attempt); true = the admin chose different questions per student from a larger pool;
 - add `published_at` NULL, `results_snapshot_at` NULL, `results_generation int NOT NULL DEFAULT 0`;
 - CHECKs: `grace_seconds <= 300`; `status::text = 'draft' OR published_at IS NOT NULL`; `results_published_at IS NULL OR results_published_at >= window_end + grace_seconds * interval '1 second'` (**the database itself refuses results before the window has closed for everyone**);
 - trigger `exams_frozen_after_publish` (2.4).
@@ -142,7 +143,7 @@ No enum changes: `ExamStatus` and `AttemptStatus` stay as they are.
 - add `source` (new enum `SubmissionSource`: `client`, `checkpoint`, `none`), no default;
 - `answers` format v1: `{ "v": 1, "a": [2, null, 0, …] }`;
 - CHECKs: `jsonb_typeof(answers->'a') = 'array'`; `request_id ~ '^[A-Za-z0-9._-]{8,80}$'`; `events` at most 16 KB;
-- **append-only**: UPDATE, DELETE and TRUNCATE refused (the trigger deferred to "the exam engine module" in the A1 review).
+- **append-only**: UPDATE and DELETE refused; TRUNCATE refused too, except in a database whose name ends in `_test` (the trigger deferred to "the exam engine module" in the A1 review). Why the exception: `truncateAll` in the integration tests runs `TRUNCATE … CASCADE` on `users`, which reaches `attempts` and `submissions`. Unlike `audit_logs`, which has no foreign keys and is simply skipped, `submissions` cannot be left out, so a strict trigger would break every session's `test:int` once a submission exists. A production database is never named `*_test` (`prepare-test-db.mjs` uses the same rule).
 
 **New `leaderboard_entries`** (the results snapshot, D8)
 - `exam_id` (FK RESTRICT), `generation`, `position` (1…n, unique order), `rank` (shared on ties), `user_id` (FK RESTRICT, indexed), `attempt_id` (FK RESTRICT, indexed), `name`, `institution`, `category`, `score`, `time_taken_seconds`, `created_at`;
@@ -155,21 +156,28 @@ No enum changes: `ExamStatus` and `AttemptStatus` stay as they are.
 
 | # | Name | Kind | Content |
 |---|---|---|---|
-| EX1 | `<ts>_exam_engine` | generated by Prisma, plus a hand-added first statement | The columns, enums, indexes and table above. The first statement is a guard: it stops with a clear message if `questions` or `attempts` has any row (pre-launch: no code has written either yet, and `lineage_id`, `position`, `question_count` have no meaningful backfill) |
+| EX1 | `<ts>_exam_engine` | generated by Prisma, plus a hand-added first statement | The columns, enums, indexes and table above. The first statement is a guard: it stops with a clear message if `questions`, `attempts` or `submissions` has any row (pre-launch: no product code has written them, and `lineage_id`, `position`, `question_count`, `source` have no meaningful backfill) |
 | EX2 | `<ts>_exam_checks` | hand-written SQL, kept apart so regenerating EX1 never loses it | Every CHECK, partial index and trigger in 2.2 and 2.4. Enum CHECKs compare `::text` |
 
 - Both come **after** payments' migrations. If payments merges while E1 is open, E1 runs `git merge origin/main`, deletes its own unmerged EX1, regenerates it on a fresh `sirat_exam` (`prisma migrate dev --create-only`), puts the guard back as its first statement, renames EX2 to a later timestamp and commits that as a new commit. A migration on `main` is never edited; the CI drift check must stay green.
 - Integration tests use exam windows a few seconds long where a test needs a closed window. No test disables a trigger.
 
+**Old rows in `*_test` databases (lead review, 2026-10-31).** Main's `db-constraints.int-spec.ts` creates exams, attempts and submissions (with `answers: {}`), and `truncateAll` runs only at the start of a suite. So every existing test database (A2's `sirat_test`, payments' `sirat_pay_test`, CI's) still holds exam rows: EX1's guard would stop, and EX2's CHECKs would fail on them. After E1 merged, every session's `test:int` would stop at `prepare-test-db.mjs`.
+- Payments solved the same problem for its own migration in `prepare-test-db.mjs` (their PR 1, not merged yet).
+- E1 extends **that** mechanism to the exam tables after `git merge origin/main` (no second path): on a `*_test` database only, the exam tables are emptied before `migrate deploy`, so EX1 and EX2 meet empty tables.
+- Test: a scratch `*_test` database is brought to the state before EX1 (the earlier migration files applied in order) and given main's old exam rows; then `prepare-test-db.mjs` runs, and EX1 and EX2 must apply.
+- **Dev databases need nothing:** main's dev fixtures create users, payments and registrations, never an exam, question or attempt.
+- **Production:** no exam row exists before E1, so the guard passes. If one ever exists, the guard stops the deploy with a clear message before any change; never a silent backfill.
+
 ### 2.4 Triggers
 
 | Trigger | Refuses |
 |---|---|
-| `exams_frozen_after_publish` | Once `status` is not `draft`: any change to `window_start`, `duration_minutes`, `questions_per_attempt`, `grace_seconds`, `category`, `round_id`, `focus_policy`; `window_end` shortened, or changed after it has passed; `published → draft` while an attempt exists; any status change out of `archived` |
+| `exams_frozen_after_publish` | Once `status` is not `draft`: any change to `window_start`, `duration_minutes`, `questions_per_attempt`, `grace_seconds`, `category`, `round_id`, `focus_policy`, `random_draw`; `window_end` shortened, or changed after it has passed; `published → draft` while an attempt exists; any status change out of `archived` |
 | `questions_frozen_after_publish` | When the exam is not `draft`: DELETE; UPDATE of anything except `is_active` true → false with `deactivated_at`. INSERT into an `archived` exam |
 | `questions_bump_exam_content_version` | Nothing; raises `exams.content_version` after every question INSERT or UPDATE |
 | `attempts_guard` | INSERT unless the exam is `published` and the status is `in_progress`; UPDATE of `user_id`, `exam_id`, `started_at`, `ends_at`, `layout`, `question_count`, `content_version` (**the timer can never be reset**); status moves other than `in_progress → submitted/expired`, `submitted/expired → scored`, `scored → scored` (re-score); DELETE |
-| `submissions_append_only` | UPDATE, DELETE, TRUNCATE |
+| `submissions_append_only` | UPDATE, DELETE; TRUNCATE except in a `*_test` database (2.2) |
 
 ### 2.5 Not in Postgres (cache Redis)
 
@@ -197,8 +205,11 @@ All containers share the VPS clock (chrony, RULEBOOK §11). Time decisions insid
 ### 3.3 Start: `POST /exams/:id/attempts`
 
 1. An existing attempt of this user for this exam → resume (3.6). One indexed read.
-2. Checks: the user row (verified, not blocked, category; one primary-key read), active paid registration (one read, after payments PR 1), exam config from Redis.
-3. Draw the layout in the API: N ids at random from `exam:pool:{id}:{cv}` (`crypto.randomInt`, partial Fisher–Yates), and per question a random option order unless `keep_option_order`.
+2. Checks: the user row (verified, not blocked, category; one primary-key read), paid registration (one read, after payments PR 1), exam config from Redis.
+3. Draw the layout in the API (`crypto.randomInt`, Fisher–Yates) from `exam:pool:{id}:{cv}`:
+   - default (`random_draw = false`, Q2): the pool holds exactly N questions; every student gets all of them, in a random order;
+   - only if the admin chose `random_draw = true`: N questions at random from the larger pool;
+   - per question a random option order, unless `keep_option_order`.
 4. One statement, the database's clock, no lock on the exam row:
 
 ```sql
@@ -325,8 +336,8 @@ ORDER BY a.score DESC, a.time_taken_seconds ASC;
 | State | Exam config | Questions |
 |---|---|---|
 | `draft` | Everything (DTO + DB CHECKs) | Add, edit in place, delete |
-| `published`, before any attempt | `title`; `window_end` extended. Anything else: unpublish first (only before `window_start − 5 min`) | Add; edit = new version; retire |
-| `published`, attempts exist | `title`; `window_end` extended while the window is still open (e.g. after an outage; reason required) | Add; edit = new version (new attempts only); retire. **Never delete** |
+| `published`, before any attempt | `title`; `window_end` extended. Anything else: unpublish first (only before `window_start − 5 min`) | Edit = new version. Add and retire only with `random_draw` (the pool must stay at least N) |
+| `published`, attempts exist | `title`; `window_end` extended while the window is still open (e.g. after an outage; reason required) | Edit = new version (new attempts only). Add and retire only with `random_draw`. **Never delete** |
 | results published | `title` | Frozen in practice (new versions reach no one) |
 | `archived` | Nothing | Nothing |
 
@@ -334,7 +345,8 @@ The database enforces the frozen columns (2.4), so a bug in the API cannot reset
 
 ### 4.2 Publish checks (server)
 
-- At least `questions_per_attempt` active questions.
+- Active questions: exactly `questions_per_attempt` (default, everyone gets the same questions), or at least that many when the admin chose `random_draw` (Q2).
+- After publish, adding or retiring a question in a `random_draw = false` exam is refused (the pool must stay equal to the count); replacing one by a version is allowed. With `random_draw`, a retire that would leave fewer than N active questions is refused.
 - Every question: 2–6 options with unique keys and non-empty texts, the correct key among them (also a CHECK), no duplicate question text in the exam (the old admin form's rule).
 - `window_end − window_start ≥ duration`; `duration ≤ 30` (CHECK).
 - `category` and `round` exist.
@@ -384,7 +396,7 @@ Rules from `07-UI-MIGRATION.md`: `@sirat/ui` components and tokens only, `-stron
 | Screen | Change | PR |
 |---|---|---|
 | `/admin/exams` (exists, read-only) | Real API; "New exam" button; status filter | E5 |
-| `/admin/exams/new` (new) | Config form: title, category (all / one), round, window start and end (Asia/Dhaka, stored UTC), duration, questions per attempt, grace, focus policy | E5 |
+| `/admin/exams/new` (new) | Config form: title, category (all / one), round, window start and end (Asia/Dhaka, stored UTC), duration, questions per attempt, grace, focus policy, and an unticked "Different questions per student (from a larger pool)" box, with a note that students then get different questions | E5 |
 | `/admin/exams/[id]` (exists, read-only) | Edit config (fields frozen by state are shown read-only with the reason); question list with an editor dialog (text, 2–6 options, correct option, explanation, keep order). In a published exam the save button says "Save as version n+1" with a note that started attempts keep theirs. Retire instead of delete. Publish, unpublish and archive dialogs with the server's check results | E5 |
 | Results panel on `/admin/exams/[id]` | Counts by status, snapshot time, build, publish/unpublish results (confirm dialogs) | E5 |
 | `/admin/leaderboard` (exists, mock) | Real `GET /admin/leaderboard`; exam and category filters | E5 |
@@ -404,7 +416,7 @@ Mutations go through Server Actions that call the API server-side with the sessi
 Each protection gets a test that fails with the protection removed (mutation-checked, as in A2). File names are proposals.
 
 **API unit (`pnpm test`)**
-- `layout.spec.ts`: N distinct ids from the pool; permutations valid; `keep_option_order` kept; uses `crypto.randomInt`.
+- `layout.spec.ts`: without `random_draw` every layout holds the same N questions, only the order differs; with it, N distinct ids from the pool; permutations valid; `keep_option_order` kept; uses `crypto.randomInt`.
 - `answers.spec.ts`: length N, `null` or 0…options − 1, wrong length/type/range → 400; events capped.
 - `scoring.spec.ts`: positions → keys through the layout; unanswered; a replaced version scored against the version the student saw.
 - `exam-time.spec.ts`: `ends_at = min(…)`, remaining seconds, the grace boundary (equal accepted, +1 ms refused), `time_taken` capped at `ends_at`.
@@ -413,10 +425,11 @@ Each protection gets a test that fails with the protection removed (mutation-che
 - DTO specs: `score`, `userId`, `startedAt`, `timeTaken`, `role`, unknown fields → 400.
 
 **Integration (`pnpm --filter @sirat/api test:int`, database + Redis)**
-- `exam-constraints.int-spec.ts` (new file; `db-constraints.int-spec.ts` is payments' to change): every CHECK and trigger in 2.2 and 2.4, one active version per lineage, `(lineage_id, version)` unique, `submissions` append-only, results not publishable before `window_end + grace`, attempts not insertable for a draft exam, the timer columns not updatable.
+- `prepare-test-db` test (2.3): EX1 and EX2 apply on a `*_test` database that holds main's old exam rows.
+- `exam-constraints.int-spec.ts` (new file): every CHECK and trigger in 2.2 and 2.4, one active version per lineage, `(lineage_id, version)` unique, `submissions` append-only, results not publishable before `window_end + grace`, attempts not insertable for a draft exam, the timer columns not updatable.
 - `exam-start.int-spec.ts`:
   - unverified email → 403;
-  - unpaid and refunded → 403 (after payments PR 1);
+  - no paid registration → 403 (after payments PR 1, with its payment status names);
   - other category → 404; draft → 404;
   - before / after the window → 409;
   - 10 parallel starts → one attempt, all answers the same;
@@ -497,7 +510,8 @@ Git rule: no rebase and no force-push on a pushed branch. Conflicts are resolved
 | `apps/api/src/app.module.ts` | No change (the modules are already imported; admin controllers live inside `ExamsModule` and `LeaderboardModule`) | — |
 | `apps/api/src/worker.ts` | E3: one import line (`ExamWorkerModule`) | Payments adds its worker module next to it: keep both |
 | `apps/api/src/config/env.ts`, both `.env.example` | E2: an "Exam engine" block at the end, all with defaults (`EXAM_CHECKPOINT_MIN_INTERVAL_SECONDS`, `EXAM_FINALIZE_SWEEP_SECONDS`, `EXAM_SCORING_CONCURRENCY`) | Payments' block also ends these files: keep both |
-| `apps/api/test/helpers.ts`, `db-constraints.int-spec.ts` | No change: exam helpers in a new `test/exam-helpers.ts`, constraints in a new `exam-constraints.int-spec.ts` | — |
+| `apps/api/test/helpers.ts`, `db-constraints.int-spec.ts` | E1, after `git merge origin/main` (payments PR 1 changes both): only the exam parts. `examData()` and `makeAttempt()` fill the new required columns, and the "exam attempts and submissions" block (today it inserts `answers: {}` and no `source`) moves into the new `exam-constraints.int-spec.ts`. New exam helpers go into a new `test/exam-helpers.ts` | Payment helpers and payment blocks are not touched |
+| `apps/api/test/prepare-test-db.mjs` | E1, after payments PR 1 merges | Extends payments' mechanism for old test rows to the exam tables (2.3); no second path |
 | `packages/shared/src/index.ts`, `records.ts`, `dashboard.ts` | E1 (records), E2/E3 (`exam.ts` + one export line; the type changes in 1.3) | The UI and payments sessions may change them too: `git merge origin/main`, keep both |
 | `apps/web/src/data/source.ts`, `data/mock/*`, `data/http/*` | E4, E5 | Coordinated with payments' web days (5.3) |
 | `apps/web/src/components/auth/LogoutButton.tsx` (A2) | E4, one line | After #12 merges, told to Rasel first |
@@ -575,7 +589,7 @@ At most five. Each has a default that applies if it is still unanswered when its
 | # | Question (OPEN-QUESTIONS) | Default | Blocks |
 |---|---|---|---|
 | Q1 | **Format (#4):** question type, marks, negative marking, images, languages? | Multiple choice, one correct answer, 4 options (2–6 allowed), 1 mark each, **no negative marking**, text only (no images), each question in the language the admin types (no paired bn/en versions). Option order shuffled per student, except questions marked "keep order" (e.g. "all of the above") | E1 (CHECKs), E3 (scoring) |
-| Q2 | **Pool (#5):** how many questions in the pool, how many per student? | Set per exam by the admin: the pool must have at least "questions per attempt" active questions; each student gets that many at random. Pool = count means everyone gets the same questions in a different order. The admin's choice; no fixed ratio | E1 (publish check), E2 (draw) |
+| Q2 | **Pool (#5):** how many questions in the pool, how many per student? | **Everyone gets the same questions** (pool = questions per attempt), so the olympiad ranking stays fair; only the question order and the option order are shuffled per student. Different questions per student from a larger pool happen only if the admin ticks that box for an exam (`random_draw`). *Lead's suggestion (2026-10-31); Rasel can change it* | E1 (publish check), E2 (draw) |
 | Q3 | **Window, time and grace (#6, #7, #8):** window length per exam? 30 minutes a hard maximum? Grace after time-up? What if the final submit never arrives? | The admin sets each window (any length of at least one exam duration); 30 minutes stays the hard maximum (CHECK); **grace 30 s**; a late starter gets only the time left in the window (`ends_at = min(start + duration, window end)`); the clock keeps running during a disconnect; **no submit by the end of the grace → the server submits the last checkpoint** (saved at most about 2 minutes earlier, plus one shortly before time-up), or an empty answer sheet if there is none | E2, E3 |
 | Q4 | **Tab switching (#9):** off, log only, or auto-submit after N? | **Log only**, a per-exam switch (`off` / `log`). Leaving the page is recorded and sent with checkpoints and the submit; the admin sees the counts. No warning pop-ups and no auto-submit: on phones, a call or a notification also leaves the page | E2, E4 |
 | Q5 | **Results (#10):** scores on the leaderboard? Ties? What does a student see of their own result? | Leaderboard per exam (each category its own): **rank, name, institution only**, no scores, times or emails for students; admins see everything. Equal score: the faster time ranks higher; equal score and time share a rank (1, 2, 2, 4). After an admin publishes the results, each student sees their own score and rank and a review with the correct answers and explanations | E3, E5 |
@@ -586,7 +600,7 @@ At most five. Each has a default that applies if it is still unanswered when its
 |---|---|
 | D1 | One exam per category (`category` null = everyone). A student sees only their category's exams |
 | D2 | Only `student` and `ambassador` can start an exam. An admin preview without an attempt is P1 |
-| D3 | Starting needs a verified email (lazy verification), an active paid registration (a refunded payment means no access, payments' Q4) and an unblocked account |
+| D3 | Starting needs a verified email (lazy verification), a **paid registration** and an unblocked account. There are no refunds (owner, 2026-10-31, in payments' DECISIONS; not on `main` yet), so access needs only "paid". The payment status names come from payments PR 1, read only |
 | D4 | Answers are option positions. The client never sees question ids, option keys or correct keys |
 | D5 | Skipping and a question palette are allowed; reload, resume and resume on another device are allowed (RULEBOOK 7.1); two devices at once are logged, not blocked |
 | D6 | Scoring right after each submit (spreads the load); no score reaches a client before results are published |
@@ -604,7 +618,7 @@ At most five. Each has a default that applies if it is still unanswered when its
 2. **Schema conflicts with payments.** Migration order, `User` back-relations, `env.ts` and `worker.ts` endings: handled by `git merge origin/main` and regeneration (sections 2.3, 7).
 3. **A2 #12 is needed for the UI.** If it is not merged by 5 November, E4 and E5 slip; the API PRs do not.
 4. **No exam date, no VPS.** The real capacity is unknown until k6 runs on the VPS. No real exam before that and the rest of RULEBOOK §13.
-5. **Question sharing** inside a two-day window (Q2): random draws from a bigger pool reduce it but make students' question sets differ.
+5. **Question sharing** inside a two-day window (Q2): with the same questions for everyone, a student who sat early can pass questions on; shuffled order and options make that slower, not impossible. A bigger pool (`random_draw`) reduces it but makes students' question sets differ, so the admin chooses it per exam.
 6. **Weak networks at time-up.** A 30 s grace with a 0–20 s spread leaves about 10 s for the network. The checkpoint just before time-up and the server-side finalize limit the loss to the last minute or so.
 7. **The session ends mid-exam.** The access token lasts 15 minutes; the open refresh gap after the 25 s API timeout (the lead's order for A2, before 15 November) would end a student's session. The player keeps the answers locally and resumes after login, but the gap must be closed before a real exam.
 8. **Cache Redis** under `allkeys-lru`: an eviction or flush loses checkpoints (only the finalize uses them) and cached questions (re-read from Postgres with a single-flight lock). Memory is measured in k6.
