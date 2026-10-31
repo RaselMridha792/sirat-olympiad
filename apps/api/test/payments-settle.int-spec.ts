@@ -9,9 +9,8 @@ import { randomUUID } from 'node:crypto';
 import { PaymentStatus, RegistrationAttemptStatus } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import type { Prisma } from '@prisma/client';
-import { Queue } from 'bullmq';
 import { EMAIL_TOKEN_TTLS } from '../src/modules/auth/email-tokens.service';
-import { EMAIL_QUEUE, type EmailJobData } from '../src/modules/notifications/email.types';
+import { EmailQueue } from '../src/modules/notifications/email-queue.service';
 import { PaymentsWorker } from '../src/modules/payments/verify/payments.worker';
 import { makePaidPayment, makeRegistrationAttempt, makeUser, paymentData } from './helpers';
 import {
@@ -132,17 +131,28 @@ describe('verify: a confirmed success', () => {
     );
     const s = await startRegistration(env);
     await env.fake.pay(s.invoiceNumber);
-    await env.verifier.verify(s.paymentId, 'callback');
+    // The email is caught at EmailQueue.enqueue, not read back from the shared "email" queue: a worker running on the
+    // same Redis (the dev stack) could take the job first.
+    const enqueue = jest.spyOn(env.app.get(EmailQueue), 'enqueue').mockResolvedValue(true);
+    let calls: Parameters<EmailQueue['enqueue']>[];
+    try {
+      await env.verifier.verify(s.paymentId, 'callback');
+    } finally {
+      calls = [...enqueue.mock.calls]; // read before mockRestore, which clears them
+      enqueue.mockRestore();
+    }
     const user = await env.prisma.user.findUniqueOrThrow({ where: { email: s.email } });
     const issued = await env.prisma.authToken.findFirstOrThrow({
       where: { userId: user.id, type: 'email_verify' },
     });
-    const emails = new Queue<EmailJobData>(EMAIL_QUEUE, { connection: env.queueRedis });
-    const job = await emails.getJob(`verify-email.${issued.id}`);
-    expect(job?.data.message.to).toBe(s.email);
-    const token = /#token=([A-Za-z0-9_-]{43})/.exec(job?.data.message.text ?? '')?.[1];
+    const [kind, key, message] = calls.find(([k]) => k === 'verify-email') ?? [];
+    expect([kind, key, message?.to]).toEqual([
+      'verify-email',
+      `verify-email.${issued.id}`,
+      s.email,
+    ]);
+    const token = /#token=([A-Za-z0-9_-]{43})/.exec(message?.text ?? '')?.[1];
     expect(token).toBeDefined();
-    await job?.remove();
     const res = await caller(env.base)('POST', '/auth/verify-email', { body: { token } });
     expect(res.status).toBe(204);
     expect(
@@ -444,7 +454,12 @@ describe('the worker, end to end', () => {
   it('callback and IPN from a real checkout: the BullMQ worker verifies once and the student can log in', async () => {
     await env.queue.obliterate({ force: true });
     env.fakeOptions.ipnUrl = `${env.base}/api/payments/paystation/ipn`;
-    const worker = new PaymentsWorker(env.verifier, env.reconciler, env.app.get(ConfigService));
+    const worker = new PaymentsWorker(
+      env.verifier,
+      env.reconciler,
+      env.app.get(ConfigService),
+      env.queueName,
+    );
     await worker.onModuleInit();
     try {
       const s = await startRegistration(env);

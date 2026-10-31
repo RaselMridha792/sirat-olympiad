@@ -15,7 +15,7 @@ import {
   type PaymentEnv,
 } from './payment.config';
 import { PAYMENT_CONFIG } from './payments-boot-check';
-import { PaymentQueue } from './verify/payment-queue';
+import { PAYMENT_QUEUE, PAYMENT_QUEUE_NAME, PaymentQueue } from './verify/payment-queue';
 import { PaymentSettlement } from './verify/payment-settlement';
 import { RegistrationEmails } from './verify/registration-emails';
 import { VerifyHints } from './verify/verify-hints';
@@ -63,6 +63,12 @@ const PAYMENT_ENV_KEYS = [
         config.enabled ? new PayStationGateway(config) : null,
     },
     {
+      provide: PAYMENT_QUEUE_NAME,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<EnvVars, true>) =>
+        config.get('PAYMENTS_QUEUE_NAME', { infer: true }) || PAYMENT_QUEUE,
+    },
+    {
       provide: VERIFY_HINTS,
       inject: [REDIS_CACHE],
       useFactory: (redis: Redis) => new VerifyHints(redis),
@@ -86,6 +92,7 @@ const PAYMENT_ENV_KEYS = [
     AuditModule,
     PAYMENT_CONFIG,
     PAYMENT_GATEWAY,
+    PAYMENT_QUEUE_NAME,
     PaymentQueue,
     VerifyRequests,
     PaymentSettlement,

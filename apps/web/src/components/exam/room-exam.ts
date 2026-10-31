@@ -14,6 +14,7 @@ export type RoomExam = Pick<
   | 'durationMinutes'
   | 'questionsPerAttempt'
   | 'violationWarnings'
+  | 'resultsPublished'
 > & {
   attempt: { phase: AttemptPhase; receipt: SubmissionReceipt | null } | null;
 };
@@ -28,6 +29,7 @@ export function toRoomExam(exam: StudentExamDetail): RoomExam {
     durationMinutes: exam.durationMinutes,
     questionsPerAttempt: exam.questionsPerAttempt,
     violationWarnings: exam.violationWarnings,
+    resultsPublished: exam.resultsPublished,
     attempt: exam.attempt && {
       phase: exam.attempt.phase,
       receipt: receipt && {
