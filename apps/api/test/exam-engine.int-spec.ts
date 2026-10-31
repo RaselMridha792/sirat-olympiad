@@ -15,7 +15,15 @@ import type {
   SubmitResult,
 } from '@sirat/shared';
 import { testPrisma } from './helpers';
-import { bootEngineApp, call, type EngineApp, HOUR_MS, loginAs, seedExam } from './exam-engine-app';
+import {
+  bootEngineApp,
+  call,
+  closeEngineApp,
+  type EngineApp,
+  HOUR_MS,
+  loginAs,
+  seedExam,
+} from './exam-engine-app';
 
 const INTERVAL_MS = 1_500;
 // Heavy or timing-sensitive on a shared machine (many starts, short real waits): a generous limit, not the 30 s default.
@@ -30,7 +38,7 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
-  await env?.app.close();
+  await closeEngineApp(env);
   await prisma?.$disconnect();
 });
 
