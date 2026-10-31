@@ -37,6 +37,7 @@ export class StudentExamsService {
     const attempt = await this.prisma.attempt.findUnique({
       where: { userId_examId: { userId, examId } },
       select: {
+        id: true,
         status: true,
         endsAt: true,
         submission: { select: { id: true, createdAt: true, endReason: true } },
@@ -49,6 +50,7 @@ export class StudentExamsService {
       violationWarnings: EXAM_VIOLATION_WARNINGS,
       serverNow: now.toISOString(),
       attempt: attempt && {
+        attemptId: attempt.id,
         phase: attemptPhase(attempt, config.graceSeconds, now),
         endsAt: attempt.endsAt.toISOString(),
         receipt: attempt.submission && {

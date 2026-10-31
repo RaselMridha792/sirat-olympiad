@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Clock, Eye, EyeOff, Info, Search, Trophy, Users } from 'lucide-react';
-import { CATEGORIES, type AdminLeaderboardRow } from '@sirat/shared';
+import type { AdminLeaderboardRow } from '@sirat/shared';
 import {
   Avatar,
   Badge,
@@ -16,14 +16,7 @@ import {
 } from '@sirat/ui';
 import { entryStatusTone } from '@/components/status';
 import { getData } from '@/data';
-import {
-  hrefWith,
-  parseEnum,
-  parseId,
-  parsePageQuery,
-  totalPages,
-  type SearchParams,
-} from '@/data/query';
+import { hrefWith, parseId, parsePageQuery, totalPages, type SearchParams } from '@/data/query';
 import type { Locale } from '@/i18n';
 import { common } from '@/i18n/common';
 import { formatDateTime, formatDuration, formatNumber } from '@/i18n/format';
@@ -34,6 +27,7 @@ import { requireAccess } from '@/lib/session';
 
 const PATH = '/admin/leaderboard';
 const PAGE_SIZE = 20;
+const EXAM_TABS = 8;
 
 type M = Messages<typeof adminLeaderboardMessages>;
 type C = Messages<typeof common>;
@@ -44,9 +38,9 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 /**
- * Staff view of the precomputed snapshot: scores, times and categories (students never get these).
- * Paging, search and filters are server-side. The public/hidden switch stays read-only until the
- * settings endpoint exists (owner decision), so only its state is shown.
+ * Staff view of one exam's precomputed snapshot: scores, times, emails and categories (students
+ * never get these), also before the results are published. Paging and search are server-side.
+ * Publishing happens on the exam's page (results panel); here only its state is shown.
  */
 export default async function AdminLeaderboardPage({
   searchParams,
@@ -61,16 +55,14 @@ export default async function AdminLeaderboardPage({
     getData(params),
   ]);
   const query = parsePageQuery(params, PAGE_SIZE);
-  const category = parseEnum(params.category, CATEGORIES);
-  const view = await data.admin.getLeaderboard({
-    ...query,
-    roundId: parseId(params.round),
-    category,
-  });
+  const [view, recent] = await Promise.all([
+    data.admin.getLeaderboard({ ...query, exam: parseId(params.exam) }),
+    data.admin.listExams({ page: 1, pageSize: EXAM_TABS }),
+  ]);
 
-  const roundId = view.round?.id;
+  const examId = view.exam?.id;
   const pages = totalPages(view.total, view.pageSize);
-  const filtered = Boolean(query.q || category);
+  const filtered = Boolean(query.q);
   // Medals only for the real top three: a search or category filter would crown the wrong people.
   const podium =
     view.page === 1 && !filtered && view.items.length >= 3 ? view.items.slice(0, 3) : [];
@@ -78,23 +70,16 @@ export default async function AdminLeaderboardPage({
   const tableRows = podium.length === 3 ? view.items.slice(3) : view.items;
   const dash = <span className="font-normal text-ink-muted">{m.none}</span>;
 
-  const roundTabs = view.rounds.map((round) => ({
-    key: round.id,
-    label: round.name,
-    href: hrefWith(PATH, { round: round.id, category, q: query.q }),
+  // The most recent exams (any other opens from its exam page); the one shown is always a tab.
+  const tabExams: Array<{ id: string; title: string }> = recent.items.filter(
+    (exam) => exam.status !== 'draft',
+  );
+  if (view.exam && !tabExams.some((exam) => exam.id === view.exam?.id)) tabExams.push(view.exam);
+  const examTabs = tabExams.map((exam) => ({
+    key: exam.id,
+    label: exam.title,
+    href: hrefWith(PATH, { exam: exam.id, q: query.q }),
   }));
-  const categoryTabs = [
-    {
-      key: 'all',
-      label: m.filters.allCategories,
-      href: hrefWith(PATH, { round: roundId, q: query.q }),
-    },
-    ...CATEGORIES.map((key) => ({
-      key,
-      label: c.categories[key],
-      href: hrefWith(PATH, { round: roundId, category: key, q: query.q }),
-    })),
-  ];
 
   return (
     <>
@@ -105,21 +90,10 @@ export default async function AdminLeaderboardPage({
       />
 
       <Card className="mb-6 flex flex-col gap-4 px-4 py-4 2xl:flex-row 2xl:items-center 2xl:justify-between">
-        {roundTabs.length > 0 ? (
-          <Tabs
-            items={roundTabs}
-            activeKey={roundId ?? ''}
-            label={m.filters.rounds}
-            linkAs={Link}
-          />
+        {examTabs.length > 0 ? (
+          <Tabs items={examTabs} activeKey={examId ?? ''} label={m.filters.exams} linkAs={Link} />
         ) : null}
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-          <Tabs
-            items={categoryTabs}
-            activeKey={category ?? 'all'}
-            label={m.filters.categories}
-            linkAs={Link}
-          />
           <SearchBox
             id="admin-leaderboard-search"
             defaultValue={query.q}
@@ -127,7 +101,7 @@ export default async function AdminLeaderboardPage({
             placeholder={m.filters.searchPlaceholder}
             submitLabel={c.search.submit}
             action={PATH}
-            preserve={{ round: roundId, category }}
+            preserve={{ exam: examId }}
             icon={<Search size={16} />}
           />
         </div>
@@ -136,7 +110,7 @@ export default async function AdminLeaderboardPage({
       {view.snapshotAt === null ? (
         <EmptyState
           icon={<Trophy size={26} />}
-          title={view.round ? m.empty.notComputed(view.round.name) : m.empty.notComputedAny}
+          title={view.exam ? m.empty.notComputed(view.exam.title) : m.empty.notComputedAny}
           description={m.empty.notComputedText}
         />
       ) : (
@@ -154,7 +128,7 @@ export default async function AdminLeaderboardPage({
               action={
                 filtered ? (
                   <Link
-                    href={hrefWith(PATH, { round: roundId })}
+                    href={hrefWith(PATH, { exam: examId })}
                     className="text-sm font-semibold text-secondary underline-offset-4 hover:underline"
                   >
                     {m.empty.clear}
@@ -184,7 +158,7 @@ export default async function AdminLeaderboardPage({
 
               {tableRows.length > 0 ? (
                 <DataTable
-                  caption={m.table.caption(view.round?.name ?? m.title)}
+                  caption={m.table.caption(view.exam?.title ?? m.title)}
                   rows={tableRows}
                   rowKey={(row) => row.userId}
                   columns={[
@@ -262,7 +236,7 @@ export default async function AdminLeaderboardPage({
         page={view.page}
         totalPages={pages}
         linkAs={Link}
-        hrefFor={(page) => hrefWith(PATH, { round: roundId, category, q: query.q, page })}
+        hrefFor={(page) => hrefWith(PATH, { exam: examId, q: query.q, page })}
         label={c.pagination.label}
         prevLabel={c.pagination.prev}
         nextLabel={c.pagination.next}

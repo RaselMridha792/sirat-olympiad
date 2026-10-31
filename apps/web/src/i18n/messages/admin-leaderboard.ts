@@ -1,15 +1,17 @@
 import { defineMessages } from '../messages.ts';
 
-/** Admin leaderboard (/admin/leaderboard). Round names and participant names are data. */
+/** Admin leaderboard (/admin/leaderboard), one snapshot per exam. Exam titles and participant names are data. */
 export const adminLeaderboardMessages = defineMessages({
   en: {
     title: 'Leaderboard',
     subtitle: 'Full results with scores — staff only',
-    publicStatus: { label: 'Public status', live: 'Live on site', hidden: 'Hidden' },
+    publicStatus: {
+      label: 'Students',
+      live: 'Results published',
+      hidden: 'Not published yet',
+    },
     filters: {
-      rounds: 'Rounds',
-      categories: 'Categories',
-      allCategories: 'All',
+      exams: 'Exams',
       searchLabel: 'Search participants',
       searchPlaceholder: 'Name, email or institution',
     },
@@ -22,7 +24,7 @@ export const adminLeaderboardMessages = defineMessages({
     rankNo: (n: string) => `#${n}`,
     points: (n: string) => `${n} pts`,
     table: {
-      caption: (round: string) => `${round} results`,
+      caption: (exam: string) => `${exam} results`,
       rank: 'Rank',
       participant: 'Participant',
       category: 'Category',
@@ -32,24 +34,26 @@ export const adminLeaderboardMessages = defineMessages({
     },
     none: '—',
     empty: {
-      notComputed: (round: string) => `No results computed for ${round} yet`,
+      notComputed: (exam: string) => `No results computed for ${exam} yet`,
       notComputedAny: 'No results computed yet',
       notComputedText:
         'Results appear here after the exam window closes for everyone and the snapshot is computed.',
       noMatch: 'No participants found',
-      noMatchText: 'Try another name, email, institution or category.',
-      noEntriesText: 'Nobody has a result in this round yet.',
-      clear: 'Clear filters',
+      noMatchText: 'Try another name, email or institution.',
+      noEntriesText: 'Nobody has a result in this exam yet.',
+      clear: 'Clear search',
     },
   },
   bn: {
     title: 'লিডারবোর্ড',
     subtitle: 'নম্বরসহ পূর্ণ ফলাফল — শুধু স্টাফদের জন্য',
-    publicStatus: { label: 'প্রকাশের অবস্থা', live: 'সাইটে প্রকাশিত', hidden: 'লুকানো' },
+    publicStatus: {
+      label: 'শিক্ষার্থীরা',
+      live: 'ফলাফল প্রকাশিত',
+      hidden: 'এখনো প্রকাশিত নয়',
+    },
     filters: {
-      rounds: 'রাউন্ড',
-      categories: 'ক্যাটাগরি',
-      allCategories: 'সব',
+      exams: 'পরীক্ষা',
       searchLabel: 'অংশগ্রহণকারী খুঁজুন',
       searchPlaceholder: 'নাম, ইমেইল বা প্রতিষ্ঠান',
     },
@@ -62,7 +66,7 @@ export const adminLeaderboardMessages = defineMessages({
     rankNo: (n: string) => `#${n}`,
     points: (n: string) => `${n} পয়েন্ট`,
     table: {
-      caption: (round: string) => `${round}-এর ফলাফল`,
+      caption: (exam: string) => `${exam}-এর ফলাফল`,
       rank: 'অবস্থান',
       participant: 'অংশগ্রহণকারী',
       category: 'ক্যাটাগরি',
@@ -72,13 +76,13 @@ export const adminLeaderboardMessages = defineMessages({
     },
     none: '—',
     empty: {
-      notComputed: (round: string) => `${round}-এর ফলাফল এখনো হিসাব করা হয়নি`,
+      notComputed: (exam: string) => `${exam}-এর ফলাফল এখনো হিসাব করা হয়নি`,
       notComputedAny: 'এখনো কোনো ফলাফল হিসাব করা হয়নি',
       notComputedText: 'সবার পরীক্ষার সময় শেষ হলে ফলাফল হিসাব করা হয়, তারপর এখানে দেখা যাবে।',
       noMatch: 'কোনো অংশগ্রহণকারী পাওয়া যায়নি',
-      noMatchText: 'অন্য নাম, ইমেইল, প্রতিষ্ঠান বা ক্যাটাগরি দিয়ে চেষ্টা করুন।',
-      noEntriesText: 'এই রাউন্ডে এখনো কারো ফলাফল নেই।',
-      clear: 'ফিল্টার মুছে দিন',
+      noMatchText: 'অন্য নাম, ইমেইল বা প্রতিষ্ঠান দিয়ে চেষ্টা করুন।',
+      noEntriesText: 'এই পরীক্ষায় এখনো কারো ফলাফল নেই।',
+      clear: 'সার্চ মুছে দিন',
     },
   },
 });

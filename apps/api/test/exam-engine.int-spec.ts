@@ -425,7 +425,10 @@ describe('the final submit', () => {
       endReason: 'submitted',
     });
     const detail = await call<StudentExamDetail>(env, 'GET', `/exams/${exam.id}`, student.cookie);
-    expect(detail.json).toMatchObject({ state: 'submitted', attempt: { phase: 'submitted' } });
+    expect(detail.json).toMatchObject({
+      state: 'submitted',
+      attempt: { attemptId: again.json.attemptId, phase: 'submitted' },
+    });
   });
 });
 
