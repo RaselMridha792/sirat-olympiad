@@ -63,6 +63,33 @@ function correctPositions(view: AttemptView, questions: SeededQuestion[]): numbe
 }
 const wrong = (p: number) => (p + 1) % 4;
 
+describe('who reaches the results routes', () => {
+  // GET /leaderboard has no @Roles: the deny-by-default AuthGuard makes it "any signed-in user", never public (it is
+  // not @Public(), so app-routes.int-spec.ts would fail if it were opened without being on the reviewed allow-list).
+  it('refuses every results route without a session (401)', async () => {
+    const someId = '00000000-0000-7000-8000-000000000000';
+    for (const path of [
+      '/leaderboard',
+      `/leaderboard?exam=${someId}`,
+      '/admin/leaderboard',
+      `/attempts/${someId}/review`,
+      `/admin/exams/${someId}/results`,
+      `/admin/exams/${someId}/attempts`,
+    ])
+      expect({ path, status: (await call(env, 'GET', path, '')).status }).toEqual({
+        path,
+        status: 401,
+      });
+  });
+
+  it('lets any signed-in role read the student leaderboard', async () => {
+    for (const role of ['student', 'jury', 'manager'] as const) {
+      const { cookie } = await loginAs(env, prisma, { role }, { registered: false });
+      expect((await call(env, 'GET', '/leaderboard', cookie)).status).toBe(200);
+    }
+  });
+});
+
 describe('one exam from start to published results', () => {
   it('scores, finalizes, builds, publishes, and shows only what students may see', async () => {
     const { exam, questions } = await seedExam(env, prisma, {
