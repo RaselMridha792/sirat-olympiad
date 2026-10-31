@@ -53,10 +53,13 @@ cat > "$T/bin/curl" <<'SH'
 echo "$*" >> "$PINGS"
 SH
 # A dump killed midway: when KILL_DUMP is set, the pg_dump call writes some bytes and is killed.
+# The ops alert: with OPS_ALERTS set, the ops-alert call is written down and answers OPS_ALERT_EXIT (default 0);
+# without it the call reaches the real Docker, where this project has no api service (as when the api is down).
 REAL_DOCKER="$(command -v docker)"
 cat > "$T/bin/docker" <<SH
 #!/usr/bin/env bash
 if [ -n "\${KILL_DUMP:-}" ] && [[ "\$*" == *pg_dump* ]]; then head -c 300000 /dev/urandom; kill -9 \$\$; fi
+if [ -n "\${OPS_ALERTS:-}" ] && [[ "\$*" == *ops-alert.js* ]]; then echo "\$*" >> "\$OPS_ALERTS"; exit "\${OPS_ALERT_EXIT:-0}"; fi
 exec "$REAL_DOCKER" "\$@"
 SH
 chmod +x "$T/bin/curl" "$T/bin/docker"
@@ -140,6 +143,28 @@ ok=1
   [ "$(find "$T/remote/hourly" -type f | wc -l)" -eq 2 ] && last_ping | grep -q '/fail$' && ok=0
 result "$ok" "a dump killed midway leaves no new copy (nor its .work.* after the next run's start), pings /fail"
 
+# 3b. The ops alert (L10): raised through the API with the step's number; when the API cannot raise it, the run still
+#     fails with /fail.
+: > "$T/pings.log"
+: > "$T/alerts.log"
+status=0; OPS_ALERTS="$T/alerts.log" KILL_DUMP=1 run_backup || status=$?
+ok=1
+[ "$status" -ne 0 ] && [ "$(wc -l < "$T/alerts.log")" -eq 1 ] &&
+  grep -q 'exec -T api node dist/cli/ops-alert.js --kind ops.backup_failed --meta step=3$' "$T/alerts.log" &&
+  last_ping | grep -q '/fail$' && ok=0
+result "$ok" "a failed run raises ops.backup_failed through the API with the step's number (3 = dump)"
+: > "$T/pings.log"
+: > "$T/alerts.log"
+status=0; OPS_ALERTS="$T/alerts.log" OPS_ALERT_EXIT=1 KILL_DUMP=1 run_backup || status=$?
+ok=1
+[ "$status" -ne 0 ] && grep -q 'the ops alert could not be raised' "$T/out.log" && last_ping | grep -q '/fail$' && ok=0
+result "$ok" "when ops-alert fails, the run still exits non-zero and the heartbeat still gets /fail"
+: > "$T/pings.log"
+status=0; KILL_DUMP=1 run_backup || status=$?
+ok=1
+[ "$status" -ne 0 ] && grep -q 'the ops alert could not be raised' "$T/out.log" && last_ping | grep -q '/fail$' && ok=0
+result "$ok" "with no api container at all, the same (the real docker exec fails)"
+
 # 4. A remote that does not exist.
 config "BACKUP_REMOTE=nosuchremote:somewhere"
 : > "$T/pings.log"
@@ -179,11 +204,13 @@ ok=1
 result "$ok" "--accept-smaller cannot be combined with --verify"
 psql -c "INSERT INTO users (email, note) SELECT 'again' || g || '@test.invalid', md5(g::text) FROM generate_series(1, 20000) g" > /dev/null
 
-# 7. Retention: the newest three copies stay.
-for _ in 1 2 3; do run_backup || true; sleep 1; done
+# 7. Retention: the newest three copies stay (and successful runs raise no ops alert).
+: > "$T/alerts.log"
+for _ in 1 2 3; do OPS_ALERTS="$T/alerts.log" run_backup || true; sleep 1; done
 ok=1
-[ "$(copies)" -eq 3 ] && [ "$(find "$T/backups" -maxdepth 1 -name 'sirat-*.manifest.json' | wc -l)" -eq 3 ] && ok=0
-result "$ok" "only the newest three copies are kept here"
+[ "$(copies)" -eq 3 ] && [ "$(find "$T/backups" -maxdepth 1 -name 'sirat-*.manifest.json' | wc -l)" -eq 3 ] &&
+  [ ! -s "$T/alerts.log" ] && ok=0
+result "$ok" "only the newest three copies are kept here, and successful runs raise no ops alert"
 
 # 8. --verify.
 status=0; run_backup --verify || status=$?

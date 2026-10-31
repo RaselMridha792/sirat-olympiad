@@ -21,6 +21,19 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - **The CSV:** core's `common/csv.ts` (BOM, CRLF, formula-injection prefix); streamed in batches of 500, never stored; audited with the filter and the count, never the rows.
 6. **No address in logs:** the request logger keeps only the method, the path and the status; the book module has no logger (`book-no-logs.spec.ts`); audit rows carry ids, counts and filters only.
 7. **Seed:** `book_title` ("Sirat Leadership Olympiad book" until an admin sets the real one) and `book_cover_image_id` (null). RUNBOOK §9 asks for both before registration opens.
+## 2026-11-01 — Alert categories, their own caps, and the ops-alert command (L10; exam session, A2's plan and handover)
+
+1. **Categories:** `security`, `payments`, `ops`. `ALERT_CATEGORY` is a `Record<SecurityAlertKind, AlertCategory>`, so a new kind without a category fails typecheck (payments' kinds included). The email subject names the category. The "Account:" line names the account when there is one. Without one, a login alert keeps "no account with that email" (owner-approved, #7: someone is trying an email that has no account). Payments and ops alerts then have no Account line: they carry their own details, and the login wording would mislead there (a payment set aside for `email_taken`, for example).
+2. **Caps per category (owner Q2, launch-plan default 6 each):** the limiter's hourly key is per category, so a flood of failed logins can never use up the cap and silence a payment or backup alert. `SECURITY_ALERT_EMAILS_PER_HOUR` keeps its name and now means "per category". The 10-minute pause per kind is unchanged.
+3. **Audit actions keep `security.<kind>`** (for example `security.ops.backup_failed`), so payments' and A2's existing queries and tests stay valid.
+4. **Boot warning:** a production server (`NODE_ENV=production`) with a blank `SECURITY_ALERT_EMAIL` logs one warning at boot from `SecurityAlerts.onModuleInit`; `main.ts` is unchanged. It never logs an address.
+5. **`ops-alert` CLI** (`apps/api/src/cli/ops-alert.ts`, `pnpm --filter @sirat/api ops:alert`):
+   - **Allowed kinds:** only those of the `ops` category, so a script can't forge a security or payments alert. Today that is `ops.backup_failed`, `ops.monitor_failed` and `ops.alert_test`.
+   - **Details:** numeric `key=value` only (at most 10), so no text, and so no personal data, reaches an email.
+   - **Before raising:** it checks the database and both Redis, because the audit write never throws, and the limiter and the email queue skip a Redis that is not ready yet. Then it waits until the email is queued.
+6. **`backup.sh` uses it** on any failure, after the heartbeat's `/fail`: `ops-alert --kind ops.backup_failed --meta step=<n>`, with a number per step and a 60 s timeout.
+   - **Best effort (lead):** when the API cannot raise it (the api container down is a likely moment for a failed backup), the run still exits non-zero, and the heartbeat, which does not depend on the app, is the alert.
+   - **Tests:** the call and its step number; an ops-alert that fails; no api service at all; successful runs raise nothing.
 
 ## 2026-11-01 — TLS behind Cloudflare, security headers and nginx logs (Claude; LAUNCH-PLAN L3, lead review)
 
