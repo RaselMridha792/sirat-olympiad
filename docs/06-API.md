@@ -28,7 +28,7 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `POST /payments/paystation/ipn` | Public | Re-confirm via status API; idempotent |
 | | `GET /payments/mine` | Auth | |
 | exams | `GET /exams`, `GET /exams/:id` | Role(student, ambassador) | Window state, never questions. Exam engine (below). Built (E2) |
-| attempts | `POST /exams/:id/attempts` | Role(student, ambassador) + verified (+ paid, after payments PR 1) | Start or resume (server clock). Built (E2) |
+| attempts | `POST /exams/:id/attempts` | Role(student, ambassador) + verified email + paid registration | Start or resume (server clock). Built (E2) |
 | | `GET /attempts/me?exam=:id` | Owner | Resume. Built (E2) |
 | | `PUT /attempts/:id/checkpoint` | Owner | Redis only. Built (E2) |
 | | `POST /attempts/:id/submit` | Owner | Idempotent by attempt and `requestId`. Built (E2) |
@@ -59,7 +59,7 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 |---|---|---|
 | `GET /exams` | — | `StudentExamListItem[]`: card, `state` (`upcoming`/`open`/`in_progress`/`submitted`/`closed`, from the server clock), `resultsPublished` |
 | `GET /exams/:id` | — | `StudentExamDetail`: card, grace, `violationWarnings` (5), `serverNow`, the student's attempt (`phase`, `endsAt`, receipt) |
-| `POST /exams/:id/attempts` | — | 201 new / 200 existing `AttemptView`: questions as texts in this attempt's order, options as texts in their shuffled order, `remainingSeconds` and `serverNow` from the server, the last checkpoint's answers and the server's violation count. 403 `email_unverified`; 409 `not_open_yet` / `window_closed`. An existing attempt in any phase answers 200 (a submitted one carries its receipt and no questions) |
+| `POST /exams/:id/attempts` | — | 201 new / 200 existing `AttemptView`: questions as texts in this attempt's order, options as texts in their shuffled order, `remainingSeconds` and `serverNow` from the server, the last checkpoint's answers and the server's violation count. 403 `email_unverified`, `registration_required` (no paid registration: read only from payments' tables); 409 `not_open_yet` / `window_closed`. An existing attempt in any phase answers 200 (a submitted one carries its receipt and no questions) |
 | `GET /attempts/me?exam=:id` | — | The same `AttemptView` (resume after a reload or on another device); 404 when none |
 | `PUT /attempts/:id/checkpoint` | `seq`, `answers` (one option position or null per question), `violationCount`, `events` (≤ 300 `{type, at}`) | Redis only, no database write. 200 `{savedSeq, violationCount, remainingSeconds, serverNow}`; an older `seq` changes nothing. 429 `too_soon` + `Retry-After` within 20 s of the last stored checkpoint (the violation count is kept even then; it never goes down). 409 `time_over` (after `ends_at` + grace), `already_submitted`; 400 `answers_invalid`; 503 `checkpoint_unavailable` (the client keeps its local copy and retries) |
 | `POST /attempts/:id/submit` | `requestId` (uuid), `answers`, `endReason` (`submitted`, `time_up`, `violations`), `violationCount`, `events` | One transaction. 200 `{receiptId, submittedAt, endReason, alreadySubmitted}`; a repeat answers the first receipt. 409 `time_over` (after `ends_at` + grace), `request_id_conflict`; 400 `answers_invalid`, `violations_not_reached` (`violations` needs more than 5). `time_taken` is computed by the server and never passes `ends_at` |

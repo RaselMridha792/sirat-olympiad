@@ -74,6 +74,17 @@ describe('who may take an exam', () => {
     });
   });
 
+  it('needs a paid registration to start (EXAM-PLAN D3)', async () => {
+    const { exam } = await seedExam(env, prisma);
+    const unregistered = await loginAs(env, prisma, {}, { registered: false });
+    expect((await call(env, 'GET', '/exams', unregistered.cookie)).status).toBe(200);
+    expect(await start(exam.id, unregistered.cookie)).toMatchObject({
+      status: 403,
+      json: { details: ['registration_required'] },
+    });
+    expect(await prisma.attempt.count({ where: { userId: unregistered.id } })).toBe(0);
+  });
+
   it('shows only published exams for everyone or the own category; others are 404', async () => {
     const mine = await seedExam(env, prisma, { data: { category: 'activist' } });
     const all = await seedExam(env, prisma);

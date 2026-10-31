@@ -8,7 +8,7 @@ import { ACCESS_COOKIE } from '../src/modules/auth/access-token.service';
 import { SessionService } from '../src/modules/auth/session.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { REDIS_CACHE } from '../src/redis/redis.module';
-import { examData, makeUser } from './helpers';
+import { examData, makePaidPayment, makeUser } from './helpers';
 
 /*
  * Shared setup for the exam engine's HTTP tests: the real AppModule against the *_test database, a Prisma service that
@@ -59,10 +59,12 @@ export async function bootEngineApp(checkpointIntervalMs: number): Promise<Engin
   };
 }
 
+/** A verified student with a paid registration (unless `registered: false`), logged in. */
 export async function loginAs(
   env: EngineApp,
   prisma: PrismaClient,
   data: Partial<Prisma.UserUncheckedCreateInput> = {},
+  { registered = true }: { registered?: boolean } = {},
 ) {
   const user = await makeUser(prisma, {
     role: 'student',
@@ -70,6 +72,10 @@ export async function loginAs(
     category: 'activist' satisfies Category,
     ...data,
   });
+  if (registered) {
+    const payment = await makePaidPayment(prisma, user.id);
+    await prisma.registration.create({ data: { userId: user.id, paymentId: payment.id } });
+  }
   const issued = await env.sessions.start(
     { id: user.id, role: user.role },
     { ip: '203.0.113.20', userAgent: 'jest' },

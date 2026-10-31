@@ -10,7 +10,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 4. **The exam cache never holds a correct key or an explanation** (only text, options and the keep-order flag), so a cache leak cannot reveal an answer. Pools are keyed by content version, loaded once under a 3 s lock (a cold cache cannot stampede Postgres); Redis trouble falls back to Postgres. A publish warms the pool in the API; the delayed warm-up before the window comes with the worker (E3).
 5. **Checkpoints are one Lua step in the cache Redis, with no database read or write** (tested with a query counter on the app's Prisma client). Answers are stored only for a newer `seq` and at most every 20 s (429 `too_soon`); the violation count only rises and is kept even on a 429. The interval is a Nest provider (tests shorten it), not an env variable, so `env.ts` stays untouched.
 6. **Submit locks one attempt row,** answers the first receipt to any repeat, refuses a request id another attempt used (409), and stores `end_reason`, the highest violation count (body, events, server) and the events. `violations` needs more than `EXAM_VIOLATION_WARNINGS` (5). `time_taken` is the server's and never passes `ends_at`.
-7. **Not yet:** the paid-registration check (with payments PR 1, before E2's PR opens), scoring and the server-side finalize (worker, E3).
+7. **Paid registration** (after payments PR 1a): a start needs the student's registration with its payment `paid` (403 `registration_required`), read only from payments' tables. There are no refunds (owner), so nothing else ends access. **Not yet:** scoring and the server-side finalize (worker, E3).
 
 ## 2026-10-31 — E1: exam schema and exam admin (Claude; plan `docs/plans/EXAM-PLAN.md`, owner's exam rules)
 

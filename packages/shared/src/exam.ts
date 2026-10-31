@@ -109,6 +109,7 @@ export type SubmitResult = SubmissionReceipt & { alreadySubmitted: boolean };
 /** Reason codes in `ApiError.details` on the student exam routes. */
 export const EXAM_STUDENT_REFUSALS = [
   'account_blocked',
+  'registration_required',
   'email_unverified',
   'not_open_yet',
   'window_closed',

@@ -24,6 +24,19 @@ export async function studentAccount(
   return { category: user.category, emailVerifiedAt: user.emailVerifiedAt };
 }
 
+/**
+ * Taking an exam needs a paid registration (EXAM-PLAN D3). There are no refunds (owner), and a registration can only
+ * point at a paid payment (payments' trigger), but the payment's status is read here too. Read only: the registration
+ * and payment tables belong to the payments module.
+ */
+export async function hasPaidRegistration(prisma: PrismaService, userId: string): Promise<boolean> {
+  const registration = await prisma.registration.findUnique({
+    where: { userId },
+    select: { payment: { select: { status: true } } },
+  });
+  return registration?.payment.status === 'paid';
+}
+
 /** A student sees published exams for everyone or for their own category (EXAM-PLAN D1). */
 export const visibleTo = (
   config: ExamConfig | null,

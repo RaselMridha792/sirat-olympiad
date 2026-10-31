@@ -21,7 +21,7 @@ import { uuidv7 } from '../../common/uuidv7';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AuthUser } from '../auth/access-token.service';
 import { type ExamConfig, ExamCache } from '../exams/exam-cache';
-import { studentAccount, visibleTo } from '../exams/student-access';
+import { hasPaidRegistration, studentAccount, visibleTo } from '../exams/student-access';
 import { type AttemptMeta, AttemptStore, type CheckpointOutcome } from './attempt-store';
 import type { CheckpointDto, SubmitDto } from './dto/attempt.dto';
 import { attemptPhase, remainingSeconds, timeTakenSeconds, withinGrace } from './exam-time';
@@ -69,7 +69,8 @@ export class AttemptsService {
     const existing = await this.findAttempt(user.id, examId);
     if (existing) return { created: false, view: await this.view(existing, config) };
     if (!student.emailVerifiedAt) throw new ForbiddenException(['email_unverified']);
-    // The paid-registration check comes with payments PR 1 (EXAM-PLAN section 0, D3).
+    if (!(await hasPaidRegistration(this.prisma, user.id)))
+      throw new ForbiddenException(['registration_required']);
 
     for (let tries = 0; tries < 2; tries++) {
       const now = new Date();
