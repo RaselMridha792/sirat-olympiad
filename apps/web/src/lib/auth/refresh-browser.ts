@@ -1,15 +1,11 @@
 import { createRefresher, parseRetryAfter, type RefreshResult } from './refresh';
+import { timeoutSignal } from './timeout';
 
 const LOCK_NAME = 'sirat-refresh';
 /** The POST gives up after this; so a tab never holds the lock longer. */
 const POST_TIMEOUT_MS = 10_000;
 /** Waiting for another tab's refresh longer than this counts as "unavailable" (try again). */
 const LOCK_WAIT_MS = 15_000;
-
-const timeout = (ms: number): AbortSignal | undefined =>
-  typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-    ? AbortSignal.timeout(ms)
-    : undefined;
 
 let refresher: (() => Promise<RefreshResult>) | null = null;
 
@@ -23,14 +19,14 @@ export function refreshSession(): Promise<RefreshResult> {
         cache: 'no-store',
         keepalive: true, // finishes even if the tab navigates away mid-rotation
         headers: { 'X-Requested-With': 'sirat-web' },
-        signal: timeout(POST_TIMEOUT_MS),
+        signal: timeoutSignal(POST_TIMEOUT_MS),
       });
       return { status: res.status, retryAfter: parseRetryAfter(res.headers.get('Retry-After')) };
     },
     withLock:
       typeof navigator !== 'undefined' && navigator.locks
         ? async (fn) =>
-            await navigator.locks.request(LOCK_NAME, { signal: timeout(LOCK_WAIT_MS) }, fn)
+            await navigator.locks.request(LOCK_NAME, { signal: timeoutSignal(LOCK_WAIT_MS) }, fn)
         : undefined,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   });
