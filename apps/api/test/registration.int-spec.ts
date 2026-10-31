@@ -456,6 +456,103 @@ describe("this browser's attempt: current, resume, retry, cancel", () => {
     });
     expect((await call('POST', '/registrations/current/resume', { cookie })).status).toBe(409);
   });
+
+  it('a missing, forged, abandoned or finished attempt: each route answers without acting on anything', async () => {
+    const forged = `sirat_reg=${'A'.repeat(43)}`; // well-formed, but no attempt has this hash
+    for (const cookie of [undefined, forged, 'sirat_reg=not-a-token']) {
+      expect((await call('GET', '/registrations/current', { cookie })).status).toBe(404);
+      for (const action of ['resume', 'retry', 'cancel']) {
+        const res = await call('POST', `/registrations/current/${action}`, { cookie });
+        expect(res.status).toBe(404);
+        expect(await json(res)).toMatchObject({ code: 'NO_REGISTRATION' });
+      }
+    }
+
+    // Abandoned (cancelled): the cookie no longer leads anywhere.
+    const abandonedRes = await start(form());
+    const abandoned = regCookie(abandonedRes);
+    const a = await json(abandonedRes);
+    await prisma.payment.update({
+      where: { invoiceNumber: a.invoiceNumber as string },
+      data: { status: PaymentStatus.failed },
+    });
+    expect(
+      (await call('POST', '/registrations/current/cancel', { cookie: abandoned })).status,
+    ).toBe(204);
+    for (const action of ['resume', 'retry', 'cancel'])
+      expect(
+        (await call('POST', `/registrations/current/${action}`, { cookie: abandoned })).status,
+      ).toBe(404);
+    expect((await call('GET', '/registrations/current', { cookie: abandoned })).status).toBe(404);
+
+    // Completed (the account exists): the state only, and nothing can be resumed, retried or cancelled.
+    const doneRes = await start(form());
+    const done = regCookie(doneRes);
+    const d = await json(doneRes);
+    const attempt = await prisma.pendingRegistration.findFirstOrThrow({
+      where: { payments: { some: { invoiceNumber: d.invoiceNumber as string } } },
+    });
+    const owner = await makeUser(prisma);
+    await prisma.pendingRegistration.update({
+      where: { id: attempt.id },
+      data: { status: 'completed', userId: owner.id, completedAt: new Date(), payload: undefined },
+    });
+    expect(await json(await call('GET', '/registrations/current', { cookie: done }))).toMatchObject(
+      {
+        state: 'completed',
+        canResume: false,
+        canRetry: false,
+      },
+    );
+    expect((await call('POST', '/registrations/current/resume', { cookie: done })).status).toBe(
+      409,
+    );
+    expect((await call('POST', '/registrations/current/retry', { cookie: done })).status).toBe(404);
+    expect((await call('POST', '/registrations/current/cancel', { cookie: done })).status).toBe(
+      404,
+    );
+  });
+
+  it('every public state-changing route needs the CSRF header (403 without it)', async () => {
+    const cookie = regCookie(await start(form()));
+    for (const path of [
+      '/registrations/start',
+      '/registrations/current/resume',
+      '/registrations/current/retry',
+      '/registrations/current/cancel',
+    ]) {
+      const res = await fetch(`${base}/api${path}`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-forwarded-for': ip(),
+          ...(cookie ? { cookie } : {}),
+        },
+        body: JSON.stringify(path.endsWith('start') ? form() : {}),
+      });
+      expect(res.status).toBe(403);
+    }
+  });
+});
+
+describe('shared IPs: a school lab or a mobile operator NAT starting together (lead, 2026-10-31)', () => {
+  it('300 different students start from one IP within a minute; the 301st start from it is refused', async () => {
+    const shared = ip();
+    const results: number[] = [];
+    const batch = 25;
+    for (let i = 0; i < 300; i += batch) {
+      const statuses = await Promise.all(
+        Array.from({ length: Math.min(batch, 300 - i) }, () =>
+          start(form(), { from: shared }).then((r) => r.status),
+        ),
+      );
+      results.push(...statuses);
+    }
+    expect(results.filter((s) => s !== 201)).toEqual([]);
+    const next = await start(form(), { from: shared });
+    expect(next.status).toBe(429);
+    expect((await start(form(), { from: ip() })).status).toBe(201); // another IP is not affected
+  }, 120_000);
 });
 
 describe('logged-in student: registration and own payments', () => {

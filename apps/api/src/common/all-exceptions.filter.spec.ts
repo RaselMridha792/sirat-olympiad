@@ -140,4 +140,34 @@ describe('AllExceptionsFilter', () => {
       expect(body).toMatchObject({ code: 'CONFLICT' });
     }
   });
+
+  it('never takes a code from anything but an HttpException our code built: Prisma, driver or plain errors', () => {
+    const prisma = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+      code: 'P2002',
+      clientVersion: '6.19.3',
+      meta: { target: ['email'], code: 'EMAIL_REGISTERED' },
+    });
+    const plain = Object.assign(new Error('EMAIL_REGISTERED'), { code: 'EMAIL_REGISTERED' });
+    const driver = Object.assign(new Error('connection refused'), { code: 'ECONNREFUSED' });
+    for (const e of [prisma, plain, driver]) {
+      const { res, body } = run(e);
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(body).toMatchObject({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Internal server error',
+      });
+    }
+    // A client error from the body parser keeps its fixed message and status name, whatever it carries.
+    const parser = Object.assign(new Error('Unexpected token'), {
+      status: 400,
+      expose: true,
+      type: 'entity.parse.failed',
+      code: 'EMAIL_REGISTERED',
+    });
+    expect(run(parser).body).toMatchObject({
+      statusCode: 400,
+      code: 'BAD_REQUEST',
+      message: 'Bad request',
+    });
+  });
 });

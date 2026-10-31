@@ -22,8 +22,15 @@ import { StartRegistrationDto } from './dto/start-registration.dto';
 import { RegistrationService, StartFailure } from './registration.service';
 import { clearResumeCookie, readResumeToken, setResumeCookie } from './resume-cookie';
 
-/** Starting or retrying a payment: per route and client IP, sized for a school sharing one IP (RULEBOOK §4). */
-const START_TIER = { default: { limit: 30, ttl: 60_000 } };
+/**
+ * Per route and client IP, sized for shared IPs: a school, or a mobile operator's carrier-grade NAT, can put
+ * thousands of students behind one address (DECISIONS "Per-user API limits"). The limit per person is elsewhere:
+ * 10 starts or retries an hour per email and per phone (RegistrationGuards).
+ * - start, retry: argon2 and a PayStation call each, so lower;
+ * - info, current, resume, cancel: cheap reads by a unique key; the result page polls current every few seconds.
+ */
+export const START_TIER = { default: { limit: 300, ttl: 60_000 } };
+export const STATUS_TIER = { default: { limit: 3_000, ttl: 60_000 } };
 
 export class PageQueryDto {
   @IsOptional()
@@ -58,6 +65,7 @@ export class RegistrationController {
 
   /** Open or closed, the fee, and the form's choices. Cached for 30 s. */
   @Public()
+  @Throttle(STATUS_TIER)
   @Get('info')
   info() {
     return this.registrations.info();
@@ -84,6 +92,7 @@ export class RegistrationController {
 
   /** Where this browser's attempt stands. No personal data. */
   @Public()
+  @Throttle(STATUS_TIER)
   @Get('current')
   current(@Req() req: Request) {
     return this.registrations.current(readResumeToken(req));
@@ -91,6 +100,7 @@ export class RegistrationController {
 
   /** The stored checkout URL again, while it is valid. */
   @Public()
+  @Throttle(STATUS_TIER)
   @Post('current/resume')
   @HttpCode(200)
   resume(@Req() req: Request) {
@@ -107,6 +117,7 @@ export class RegistrationController {
 
   /** Gives up this attempt (only while no payment is active) and forgets the cookie. */
   @Public()
+  @Throttle(STATUS_TIER)
   @Post('current/cancel')
   @HttpCode(204)
   async cancel(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<void> {

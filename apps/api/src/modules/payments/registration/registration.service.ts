@@ -236,7 +236,7 @@ export class RegistrationService {
       amountMinor: latest?.amountMinor ?? null,
       currency: latest?.currency ?? null,
       expiresAt: latest?.expiresAt.toISOString() ?? null,
-      canResume: canResume(latest, now),
+      canResume: attempt.status === RegistrationAttemptStatus.open && canResume(latest, now),
       canRetry:
         attempt.status === RegistrationAttemptStatus.open &&
         !!latest &&
@@ -247,8 +247,14 @@ export class RegistrationService {
 
   async resume(browserToken: string | null, now = new Date()): Promise<{ paymentUrl: string }> {
     const attempt = browserToken ? await this.attemptByToken(browserToken) : null;
-    const latest = attempt?.payments[0] ?? null;
-    if (!attempt || attempt.status !== RegistrationAttemptStatus.open || !canResume(latest, now))
+    if (!attempt || attempt.status === RegistrationAttemptStatus.abandoned)
+      throw error(
+        NotFoundException,
+        'NO_REGISTRATION',
+        'No registration in progress in this browser',
+      );
+    const latest = attempt.payments[0] ?? null;
+    if (attempt.status !== RegistrationAttemptStatus.open || !canResume(latest, now))
       throw error(ConflictException, 'NOTHING_TO_RESUME', 'There is no payment to continue');
     return { paymentUrl: latest?.paymentUrl as string };
   }
