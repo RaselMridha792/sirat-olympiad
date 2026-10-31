@@ -177,6 +177,8 @@ export class LoginLimiter {
     private readonly redis: Redis,
     private readonly limits: LoginLimits,
     private readonly prefix = 'login:',
+    /** How long one Redis call may take before the limiter fails open. Only tests on a loaded machine raise it. */
+    private readonly timeoutMs = LOGIN_REDIS_TIMEOUT_MS,
   ) {
     const define = (name: string, lua: string): Script => {
       redis.defineCommand(name, { numberOfKeys: 0, lua });
@@ -255,10 +257,7 @@ export class LoginLimiter {
   ): Promise<number[] | number | null> {
     if (this.redis.status !== 'ready') return this.unavailable(`redis ${this.redis.status}`);
     try {
-      return await withTimeout(
-        this.scripts[name](this.prefix, hash, ip, ...args),
-        LOGIN_REDIS_TIMEOUT_MS,
-      );
+      return await withTimeout(this.scripts[name](this.prefix, hash, ip, ...args), this.timeoutMs);
     } catch (err) {
       return this.unavailable(err instanceof Error ? err.message : 'unknown error');
     }

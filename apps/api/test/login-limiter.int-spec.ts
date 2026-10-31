@@ -5,6 +5,7 @@
 import { randomUUID } from 'node:crypto';
 import Redis from 'ioredis';
 import {
+  emailHash,
   type FailureResult,
   LoginLimiter,
   type LoginLimits,
@@ -12,15 +13,20 @@ import {
 
 const url = process.env.REDIS_CACHE_URL as string;
 const prefix = `login-test:${randomUUID()}:`;
+// Locks last minutes here, so no assertion races a lock's expiry on a loaded machine (three sessions share it);
+// expiry is simulated by deleting the lock key, never by sleeping. Redis calls may take up to 10 s before the
+// limiter fails open (production: 300 ms).
 const limits: LoginLimits = {
   ipFailuresPerMinute: 6,
   pairMaxFailures: 3,
-  lockBaseMs: 1_000,
-  lockMaxMs: 3_000,
+  lockBaseMs: 60_000,
+  lockMaxMs: 180_000,
   accountFailuresPerHour: 5,
   alertDistinctIps: 3,
 };
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const PATIENT_MS = 10_000;
+/** The pair's lock key (generation 0, before any reset): see login-limiter.ts. */
+const lockKey = (mail: string, from: string) => `${prefix}lock:${emailHash(mail)}:0:${from}`;
 
 let redis: Redis;
 let limiter: LoginLimiter;
@@ -28,7 +34,7 @@ let limiter: LoginLimiter;
 beforeAll(async () => {
   redis = new Redis(url, { maxRetriesPerRequest: 1 });
   await redis.ping();
-  limiter = new LoginLimiter(redis, limits, prefix);
+  limiter = new LoginLimiter(redis, limits, prefix, PATIENT_MS);
 });
 
 afterAll(async () => {
@@ -59,23 +65,26 @@ describe('LoginLimiter', () => {
     const [a, b] = [ip(), ip()];
     expect(await fail(2, mail, a)).toMatchObject({ lockedForMs: 0, lockLevel: 0 });
     expect(await limiter.check(mail, a)).toEqual({ allowed: true });
-    expect(await fail(1, mail, a)).toMatchObject({ lockedForMs: 1_000, lockLevel: 1 });
+    expect(await fail(1, mail, a)).toMatchObject({ lockedForMs: 60_000, lockLevel: 1 });
 
     const locked = await limiter.check(mail, a);
     expect(locked).toMatchObject({ allowed: false, reason: 'pair_locked' });
-    expect((locked as { retryAfterMs: number }).retryAfterMs).toBeLessThanOrEqual(1_000);
+    expect((locked as { retryAfterMs: number }).retryAfterMs).toBeLessThanOrEqual(60_000);
     expect(await limiter.check(mail, b)).toEqual({ allowed: true }); // another IP is not locked out
     expect(await limiter.check(email(), a)).toEqual({ allowed: true }); // nor another account
   });
 
   it('lets a lock expire by itself; repeated locks double up to the cap', async () => {
     const [mail, from] = [email(), ip()];
-    expect((await fail(3, mail, from)).lockedForMs).toBe(1_000);
-    await sleep(1_100);
+    expect((await fail(3, mail, from)).lockedForMs).toBe(60_000);
+    const left = await redis.pttl(lockKey(mail, from));
+    expect(left).toBeGreaterThan(0); // Redis drops the key by itself when the time is up
+    expect(left).toBeLessThanOrEqual(60_000);
+    await redis.del(lockKey(mail, from)); // ... which this stands for, without waiting
     expect(await limiter.check(mail, from)).toEqual({ allowed: true });
-    expect(await fail(3, mail, from)).toMatchObject({ lockedForMs: 2_000, lockLevel: 2 });
-    await sleep(2_100);
-    expect(await fail(3, mail, from)).toMatchObject({ lockedForMs: 3_000, lockLevel: 3 }); // 4 s capped at 3 s
+    expect(await fail(3, mail, from)).toMatchObject({ lockedForMs: 120_000, lockLevel: 2 });
+    await redis.del(lockKey(mail, from));
+    expect(await fail(3, mail, from)).toMatchObject({ lockedForMs: 180_000, lockLevel: 3 }); // 4 min capped at 3
   });
 
   it('resets the count and the escalation after a right password without a lock', async () => {
@@ -83,7 +92,7 @@ describe('LoginLimiter', () => {
     await fail(2, mail, from);
     await limiter.recordSuccess(mail, from);
     expect((await fail(2, mail, from)).lockedForMs).toBe(0); // counting started again
-    expect(await fail(1, mail, from)).toMatchObject({ lockedForMs: 1_000, lockLevel: 1 });
+    expect(await fail(1, mail, from)).toMatchObject({ lockedForMs: 60_000, lockLevel: 1 });
   });
 
   it('at the account limit refuses only IPs that failed on it; a fresh IP still gets in', async () => {
@@ -123,7 +132,12 @@ describe('LoginLimiter', () => {
 
   it('a completed password reset unlocks that account on every IP, and no other account', async () => {
     // A high IP limit here: two accounts fail from one IP, and a reset never clears an IP's limit.
-    const roomy = new LoginLimiter(redis, { ...limits, ipFailuresPerMinute: 100 }, prefix);
+    const roomy = new LoginLimiter(
+      redis,
+      { ...limits, ipFailuresPerMinute: 100 },
+      prefix,
+      PATIENT_MS,
+    );
     const [mail, other] = [email(), email()];
     const [a, b] = [ip(), ip()];
     for (let i = 0; i < 3; i += 1) await roomy.recordFailure(mail, a);
@@ -148,7 +162,12 @@ describe('LoginLimiter', () => {
   });
 
   it('signals once when more distinct IPs than the threshold fail on one account, and blocks nobody for it', async () => {
-    const roomy = new LoginLimiter(redis, { ...limits, accountFailuresPerHour: 100 }, prefix);
+    const roomy = new LoginLimiter(
+      redis,
+      { ...limits, accountFailuresPerHour: 100 },
+      prefix,
+      PATIENT_MS,
+    );
     const mail = email();
     const first = ip();
     const signals: boolean[] = [];
