@@ -1,10 +1,11 @@
 import { Logger, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { EnvVars } from '../../config/env';
+import { AuditModule } from '../audit/audit.module';
 import { buildPaymentConfig, describePaymentConfig, type PaymentEnv } from './payment.config';
+import { PAYMENT_CONFIG, PaymentsBootCheck } from './payments-boot-check';
 
-/** The validated PayStation settings (payment.config.ts). Building them at boot makes a wrong .env stop the app. */
-export const PAYMENT_CONFIG = Symbol('PAYMENT_CONFIG');
+export { PAYMENT_CONFIG } from './payments-boot-check';
 
 const PAYMENT_ENV_KEYS = [
   'NODE_ENV',
@@ -25,8 +26,10 @@ const PAYMENT_ENV_KEYS = [
  * endpoints in AdminModule, so app.module.ts does not change (plan D10).
  */
 @Module({
+  imports: [AuditModule],
   providers: [
     {
+      // The validated PayStation settings (payment.config.ts). Building them at boot makes a wrong .env stop the app.
       provide: PAYMENT_CONFIG,
       inject: [ConfigService],
       useFactory: (config: ConfigService<EnvVars, true>) => {
@@ -38,6 +41,7 @@ const PAYMENT_ENV_KEYS = [
         return payment;
       },
     },
+    PaymentsBootCheck,
   ],
   exports: [PAYMENT_CONFIG],
 })
