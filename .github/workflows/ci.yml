@@ -244,13 +244,16 @@ jobs:
               for d in /repo /app; do
                 [ -d "$d" ] || continue
                 find "$d" -path "*/node_modules" -prune -o \( -name ".env" -o -name ".env.*" -o -name ".envrc" \
-                  -o -name "*.pem" -o -name "*.key" -o -name "*.dump" -o -name "zero-olympiad-*" \
+                  -o -name "*.pem" -o -name "*.key" -o -name "*.dump" -o -name "*.age" -o -name "zero-olympiad-*" \
                   -o -path "*/prisma/fixtures" -o -path "*/apps/api/test" -o -path "*/infra" -o -path "*/scripts" \
                   -o -path "*/backups" -o -path "*/nginx/certs" \) -print
               done')
             if [ -n "$found" ]; then echo "::error::$img contains forbidden files:"; echo "$found"; exit 1; fi
             echo "$img clean"
           done
+      - name: Backups are encrypted, checked and uploaded; a killed dump, a bad remote or a shrunken dump fails (L6)
+        # Its own compose project (sirat-backup-test), a throwaway age key and an rclone local remote; see the script.
+        run: bash scripts/test/run-backup-test.sh
       - name: Logs on failure
         if: failure()
         run: $DCD ps -a; $DCD logs --tail=200

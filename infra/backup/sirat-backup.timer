@@ -1,0 +1,16 @@
+# /etc/systemd/system/sirat-backup.timer: hourly while registration is open (LAUNCH-PLAN §4). After it closes, switch
+# to daily with a drop-in (RUNBOOK §5): `systemctl edit sirat-backup.timer`, then
+#   [Timer]
+#   OnCalendar=
+#   OnCalendar=*-*-* 03:30 Asia/Dhaka
+# and set the heartbeat's expected period to match.
+[Unit]
+Description=Sirat database backup schedule
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

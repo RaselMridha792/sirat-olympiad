@@ -26,6 +26,7 @@ import { AmbassadorsModule } from './modules/ambassadors/ambassadors.module';
 import { RoundsModule } from './modules/rounds/rounds.module';
 import { LeaderboardModule } from './modules/leaderboard/leaderboard.module';
 import { CertificatesModule } from './modules/certificates/certificates.module';
+import { AnnouncementsModule } from './modules/announcements/announcements.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { CertificatesModule } from './modules/certificates/certificates.module';
     RoundsModule,
     LeaderboardModule,
     CertificatesModule,
+    AnnouncementsModule,
   ],
   // Global guards, run in this order on every route: rate limit, CSRF header on state-changing requests, then
   // the session (deny by default; @Public() opens a route, @Roles() narrows it).
