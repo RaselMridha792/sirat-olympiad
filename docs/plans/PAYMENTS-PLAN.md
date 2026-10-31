@@ -150,6 +150,8 @@ Why it is not free in `.env` (lead review): with a free URL, a dev machine with 
 - **Where:** both `.env.example` files get a "Registration and payments" block appended at the end, with `PAYSTATION_BASE_URL` blank. The root file's `PAYSTATION_BASE_URL=https://sandbox.paystation.com.bd` line is removed. The CI integration job gets `PAYSTATION_ENV=fake`. Compose needs nothing (`api` and `worker` load `../.env`).
 - **S11 done (2026-10-31, `SANDBOX-CHECKLIST.md`):** the sandbox has its own host. Sandbox credentials get `"1001"` "Invalid Credential." on the live host, so the allow-list tells the two apart and stays unchanged. The merchant id works only with its "-"; the docs' curl example, which drops it, is wrong.
 - **Built in step 1** (`payment.config.ts`, `payments.module.ts`): `PaymentsModule` builds the settings at boot and logs one line (env, host, account label, invoice prefix, callback, IPN). A wrong value stops the app. The error names the variable and the rule, never the value. The tests remove each guard in turn to check that a test then fails.
+- **Blank on a production server** (lead, 2026-10-31): payments stay disabled and the app still boots, but `PaymentsBootCheck` logs a WARN and raises the operator alert `payments.disabled_in_production` (audit row, rate-limited email). The RUNBOOK launch checklist compares the boot line.
+- **Note:** the local docker stack runs with `NODE_ENV=production` too, so its API logs this WARN and alert on every start while `PAYSTATION_ENV` is blank there. That is expected, and the email only reaches Mailpit.
 - **Local sandbox tests:** the callback is a browser redirect, so `localhost` works; the IPN is server-to-server and needs a public `https://` URL (D8, section 8.1).
 
 ## 4. Migrations, from the existing schema
@@ -286,6 +288,12 @@ Rules: never hold a DB transaction across an HTTP call to PayStation. Every stat
 6. `gateway.initiate` outside the transaction; record the event.
    - Created → transaction 2: `pending` + `payment_url`. Answer 201 `{ paymentUrl }` and set `sirat_reg` (httpOnly, Secure, SameSite=Lax so it returns on PayStation's top-level redirect, Path `/api/registrations`, 7 days).
    - Refused or timed out → `failed`, 502 "The payment could not start. Please try again."
+   - **`"1001"` "Invalid Credential." is a configuration error, not a failed payment** (lead, 2026-10-31; seen in S11; not in the docs):
+     - the payment becomes `failed` (no checkout URL reached the student);
+     - a critical alert goes out;
+     - a pause flag in the cache Redis (10 minutes) stops further initiate calls;
+     - the student sees "Payments are paused right now" (bn: "পেমেন্ট এখন বন্ধ") with 503, and nothing retries blindly.
+     The flag is lifted by its expiry or by the operator after fixing `.env`.
 
 ### 6.2 Callback: `GET /payments/paystation/callback/:invoice` (public; a hint only)
 
@@ -350,6 +358,7 @@ type InitiateRequest = {
 };
 type InitiateResult =
   | { kind: 'created'; paymentUrl: string }
+  | { kind: 'credentials_rejected' } // "1001": a configuration error (pause + critical alert, 6.1)
   | { kind: 'refused'; statusCode: string } // 1008 and every other non-200 code
   | { kind: 'unavailable'; reason: 'timeout' | 'network' | 'http' | 'bad_response' };
 type StatusResult =
@@ -545,7 +554,8 @@ Each PR is opened as soon as its steps are done and its checks pass:
 | PR | Steps | Content |
 |---|---|---|
 | #11 | 0 | This plan, the DECISIONS entries, OPEN-QUESTIONS #1, #2, P6 (docs only; merged 31 Oct) |
-| 1 | 1–3 | Foundation: this schedule and the owner's Q3/Q4 answers, migrations (with the phone rules), fixtures, config, gateway client, fake server, state machine, invoice. Small and early, so the conflict window with A2 stays short |
+| 1a | 1 | Foundation (lead, 19:26: split so the schema reaches `main` first; the exam session's migrations build on it): this schedule, the owner's answers, migrations M1–M3 with the phone rules, seed, fixtures and `--clean`, `prepare-test-db`, `PaymentConfig` |
+| 1b | 2–3 | Gateway client, fake server, `paystation:selfcheck` (one line in `apps/api/package.json`: Rasel is told before the push), state machine, invoice |
 | 2 | 4–5 | Start and status: `registrations/start`, `info`, `current/*`, `registrations/me`, `payments/mine` |
 | 3 | 6–9 | Money flow: settle, callback, IPN, reconciliation, admin payments and settings. Kept apart from PR 2, so the review of the paths that mark a payment paid stays readable |
 | 4 | 10–11 | Web: wizard, result page, dashboard status, admin fee dialog and payments page |

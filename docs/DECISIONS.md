@@ -13,6 +13,10 @@ One short entry per non-obvious technical or product decision. Newest first. For
 3. **Boot log without any part of a credential.** It shows env, host, account label, invoice prefix, callback and IPN. The account label identifies the account, so the plan's "last 4 characters of the merchant id" is dropped.
 4. **Callback:** `http://localhost` is allowed outside production (a browser redirect on the same machine); https otherwise. **IPN URL:** required only in production; blank locally until a tunnel exists.
 5. **`.env.example`:** the PayStation host leaves both files; the values are blank, and `PAYSTATION_PAY_WITH_CHARGE=0`.
+6. **Lead review (19:26)** accepted points 2 and 3, and added:
+   - **Blank `PAYSTATION_ENV` on a production server:** a WARN line and the operator alert `payments.disabled_in_production` at every start (built; a new kind in `SecurityAlerts`). The RUNBOOK launch checklist compares the boot line.
+   - **Initiate `"1001"` is a configuration error, not a failed payment:** a critical alert, a short pause of further initiate calls, "Payments are paused right now" for the student, and no blind retry (built with the gateway client, plan 6.1).
+   - **PR 1 is split:** 1a (schema, fixtures, config) goes to `main` first, because the exam session's migrations build on it; 1b holds the gateway client, the fake server and the selfcheck.
 
 ## 2026-10-31 — Free book after payment (owner, via the lead)
 
