@@ -5,6 +5,10 @@ import type {
   AdminExamQuery,
   AdminLeaderboardQuery,
   AdminLeaderboardView,
+  AdminPaymentDetail,
+  AdminPaymentQuery,
+  AdminPaymentRow,
+  AdminSetting,
   AdminStats,
   AdminUserDetail,
   AdminUserQuery,
@@ -73,5 +77,11 @@ export interface DataSource {
     listAmbassadors(query: PageQuery): Promise<Paginated<AdminAmbassadorRow>>;
     /** GET /admin/announcements?page= */
     listAnnouncements(query: PageQuery): Promise<Paginated<AnnouncementItem>>;
+    /** GET /admin/payments?invoice=&trx=&phone=&email=&status=&review=1&page= (admin only) */
+    listPayments(query: AdminPaymentQuery): Promise<Paginated<AdminPaymentRow>>;
+    /** GET /admin/payments/:id, with its events (null = not found) */
+    getPayment(id: string): Promise<AdminPaymentDetail | null>;
+    /** GET /admin/settings (the keys an admin may change) */
+    listSettings(): Promise<AdminSetting[]>;
   };
 }

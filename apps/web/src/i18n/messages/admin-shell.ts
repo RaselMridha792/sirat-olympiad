@@ -12,6 +12,8 @@ export const adminShellMessages = defineMessages({
       leaderboard: 'Leaderboard',
       ambassadors: 'Ambassadors',
       announcements: 'Announcements',
+      payments: 'Payments',
+      settings: 'Settings',
     },
   },
   bn: {
@@ -25,6 +27,8 @@ export const adminShellMessages = defineMessages({
       leaderboard: 'লিডারবোর্ড',
       ambassadors: 'অ্যাম্বাসেডর',
       announcements: 'ঘোষণা',
+      payments: 'পেমেন্ট',
+      settings: 'সেটিংস',
     },
   },
 });

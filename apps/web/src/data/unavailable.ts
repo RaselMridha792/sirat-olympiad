@@ -38,5 +38,8 @@ export const unavailableSource: DataSource = {
     getExam: fail,
     listAmbassadors: fail,
     listAnnouncements: fail,
+    listPayments: fail,
+    getPayment: fail,
+    listSettings: fail,
   },
 };

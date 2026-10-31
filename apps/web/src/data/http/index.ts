@@ -1,6 +1,7 @@
 import type { DataSource } from '../source.ts';
 import { unavailableSource } from '../unavailable.ts';
 import { studentExams } from './exams.ts';
+import { adminPayments } from './payments.ts';
 import type { ApiGet } from './request.ts';
 import { adminUsers } from './users.ts';
 
@@ -23,6 +24,7 @@ export function createHttpSource(get: ApiGet): DataSource {
     admin: {
       ...unavailableSource.admin,
       ...adminUsers(get),
+      ...adminPayments(get),
     },
   };
 }
