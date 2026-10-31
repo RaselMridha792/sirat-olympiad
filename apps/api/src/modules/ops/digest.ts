@@ -5,8 +5,8 @@ import type { EmailMessage } from '../notifications/email.types';
 /*
  * The daily digest (LAUNCH-PLAN §6, L11), sent at 08:00 Asia/Dhaka by `ops-check --digest`: the last 24 h of alerts
  * by kind (from the audit log, so the ones the caps held back count too), the backup age, the disk, and the payments
- * by status. One a day: an `ops.digest` audit row for the Dhaka date is the record that it went out. It also proves
- * every morning that the alert email path works. Counts and kinds only, never an address or a name.
+ * by status. One a day: an `ops.digest` audit row carrying the Dhaka date (YYYYMMDD) is the record that it went out.
+ * It also proves every morning that the alert email path works. Counts and kinds only, never an address or a name.
  */
 
 const DHAKA_OFFSET_MS = 6 * 60 * 60_000; // UTC+6 all year (no daylight saving since 2009)
@@ -92,9 +92,10 @@ export async function sendDailyDigest(deps: {
   now: Date;
 }): Promise<DigestOutcome> {
   if (!deps.to) return 'no_recipient';
-  const { date, startsAt } = dhakaDay(deps.now);
+  const { date } = dhakaDay(deps.now);
+  const day = Number(date.replace(/-/g, ''));
   const sent = await deps.prisma.auditLog.findFirst({
-    where: { action: 'ops.digest', createdAt: { gte: startsAt } },
+    where: { action: 'ops.digest', meta: { path: ['date'], equals: day } },
     select: { id: true },
   });
   if (sent) return 'already_sent';
@@ -106,7 +107,7 @@ export async function sendDailyDigest(deps: {
   );
   if (!queued) return 'not_queued';
   await deps.prisma.auditLog.create({
-    data: { action: 'ops.digest', meta: { date: Number(date.replace(/-/g, '')) } },
+    data: { action: 'ops.digest', meta: { date: day } },
   });
   return 'sent';
 }
