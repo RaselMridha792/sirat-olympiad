@@ -14,6 +14,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 5. **The same page replaces nginx's own 502/504** on pages and on the callback, with the status kept so checks see the real code. Other `/api` calls, the IPN included, keep the JSON errors: PayStation retries.
 6. **Both answers** carry `Cache-Control: no-store` (Cloudflare must not keep them), `Retry-After: 120` and each security header once.
 7. **The text:** a generic bn/en "we'll be right back" with the "your payment is safe" line and no contact details (LAUNCH-PLAN §10 default; Rasel checks the Bangla). Plain HTML with inline styles and no scripts or fonts, so it needs nothing from the web container.
+
 ## 2026-11-01 — Free book on the web (Claude; payments PR 6b, plan §16.4, lead's rules)
 
 1. **`/dashboard/book`:** the title and the cover, then the address form, pre-filled from the student's own name, phone and district.
