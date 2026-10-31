@@ -74,3 +74,16 @@ export function linkTokenFrom(hash: string): string | null {
   const token = params.get('token');
   return token && TOKEN.test(token) ? token : null;
 }
+
+/**
+ * The page's token after reading the address bar's `hash`. The first read decides (no token: null). Later, only a
+ * new emailed link (a hash with `token=`, opened in the same tab without a reload) replaces it; any other hash,
+ * like an in-page anchor, keeps it. `strip`: remove the hash from the address bar.
+ */
+export function readLinkToken(
+  current: string | null | undefined,
+  hash: string,
+): { token: string | null; strip: boolean } {
+  if (current !== undefined && !/[#&]token=/.test(hash)) return { token: current, strip: false };
+  return { token: linkTokenFrom(hash), strip: hash !== '' };
+}

@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { INVALID_LINK_MESSAGE, linkProblem, linkTokenFrom, loginProblem } from './auth-errors.ts';
+import {
+  INVALID_LINK_MESSAGE,
+  linkProblem,
+  linkTokenFrom,
+  loginProblem,
+  readLinkToken,
+} from './auth-errors.ts';
 
 const answer = (
   status: number,
@@ -84,4 +90,17 @@ test('the link token: only the 43-character base64url shape from the fragment', 
   ]) {
     assert.equal(linkTokenFrom(bad), null, bad);
   }
+});
+
+test('a new emailed link opened in the same tab replaces the token; other hashes keep it', () => {
+  const first = 'f'.repeat(43);
+  const second = 's'.repeat(43);
+  assert.deepEqual(readLinkToken(undefined, `#token=${first}`), { token: first, strip: true });
+  assert.deepEqual(readLinkToken(undefined, ''), { token: null, strip: false });
+  assert.deepEqual(readLinkToken(first, ''), { token: first, strip: false });
+  assert.deepEqual(readLinkToken(first, `#token=${second}`), { token: second, strip: true });
+  assert.deepEqual(readLinkToken(null, `#token=${second}`), { token: second, strip: true });
+  assert.deepEqual(readLinkToken(first, '#token=junk'), { token: null, strip: true });
+  assert.deepEqual(readLinkToken(first, '#main'), { token: first, strip: false });
+  assert.deepEqual(readLinkToken(undefined, '#main'), { token: null, strip: true });
 });

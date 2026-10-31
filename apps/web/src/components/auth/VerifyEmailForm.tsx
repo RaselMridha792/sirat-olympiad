@@ -17,8 +17,13 @@ import { useLinkToken } from './useLinkToken';
  * already verified (the API cannot tell, it has one answer for every bad link).
  */
 export function VerifyEmailForm({ locale }: { locale: Locale }) {
-  const m = pick(authMessages, locale);
   const token = useLinkToken();
+  // A new emailed link opened in this tab starts over: nothing left from the old one ('done', 'bad link').
+  return <VerifyEmail key={token ?? ''} locale={locale} token={token} />;
+}
+
+function VerifyEmail({ locale, token }: { locale: Locale; token: string | null | undefined }) {
+  const m = pick(authMessages, locale);
   const hydrated = useHydrated();
   const busy = useRef(false);
   const [sending, setSending] = useState(false);

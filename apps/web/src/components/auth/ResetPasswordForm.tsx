@@ -20,8 +20,13 @@ const MAX = 128;
  * ends every session and never logs in, so the user signs in with the new password.
  */
 export function ResetPasswordForm({ locale }: { locale: Locale }) {
-  const m = pick(authMessages, locale);
   const token = useLinkToken();
+  // A new emailed link opened in this tab starts over: nothing left from the old one ('done', 'bad link').
+  return <ResetPassword key={token ?? ''} locale={locale} token={token} />;
+}
+
+function ResetPassword({ locale, token }: { locale: Locale; token: string | null | undefined }) {
+  const m = pick(authMessages, locale);
   const hydrated = useHydrated();
   const busy = useRef(false);
   const [password, setPassword] = useState('');

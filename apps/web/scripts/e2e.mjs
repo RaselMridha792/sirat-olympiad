@@ -330,6 +330,16 @@ try {
       await page.waitFor(hasText('This link is invalid or has expired.'));
       check(await page.evaluate(hasText('Already verified? Sign in.')), 'no sign-in link');
       check(await page.evaluate(`!!document.querySelector('input[name=email]')`), 'no resend form');
+      // A new link opened in the same tab changes only the fragment (no reload): the page starts over with it.
+      const newer = randomBytes(32).toString('base64url');
+      await page.evaluate(`location.hash = ${js(`token=${newer}`)}, true`);
+      await page.waitFor(
+        `!!${buttonWith('Verify my email')} && !${buttonWith('Verify my email')}.disabled`,
+      );
+      check(
+        (await page.evaluate('location.hash')) === '',
+        'the new token is still in the address bar',
+      );
       await context.close();
     },
   );
