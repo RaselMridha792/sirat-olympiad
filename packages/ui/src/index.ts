@@ -19,3 +19,4 @@ export * from './components/Tabs';
 export * from './components/SearchBox';
 export * from './components/Dialog';
 export * from './components/DetailList';
+export * from './components/Prose';
