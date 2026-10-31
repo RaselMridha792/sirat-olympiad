@@ -4,13 +4,11 @@ import { Button } from '@sirat/ui';
 import type { Locale } from '@/i18n';
 import { pick } from '@/i18n/messages';
 import { authMessages } from '@/i18n/messages/auth';
-import { allowRefreshVisit } from '@/lib/auth/loop-guard';
+import { mayRenew, recordRenewal } from '@/lib/auth/loop-guard';
 import { loginUrl, safeNext } from '@/lib/auth/next-param';
 import { retryDelayMs } from '@/lib/auth/refresh';
 import { refreshSession } from '@/lib/auth/refresh-browser';
 
-/** Counted once per page load (React's dev mode runs effects twice). */
-let visitAllowed: boolean | null = null;
 /** A renewal still unanswered after this is shown as slow; the request itself keeps going (refresh-browser.ts). */
 const SLOW_AFTER_MS = 10_000;
 
@@ -27,6 +25,15 @@ function target(): string {
   return safeNext(raw, window.location.origin) ?? '/dashboard';
 }
 
+/** The tab's storage for the loop guard, or null where even reading it throws (blocked site data). */
+function tabStorage(): Storage | null {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
 export function RefreshScreen({ locale }: { locale: Locale }) {
   const m = pick(authMessages, locale);
   const [state, setState] = useState<'working' | 'slow' | 'unavailable'>('working');
@@ -34,8 +41,7 @@ export function RefreshScreen({ locale }: { locale: Locale }) {
 
   useEffect(() => {
     const next = target();
-    visitAllowed ??= allowRefreshVisit(window.sessionStorage, next, Date.now());
-    if (!visitAllowed) {
+    if (!mayRenew(tabStorage(), next, Date.now())) {
       window.location.replace(loginUrl(next));
       return;
     }
@@ -50,7 +56,10 @@ export function RefreshScreen({ locale }: { locale: Locale }) {
         const result = await refreshSession();
         clearTimeout(slow);
         if (stopped) return;
-        if (result.outcome === 'ok') return window.location.replace(next);
+        if (result.outcome === 'ok') {
+          const back = recordRenewal(tabStorage(), next, Date.now());
+          return window.location.replace(back ? next : loginUrl(next));
+        }
         if (result.outcome === 'expired') return window.location.replace(loginUrl(next));
         setState('unavailable');
         await new Promise<void>((resolve) => {
