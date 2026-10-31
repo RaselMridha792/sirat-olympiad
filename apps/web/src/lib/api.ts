@@ -1,16 +1,17 @@
 import type { ApiError } from '@sirat/shared';
-import { loginUrl, safeNext } from './auth/next-param';
-import { parseRetryAfter } from './auth/refresh';
-import { refreshSession } from './auth/refresh-browser';
+import { loginUrl, safeNext } from './auth/next-param.ts';
+import { parseRetryAfter } from './auth/refresh.ts';
+import { refreshSession } from './auth/refresh-browser.ts';
 
 /**
  * The ONLY way the browser talks to the backend.
  * - Same origin (/api) -> no CORS, cookies stay simple.
  * - Auth is an httpOnly cookie set by the server; JS never sees or stores a token.
  * - State-changing requests send a custom header (CSRF defense on top of SameSite=Lax).
- * - A 401 renews the session once (lib/auth/refresh.ts) and repeats the request. When the session is over, the
- *   user goes to /login (or the caller handles it, like logout); when the renewal is only unavailable (network,
- *   rate limit, server), the request fails with that and nobody is logged out.
+ * - A 401 renews the session once (lib/auth/refresh.ts) and repeats the request. When the session is over (the
+ *   refresh said 401), the user goes to /login (or the caller handles it, like logout); when the renewal is only
+ *   unavailable (network, rate limit, server), the request fails with that and nobody is logged out. A request
+ *   still refused after renewals that worked fails as an ordinary 401: that is no proof the session is over.
  */
 export class ApiRequestError extends Error {
   readonly status: number;
@@ -79,8 +80,8 @@ export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
   const { onExpired = 'login', ...request } = init;
   let res = await send(path, request);
   for (let refreshes = 0; res.status === 401 && !NO_REFRESH.has(path); refreshes += 1) {
-    const result =
-      refreshes < MAX_REFRESHES ? await refreshSession() : { outcome: 'expired' as const };
+    if (refreshes >= MAX_REFRESHES) break; // thrown below as the 401 it is, never as "expired"
+    const result = await refreshSession();
     if (result.outcome === 'expired') {
       if (onExpired === 'login') goToLogin();
       throw new SessionExpiredError();

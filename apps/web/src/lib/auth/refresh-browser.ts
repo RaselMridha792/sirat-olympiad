@@ -1,5 +1,5 @@
-import { createRefresher, parseRetryAfter, type RefreshResult } from './refresh';
-import { timeoutSignal } from './timeout';
+import { createRefresher, parseRetryAfter, type RefreshResult } from './refresh.ts';
+import { timeoutSignal } from './timeout.ts';
 
 const LOCK_NAME = 'sirat-refresh';
 /** Waiting for another tab's refresh longer than this counts as "unavailable": try again later. */
