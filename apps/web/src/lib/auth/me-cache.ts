@@ -4,7 +4,8 @@ import { createHash } from 'node:crypto';
  * A short in-process cache of successful /auth/me answers, so page loads and navigations do not all reach the API
  * (a whole school can share one IP). Keyed by the SHA-256 of the access cookie, never the cookie itself; only
  * 200 answers are stored, errors never; bounded, the oldest entry goes first. Trade-off (docs/DECISIONS.md): a
- * block or a role change can take up to `ttlMs` to show in the web, while the API's own guards see it at once.
+ * block or a role change can take up to `ttlMs` to show in the web. The API's guards trust the access token's role
+ * until it expires (up to 15 min); /auth/me, refresh and login read the database at once.
  */
 export class MeCache<T> {
   private readonly entries = new Map<string, { value: T; expiresAt: number }>();

@@ -5,12 +5,12 @@ One short entry per non-obvious technical or product decision. Newest first. For
 ## 2026-10-31 — Web session: the real session replaces the mock (Lead approved the plan; Claude implementation)
 
 1. **Server-side lookup:** `getSession()` asks `GET /api/auth/me` straight from the web server to the API inside the stack (`API_INTERNAL_URL`, compose inline `http://api:4000`; required in production, dev default `http://localhost:4000`). Only the access cookie goes along, plus the student's IP and nginx's request id.
-2. **Client IP (Lead's condition a):** nginx sends `X-Real-IP $remote_addr` and `X-Forwarded-For $proxy_add_x_forwarded_for`, whose first entries the client can write. The web reads only `X-Real-IP` and sends exactly one `X-Forwarded-For` value. The API (trust proxy 1) takes the last entry, so it sees nginx's address. This applies only in production, behind nginx; in dev, `X-Real-IP` is client input and nothing is forwarded. A test sends a forged `X-Forwarded-For`.
+2. **Client IP (Lead's condition a):** nginx sends `X-Real-IP $remote_addr` and `X-Forwarded-For $proxy_add_x_forwarded_for`, whose first entries the client can write. The web reads only `X-Real-IP` and sends exactly one `X-Forwarded-For` value. The API (trust proxy 1) takes the last entry, so it sees the client address that nginx recorded in `X-Real-IP` (`$remote_addr`), never the web container or an entry the client wrote. This applies only in production, behind nginx; in dev, `X-Real-IP` is client input and nothing is forwarded. A test sends a forged `X-Forwarded-For`.
 3. **Failures never log anyone out:** no cookie or a 401 goes to `/refresh`. Anything else (API down, 429, timeout) goes to the error page and never to `/login`, because a busy API must not log a whole exam hall out. `check-pages api-down` proves it with the API stopped.
 4. **/me cache (condition c):**
    - It lives in the web process for 30 s and is keyed by the SHA-256 of the access cookie, never the cookie itself.
    - It holds at most 5,000 entries and stores only 200 answers, never errors.
-   - **Trade-off:** a block or a role change can take up to 30 s to show in the web. The API's own guards see it at once.
+   - **Trade-off:** a block or a role change can take up to 30 s to show in the web. The API's guards trust the role in the access token and do not check blocks until it expires, up to 15 min (as A2.1d #9 records); `/auth/me`, refresh and login read the database at once.
 5. **One access table (`apps/web/src/lib/access.ts`):** it drives the page guards, the sidebars and the page checks.
    - Every dashboard page and Server Action calls `requireAccess()` first, because layouts do not re-render on client-side navigation.
    - The other area sends the user to their own home. A page of their own area that the role may not open is not found.
@@ -42,7 +42,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
       - A token that is not the 43-character base64url shape gets the bad-link state with no request.
       - The POST goes out only on a button press, one at a time.
       - A bad link is recognised by its exact message.
-    - **Every form:** it uses `method="post"` and keeps submit disabled until hydrated.
+    - **Login, forgot, reset and verify forms:** each uses `method="post"` and keeps submit disabled until hydrated. The register form (Phase C, payments) must follow the same rule when it is rebuilt: today a submit before hydration would put its fields in the URL.
 11. **Jury (Lead):** a plain placeholder at `/admin`, with its text from i18n and no stats call.
 12. **Checks (Lead):**
     - **CI page checks:** real sessions (option A). The API runs in the job with a fixture student and an admin made with the create-admin CLI. The fixtures guard is unchanged; the CI Postgres runs with `-c sirat.environment=test`.
