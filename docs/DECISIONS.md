@@ -31,6 +31,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
      - a SCRAM login on a scratch role that is dropped after;
      - eleven statements `sirat_app` must not run (each fails with 42501).
 5. **The boot line** `database role=<name> superuser=<bool>` in the API and the worker makes the RUNBOOK §9 item readable from the logs. In production it warns while the role is a superuser; from L8 a superuser is refused.
+
 ## 2026-11-01 — Free book: API, schema and the cover upload (Claude; payments PR 6a, plan §16, owner B1–B5)
 
 1. **Schema:** `book_orders` (one per student) and `book_images` (covers in Postgres, bytea), migrations `*_book_orders` (generated) and `*_book_checks` (hand-written).
