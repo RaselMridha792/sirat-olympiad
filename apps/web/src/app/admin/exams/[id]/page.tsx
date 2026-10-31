@@ -14,15 +14,25 @@ import {
   ListChecks,
   Lock,
 } from 'lucide-react';
+import { EXAM_VIOLATION_WARNINGS } from '@sirat/shared';
 import { Badge, Card, cn, EmptyState, PageHeader } from '@sirat/ui';
+import {
+  ATTEMPT_FILTERS,
+  ExamAttemptsSection,
+  ExamResultsSection,
+  MIN_VIOLATIONS_FILTER,
+} from '@/components/exam/admin/ExamResultsPanel';
 import { examStatusTone } from '@/components/status';
 import { getData } from '@/data';
-import { parseId, type SearchParams } from '@/data/query';
+import { parseEnum, parseId, parsePageQuery, type SearchParams } from '@/data/query';
 import { common } from '@/i18n/common';
 import { formatDateTime, formatNumber } from '@/i18n/format';
+import { adminExamResultsMessages } from '@/i18n/messages/admin-exam-results';
 import { adminExamsMessages } from '@/i18n/messages/admin-exams';
 import { getMessages } from '@/i18n/server';
 import { requireAccess } from '@/lib/session';
+
+const ATTEMPTS_PAGE_SIZE = 20;
 
 export async function generateMetadata(): Promise<Metadata> {
   const { m } = await getMessages(adminExamsMessages);
@@ -31,7 +41,8 @@ export async function generateMetadata(): Promise<Metadata> {
 
 /**
  * Admin exam detail (old quiz-management/view/[id]) with the answer keys. Staff only: no student
- * shape carries `correctKey`. Read-only: "Edit quiz" stays hidden until the versioning API exists.
+ * shape carries `correctKey`. Once published, the results panel and the attempts with their
+ * violations (owner Q4) come first. Editing arrives with E5b.
  */
 export default async function AdminExamDetailPage({
   params,
@@ -44,13 +55,27 @@ export default async function AdminExamDetailPage({
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const examId = parseId(id);
   if (!examId) notFound();
-  const [{ locale, m }, { m: c }, data] = await Promise.all([
+  const [{ locale, m }, { m: c }, { m: r }, data] = await Promise.all([
     getMessages(adminExamsMessages),
     getMessages(common),
+    getMessages(adminExamResultsMessages),
     getData(query),
   ]);
-  const exam = await data.admin.getExam(examId);
+  const filter = parseEnum(query.filter, ATTEMPT_FILTERS);
+  const page = parsePageQuery(query, ATTEMPTS_PAGE_SIZE);
+  const attemptId = parseId(query.attempt);
+  const [exam, results, attempts, attempt] = await Promise.all([
+    data.admin.getExam(examId),
+    data.admin.getExamResults(examId),
+    data.admin.listAttempts(examId, {
+      ...page,
+      ...(filter === 'violations' ? { endReason: 'violations' as const } : {}),
+      ...(filter === 'min3' ? { minViolations: MIN_VIOLATIONS_FILTER } : {}),
+    }),
+    attemptId ? data.admin.getAttempt(examId, attemptId) : Promise.resolve(null),
+  ]);
   if (!exam) notFound();
+  const path = `/admin/exams/${encodeURIComponent(exam.id)}`;
 
   const info: Array<{ key: string; label: string; value: string; icon: ReactNode; tone: string }> =
     [
@@ -163,6 +188,24 @@ export default async function AdminExamDetailPage({
           </div>
         ))}
       </dl>
+
+      {exam.status !== 'draft' && results ? (
+        <>
+          <ExamResultsSection exam={exam} results={results} locale={locale} m={r} />
+          <ExamAttemptsSection
+            path={path}
+            list={attempts}
+            filter={filter}
+            q={page.q}
+            attemptId={attemptId}
+            detail={attempt}
+            warnings={EXAM_VIOLATION_WARNINGS}
+            locale={locale}
+            m={r}
+            c={c}
+          />
+        </>
+      ) : null}
 
       <section aria-labelledby="exam-questions">
         <h2
