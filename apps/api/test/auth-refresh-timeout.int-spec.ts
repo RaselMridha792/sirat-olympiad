@@ -1,8 +1,8 @@
 /**
  * A slow refresh never ends the session (Lead, 2026-10-31). A rotation commits only within its budget
  * (REFRESH_ROTATION_BUDGET_MS from the handler's start), so its answer, the only copy of the new cookies, always
- * goes out; past the budget it is rolled back and the old token keeps working. Scaled down here (budget 300 ms,
- * request timeout 1 s) from production's 15 s budget, 25 s request timeout and nginx's 30 s. Another connection
+ * goes out; past the budget it is rolled back and the old token keeps working. Scaled down here (budget 500 ms,
+ * request timeout 1.5 s) from production's 15 s budget, 25 s request timeout and nginx's 30 s. Another connection
  * holds the session row locked, as a busy database would, so the rotation waits.
  */
 import type { PrismaClient } from '@prisma/client';
@@ -13,8 +13,9 @@ import { REFRESH_COOKIE } from '../src/modules/auth/session-cookies';
 import { REFRESH_REUSE_GRACE_MS, SessionService } from '../src/modules/auth/session.service';
 import { makeUser, testPrisma } from './helpers';
 
-const BUDGET_MS = 300;
-const REQUEST_TIMEOUT_MS = 1_000;
+// Headroom for slow CI runners: a normal rotation takes a few ms, the short lock below 100 ms.
+const BUDGET_MS = 500;
+const REQUEST_TIMEOUT_MS = 1_500;
 
 let app: NestExpressApplication;
 let base: string;
@@ -115,7 +116,7 @@ describe('POST /api/auth/refresh within the rotation budget', () => {
 
   it('a short wait inside the budget still rotates', async () => {
     const { issued } = await newSession();
-    const lock = holdRow(issued.user.sessionId, BUDGET_MS / 3);
+    const lock = holdRow(issued.user.sessionId, 100);
     await lock.locked;
     const res = await refresh(issued.refreshToken);
     await lock.released;

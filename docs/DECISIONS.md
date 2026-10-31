@@ -17,7 +17,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - A retired token after the grace still revokes the family and is audited.
    - The retirement time is now taken inside the transaction, so a slow rotation no longer eats into the grace.
 4. **Not chosen:** keeping the successor token (encrypted) in Redis so a retry gets the same cookies. RULEBOOK §5 stores refresh tokens hashed only, and it would change what a replay inside the window gets.
-5. **Tests** (`auth-refresh-timeout.int-spec.ts`, scaled down: budget 300 ms, request timeout 1 s; another connection holds the session row locked):
+5. **Tests** (`auth-refresh-timeout.int-spec.ts`, scaled down: budget 500 ms, request timeout 1.5 s; another connection holds the session row locked):
    - the rotation is rolled back: 503, no cookies, and no new row even after the lock is released; the same token then renews and `/auth/me` answers 200;
    - a short wait inside the budget still rotates;
    - real reuse after the grace still ends the family and is audited.
