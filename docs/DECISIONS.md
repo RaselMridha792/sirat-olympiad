@@ -15,6 +15,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 6. **`backup.sh` uses it** on any failure, after the heartbeat's `/fail`: `ops-alert --kind ops.backup_failed --meta step=<n>`, with a number per step and a 60 s timeout.
    - **Best effort (lead):** when the API cannot raise it (the api container down is a likely moment for a failed backup), the run still exits non-zero, and the heartbeat, which does not depend on the app, is the alert.
    - **Tests:** the call and its step number; an ops-alert that fails; no api service at all; successful runs raise nothing.
+
 ## 2026-11-01 — TLS behind Cloudflare, security headers and nginx logs (Claude; LAUNCH-PLAN L3, lead review)
 
 1. **Certificate:** Cloudflare SSL mode Full (strict) with a free Cloudflare Origin CA certificate. It needs no ACME client and no API token on the server, and Cloudflare trusts it for 15 years. No Cloudflare Tunnel (an untested component in the critical path). Authenticated Origin Pulls come after launch. A Let's Encrypt fallback (DNS-01) is only documented (RUNBOOK §15).
