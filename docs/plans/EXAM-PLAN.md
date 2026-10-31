@@ -1,6 +1,6 @@
 # Exam engine, exam admin and results: plan
 
-Plan only, no product code (2026-10-31, branch `feat/exam-plan`, worktree `G:\sirat-exam`). Revised the same day after the lead's review: old rows in `*_test` databases (2.3), no refunds (D3), the same questions for everyone by default (Q2). It reaches `main` in a docs-only pull request; Rasel merges it. Code starts only after that, on new branches from `main` (section 8).
+Plan only, no product code (2026-10-31, branch `feat/exam-plan`, worktree `G:\sirat-exam`). Revised the same day after the lead's review (old rows in `*_test` databases, 2.3; no refunds, D3; the same questions for everyone, Q2) and after the owner's answers (section 9; Q4 brings rule-violation warnings and an automatic submit, 3.15). It reaches `main` in a docs-only pull request; Rasel merges it. Code starts only after that, on new branches from `main` (section 8).
 
 **Priority:** the 15 November launch (registration + payment, A2's login) comes first. The exam pull requests may be reviewed and merged after it. This work never touches the A2, payments or lead worktrees or branches.
 
@@ -8,7 +8,7 @@ Sources: RULEBOOK §7, §7.1, §9, §13, §18; `02-SYSTEM-DESIGN.md`; `03-HOW-IT
 
 From `reference/` only the look and the business rules are taken (`QuizForm`, `QuizQuestion`, `NextButton`, `StartModal`, `TimeUpModal`, `FinalSubmitModal`, `admin/quiz-management/*`). No code is copied: the old exam sent the questions with their answers to the browser, took `user_id`, `time_taken` and the category from the request body, and ran the timer in the browser.
 
-The five owner questions are in section 9. Everything else uses the defaults listed there; the owner can override any of them at review.
+The owner answered all five questions on 2026-10-31 (section 9; DECISIONS "Exam rules (owner)"). Everything else uses the defaults listed there; the owner can override any of them at review.
 
 ## 0. Scope and dependencies
 
@@ -19,13 +19,13 @@ The five owner questions are in section 9. Everything else uses the defaults lis
 - UI: exam player (waiting room, rules, player, time-up, receipt), admin create/edit/publish, and the existing exam and leaderboard pages on the real API.
 - k6 exam simulation: locally now, the real numbers on the VPS.
 
-**Out of scope:** rounds, promotion, jury and certificates (later in the Phase A order); CSV import and answer-key correction with re-scoring (P1, PR E7); the public marketing leaderboard (Phase D); proctoring beyond log-only focus events; admin 2FA (A2).
+**Out of scope:** rounds, promotion, jury and certificates (later in the Phase A order); CSV import and answer-key correction with re-scoring (P1, PR E7); the public marketing leaderboard (Phase D); proctoring beyond the browser-side rule-violation warnings (3.15); admin 2FA (A2).
 
 **Dependencies:**
 - **Payments PR 1** (target 1 November) changes `schema.prisma` and adds migrations first. This work's migrations always come after theirs (section 7). The access check (paid registration) is written only after PR 1 merges, and it only reads `registrations` and `payments`.
 - **A2's web session (PR #12)**: the player uses its browser API client (`lib/api.ts`, refresh after a 401) and the server helper (`lib/server-api.ts`). The UI pull requests (E4, E5) start after #12 merges.
 - **A2's per-user limit PR**: the exam routes use its per-user keys. If it is not merged by E2, the checkpoint keeps its own per-attempt minimum interval (section 3.4), which needs no shared file.
-- **Owner answers** Q1–Q5 (section 9), before E2.
+- **Owner answers** Q1–Q5: answered on 2026-10-31 (section 9, DECISIONS). Q4 changed the plan: rule-violation warnings and an automatic submit (3.15).
 - **VPS** (OPEN-QUESTIONS #22): the real k6 numbers. The client's exam content, dates and the expected peak (OPEN-QUESTIONS #24).
 - **No exam date is set yet.** The first real exam still needs RULEBOOK §13's pre-exam checklist: k6 at 1.5–2× peak on the VPS, a restore drill, a 48-hour code freeze.
 
@@ -42,13 +42,13 @@ Roles: `student`, `ambassador` (an ambassador is a student with an extra panel).
 | Method + path | Ownership and checks | Answer | PR |
 |---|---|---|---|
 | `GET /exams` | Exams the session user may see: `published`, category `null` or equal to the user's | `StudentExamCard[]`, the state from the server clock (section 3.11), `resultsPublished`. Never questions | E2 |
-| `GET /exams/:id` | Same visibility; otherwise 404 | Card + rules (`durationMinutes`, `questionsPerAttempt`, `graceSeconds`, `focusPolicy`) + `serverNow` + the user's attempt summary (status, `endsAt`, receipt). Never questions | E2 |
+| `GET /exams/:id` | Same visibility; otherwise 404 | Card + rules (`durationMinutes`, `questionsPerAttempt`, `graceSeconds`, `violationWarnings` = 5) + `serverNow` + the user's attempt summary (status, `endsAt`, receipt). Never questions | E2 |
 | `POST /exams/:id/attempts` | Start or resume. Body `{}`. Email verified (lazy verification, DECISIONS 2026-10-30), paid registration (after payments PR 1; D3), not blocked, category match, `published`, window open | 201 new / 200 existing: `AttemptView` (1.3). 403 `email_unverified` · 403 `registration_required` · 404 not visible · 409 `not_open_yet` · 409 `window_closed` · 409 `already_submitted` (with the receipt) | E2 |
 | `GET /attempts/me?exam=:id` | The session user's attempt for that exam (`WHERE user_id = sub`) | `AttemptView` in progress; receipt only once submitted; 404 when none | E2 |
-| `PUT /attempts/:id/checkpoint` | Owner. Body `{ seq, answers, events? }` | Redis only. 200 `{ savedSeq, remainingSeconds, serverNow }` · 409 `time_over` · 409 `already_submitted` · 429 + `Retry-After` below the minimum interval | E2 |
-| `POST /attempts/:id/submit` | Owner. Body `{ requestId (uuid), answers, events? }` | Idempotent. 200 `{ receiptId, submittedAt, alreadySubmitted }` · 409 `time_over` · 409 `request_id_conflict` (the id belongs to another attempt) | E2 |
+| `PUT /attempts/:id/checkpoint` | Owner. Body `{ seq, answers, violationCount, events }` | Redis only. 200 `{ savedSeq, violationCount, remainingSeconds, serverNow }` (the server's count never goes down, 3.15) · 409 `time_over` · 409 `already_submitted` · 429 + `Retry-After` below the minimum interval | E2 |
+| `POST /attempts/:id/submit` | Owner. Body `{ requestId (uuid), answers, endReason, violationCount, events }`; `endReason` is `submitted`, `time_up` or `violations` (the last only with more than 5 violations) | Idempotent. 200 `{ receiptId, submittedAt, endReason, alreadySubmitted }` · 409 `time_over` · 409 `request_id_conflict` (the id belongs to another attempt) | E2 |
 | `GET /attempts/:id/review` | Owner. 403 `results_not_published` until the exam's results are published (the database refuses that before `window_end + grace`, 2.2) | The attempt's questions in its order: the student's choice, the correct option, the explanation; own score, rank, server time taken | E3 |
-| `GET /leaderboard?exam=&round=&category=&page=&q=` | Auth (any role). `round` + `category` resolve to one exam on the server; `category` defaults to the user's | `LeaderboardView`: `unpublished`, or the published snapshot (rank, name, institution; scores only if Q5 says so). Server paging, search by name/institution | E3 |
+| `GET /leaderboard?exam=&round=&category=&page=&q=` | Auth (any role). `round` + `category` resolve to one exam on the server; `category` defaults to the user's | `LeaderboardView`: `unpublished`, or the published snapshot (rank, name, institution; no scores, Q5). Server paging, search by name/institution | E3 |
 
 ### 1.2 Admin
 
@@ -57,7 +57,7 @@ All rows: `@Roles('admin')` unless noted, every write audit-logged (`exam.*`, `q
 | Method + path | Rules | PR |
 |---|---|---|
 | `GET /admin/exams?page=&q=&status=` | `AdminExamCard` (paged) | E1 |
-| `POST /admin/exams` | Creates a `draft`. Fields: title, category (or all), round, window start/end, duration (1–30), questions per attempt, grace seconds (form pre-filled from `SUBMIT_GRACE_SECONDS_DEFAULT`), focus policy, `randomDraw` (default false, Q2). The window must be at least one duration long | E1 |
+| `POST /admin/exams` | Creates a `draft`. Fields: title, category (or all), round, window start/end, duration (1–30), questions per attempt, grace seconds (form pre-filled from `SUBMIT_GRACE_SECONDS_DEFAULT`), `randomDraw` (default false, Q2). No violation switch: the rule is on for every exam (Q4). The window must be at least one duration long | E1 |
 | `GET /admin/exams/:id` | `AdminExamDetail`: active questions **with** correct keys and explanations, version numbers. Admin only, never manager | E1 |
 | `PATCH /admin/exams/:id` | Draft: every config field. Published: only `title`, and `windowEnd` extended (never shortened, only before the window has ended; reason required) | E1 |
 | `POST /admin/exams/:id/publish` | Checks in 4.2; then the questions are warmed into Redis (E2 adds the warm-up job) | E1 |
@@ -71,7 +71,8 @@ All rows: `@Roles('admin')` unless noted, every write audit-logged (`exam.*`, `q
 | `POST /admin/exams/:id/results/build` | Rebuilds the snapshot; only after the window closed for everyone and every attempt is final | E3 |
 | `POST /admin/exams/:id/results/publish`, `/unpublish` | Publishing sets `results_published_at`; the database refuses it before `window_end + grace` | E3 |
 | `GET /admin/leaderboard?exam=&round=&category=&page=&q=` | `@Roles('admin', 'manager')`: the snapshot with email, score and time, also before it is published | E3 |
-| `GET /admin/exams/:id/attempts?page=&status=` | Attempts with status, times, score, focus-event count; never answers (P1, may move to E7) | E3 |
+| `GET /admin/exams/:id/attempts?page=&status=&endReason=&minViolations=` | Each student's attempt: status, times, end reason, violation count, score; never answers (owner, Q4) | E3 |
+| `GET /admin/exams/:id/attempts/:attemptId` | One attempt's violation and connection events with times (`events` of the submission, or the live checkpoint while in progress) | E3 |
 
 Admin exam routes live in controllers inside `ExamsModule` and `LeaderboardModule` (`/admin/...` paths), so `admin.module.ts` and `app.module.ts` do not change (D10).
 
@@ -93,13 +94,25 @@ interface AttemptView {
   questions: Array<{ text: string; options: string[] }>; // in this attempt's order
   answers: Array<number | null> | null; // option positions from the last checkpoint
   savedSeq: number | null;
-  receipt: { receiptId: string; submittedAt: string } | null;
+  violationCount: number; // the server's count (3.15): a reload or another device never starts again from 0
+  violationWarnings: number; // EXAM_VIOLATION_WARNINGS (5): the next violation ends the exam
+  receipt: { receiptId: string; submittedAt: string; endReason: EndReason } | null;
 }
 type AnswerList = Array<number | null>; // index = question position, value = option position
-interface CheckpointBody { seq: number; answers: AnswerList; events?: FocusEvent[] }
-interface SubmitBody { requestId: string; answers: AnswerList; events?: FocusEvent[] }
-interface FocusEvent { type: 'hidden' | 'visible' | 'offline' | 'online'; at: number } // seconds since start
+type EndReason = 'submitted' | 'time_up' | 'violations' | 'server_checkpoint' | 'server_empty';
+interface CheckpointBody { seq: number; answers: AnswerList; violationCount: number; events: ExamEvent[] }
+interface SubmitBody {
+  requestId: string;
+  answers: AnswerList;
+  endReason: 'submitted' | 'time_up' | 'violations';
+  violationCount: number;
+  events: ExamEvent[];
+}
+/** Seconds since start. `leave` (tab or app switch) and `devtools` are violations; the rest are only logged. */
+interface ExamEvent { type: 'leave' | 'return' | 'devtools' | 'offline' | 'online' | 'resume'; at: number }
 ```
+
+`EXAM_VIOLATION_WARNINGS = 5` is one constant in `@sirat/shared`, used by the API, the player and the rules text. If Rasel wants the 5th violation to end the exam, only this constant changes (to 4).
 
 Changes to existing types (`dashboard.ts`): `StudentExamCard` gains `resultsPublished`; `LeaderboardQuery` gains `examId` and `category`; `AdminExamCard.locked` becomes "published" (versions only); `AdminLeaderboardView.isPublic` means the exam's results are published (D7).
 
@@ -120,7 +133,6 @@ No enum changes: `ExamStatus` and `AttemptStatus` stay as they are.
 
 **`exams`**
 - add `content_version int NOT NULL DEFAULT 1`: raised by every question write (trigger), so caches and attempts know which pool they used;
-- add `focus_policy` (new enum `FocusPolicy`: `off`, `log`; default `log`, Q4);
 - add `random_draw boolean NOT NULL DEFAULT false` (Q2): false = everyone gets the same questions (pool = questions per attempt); true = the admin chose different questions per student from a larger pool;
 - add `published_at` NULL, `results_snapshot_at` NULL, `results_generation int NOT NULL DEFAULT 0`;
 - CHECKs: `grace_seconds <= 300`; `status::text = 'draft' OR published_at IS NOT NULL`; `results_published_at IS NULL OR results_published_at >= window_end + grace_seconds * interval '1 second'` (**the database itself refuses results before the window has closed for everyone**);
@@ -140,7 +152,8 @@ No enum changes: `ExamStatus` and `AttemptStatus` stay as they are.
 - trigger `attempts_guard` (2.4).
 
 **`submissions`**
-- add `source` (new enum `SubmissionSource`: `client`, `checkpoint`, `none`), no default;
+- add `end_reason` (new enum `EndReason`: `submitted`, `time_up`, `violations`, `server_checkpoint`, `server_empty`), no default: why the exam ended (Q4: an exam ended by violations says so);
+- add `violation_count int NOT NULL` (CHECK `>= 0`): the final count (3.15); `events` holds the violation and connection events with their times, for the admin;
 - `answers` format v1: `{ "v": 1, "a": [2, null, 0, …] }`;
 - CHECKs: `jsonb_typeof(answers->'a') = 'array'`; `request_id ~ '^[A-Za-z0-9._-]{8,80}$'`; `events` at most 16 KB;
 - **append-only**: UPDATE and DELETE refused; TRUNCATE refused too, except in a database whose name ends in `_test` (the trigger deferred to "the exam engine module" in the A1 review). Why the exception: `truncateAll` in the integration tests runs `TRUNCATE … CASCADE` on `users`, which reaches `attempts` and `submissions`. Unlike `audit_logs`, which has no foreign keys and is simply skipped, `submissions` cannot be left out, so a strict trigger would break every session's `test:int` once a submission exists. A production database is never named `*_test` (`prepare-test-db.mjs` uses the same rule).
@@ -156,7 +169,7 @@ No enum changes: `ExamStatus` and `AttemptStatus` stay as they are.
 
 | # | Name | Kind | Content |
 |---|---|---|---|
-| EX1 | `<ts>_exam_engine` | generated by Prisma, plus a hand-added first statement | The columns, enums, indexes and table above. The first statement is a guard: it stops with a clear message if `questions`, `attempts` or `submissions` has any row (pre-launch: no product code has written them, and `lineage_id`, `position`, `question_count`, `source` have no meaningful backfill) |
+| EX1 | `<ts>_exam_engine` | generated by Prisma, plus a hand-added first statement | The columns, enums, indexes and table above. The first statement is a guard: it stops with a clear message if `questions`, `attempts` or `submissions` has any row (pre-launch: no product code has written them, and `lineage_id`, `position`, `question_count`, `end_reason` have no meaningful backfill) |
 | EX2 | `<ts>_exam_checks` | hand-written SQL, kept apart so regenerating EX1 never loses it | Every CHECK, partial index and trigger in 2.2 and 2.4. Enum CHECKs compare `::text` |
 
 - Both come **after** payments' migrations. If payments merges while E1 is open, E1 runs `git merge origin/main`, deletes its own unmerged EX1, regenerates it on a fresh `sirat_exam` (`prisma migrate dev --create-only`), puts the guard back as its first statement, renames EX2 to a later timestamp and commits that as a new commit. A migration on `main` is never edited; the CI drift check must stay green.
@@ -173,7 +186,7 @@ No enum changes: `ExamStatus` and `AttemptStatus` stay as they are.
 
 | Trigger | Refuses |
 |---|---|
-| `exams_frozen_after_publish` | Once `status` is not `draft`: any change to `window_start`, `duration_minutes`, `questions_per_attempt`, `grace_seconds`, `category`, `round_id`, `focus_policy`, `random_draw`; `window_end` shortened, or changed after it has passed; `published → draft` while an attempt exists; any status change out of `archived` |
+| `exams_frozen_after_publish` | Once `status` is not `draft`: any change to `window_start`, `duration_minutes`, `questions_per_attempt`, `grace_seconds`, `category`, `round_id`, `random_draw`; `window_end` shortened, or changed after it has passed; `published → draft` while an attempt exists; any status change out of `archived` |
 | `questions_frozen_after_publish` | When the exam is not `draft`: DELETE; UPDATE of anything except `is_active` true → false with `deactivated_at`. INSERT into an `archived` exam |
 | `questions_bump_exam_content_version` | Nothing; raises `exams.content_version` after every question INSERT or UPDATE |
 | `attempts_guard` | INSERT unless the exam is `published` and the status is `in_progress`; UPDATE of `user_id`, `exam_id`, `started_at`, `ends_at`, `layout`, `question_count`, `content_version` (**the timer can never be reset**); status moves other than `in_progress → submitted/expired`, `submitted/expired → scored`, `scored → scored` (re-score); DELETE |
@@ -183,11 +196,11 @@ No enum changes: `ExamStatus` and `AttemptStatus` stay as they are.
 
 | Key | Content | Lifetime |
 |---|---|---|
-| `exam:cfg:{examId}` | Status, window, duration, N, grace, category, round, focus policy, `content_version` | 60 s; deleted after every admin write |
+| `exam:cfg:{examId}` | Status, window, duration, N, grace, category, round, `random_draw`, `content_version` | 60 s; deleted after every admin write |
 | `exam:pool:{examId}:{cv}` | Active question ids of that content version | 3 days |
 | `qv:{questionId}` | One version's text and options (keys and texts), `keep_option_order`. **Never the correct key or the explanation** | 3 days; deleted when a draft question is edited |
 | `att:{attemptId}` | `userId`, `examId`, `endsAt`, `graceSeconds`, N, status | until `ends_at + grace + 2 h` |
-| `ckpt:{attemptId}` | `seq`, answers, events, saved time | same |
+| `ckpt:{attemptId}` | `seq`, answers, violation count (never lowered), events, saved time | same |
 | `lb:{examId}:{gen}:{page}` | One rendered leaderboard page | 1 h; a new generation uses new keys |
 
 The worker reads correct keys from Postgres only. A bug that dumps the API cache can therefore never leak an answer.
@@ -231,9 +244,13 @@ Cost per student: two or three indexed reads and one insert (02-SYSTEM-DESIGN §
 
 ### 3.4 During the exam: local save and checkpoints
 
-- **Every answer change** is saved at once in the browser (`localStorage`, key `sirat.exam.v1.<attemptId>`: `seq`, answers, events, a pending submit). Nothing is sent per answer.
-- **Checkpoint** every 60–120 s (random, so students do not line up), and also on `online`, on `visibilitychange` → hidden (`fetch` with `keepalive`, which keeps the CSRF header), and **once more 30–60 s before time-up**, so the server's copy is fresh if the final submit never arrives.
-- **Server:** `att:{id}` from Redis (on a miss, one primary-key read, then re-cached). Owner check; refused after `ends_at + grace` or once submitted. Answers validated: exactly N entries, each `null` or `0 … options − 1`; events capped at 300. Then one Lua script on `ckpt:{id}`: stores only if `seq` is newer, and answers 429 below the minimum interval (`EXAM_CHECKPOINT_MIN_INTERVAL_SECONDS`, 20). **No database read or write** on a warm cache.
+- **Every answer change** is saved at once in the browser (`localStorage`, key `sirat.exam.v1.<attemptId>`: `seq`, answers, violation count, events, a pending submit). Nothing is sent per answer.
+- **Checkpoint** every 60–120 s (random, so students do not line up), and also on `online`, on `visibilitychange` → hidden (`fetch` with `keepalive`, which keeps the CSRF header), **as soon as the minimum interval allows after a violation** (3.15), and **once more 30–60 s before time-up**, so the server's copy is fresh if the final submit never arrives.
+- **Server:** `att:{id}` from Redis (on a miss, one primary-key read, then re-cached). Owner check; refused after `ends_at + grace` or once submitted. Answers validated: exactly N entries, each `null` or `0 … options − 1`; events capped at 300. Then one Lua script on `ckpt:{id}`:
+  - the answers are stored only if `seq` is newer, and a write below the minimum interval (`EXAM_CHECKPOINT_MIN_INTERVAL_SECONDS`, 20) answers 429;
+  - the violation count becomes the highest of the stored count, the sent count and the number of violation events, **also on a 429**, so a violation is never lost on the server and the count never goes down.
+
+  **No database read or write** on a warm cache.
 - The answer carries `remainingSeconds` and `serverNow`; the client re-syncs its timer.
 
 ### 3.5 Disconnect
@@ -242,7 +259,7 @@ The timer keeps running on the server (RULEBOOK 7.1). The client keeps answering
 
 ### 3.6 Refresh, crash or another device
 
-`GET /attempts/me?exam=` returns the same questions in the same order (from `layout` and the immutable `qv:` versions, even if an admin has since replaced a question), the remaining time and the checkpoint answers. The client merges: the higher `seq` wins between `localStorage` and the server. On another device only the server copy exists, so at most the last 2 minutes are lost. Two open devices are allowed (a dead phone, then a laptop); each sends a `deviceId` event, and the admin sees the count (D5).
+`GET /attempts/me?exam=` returns the same questions in the same order (from `layout` and the immutable `qv:` versions, even if an admin has since replaced a question), the remaining time, the checkpoint answers and the server's violation count. The client merges: the higher `seq` wins for the answers, and the **higher violation count** wins (`localStorage` or server), so a reload or another device never starts the count again from 0. On another device only the server copy exists, so at most the last 2 minutes of answers are lost. Two open devices are allowed (a dead phone, then a laptop); each resume adds a `resume` event, which the admin sees (D5). A resume whose count is already over 5 submits at once (3.15).
 
 ### 3.7 Time-up and auto-submit
 
@@ -254,7 +271,7 @@ One transaction:
 1. `SELECT … FROM attempts JOIN exams … WHERE attempts.id = $1 FOR UPDATE OF attempts` (a lock on one attempt row only); not the session user's → 404.
 2. A submission already exists → its receipt (`alreadySubmitted: true`), whichever `requestId` was sent.
 3. `now() > ends_at + grace` (grace from the exam, default 30 s, Q3), or the sweep has already finalized it → 409 `time_over`. Exactly at `ends_at + grace` is still accepted.
-4. Insert the submission (`source = client`), set `submitted`, `submitted_at = now()`, `time_taken_seconds = LEAST(now(), ends_at) − started_at` in whole seconds (**server time; grace never adds time**).
+4. Insert the submission: `end_reason` from the body (`submitted`, `time_up`, or `violations`, which is refused with 400 unless the count is over 5), `violation_count` = the higher of the body's count and the checkpoint's, `events` from the body. Set `submitted`, `submitted_at = now()`, `time_taken_seconds = LEAST(now(), ends_at) − started_at` in whole seconds (**server time; grace never adds time**).
 5. Commit, then: mark `att:{id}` submitted, enqueue scoring (job id `score.<attemptId>`), answer the receipt. If the enqueue fails, the answer is still 200 and the sweep enqueues it later.
 
 The client keeps its local copy and retries with backoff until a receipt arrives. A `requestId` used by another attempt → 409 `request_id_conflict` (P2002 on the unique).
@@ -263,7 +280,7 @@ The client keeps its local copy and retries with backoff until a receipt arrives
 
 For attempts still `in_progress` past `ends_at + grace + 30 s` (the partial index), at most 500 per run:
 1. Read `ckpt:{id}` from Redis.
-2. Transaction: lock the row with `FOR UPDATE SKIP LOCKED`; if it is still `in_progress` with no submission, insert a submission from the checkpoint (`source = checkpoint`) or an empty one (`source = none`), request id `auto.<attemptId>`; status `expired`, `submitted_at = now()`, `time_taken_seconds = ends_at − started_at`.
+2. Transaction: lock the row with `FOR UPDATE SKIP LOCKED`; if it is still `in_progress` with no submission, insert a submission from the checkpoint (`end_reason = server_checkpoint`, with its violation count and events) or an empty one (`server_empty`), request id `auto.<attemptId>`; status `expired`, `submitted_at = now()`, `time_taken_seconds = ends_at − started_at`.
 3. Enqueue scoring.
 
 The same job re-enqueues scoring for any `submitted`/`expired` attempt still unscored after 5 minutes (a lost job). Two workers can run it safely: `SKIP LOCKED` and the unique `attempt_id` make it idempotent.
@@ -318,6 +335,8 @@ ORDER BY a.score DESC, a.time_taken_seconds ASC;
 | Redis flushed mid-exam | Questions re-read from Postgres (single-flight); checkpoints lost, local copies and the final submit remain |
 | Worker down | Submits still succeed; scoring waits in the queue; alert on queue depth |
 | Session expires mid-exam | 401 → refresh → retry (A2's client); if the session is gone, answers stay local, the student logs in and resumes |
+| Reload after 3 violations | The count stays 3 (`localStorage` and the server); the next violation is warning 4 |
+| 6th violation while offline | The player ends the exam at once and keeps the submit (`violations`) locally until it gets through, within the grace; otherwise the sweep submits the last checkpoint |
 
 ### 3.14 Cost per student
 
@@ -328,6 +347,33 @@ ORDER BY a.score DESC, a.time_taken_seconds ASC;
 | Submit | 1 transaction (lock, insert, update) | 1 write |
 | Scoring (worker) | 2 reads + 1 update | — |
 | Leaderboard view | 0 for pages, 1 snapshot read for a search | 1 read |
+
+### 3.15 Rule violations: warnings, then an automatic submit (owner, Q4)
+
+On for every exam, always; no admin switch. The idea comes from the old `QuizForm.jsx` and `StartModal.jsx`, not the code.
+
+**What counts as a violation** (only while the exam is running: not before Start, not during time-up or submitting):
+- **Leaving the exam:** the window loses focus or the page becomes hidden (a tab or app switch). One leave counts once, until the page has focus again; a warning on screen does not pause counting.
+- **Developer tools keys:** F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C, and on a Mac Cmd+Opt+I, Cmd+Opt+J, Cmd+Opt+C. The key is blocked and counted. Opening the tools from the browser menu cannot be seen by a page.
+
+**Not a violation (recorded as an event only):**
+- the blur of a page that is reloading or closing (`beforeunload` / `pagehide` mark the page as unloading first);
+- going offline or coming back online.
+
+**What the student sees:**
+- Each violation: the exam area turns blurred and grey, with a dialog "Warning n/5", the reason (left the exam / developer tools) and a "Return to exam" button. The timer keeps running.
+- After 5 warnings, the next violation (the 6th) shows "Exam ended" (no way back) and submits the **current** answers at once, with `endReason = violations`; then the receipt says why the exam ended. There is no 0–20 s delay here: such ends are spread out on their own.
+- If Rasel wants the 5th violation to end the exam, the lead will say so; only `EXAM_VIOLATION_WARNINGS` changes.
+- Right-click and text selection are off in the exam area (the `contextmenu` event and `user-select: none`). Screen readers still read the text.
+
+**The count survives everything (the old count lived only in the page's memory, so a reload reset it to 0):**
+1. Every violation is written to `localStorage` at once (count + event with its time).
+2. The next checkpoint carries the count and the events; the server keeps the highest count it has seen and never lowers it (3.4).
+3. `AttemptView.violationCount` returns the server's count on every start and resume; the player takes the higher of it and the local count.
+4. A resume with a count already over 5 submits at once (`violations`).
+5. The final submit stores `end_reason`, `violation_count` and the events; the admin sees each student's count, end reason and event times (`GET /admin/exams/:id/attempts`, E3; the screen in E5).
+
+**Honest limits:** the browser detects all of this, so a modified browser or a second device can avoid it. It deters and records; it does not prove cheating. The rules text says only what the system really does (5.1).
 
 ## 4. Admin: create, edit, version, publish, lock
 
@@ -378,8 +424,10 @@ Rules from `07-UI-MIGRATION.md`: `@sirat/ui` components and tokens only, `-stron
 |---|---|---|
 | `/dashboard/exam` (exists, mock) | Real `GET /exams`. Buttons by state: Open → "Start", In progress → "Continue", Submitted → "Receipt", results published → "Results" | E4 |
 | `/dashboard/exam/[id]` (new) | Server Component reads `GET /exams/:id`, then renders one of: waiting room (countdown to start from `serverNow`), rules dialog, player, receipt | E4 |
-| Rules dialog (look of `StartModal`) | Rules from the exam config (duration, number of questions, grace, resume allowed, focus events recorded if `log`), an "I agree" checkbox, Start | E4 |
-| Player (look of `QuizForm` + `QuizQuestion`) | One question at a time, progress `n/N` with a bar, positional labels (A–D / ক–ঘ), Back/Next and a question palette (unanswered ones marked), `Countdown` from server seconds, connection badge | E4 |
+| Rules dialog (look of `StartModal`) | Rules from the exam config (duration, number of questions, grace), the violation rule below, an "I agree" checkbox, Start | E4 |
+| Player (look of `QuizForm` + `QuizQuestion`) | One question at a time, progress `n/N` with a bar, positional labels (A–D / ক–ঘ), Back/Next and a question palette (unanswered ones marked), `Countdown` from server seconds, connection badge, the warning count once it is above 0. Right-click and text selection off in the exam area | E4 |
+| Warning dialog (3.15) | The exam area blurred and grey; "Warning n/5", the reason, "Return to exam" | E4 |
+| "Exam ended" dialog (3.15) | After the 6th violation: "Exam ended. Your answers are being submitted." No way back; then the receipt with the reason | E4 |
 | Final submit dialog (look of `FinalSubmitModal`) | "Submit now? n unanswered"; confirm | E4 |
 | Time-up dialog (look of `TimeUpModal`) | "Time is up. Saving your answers…", then the receipt. No "Quit" | E4 |
 | Receipt | Receipt id and time; "Results after the window closes for everyone". No score | E4 |
@@ -389,16 +437,30 @@ Rules from `07-UI-MIGRATION.md`: `@sirat/ui` components and tokens only, `-stron
 - **Player logic is in plain modules** (`components/exam/state.ts` reducer, `storage.ts`, `sync.ts`, `time.ts`), so `node --test` covers them without a browser.
 - **The player is the one screen that calls `/api` from the browser** (through A2's `lib/api.ts`, refresh after a 401): RULEBOOK 7.1 requires the answers to live in the browser. This is a recorded exception to "no client-side fetching" (DECISIONS, E4).
 - **Local copy:** `sirat.exam.*` keys are removed on receipt and on logout. The logout change is one line in A2's `LogoutButton.tsx`, after #12 merges, told to Rasel first.
-- **Dropped from the old player:** the 30-minute constant, `time_taken` and `user_id` sent by the client, the blur/grayscale punishment, the right-click and print blocking (no security value), the 4th-violation auto-submit (unless Q4 says otherwise), "Next" locked until answered (skipping is allowed, D5).
+- **Rules text (bn + en), only what the system really does** (the old text claimed "AI detection and screenshot monitoring", which did not exist):
+  - "Do not leave the exam. Switching to another tab or app, or opening developer tools, shows a warning."
+  - "After 5 warnings, the 6th time ends your exam and submits your current answers."
+  - "Every such event is recorded with its time."
+  - "On a phone, turn on Do Not Disturb: a call or a notification can count as leaving the exam."
+  - "Reloading the page or losing the network does not count. Your answers are saved, and the timer keeps running."
+- **Kept from the old player (the idea, not the code):** blur and grey on a violation, the warning dialog, the automatic submit after the warnings run out (now after 5 warnings), right-click and selection off in the exam area.
+- **Dropped from the old player:**
+  - the 30-minute constant;
+  - `time_taken` and `user_id` sent by the client;
+  - the violation count kept only in the page's memory (a reload reset it to 0);
+  - the claims about AI detection and screenshots;
+  - the print blocking;
+  - "Next" locked until answered (skipping is allowed, D5).
 
 ### 5.2 Admin
 
 | Screen | Change | PR |
 |---|---|---|
 | `/admin/exams` (exists, read-only) | Real API; "New exam" button; status filter | E5 |
-| `/admin/exams/new` (new) | Config form: title, category (all / one), round, window start and end (Asia/Dhaka, stored UTC), duration, questions per attempt, grace, focus policy, and an unticked "Different questions per student (from a larger pool)" box, with a note that students then get different questions | E5 |
+| `/admin/exams/new` (new) | Config form: title, category (all / one), round, window start and end (Asia/Dhaka, stored UTC), duration, questions per attempt, grace, and an unticked "Different questions per student (from a larger pool)" box, with a note that students then get different questions | E5 |
 | `/admin/exams/[id]` (exists, read-only) | Edit config (fields frozen by state are shown read-only with the reason); question list with an editor dialog (text, 2–6 options, correct option, explanation, keep order). In a published exam the save button says "Save as version n+1" with a note that started attempts keep theirs. Retire instead of delete. Publish, unpublish and archive dialogs with the server's check results | E5 |
 | Results panel on `/admin/exams/[id]` | Counts by status, snapshot time, build, publish/unpublish results (confirm dialogs) | E5 |
+| Attempts on `/admin/exams/[id]` (owner, Q4) | Paged table: student, status, end reason, violation count, times, score (after scoring); filters for "ended by violations" and "at least n violations"; a dialog with one attempt's events and times | E5 |
 | `/admin/leaderboard` (exists, mock) | Real `GET /admin/leaderboard`; exam and category filters | E5 |
 
 Mutations go through Server Actions that call the API server-side with the session cookie (A2's `lib/server-api.ts`), as `07-UI-MIGRATION.md` requires. The action buttons hidden by the UI port (DECISIONS UI #9) appear only once their audited endpoints exist.
@@ -446,7 +508,13 @@ Each protection gets a test that fails with the protection removed (mutation-che
   - another user's attempt → 404;
   - after the grace → 409; after submit → 409;
   - **no database write** (a query counter on the test app's Prisma client sees no INSERT or UPDATE);
-  - an older `seq` is ignored; bad answers → 400; below the interval → 429.
+  - an older `seq` is ignored; bad answers → 400; below the interval → 429;
+  - the violation count never goes down (a lower count is ignored) and is kept even on a 429.
+- `exam-violations.int-spec.ts` (owner, Q4):
+  - **the count survives a reload:** after checkpoints with 3 violations, resume and a start from a second "device" both return `violationCount` 3;
+  - **the 6th violation submits the real answers:** a submit with `endReason = violations`, count 6 and answers `[2, null, 1]` stores exactly those, with the reason and the events;
+  - `violations` with a count of 5 or less → 400;
+  - the admin attempts list shows each student's count and end reason, and the attempt detail the events; a student or manager → 403.
 - `exam-submit.int-spec.ts`:
   - 5 parallel submits with one `requestId` → one row, one receipt;
   - a second `requestId` → the first receipt;
@@ -461,7 +529,7 @@ Each protection gets a test that fails with the protection removed (mutation-che
 - `exam-results.int-spec.ts`:
   - the snapshot only when everything is scored;
   - ranks and ties, paging, search, blocked users left out;
-  - students see `unpublished` before publishing and no score/time/email after it (unless Q5);
+  - students see `unpublished` before publishing and no score/time/email after it either (Q5);
   - review 403 before publishing, then the correct answers; another user's review → 404;
   - publishing before `window_end + grace` refused by the API and by the CHECK.
 - `admin-exams.int-spec.ts`:
@@ -475,11 +543,20 @@ Each protection gets a test that fails with the protection removed (mutation-che
 
 **Web (`pnpm -F web test`, `node --test`)**
 - `state.test.ts`: **auto-submit at time-up sends the current answers** (e.g. `[2, null, 1]`), never `{}` or an empty list; a local save after each change; the pre-time-up checkpoint; the 0–20 s jitter bounds; submit retries keep the local copy until a receipt; merging local and server by `seq`; 401 → refresh → retry; the offline badge.
+- `violations.test.ts` (owner, Q4):
+  - **the count survives a reload** (restored from `localStorage`; the higher of local and server wins);
+  - **the 6th violation submits the current answers** (`[2, null, 1]`, `endReason = violations`), never an empty list; warnings 1–5 only warn;
+  - **reload, close and offline are not violations** (`beforeunload`/`pagehide` before the blur; `offline`/`online` events);
+  - **developer tools keys are caught:** F12, Ctrl+Shift+I/J/C, Cmd+Opt+I/J/C count and are blocked; other keys (Ctrl+C, Shift+I alone, letters) do not count;
+  - one leave counts once until focus returns; leaving again while a warning is open counts again;
+  - nothing counts before Start or after the exam ended;
+  - the rules text in bn and en does not mention AI detection or screenshots.
 - Every API error code maps to a Bangla and an English message; i18n parity (existing).
 - `check:leak` also renders the waiting room and receipt pages with canary data.
 
 **End to end** (A2's `scripts/e2e.mjs`, headless browser; on the shared stack only when Rasel says so):
-- log in as a fixture student, start, answer, reload (resume), go offline and back;
+- log in as a fixture student, start, answer, reload (resume), go offline and back: no warning;
+- switch to another tab: warning 1/5; reload: still 1/5; five more switches: "Exam ended", and the admin attempts list shows `violations` with the answers given;
 - a 1-minute test exam reaches time-up and auto-submits; the admin results show the answered count;
 - a receipt without a score.
 
@@ -493,7 +570,7 @@ Each protection gets a test that fails with the protection removed (mutation-che
 - **Checks:** p95 < 500 ms, errors < 0.5 % (RULEBOOK §13); after the run, the admin results count equals the receipts k6 received (**zero lost submissions**); the queue drains; `pg_stat_user_tables` shows no writes during checkpoint-only phases.
 - **Users:** a guarded load fixture script (`prisma/fixtures/loadtest-fixtures.ts`, the same four guards as the dev fixtures) creates N verified students with paid registrations in the local database. It builds on payments' new fixture shape, so it comes after payments PR 1.
 - **Now (local, E6):** this worktree's API on 4200 and its worker against `sirat_exam`, a few hundred users. The numbers are provisional and catch regressions only.
-- **Later (VPS):** from another machine, at 1.5–2× the expected peak (OPEN-QUESTIONS #24: 1,300–3,800 concurrent attempts, so about 5,700–7,600), including the first-hour surge, against a staging stack (own compose project and database). Results and the capacity decision go into DECISIONS. No real exam before this passes.
+- **Later (VPS):** from another machine, at 1.5–2× the expected peak (OPEN-QUESTIONS #24 estimates 1,300–3,800 concurrent attempts; 1.5–2× the upper figure is about 5,700–7,600), including the first-hour surge, against a staging stack (own compose project and database). Results and the capacity decision go into DECISIONS. No real exam before this passes.
 
 ## 7. Conflict files: what changes when
 
@@ -510,7 +587,7 @@ Git rule: no rebase and no force-push on a pushed branch. Conflicts are resolved
 | `apps/api/src/app.module.ts` | No change (the modules are already imported; admin controllers live inside `ExamsModule` and `LeaderboardModule`) | — |
 | `apps/api/src/worker.ts` | E3: one import line (`ExamWorkerModule`) | Payments adds its worker module next to it: keep both |
 | `apps/api/src/config/env.ts`, both `.env.example` | E2: an "Exam engine" block at the end, all with defaults (`EXAM_CHECKPOINT_MIN_INTERVAL_SECONDS`, `EXAM_FINALIZE_SWEEP_SECONDS`, `EXAM_SCORING_CONCURRENCY`) | Payments' block also ends these files: keep both |
-| `apps/api/test/helpers.ts`, `db-constraints.int-spec.ts` | E1, after `git merge origin/main` (payments PR 1 changes both): only the exam parts. `examData()` and `makeAttempt()` fill the new required columns, and the "exam attempts and submissions" block (today it inserts `answers: {}` and no `source`) moves into the new `exam-constraints.int-spec.ts`. New exam helpers go into a new `test/exam-helpers.ts` | Payment helpers and payment blocks are not touched |
+| `apps/api/test/helpers.ts`, `db-constraints.int-spec.ts` | E1, after `git merge origin/main` (payments PR 1 changes both): only the exam parts. `examData()` and `makeAttempt()` fill the new required columns, and the "exam attempts and submissions" block (today it inserts `answers: {}` and no `end_reason`) moves into the new `exam-constraints.int-spec.ts`. New exam helpers go into a new `test/exam-helpers.ts` | Payment helpers and payment blocks are not touched |
 | `apps/api/test/prepare-test-db.mjs` | E1, after payments PR 1 merges | Extends payments' mechanism for old test rows to the exam tables (2.3); no second path |
 | `packages/shared/src/index.ts`, `records.ts`, `dashboard.ts` | E1 (records), E2/E3 (`exam.ts` + one export line; the type changes in 1.3) | The UI and payments sessions may change them too: `git merge origin/main`, keep both |
 | `apps/web/src/data/source.ts`, `data/mock/*`, `data/http/*` | E4, E5 | Coordinated with payments' web days (5.3) |
@@ -519,11 +596,12 @@ Git rule: no rebase and no force-push on a pushed branch. Conflicts are resolved
 | `infra/*` | No change | — |
 | `docs/06-API.md` | E1 (admin), E2 (student), E3 (results, leaderboard) | Payments edits it too (its day 4): merge, keep both |
 | `docs/05-DATABASE.md` | E1 | |
-| `docs/DECISIONS.md` | E1 (the owner's answers and this plan's defaults), then one entry per PR | Entries at the top. Before each push: `git merge origin/main`, keep every entry from both sides, newest first |
+| `docs/DECISIONS.md` | E0 (the owner's exam rules, Q1–Q5), then one entry per PR | Entries at the top. Before each push: `git merge origin/main`, keep every entry from both sides, newest first |
+| `docs/OPEN-QUESTIONS.md` | E0 (rows #4–#10 marked answered, pointing to DECISIONS) | Payments and A2 may edit other rows: merge, keep both |
 | `docs/RUNBOOK.md` | E6 only, one commit (exam-day steps: warm-up check, sweep and queue health, publish results, incidents) | |
-| `docs/03-HOW-IT-WORKS.md` §3–4, `07-UI-MIGRATION.md`, `OPEN-QUESTIONS.md`, `CLAUDE.md` §4 | E3 (03), E4/E5 (07), E1 (OPEN-QUESTIONS answers move to DECISIONS), E6 (CLAUDE.md state, or when the lead says) | |
+| `docs/03-HOW-IT-WORKS.md` §3–4, `07-UI-MIGRATION.md`, `CLAUDE.md` §4 | E3 (03), E4/E5 (07), E6 (CLAUDE.md state, or when the lead says) | |
 
-The docs-only pull request of this plan adds one new file (`docs/plans/EXAM-PLAN.md`) and touches nothing else, so it cannot conflict.
+The docs-only pull request of this plan adds `docs/plans/EXAM-PLAN.md`, one entry at the top of `DECISIONS.md` and the answered rows #4–#10 in `OPEN-QUESTIONS.md` (owner, 2026-10-31). It runs `git merge origin/main` right before each push.
 
 ## 8. Pull requests and schedule
 
@@ -533,14 +611,14 @@ Each starts from `main` after the previous one merges. If one must wait, the nex
 
 | PR | Branch | Content | Needs |
 |---|---|---|---|
-| E0 | `feat/exam-plan` | This plan (docs only) | Lead review |
+| E0 | `feat/exam-plan` | This plan, the owner's exam rules in DECISIONS, OPEN-QUESTIONS #4–#10 answered (docs only) | Lead review |
 | E1 | `feat/exam-schema` | EX1 + EX2, the exam/question admin API (create, edit, version, publish, unpublish, archive), audit, `06-API`/`05-DATABASE`, DECISIONS | E0 merged; opens after payments PR 1 merged (migration order) |
-| E2 | `feat/exam-engine` | `GET /exams`, start/resume, checkpoint, submit, Redis caches and warm-up, access check, dev exam fixture, the leak test | E1; payments PR 1 (access check); Q1–Q4 |
-| E3 | `feat/exam-results` | Worker: scoring, finalize sweep, leaderboard build; results publish, review, student and admin leaderboard API | E2; Q5 |
-| E4 | `feat/exam-player` | Exam list on the API, waiting room, rules, player, time-up, receipt | E2; A2 PR #12 merged |
-| E5 | `feat/exam-admin-ui` | Admin create/edit/publish, results panel, review page, leaderboards on the API | E1, E3, E4 |
+| E2 | `feat/exam-engine` | `GET /exams`, start/resume, checkpoint (with the violation count), submit (with the end reason), Redis caches and warm-up, access check, dev exam fixture, the leak test | E1; payments PR 1 (access check) |
+| E3 | `feat/exam-results` | Worker: scoring, finalize sweep, leaderboard build; results publish, review, student and admin leaderboard API; the admin attempts list with violations (owner) | E2 |
+| E4 | `feat/exam-player` | Exam list on the API, waiting room, rules, player, violation warnings and the automatic submit, time-up, receipt | E2; A2 PR #12 merged |
+| E5 | `feat/exam-admin-ui` | Admin create/edit/publish, results panel, attempts with violations, review page, leaderboards on the API | E1, E3, E4 |
 | E6 | `feat/exam-loadtest` | k6 exam simulation (local), load fixtures, RUNBOOK exam day, 03-HOW-IT-WORKS, CLAUDE.md state | E3 |
-| E7 (P1) | later | CSV import, answer-key correction with re-scoring, admin attempts list | after the launch |
+| E7 (P1) | later | CSV import, answer-key correction with re-scoring | after the launch |
 
 ### 8.2 Schedule (estimate, at the measured pace)
 
@@ -556,10 +634,10 @@ Each starts from `main` after the previous one merges. If one must wait, the nex
 | E1 | 5–6 h |
 | E2 | 6–7 h |
 | E3 | 5–6 h |
-| E4 | 5–6 h |
+| E4 | 6–7 h (with the violation rule) |
 | E5 | 4–5 h |
 | E6 | 2–3 h |
-| **Total** | **27–33 h** |
+| **Total** | **28–34 h** |
 
 | Date (estimate) | Work |
 |---|---|
@@ -574,7 +652,6 @@ Each starts from `main` after the previous one merges. If one must wait, the nex
 | After 15 Nov | Merges still open; k6 on the VPS once it exists |
 
 **What does not compress** (waits, not coding):
-- Rasel's answers to Q1–Q5.
 - Payments PR 1's merge (E1 opens, E2's access check).
 - A2 #12's merge (E4, E5).
 - The lead's reviews and Rasel's merges, which come after the launch work.
@@ -582,17 +659,17 @@ Each starts from `main` after the previous one merges. If one must wait, the nex
 - The VPS for the real k6 numbers.
 - The client's exam content and dates.
 
-## 9. Owner questions (Rasel)
+## 9. Owner questions (Rasel): answered 2026-10-31
 
-At most five. Each has a default that applies if it is still unanswered when its PR starts. The answers go to DECISIONS and the matching OPEN-QUESTIONS rows close.
+All five are answered (owner, through the lead, 2026-10-31 18:13). Recorded in DECISIONS ("Exam rules (owner)"); OPEN-QUESTIONS #4–#10 point there.
 
-| # | Question (OPEN-QUESTIONS) | Default | Blocks |
+| # | Question (OPEN-QUESTIONS) | Owner's answer | Used in |
 |---|---|---|---|
-| Q1 | **Format (#4):** question type, marks, negative marking, images, languages? | Multiple choice, one correct answer, 4 options (2–6 allowed), 1 mark each, **no negative marking**, text only (no images), each question in the language the admin types (no paired bn/en versions). Option order shuffled per student, except questions marked "keep order" (e.g. "all of the above") | E1 (CHECKs), E3 (scoring) |
-| Q2 | **Pool (#5):** how many questions in the pool, how many per student? | **Everyone gets the same questions** (pool = questions per attempt), so the olympiad ranking stays fair; only the question order and the option order are shuffled per student. Different questions per student from a larger pool happen only if the admin ticks that box for an exam (`random_draw`). *Lead's suggestion (2026-10-31); Rasel can change it* | E1 (publish check), E2 (draw) |
-| Q3 | **Window, time and grace (#6, #7, #8):** window length per exam? 30 minutes a hard maximum? Grace after time-up? What if the final submit never arrives? | The admin sets each window (any length of at least one exam duration); 30 minutes stays the hard maximum (CHECK); **grace 30 s**; a late starter gets only the time left in the window (`ends_at = min(start + duration, window end)`); the clock keeps running during a disconnect; **no submit by the end of the grace → the server submits the last checkpoint** (saved at most about 2 minutes earlier, plus one shortly before time-up), or an empty answer sheet if there is none | E2, E3 |
-| Q4 | **Tab switching (#9):** off, log only, or auto-submit after N? | **Log only**, a per-exam switch (`off` / `log`). Leaving the page is recorded and sent with checkpoints and the submit; the admin sees the counts. No warning pop-ups and no auto-submit: on phones, a call or a notification also leaves the page | E2, E4 |
-| Q5 | **Results (#10):** scores on the leaderboard? Ties? What does a student see of their own result? | Leaderboard per exam (each category its own): **rank, name, institution only**, no scores, times or emails for students; admins see everything. Equal score: the faster time ranks higher; equal score and time share a rank (1, 2, 2, 4). After an admin publishes the results, each student sees their own score and rank and a review with the correct answers and explanations | E3, E5 |
+| Q1 | **Format (#4):** question type, marks, negative marking, images, languages? | **Default approved.** Multiple choice, one correct answer, 4 options (2–6 allowed), 1 mark each, **no negative marking**, text only (no images), each question in the language the admin types (no paired bn/en versions). Option order shuffled per student, except questions marked "keep order" (e.g. "all of the above") | E1 (CHECKs), E3 (scoring) |
+| Q2 | **Pool (#5):** how many questions in the pool, how many per student? | **Approved with the lead's change.** Everyone gets the same questions (pool = questions per attempt), so the olympiad ranking stays fair; only the question order and the option order are shuffled per student. Different questions per student from a larger pool happen only if the admin ticks that box for an exam (`random_draw`) | E1 (publish check), E2 (draw) |
+| Q3 | **Window, time and grace (#6, #7, #8):** window length per exam? 30 minutes a hard maximum? Grace after time-up? What if the final submit never arrives? | **Default approved.** The admin sets each window (any length of at least one exam duration); 30 minutes stays the hard maximum (CHECK); **grace 30 s**; a late starter gets only the time left in the window (`ends_at = min(start + duration, window end)`); the clock keeps running during a disconnect; **no submit by the end of the grace → the server submits the last checkpoint** (saved at most about 2 minutes earlier, plus one shortly before time-up), or an empty answer sheet if there is none | E2, E3 |
+| Q4 | **Tab switching (#9):** off, log only, or auto-submit after N? | **Changed by the owner (the plan's log-only default is dropped).** Each tab or app switch, and each developer-tools key, is a violation with a warning ("Warning n/5", blurred grey page, "Return to exam"). After 5 warnings, the 6th violation ends the exam and submits the current answers, as in the old Zero Olympiad. **On for every exam, always; no admin switch.** Reload, close and offline are not violations. Right-click and text selection off in the exam area. The count lives in `localStorage` and on the server, so a reload never resets it; the admin sees each student's count and events. Details: 3.15. (If Rasel wants the 5th violation to end the exam, the lead will say so; one constant changes) | E2, E3, E4, E5 |
+| Q5 | **Results (#10):** scores on the leaderboard? Ties? What does a student see of their own result? | **Default approved.** Leaderboard per exam (each category its own): **rank, name, institution only**, no scores, times or emails for students; admins see everything. Equal score: the faster time ranks higher; equal score and time share a rank (1, 2, 2, 4). After an admin publishes the results, each student sees their own score and rank and a review with the correct answers and explanations | E3, E5 |
 
 **Defaults taken in this plan (not blocking; say if you disagree):**
 
@@ -602,7 +679,7 @@ At most five. Each has a default that applies if it is still unanswered when its
 | D2 | Only `student` and `ambassador` can start an exam. An admin preview without an attempt is P1 |
 | D3 | Starting needs a verified email (lazy verification), a **paid registration** and an unblocked account. There are no refunds (owner, 2026-10-31, in payments' DECISIONS; not on `main` yet), so access needs only "paid". The payment status names come from payments PR 1, read only |
 | D4 | Answers are option positions. The client never sees question ids, option keys or correct keys |
-| D5 | Skipping and a question palette are allowed; reload, resume and resume on another device are allowed (RULEBOOK 7.1); two devices at once are logged, not blocked |
+| D5 | Skipping and a question palette are allowed; reload, resume and resume on another device are allowed (RULEBOOK 7.1) and keep the violation count; two devices at once are logged (`resume` events), not blocked |
 | D6 | Scoring right after each submit (spreads the load); no score reaches a client before results are published |
 | D7 | Students see results when an admin publishes them per exam (`results_published_at`, refused by the database before `window_end + grace`). `settings.leaderboard_public` stays for the public marketing board (Phase D). Review unlocks with the results |
 | D8 | The snapshot lives in a Postgres table (`leaderboard_entries`), with leaderboard pages cached in Redis. Why: search on the server, it survives a Redis flush, and the admin and student views read one snapshot. This changes `05-DATABASE.md`'s "leaderboard snapshot (Redis/CDN)". Blocked users are left out |
@@ -620,12 +697,14 @@ At most five. Each has a default that applies if it is still unanswered when its
 4. **No exam date, no VPS.** The real capacity is unknown until k6 runs on the VPS. No real exam before that and the rest of RULEBOOK §13.
 5. **Question sharing** inside a two-day window (Q2): with the same questions for everyone, a student who sat early can pass questions on; shuffled order and options make that slower, not impossible. A bigger pool (`random_draw`) reduces it but makes students' question sets differ, so the admin chooses it per exam.
 6. **Weak networks at time-up.** A 30 s grace with a 0–20 s spread leaves about 10 s for the network. The checkpoint just before time-up and the server-side finalize limit the loss to the last minute or so.
-7. **The session ends mid-exam.** The access token lasts 15 minutes; the open refresh gap after the 25 s API timeout (the lead's order for A2, before 15 November) would end a student's session. The player keeps the answers locally and resumes after login, but the gap must be closed before a real exam.
-8. **Cache Redis** under `allkeys-lru`: an eviction or flush loses checkpoints (only the finalize uses them) and cached questions (re-read from Postgres with a single-flight lock). Memory is measured in k6.
-9. **Window-open surge.** Measured in the k6 surge scenario. Per-user limits come from A2's PR; the checkpoint has its own interval.
-10. **Correct answers on admin screens.** `GET /admin/exams/:id` is admin only (never manager); covered by the role tests and the leak checks.
-11. **Personal data of minors on the leaderboard:** names and institutions are visible to logged-in students (Q5); the snapshot copies them; no emails, phones or scores.
-12. **Two sessions on one machine** (section 11): separate database names, Redis DB 2 and ports; the shared stack only after Rasel says "stack তোমার".
+7. **False violations on phones** (Q4): a call, a notification or a system pop-up takes the focus and counts. Six of them end a student's exam. The rules text asks for Do Not Disturb, and the admin sees every event and its time, so a disputed case can be judged; the exam itself is not reopened by the system.
+8. **Violations are detected in the browser** (3.15): a modified browser or a second device avoids them. They deter and record; they do not prove cheating.
+9. **The session ends mid-exam.** The access token lasts 15 minutes; the open refresh gap after the 25 s API timeout (the lead's order for A2, before 15 November) would end a student's session. The player keeps the answers locally and resumes after login, but the gap must be closed before a real exam.
+10. **Cache Redis** under `allkeys-lru`: an eviction or flush loses checkpoints (only the finalize uses them) and cached questions (re-read from Postgres with a single-flight lock). Memory is measured in k6.
+11. **Window-open surge.** Measured in the k6 surge scenario. Per-user limits come from A2's PR; the checkpoint has its own interval.
+12. **Correct answers on admin screens.** `GET /admin/exams/:id` is admin only (never manager); covered by the role tests and the leak checks.
+13. **Personal data of minors on the leaderboard:** names and institutions are visible to logged-in students (Q5); the snapshot copies them; no emails, phones or scores.
+14. **Two sessions on one machine** (section 11): separate database names, Redis DB 2 and ports; the shared stack only after Rasel says "stack তোমার".
 
 ## 11. Local environment: working next to A2 and payments
 

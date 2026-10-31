@@ -2,6 +2,22 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — Exam rules: format, pool, window and grace, rule violations, results (owner)
+
+Answers to OPEN-QUESTIONS #4–#10, through the lead (2026-10-31). Plan: `docs/plans/EXAM-PLAN.md` (section 9; violations in 3.15).
+
+1. **Format (#4):** multiple choice with one correct answer, 4 options (2–6 allowed), 1 mark each, no negative marking, text only, each question in the language the admin types. The option order is shuffled per student, except questions marked "keep order".
+2. **Pool (#5):** everyone gets the same questions (pool = questions per attempt), so the olympiad ranking stays fair; only the question order and the option order are shuffled. Different questions per student from a larger pool only if the admin chooses it for an exam (`random_draw`). The lead's proposal, approved by the owner.
+3. **Window, time, grace (#6–#8):** the admin sets each exam's window (at least one exam long); 30 minutes stays the hard maximum; grace 30 s; a late starter gets only the time left in the window; the timer keeps running during a disconnect; if no submit arrives by the end of the grace, the server submits the last checkpoint (or an empty sheet).
+4. **Rule violations (#9; the plan's log-only default is replaced):**
+   - **What counts:** a tab or app switch (window blur) and the developer-tools keys (F12, Ctrl+Shift+I/J/C, Cmd+Opt+I/J/C). Reload, close and offline do not count.
+   - **What the student sees:** each violation blurs and greys the exam with "Warning n/5" and "Return to exam". After 5 warnings, the 6th violation ends the exam and submits the current answers, with the reason recorded (`violations`), as in the old Zero Olympiad.
+   - **On for every exam, always;** there is no admin switch. Right-click and text selection are off in the exam area.
+   - **The count is kept in the browser and on the server,** so a reload or another device never resets it. The admin sees each student's count, end reason and events.
+   - **The rules text** claims nothing the system does not do, and asks students to use Do Not Disturb on phones.
+   - If the 5th violation should end the exam instead, only the shared constant changes.
+5. **Results (#10):** students see rank, name and institution only (no scores, times or emails); an equal score is ranked by time, and equal score and time share a rank (1, 2, 2, 4). After an admin publishes the results, each student sees their own score, rank and a review with the correct answers and explanations.
+
 ## 2026-10-31 — Gateway charge: the merchant pays it, `pay_with_charge = 0` (owner)
 
 1. The student pays exactly the fee (400 BDT); the merchant bears PayStation's charge: `pay_with_charge = 0` (OPEN-QUESTIONS P6, plan Q1). This replaces the default `pay_with_charge=1` in OPEN-QUESTIONS #1.
@@ -312,4 +328,4 @@ Public frontend design is unconfirmed, so: backend first, then dashboards, then 
 
 ## Pending decisions (see OPEN-QUESTIONS.md)
 
-Hosting fallback (Malaysia/AWS), email provider, domain/Cloudflare, question pool size, grace period, tab-switch logging default, `manager` role duties, ambassador approval flow, client confirmation of grade bands / fee / rank thresholds, VPS specs.
+Hosting fallback (Malaysia/AWS), email provider, domain/Cloudflare, `manager` role duties, ambassador approval flow, client confirmation of grade bands / fee / rank thresholds, VPS specs.

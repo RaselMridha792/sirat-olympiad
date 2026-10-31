@@ -11,13 +11,13 @@ Owner = Rasel Mridha. Client = GLTS Leadership × Sirat Olympiad. Add the answer
 | 1 | **PayStation:** production merchant account and approval? Which methods enabled? ~~Who pays the gateway charge (`pay_with_charge`, P6)?~~ **Answered 2026-10-31: the merchant, `pay_with_charge = 0`** (DECISIONS "Gateway charge"). Checkout expiry and the IPN retry count/interval (not in the official docs). Callback parameters: P1. (Shared sandbox credentials are published on PayStation's docs page; currency BDT per docs.) | Payments | Build against sandbox; expiry 60 min; `pay_with_charge=0` (owner); verify the rest in sandbox |
 | 2 | ~~Registration fee amount~~ **Fee answered 2026-10-31: 400 BDT** in `settings` (DECISIONS "Registration fee"). Still open: registration open/close dates | Registration | Config in `settings`, no hardcoding |
 | 3 | Category ↔ grade-level mapping for the 17 grade levels (Activist / Ambassador / Achiever bands) | Seed data | Use old bands (SDG 1–4 → Activist, 5–10 → Ambassador, 11–17 → Achiever) |
-| 4 | Exam format: question types, count, negative marking, image questions, languages | Exam engine | MCQ A–D, no negative marking, text only |
-| 5 | Question **pool size** and questions per attempt | Exam engine | Pool configurable per exam |
-| 6 | Exam window length per exam; is 30 min a hard max for every exam? | Exam config | CHECK ≤ 30 |
-| 7 | Submit **grace period** after `ends_at` | Submit | 30 s |
-| 8 | Disconnect mid-exam: timer keeps running — confirmed with client? | Exam rules | Yes (RULEBOOK 7.1) |
-| 9 | Tab-switch / focus-loss logging: off, log-only, or auto-submit after N violations? | Exam player | Log-only, optional flag |
-| 10 | Show **scores** on the leaderboard or only rank/name? | Leaderboard | Rank + name + institution only |
+| 4 | ~~Exam format: question types, count, negative marking, image questions, languages~~ **Answered 2026-10-31 (owner):** MCQ, one correct answer, 4 options (2–6), 1 mark, no negative marking, text only (DECISIONS "Exam rules (owner)") | Exam engine | MCQ A–D, no negative marking, text only |
+| 5 | ~~Question **pool size** and questions per attempt~~ **Answered 2026-10-31 (owner):** the same questions for everyone (pool = questions per attempt), order and options shuffled; a larger random pool only if the admin chooses it (DECISIONS "Exam rules (owner)") | Exam engine | Pool configurable per exam |
+| 6 | ~~Exam window length per exam; is 30 min a hard max for every exam?~~ **Answered 2026-10-31 (owner):** the admin sets each window; 30 min is the hard maximum (CHECK) (DECISIONS "Exam rules (owner)") | Exam config | CHECK ≤ 30 |
+| 7 | ~~Submit **grace period** after `ends_at`~~ **Answered 2026-10-31 (owner):** 30 s; with no submit by then, the server submits the last checkpoint (DECISIONS "Exam rules (owner)") | Submit | 30 s |
+| 8 | ~~Disconnect mid-exam: timer keeps running — confirmed with client?~~ **Answered 2026-10-31 (owner):** yes, the timer keeps running; resume within the remaining time (DECISIONS "Exam rules (owner)") | Exam rules | Yes (RULEBOOK 7.1) |
+| 9 | ~~Tab-switch / focus-loss logging: off, log-only, or auto-submit after N violations?~~ **Answered 2026-10-31 (owner):** a warning on every tab/app switch and developer-tools key; after 5 warnings the 6th ends the exam with the current answers; always on, no admin switch (DECISIONS "Exam rules (owner)") | Exam player | Log-only, optional flag |
+| 10 | ~~Show **scores** on the leaderboard or only rank/name?~~ **Answered 2026-10-31 (owner):** rank + name + institution only; own score and review after the results are published (DECISIONS "Exam rules (owner)") | Leaderboard | Rank + name + institution only |
 | 11 | **`manager` role:** what are its duties? | Roles/admin | Read-only staff until defined |
 | 12 | **Ambassador:** admin approval required, or self-generated code? | Ambassador | Admin approval |
 | 13 | Ranks (names + point thresholds) and points per event (referral paid, task) | Ambassador | Bronze/Silver/Gold, thresholds editable |
