@@ -2,6 +2,7 @@ import type { DataSource } from '../source.ts';
 import { unavailableSource } from '../unavailable.ts';
 import { studentExams } from './exams.ts';
 import type { ApiGet } from './request.ts';
+import { adminUsers } from './users.ts';
 
 /**
  * The production data source: server-side reads from the API, one file per area (DECISIONS "Web data layer over
@@ -21,6 +22,7 @@ export function createHttpSource(get: ApiGet): DataSource {
     },
     admin: {
       ...unavailableSource.admin,
+      ...adminUsers(get),
     },
   };
 }

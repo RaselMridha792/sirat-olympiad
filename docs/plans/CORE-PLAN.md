@@ -184,7 +184,7 @@ Starts after exam's E4/E5 are on `main` and Q4 is answered, with a short plan up
 
 ### 8.1 The web's HTTP data source (`apps/web/src/data/http/`)
 
-Nobody has written it yet (checked on every local branch); exam (E4/E5) and payments (web days) will need it too. Proposal for the lead: C1 lands a small skeleton:
+**Built first, as its own PR (#23, lead 22:58),** so exam (E4/E5) and payments (web days) build on it; pattern note in DECISIONS "Web data layer over HTTP":
 - `data/http/index.ts` builds the `DataSource` from per-area files (`http/users.ts`, `http/announcements.ts`, `http/ambassador.ts` here; `http/exams.ts`, `http/leaderboard.ts` for exam; payments adds its own). A method no file implements falls back to `unavailable`, so its page keeps today's error state.
 - Calls go server-side with the session cookie through A2's `lib/server-api.ts`, as `lib/session.ts` does.
 - `getData()` returns it in production; development keeps the mock unless `DATA_SOURCE=http` (for local runs against this worktree's API). `kind` gains `'http'`.
@@ -209,7 +209,8 @@ Each team then adds one file and one line in `index.ts`.
 | PR | Branch | Content | Coding (estimate) | Date (estimate) | Needs |
 |---|---|---|---|---|---|
 | C0 | `feat/core-plan` | This plan (docs only) | ~1 h | Sat 31 Oct | lead review |
-| C1 | `feat/core-students` | 06-API; admin users list, detail, CSV export, `common/csv.ts`; `data/http` skeleton (8.1); admin users page wired | 1.5–2 h | Sun 1 Nov | C0; lead's OK on 8.1 |
+| C0b | `feat/web-http-source` | The `data/http` skeleton (8.1), merged as #23 | ~30 min | Sat 31 Oct | lead's order |
+| C1 | `feat/core-students` | 06-API; admin users list, detail, CSV export, `common/csv.ts`; admin users page wired | 1.5–2 h | Sun 1 Nov | #23 |
 | C2 | `feat/core-public` | Entry, about, privacy, terms, refund-policy (en + bn), `site.ts`, `legal.ts`, `Prose`, footer | ~1 h | Sun 1 Nov | C0; the fee needs payments PR 2's `/registrations/info` (the page works without it); real texts later (small follow-up PR) |
 | C3 | `feat/core-profile` | 06-API; `/users/me`, profile options, PATCH, admin grade correction; profile form wired | 1–1.5 h | Mon 2 Nov | payments PR 2 on `main` (`BD_DISTRICTS`, `EDUCATION_TYPES`, `REGISTRATION_MESSAGES`); Q1 |
 | C4 | `feat/core-announcements` | 06-API, 05-DATABASE; CX1; `AnnouncementsModule`; student and admin pages wired; dashboard home composed | 1–1.5 h | Mon 2 Nov | C1 (8.1) |
