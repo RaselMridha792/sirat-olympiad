@@ -2,6 +2,55 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — Settle, callback, IPN, reconciliation and admin payments (Claude; payments PR 3, plan 6.2–6.7; reconcile rule: lead)
+
+1. **Only the worker asks PayStation.** One BullMQ queue `payments` on the queue Redis:
+   - job id `verify.<paymentId>`, so one check per payment at a time (a callback and an IPN together make one status call);
+   - priority 1 for callback, IPN and rechecks, 10 for reconciliation; 4 at a time per worker;
+   - a job that throws (the database) is tried 3 times from 5 s and then removed at once: a kept failed job would hold its id and swallow every later hint. An unreachable PayStation is a recorded outcome, not a throw.
+2. **The settlement** (`verify/payment-settlement.ts`) is the only code that marks a payment paid or failed: the verify job and the admin reconcile both go through it.
+   - One transaction: `FOR UPDATE` on the payment, then on the attempt. `decide()` runs again on the locked row (not on the row read before the PayStation call).
+   - Paid consumes an open attempt: the account (role always `student`, category from the class), the registration, the payment's user, `registration.completed` in the audit log and the payment event, all in that transaction. The stored form, password hash included, is cleared. The verification email (A2's) is queued after the commit.
+   - **Money taken always wins**, set aside with a review reason and a critical alert (`security.payments.needs_review`):
+     - `email_taken` / `phone_taken`: an account got that email or phone meanwhile. The payment is paid with no account; the attempt becomes `conflict`; the result page says `needs_help`.
+     - `duplicate_payment`: the attempt was already completed by another payment. The payment gets the same user; no second registration.
+     - `abandoned_attempt_paid`: a late success on an attempt the student gave up. No account is made from it, since the student may already have started again.
+     - `attempt_invalid`: the stored form is unusable.
+   - **A trx_id another payment holds is never paid here** (`trx_id_reused`, critical; the UNIQUE index refuses it anyway).
+   - **Warnings** (`late_success`, 2001 or an unknown status at expiry, `account_mismatch`) go to the audit log (`payments.warning`) and the log, without an email, so the alert-email budget stays for the critical ones.
+3. **Callback:** `GET /payments/paystation/callback/:invoice` (the client already appends our invoice to the callback URL).
+   - It records the query (at most 10 keys, 200 characters each) and asks for a check only while the payment is watched (active, or failed/expired with a checkout until 48 h after expiry).
+   - It always answers 303 to `APP_URL` + `/register/result` and never reads a result from the query.
+   - An unknown invoice is recorded; a malformed one is only redirected.
+4. **IPN:** `POST /payments/paystation/ipn`, the only CSRF-exempt route.
+   - At most 16 KB (413). A database failure answers 503, so PayStation retries.
+   - Unknown invoice: 200, and only the documented fields are kept.
+   - Paid with the same `trx_id`: 200 `duplicate`, no check.
+   - Anything else for our invoice asks for a check, even outside the late watch (an IPN means money).
+5. **Windows on outside signals** (cache Redis; fail open like the other limiters): the callback and the IPN share one 30 s window per payment; a student's recheck and an admin's recheck have 10 s each. With the job id, unsigned IPN spam cannot become a flood of status calls.
+6. **Reconciliation:**
+   - every 2 minutes (one job scheduler, so one run at a time); at most 100 payments a run, of the current PayStation account only;
+   - which payments: active ones older than 2 minutes, and failed/expired ones that reached a checkout, until 48 h after their expiry;
+   - back-off by `check_count`: 2, 2, 5, 10, then 30 minutes;
+   - the claim (`last_checked_at`) is a short transaction with `SKIP LOCKED`.
+   These timings are constants in `verify/payment-timing.ts`, not env: tests pass their own clock.
+7. **A payment started on another PayStation account** (`gateway_account` differs from `PAYSTATION_ACCOUNT_LABEL`) is not asked about: the new account would answer 2001 and could expire a real payment. It is recorded (`account_mismatch`) for an admin.
+8. **Manual reconcile** (lead, 23:32; a technical safety valve, not a money-policy change: it only confirms what PayStation already reported). `POST /admin/payments/:id/reconcile { trxId, reason }`, admin only.
+   - Allowed only when, under the row lock:
+     - the payment is pending, failed or expired, and the automatic rule stopped on `success_without_trx_id`;
+     - its latest `status_v1` answer shows a success with our invoice, our reference (when echoed) and exactly our amount, but no trx_id.
+   - The admin types the trx_id from PayStation's panel (UNIQUE applies: 409 `TRX_ID_IN_USE`) and a reason (10–200 characters).
+   - Then the settlement runs exactly as the automatic path. Audit `payments.reconciled`, plus an `admin` payment event.
+   - A payment already paid answers its current state (`applied: false`), never a second settle.
+   - trx_id reuse, amount or invoice mismatches and refunds stay on the manual path (RUNBOOK §11).
+9. **Admin settings** (`GET /admin/settings`, `PUT /admin/settings/:key { value, expected, reason }`, admin only):
+   - allow-listed keys only, each with its own rule. The fee: 10–10,000 BDT in whole taka, with a reason. Registration must open before it closes.
+   - The row is locked, and `expected` must still be the current value (409 `SETTING_CHANGED`).
+   - The audit row `settings.changed` (old, new, reason) is written in the same transaction; the registration info cache is cleared after it.
+   - Payments already started keep their fee snapshot.
+10. **Admin only, not manager,** for payments (payers' contact data) and settings; admin writes 20/min per IP, besides the per-user limit.
+11. **Not in this PR:** an alert for 2001 repeating across payments, and queue depth (LAUNCH-PLAN monitoring); abandoning stale open attempts and clearing their stored form (the cleanup job, plan 4.3).
+
 ## 2026-10-31 — Web data layer over HTTP (Lead's order; core session implementation)
 
 1. **Production reads the API:** `getData()` returns the HTTP source (`apps/web/src/data/http/`). Development keeps the mock unless `DATA_SOURCE=http` (a local web against a local API). The literal `NODE_ENV` check still drops the mock from production builds (`assert-no-mock.mjs`).
