@@ -24,6 +24,7 @@ import { AlertEmailLimiter } from '../modules/audit/alert-email-limiter';
 import { AuditService } from '../modules/audit/audit.service';
 import { SecurityAlerts } from '../modules/audit/security-alerts.service';
 import { EmailQueue } from '../modules/notifications/email-queue.service';
+import { HOUSEKEEPING_QUEUE } from '../modules/housekeeping/housekeeping-queue';
 import { EMAIL_QUEUE } from '../modules/notifications/email.types';
 import { collectAppFacts, type QueueSpec } from '../modules/ops/app-facts';
 import { sendDailyDigest } from '../modules/ops/digest';
@@ -151,6 +152,7 @@ export function queueSpecs(env: OpsEnv): QueueSpec[] {
       criticalJob: PAYMENT_JOBS.verify,
     },
     { name: 'exam', queueName: env.EXAM_QUEUE_NAME || EXAM_QUEUE },
+    { name: 'housekeeping', queueName: env.HOUSEKEEPING_QUEUE_NAME || HOUSEKEEPING_QUEUE },
   ];
 }
 

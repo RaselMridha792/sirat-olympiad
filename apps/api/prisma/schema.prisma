@@ -167,6 +167,8 @@ model Session {
 
   @@index([userId])
   @@index([familyId])
+  @@index([expiresAt]) // the nightly cleanup (LAUNCH-PLAN §9)
+  @@index([revokedAt])
   @@map("sessions")
 }
 
@@ -182,6 +184,7 @@ model AuthToken {
   user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, type])
+  @@index([expiresAt]) // the nightly cleanup (LAUNCH-PLAN §9)
   @@map("auth_tokens")
 }
 
