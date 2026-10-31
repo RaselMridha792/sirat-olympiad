@@ -2,6 +2,8 @@
  * Registration form constants and error codes shared by the API and the web (docs/plans/PAYMENTS-PLAN.md 6.1).
  * The API refuses anything outside these lists; the web shows them as choices.
  */
+import type { PageQuery } from './dashboard';
+import type { Category, PaymentStatus } from './index';
 
 /** Bangladesh's 64 districts, in the current official English spelling (8 divisions). */
 export const BD_DISTRICTS = [
@@ -132,3 +134,182 @@ export const REGISTRATION_MESSAGES: Partial<
 /** Where a registration attempt stands, as GET /registrations/current reports it (no personal data). */
 export type RegistrationState =
   'awaiting_payment' | 'confirming' | 'completed' | 'failed' | 'expired' | 'needs_help';
+
+/**
+ * Short bn/en labels of each state, for a badge or a card (core's dashboard card, C4). The result page
+ * (/register/result) shows the longer texts and the actions; a card links there for the states that need one.
+ */
+export const REGISTRATION_STATE_LABELS: Record<RegistrationState, { bn: string; en: string }> = {
+  awaiting_payment: { bn: 'পেমেন্টের অপেক্ষায়', en: 'Waiting for payment' },
+  confirming: { bn: 'পেমেন্ট নিশ্চিত করা হচ্ছে', en: 'Confirming the payment' },
+  completed: { bn: 'রেজিস্ট্রেশন সম্পন্ন', en: 'Registered' },
+  failed: { bn: 'পেমেন্ট সম্পন্ন হয়নি', en: 'Payment not completed' },
+  expired: { bn: 'পেমেন্টের সময় শেষ', en: 'Payment time ran out' },
+  needs_help: { bn: 'আমাদের দেখতে হবে', en: 'We are checking your payment' },
+};
+
+// ───────────── API shapes (docs/06-API.md "Registration and payment", "Admin payments and settings") ─────────────
+
+/** The form's limits, as the API's StartRegistrationDto checks them. The web checks the same before it sends. */
+export const REGISTRATION_FORM = {
+  nameMin: 2,
+  nameMax: 100,
+  emailMax: 254,
+  passwordMin: 8,
+  passwordMax: 128,
+  institutionMin: 2,
+  institutionMax: 150,
+  promoCodePattern: '^[A-Za-z0-9_-]{3,40}$',
+} as const;
+
+/** GET /registrations/info (public, cached 30 s). */
+export interface RegistrationInfo {
+  open: boolean;
+  opensAt: string | null;
+  closesAt: string | null;
+  fee: { amountMinor: number; currency: string } | null;
+  gradeLevels: { id: string; label: string }[];
+  districts: string[];
+  educationTypes: string[];
+}
+
+/** POST /registrations/start. Never an amount, a fee or a role. */
+export interface StartRegistrationInput {
+  startRequestId: string;
+  name: string;
+  phone: string;
+  email: string;
+  password: string;
+  district: string;
+  institution: string;
+  educationType: string;
+  gradeLevelId: string;
+  promoCode?: string;
+}
+
+/** 201 from start and retry: the PayStation checkout to send the browser to. */
+export interface StartRegistrationResult {
+  paymentUrl: string;
+  invoiceNumber: string;
+  amountMinor: number;
+  currency: string;
+}
+
+/** GET /registrations/current: this browser's attempt (the `sirat_reg` cookie). No personal data. */
+export interface CurrentRegistration {
+  state: RegistrationState;
+  invoiceNumber: string | null;
+  amountMinor: number | null;
+  currency: string | null;
+  expiresAt: string | null;
+  canResume: boolean;
+  canRetry: boolean;
+}
+
+/** GET /registrations/me: the logged-in student's registration and its payment. */
+export type MyRegistration =
+  | { registered: false }
+  | {
+      registered: true;
+      registeredAt: string;
+      category: Category | null;
+      gradeLevel: string | null;
+      payment: {
+        invoiceNumber: string;
+        amountMinor: number;
+        currency: string;
+        status: PaymentStatus;
+        paidAt: string | null;
+      };
+    };
+
+/** Review reasons the settlement and the verify job set on a payment (RUNBOOK §11 says what to do with each). */
+export const PAYMENT_REVIEW_REASONS = [
+  'success_without_trx_id',
+  'email_taken',
+  'phone_taken',
+  'duplicate_payment',
+  'abandoned_attempt_paid',
+  'attempt_invalid',
+  'amount_mismatch',
+  'invoice_mismatch',
+  'trx_id_reused',
+  'paid_trx_mismatch',
+  'refund_reported',
+  'late_success',
+  'failed_after_paid',
+  'manually_reconciled',
+] as const;
+export type PaymentReviewReason = (typeof PAYMENT_REVIEW_REASONS)[number];
+
+/** GET /admin/payments filters (all exact matches). */
+export interface AdminPaymentQuery extends PageQuery {
+  invoice?: string;
+  trx?: string;
+  phone?: string;
+  email?: string;
+  status?: PaymentStatus;
+  review?: boolean;
+}
+
+export interface AdminPaymentRow {
+  id: string;
+  invoiceNumber: string;
+  amountMinor: number;
+  currency: string;
+  status: PaymentStatus;
+  trxId: string | null;
+  paidAmountMinor: number | null;
+  gatewayStatus: string | null;
+  gatewayAccount: string;
+  /** A reason this web does not know yet is shown as its raw text. */
+  reviewReason: string | null;
+  checkCount: number;
+  lastCheckedAt: string | null;
+  expiresAt: string;
+  paidAt: string | null;
+  createdAt: string;
+  userId: string | null;
+  attempt: { status: string; email: string; phone: string; name: string };
+}
+
+/** One entry of a payment's log (the stored gateway answer itself stays in the API). */
+export interface AdminPaymentEvent {
+  id: string;
+  source: string;
+  outcome: string;
+  statusCode: string | null;
+  trxStatus: string | null;
+  trxId: string | null;
+  byAdmin: boolean;
+  createdAt: string;
+}
+
+export interface AdminPaymentDetail {
+  payment: AdminPaymentRow;
+  events: AdminPaymentEvent[];
+}
+
+/** PUT /admin/settings/:key: the keys an admin may change, and their limits. */
+export const ADMIN_SETTING_KEYS = [
+  'registration_fee_minor',
+  'registration_open',
+  'registration_opens_at',
+  'registration_closes_at',
+  'payment_expiry_minutes',
+] as const;
+export type AdminSettingKey = (typeof ADMIN_SETTING_KEYS)[number];
+export const ADMIN_SETTING_LIMITS = {
+  feeMinTaka: 10,
+  feeMaxTaka: 10_000,
+  reasonMin: 3,
+  reasonMax: 200,
+  reconcileReasonMin: 10,
+  reconcileReasonMax: 200,
+} as const;
+
+export interface AdminSetting {
+  key: AdminSettingKey;
+  value: string | number | boolean | null;
+  updatedAt: string;
+}

@@ -6,7 +6,7 @@ import { errorLogFields } from '../../common/all-exceptions.filter';
 import type { EnvVars } from '../../config/env';
 import { QUEUE_REDIS_OPTIONS } from '../../redis/redis.module';
 import { ExamJobs } from './exam-jobs';
-import { EXAM_JOBS, EXAM_JOB_OPTIONS, EXAM_QUEUE, type ExamJobData } from './exam-queue';
+import { EXAM_JOBS, EXAM_JOB_OPTIONS, examQueueName, type ExamJobData } from './exam-queue';
 
 /** Jobs at the same time per worker process: scoring is two reads and one update each. */
 export const EXAM_CONCURRENCY = 4;
@@ -35,13 +35,14 @@ export class ExamWorker implements OnModuleInit, OnApplicationShutdown {
       ...QUEUE_REDIS_OPTIONS,
     });
     this.connection.on('error', () => undefined); // BullMQ reconnects; job failures are logged below
-    this.queue = new Queue<ExamJobData>(EXAM_QUEUE, { connection: this.connection });
+    const queueName = examQueueName(this.config);
+    this.queue = new Queue<ExamJobData>(queueName, { connection: this.connection });
     await this.queue.upsertJobScheduler(
       SWEEP_SCHEDULER_ID,
       { every: SWEEP_EVERY_MS },
       { name: EXAM_JOBS.sweep, opts: { ...EXAM_JOB_OPTIONS, attempts: 1 } },
     );
-    this.worker = new Worker<ExamJobData>(EXAM_QUEUE, (job) => this.process(job), {
+    this.worker = new Worker<ExamJobData>(queueName, (job) => this.process(job), {
       connection: this.connection,
       concurrency: EXAM_CONCURRENCY,
     });
