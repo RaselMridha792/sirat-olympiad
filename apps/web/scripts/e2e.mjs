@@ -410,7 +410,7 @@ try {
   await browser.close();
 }
 
-const csp = cspReport(browser); // LAUNCH-PLAN §3: the page CSP is delivered and never broken
+const csp = cspReport(browser, BASE); // LAUNCH-PLAN §3: the page CSP is delivered and never broken
 results.push(csp.ok);
 console.log(csp.line);
 

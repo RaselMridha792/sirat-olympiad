@@ -102,20 +102,20 @@ export async function launchBrowser() {
   // Content-Security-Policy, seen by every page: the violations (enforced or Report-Only) and which documents carried
   // nginx's page policy. e2e.mjs and e2e-exam.mjs check both once at the end (cspReport below, LAUNCH-PLAN §3).
   const cspViolations = [];
-  const cspDocuments = { withPolicy: 0, withoutPolicy: [] };
-  const onDocument = ({ hasPolicy, path }) => {
-    if (hasPolicy) cspDocuments.withPolicy += 1;
-    else cspDocuments.withoutPolicy.push(path);
-  };
+  const cspDocuments = []; // { origin, path, hasPolicy } for every http(s) document
+  const onDocument = (doc) => cspDocuments.push(doc);
 
   return {
     /** The CSP violations recorded so far, across every page of this browser. */
     cspViolations: () => [...cspViolations],
-    /** How many documents carried the page CSP, and the paths of those that did not. */
-    cspDocuments: () => ({
-      withPolicy: cspDocuments.withPolicy,
-      withoutPolicy: [...cspDocuments.withoutPolicy],
-    }),
+    /** How many documents (of `origin`, or all) carried the page CSP, and the paths of those that did not. */
+    cspDocuments: (origin) => {
+      const docs = cspDocuments.filter((d) => !origin || d.origin === origin);
+      return {
+        withPolicy: docs.filter((d) => d.hasPolicy).length,
+        withoutPolicy: docs.filter((d) => !d.hasPolicy).map((d) => d.path),
+      };
+    },
     /** A separate cookie jar. */
     async newContext() {
       const { browserContextId } = await conn.send('Target.createBrowserContext', {
@@ -184,13 +184,16 @@ function hostOf(url) {
 const CSP_BINDING = '__siratCspViolation';
 
 /**
- * The end-of-run CSP verdict for e2e scripts. It fails when a document lacked nginx's page policy, when no document had
- * it (a run against a bare Next or an nginx without security-headers.conf would otherwise pass without testing
- * anything), or when any violation was seen.
+ * The end-of-run CSP verdict for e2e scripts. It fails when a document of the site (`base`) lacked nginx's page
+ * policy, when none had it (a run against a bare Next or an nginx without security-headers.conf would otherwise pass
+ * without testing anything), or when any violation was seen.
  */
-export function cspReport(browser) {
+export function cspReport(browser, base) {
   const violations = browser.cspViolations();
-  const { withPolicy, withoutPolicy } = browser.cspDocuments();
+  // Only the site's own documents must carry it: a payment gateway page is another origin with its own headers.
+  const { withPolicy, withoutPolicy } = browser.cspDocuments(
+    base ? new URL(base).origin : undefined,
+  );
   if (withPolicy === 0) {
     return {
       ok: false,
@@ -263,9 +266,11 @@ async function openPage(conn, browserContextId, onCspViolation = () => {}, onDoc
       msg.params.type === 'Document' &&
       /^https?:/.test(msg.params.response.url)
     ) {
+      const url = new URL(msg.params.response.url);
       onDocument({
+        origin: url.origin,
+        path: url.pathname,
         hasPolicy: hasPagePolicy(msg.params.response.headers),
-        path: new URL(msg.params.response.url).pathname,
       });
     }
   });
