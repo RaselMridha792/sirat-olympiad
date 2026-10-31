@@ -22,6 +22,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - web: `users.test.ts`, `export-problem.test.ts`, the blob case in `api.test.ts`;
    - integration: `admin-users.int-spec.ts` (roles, a blocked or demoted admin, every search kind and filter, paging bounds, masked phone, detail, CSV content and escaping, audit row, batches, the hourly limit).
    - **Mutation checks:** without the explicit pick, a hash canary reaches the page; without the formula prefix, the CSV test fails.
+
 ## 2026-10-31 — Public entry page and legal pages (core C2; plan `docs/plans/CORE-PLAN.md` section 3)
 
 1. **Why now, before Phase D:** PayStation's merchant review asks for a live site with an about page, terms, a privacy policy, contact details (one email and at least one phone number) and the registered business name; a refund policy depends on the business. So only these five pages are built (entry, about, privacy, terms, refund policy): no design work, no other marketing sections.
