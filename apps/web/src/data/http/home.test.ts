@@ -140,7 +140,6 @@ test('without an exam or a registration the home still renders', async () => {
   assert.equal(home.nextExam, null);
   assert.deepEqual(home.registration, { registered: false });
   assert.equal(quiet.calls.includes('/exams/undefined'), false);
-
 });
 
 test('the admin announcement list keeps only its fields and refuses an unknown status', async () => {
