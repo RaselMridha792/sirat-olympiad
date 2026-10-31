@@ -2,7 +2,8 @@
 # Refreshes infra/nginx/cloudflare-realip.conf (the Cloudflare ranges nginx trusts for the real client IP).
 # Never installs an empty or partial list: both downloads are validated, the new config is tested with the pinned
 # nginx image, and only then is the live file rewritten in place. Any failure leaves the live file untouched.
-# Usage: scripts/refresh-cloudflare-ips.sh   then: docker compose --env-file .env -f infra/docker-compose.yml exec nginx nginx -s reload
+# Usage: scripts/refresh-cloudflare-ips.sh
+#   then: docker compose --env-file .env -f infra/docker-compose.yml exec nginx nginx -c /etc/nginx/sirat/nginx.conf -s reload
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export MSYS_NO_PATHCONV=1 # Git Bash on Windows: keep container paths as written
@@ -43,14 +44,20 @@ fi
   echo "real_ip_recursive on;"
 } > "$tmp/cloudflare-realip.conf"
 
+# Test the new list in a copy of the nginx folder (without the certificates) on the pinned image, with the plain site
+# (the production site would need the certificate; the list is used the same way by both).
+mkdir -p "$tmp/nginx/sites"
+cp infra/nginx/nginx.conf infra/nginx/app-locations.conf infra/nginx/security-headers.conf \
+  infra/nginx/proxy_params_inline "$tmp/nginx/"
+cp -R infra/nginx/sites/plain "$tmp/nginx/sites/"
+cp "$tmp/cloudflare-realip.conf" "$tmp/nginx/cloudflare-realip.conf"
 image=$($DC config --images | grep '^nginx:')
-docker run --rm --network none \
-  -v "$(hostpath "$PWD/infra/nginx/nginx.conf"):/etc/nginx/nginx.conf:ro" \
-  -v "$(hostpath "$PWD/infra/nginx/proxy_params_inline"):/etc/nginx/proxy_params_inline:ro" \
-  -v "$(hostpath "$tmp/cloudflare-realip.conf"):/etc/nginx/cloudflare-realip.conf:ro" \
-  "$image" nginx -t -q
+docker run --rm --network none -e NGINX_ENTRYPOINT_QUIET_LOGS=1 \
+  -v "$(hostpath "$tmp/nginx"):/etc/nginx/sirat:ro" \
+  -v "$(hostpath "$tmp/nginx/sites/plain"):/etc/nginx/templates:ro" \
+  "$image" nginx -c /etc/nginx/sirat/nginx.conf -t -q
 
 diff -u "$LIVE" "$tmp/cloudflare-realip.conf" || true
-# Same inode: the single-file bind mount in the running nginx container sees the new content (mv would not).
+# Rewritten in place (same inode); the running container mounts the whole folder, so it sees the new content either way.
 cat "$tmp/cloudflare-realip.conf" > "$LIVE"
-echo "updated $LIVE ($n4 IPv4 + $n6 IPv6 ranges). Apply: $DC exec nginx nginx -s reload"
+echo "updated $LIVE ($n4 IPv4 + $n6 IPv6 ranges). Apply: $DC exec nginx nginx -c /etc/nginx/sirat/nginx.conf -s reload"

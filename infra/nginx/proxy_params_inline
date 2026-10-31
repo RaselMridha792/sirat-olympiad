@@ -1,4 +1,4 @@
-# Mounted by docker-compose at /etc/nginx/proxy_params_inline.
+# Part of the infra/nginx folder that compose mounts at /etc/nginx/sirat (included as /etc/nginx/sirat/proxy_params_inline).
 proxy_http_version 1.1;
 proxy_set_header Connection "";
 proxy_set_header Host $host;
