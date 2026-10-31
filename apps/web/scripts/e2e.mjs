@@ -246,7 +246,9 @@ try {
       const offNav = page.onEvent('Page.frameNavigated', ({ frame }) => {
         if (!frame.parentId) visited.push(new URL(frame.url).pathname);
       });
-      // The API has already rotated the token; only its answer (with the new cookies) is late.
+      // The API has rotated and answered; the browser holds the answer 15 s before the page sees it. Chrome stores
+      // the cookies when the headers arrive, before this pause, so this proves the page waits for the answer and
+      // never leaves for /login; that the POST is never aborted is pinned by src/lib/auth/refresh-browser.test.ts.
       const offHold = await interceptRefresh(
         page,
         ({ requestId }) =>
