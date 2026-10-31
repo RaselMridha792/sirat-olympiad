@@ -4,15 +4,15 @@ Plan only, no product code (2026-10-31, branch `feat/a2-launch-plan`, A2 session
 
 **Launch:** registration and payment only (Lead, 2026-10-31). A student registers, pays, logs in and sees their own registration and payment status. All times below are estimates at the measured pace (section 12), not promises.
 
-Sources: RULEBOOK §3, §5, §6, §9, §11–§14, §18; RUNBOOK §2–§5, §7, §9, §10, §12, §13; `plans/PAYMENTS-PLAN.md` §10, §13, §16; `plans/EXAM-PLAN.md`; `plans/CORE-PLAN.md`; DECISIONS (A1 approval, A2.1b, A2.1e, "Per-user API limits", "Registration start and status", "Web data layer over HTTP", "Public entry page and legal pages"); OPEN-QUESTIONS #17, #18, #22, #23, #27. Six read-only passes over `main` at aef64c9 (deploy, TLS, backups, DB role and cleanup, monitoring, dashboards) established today's state. An independent review then checked every claim again against `main` at a6876ec, after #19, #21, #22, #23 and #25 had merged.
+Sources: RULEBOOK §3, §5, §6, §9, §11–§14, §18; RUNBOOK §2–§5, §7, §9, §10, §12, §13; `plans/PAYMENTS-PLAN.md` §10, §13, §16; `plans/EXAM-PLAN.md`; `plans/CORE-PLAN.md`; DECISIONS (A1 approval, A2.1b, A2.1e, "Per-user API limits", "Registration start and status", "Web data layer over HTTP", "Public entry page and legal pages"); OPEN-QUESTIONS #17, #18, #22, #23, #27. Six read-only passes over `main` at aef64c9 (deploy, TLS, backups, DB role and cleanup, monitoring, dashboards) established today's state. An independent review then checked every claim again against `main` at a6876ec, after #19, #21, #22, #23 and #25 had merged, and a second review at f952ade, after #24 and #26. `main` moves several times a day: the lead re-reads the "Today" lines at review.
 
 ## 0. Scope, dependencies and dates
 
 - **This plan (A2):** the eight areas the lead listed on 2026-10-31 (22:26), the email (SES) items of the checklist, and nginx logs without query strings (Lead, 22:58).
 - **Other sessions:**
   - **payments:** the money flow (PR 3), the wizard and the dashboard status (PR 4), the PayStation live switch, the real payment, the k6 registration surge and the free book (`PAYMENTS-PLAN.md` §10.4, §13). The per-IP tiers of `/registrations/*` were set in #21 (DECISIONS "Registration start and status" #6); section 3 shows how they sit against nginx.
-  - **exam:** the student exam list has read `GET /exams` since #23. E4 (#24, open) adds the exam room; the leaderboard and admin exam pages come with E5 and say "coming soon" until then (section 8).
-  - **core:** the public entry page and the privacy, terms and refund-policy pages are merged with placeholder texts (#25). Planned before 15 Nov: the admin students list (C1), the profile (C3), announcements together with the student dashboard home (C4, composed in the web from existing endpoints, so `GET /dashboard/home` is dropped: CORE-PLAN D6) and ambassador approval (C5a).
+  - **exam:** the student exam list (`GET /exams`, #23) and the exam room (`GET /exams/:id`, E4, #24) are on `main`. The leaderboard and admin exam pages come with E5 and say "coming soon" until then (section 8).
+  - **core:** the public entry page and the privacy, terms and refund-policy pages are merged with placeholder texts (#25), and so is the admin students list (C1, #26). Planned before 15 Nov: the profile (C3), announcements together with the student dashboard home (C4, composed in the web from existing endpoints, so `GET /dashboard/home` is dropped: CORE-PLAN D6) and ambassador approval (C5a).
     - PayStation's live review needs these pages live on the client's domain with the client's texts (CORE-PLAN Q5 and risk 2). They go live with the first VPS deploy and TLS (Sat 7). `PAYMENTS-PLAN.md` §10.2 lists only the domain for the live merchant; the lead aligns the two plans.
     - The privacy page should state the backup retention that Q1 settles (section 10).
 - **Outside dates** (`PAYMENTS-PLAN.md` §10.2): domain Mon 2 Nov (latest Wed 4); VPS Sat 7 Nov (latest Tue 10); live merchant Tue 10 (latest Thu 12); SES production access requested the day the domain arrives, granted by Wed 11 (latest Fri 13).
@@ -22,11 +22,11 @@ Sources: RULEBOOK §3, §5, §6, §9, §11–§14, §18; RUNBOOK §2–§5, §7,
 
 | § | Area | Now, without the VPS | Waits for the domain or the VPS | PRs (estimate) |
 |---|---|---|---|---|
-| 2 | Deploy and rollback | SHA-tagged images and a release file; `deploy.sh` (an explicit project, preflight, migrate first, smoke, automatic rollback without a build); `bootstrap.sh`; a rehearsal in a throwaway VM | bootstrap and first deploy; deploy, second deploy, forced rollback and reboot rehearsed on the VPS | L9 3.5–4.5 h; L12 (part) |
+| 2 | Deploy and rollback | SHA-tagged images and a release file; `deploy.sh` (an explicit project, a first start, preflight, migrate first, smoke, automatic rollback without a build); `bootstrap.sh`; a rehearsal in a throwaway VM (Q4) or its own compose project | bootstrap, first start and first deploy; deploy, second deploy, forced rollback and reboot rehearsed on the VPS | L9 3.5–4.5 h; L12 (part) |
 | 3 | TLS, real IPs, logs | 443 for Cloudflare Full (strict); HSTS and a page CSP from nginx; `no-store` on `/api`; logs without query strings or Referer; an internal listener for checks from the server; a real-IP test harness; zones and tiers sized for shared IPs | Origin CA certificate, Cloudflare settings, firewall, real-IP check on the mobile networks | L3 3–3.5 h; L4 2–2.5 h |
 | 4 | Backups | encrypted dumps shipped off-server (a local remote in tests); restore into an empty database on a fresh cluster; an isolated, scripted drill, run locally and in CI | bucket and keys (owner); timers on the VPS; drills from a real VPS copy on another machine | L6 2 h; L7 2.5–3 h |
 | 5 | Runtime DB role | role, grants, boot line, the app tested as the role; then the switch | the first VPS deploy starts with the role | L2 2–2.5 h; L8 1–1.5 h |
-| 6 | Monitoring | alert categories with their own caps; `ops-check`; `monitor.sh` (host, CPU and memory, web render errors); a heartbeat that fails on any critical state; a daily digest | outside monitors on the domain; cron on the VPS; fake-alert drill | L10 2 h; L11 4 h |
+| 6 | Monitoring | alert categories with their own caps; `ops-check`; `monitor.sh` (host, CPU and memory, web render errors); a heartbeat that fails on any critical state; a daily digest | outside monitors on the domain; cron on the VPS; fake-alert drill | L10 2 h; L11 4 h (the digest included) |
 | 7 | Maintenance, checklist | maintenance switch (503 page, the IPN still passes); `prelaunch-check.sh`; RUNBOOK §9 as T-7 → T-0 | switch tested through Cloudflare; checklist on the VPS; go/no-go | L5 2 h; L12 (part) |
 | 8 | "Coming soon" | a launch table, `ComingSoon`, guards for pages whose data is not wired by launch, per-page CI expectations | one pass on the server as a real student and admin | L1 1.5–2 h |
 | 9 | Cleanup job | session and token purge (DECISIONS A2.1b #9), indexes, a nightly job in the worker | first run on the VPS | L13 1.5 h |
@@ -47,32 +47,42 @@ L12 is `bootstrap.sh` + `prelaunch-check.sh` + RUNBOOK §9 (4–5 h). In all: 14
 - **Images:** compose sets `image: sirat-<service>:${SIRAT_TAG:-latest}`, so CI and local runs keep `latest`.
 - **The live release:** `deploy.sh` writes `SIRAT_TAG=<sha>` to a release file outside the repo (`/var/lib/sirat/release.env`); `--rollback` writes the previous one. The VPS `$DC` reads it as a second `--env-file`, and every `up` on the VPS uses `--no-build`. So the RUNBOOK's scale, worker, selfcheck and create-admin commands run the live release and never start a build. L9 updates those RUNBOOK lines (§3, §5, §7, §9, §10, §12, §13).
 - **The project is always explicit:** every script that calls compose (`deploy.sh`, `backup.sh`, `restore.sh`, `restore-drill.sh`, `prelaunch-check.sh`) passes `-p <project>`. The compose file pins `name: sirat`, so a second clone alone is no isolation.
+- **First start, `deploy.sh --first`,** once on a fresh host (the VPS, and the rehearsal's release A):
+  - it refuses if any data container of the project already exists, so it can never recreate one;
+  - it needs a filled `.env`, the certificate in `infra/nginx/certs`, and L14 part 1 merged if the specs differ;
+  - it runs `up -d --no-build --wait postgres pgbouncer redis-cache redis-queue`, then `up -d --no-deps --no-build nginx` (nginx's `resolve` upstreams let it start before web and api exist);
+  - the first deploy that follows has no previous release: it treats a database without an `exams` table as "no exam window", and on failure it stops with maintenance on instead of rolling back.
 - **`scripts/deploy.sh <sha>`:**
   1. **Preflight:**
      - a lock; not root; `.env` mode 600; a clean tree;
      - exported `DATABASE_URL`, `DIRECT_URL`, `POSTGRES_*` and `COMPOSE_*` unset;
-     - the target refused if its Postgres carries the development marker, unless in rehearsal mode, which in turn refuses project `sirat`;
+     - the target refused if its Postgres carries the development marker (the shared dev stack);
      - free disk;
-     - the SHA is on `origin/main` and its CI run passed;
+     - the SHA is on `origin/main` and its CI run passed. **Rehearsal mode** (refused for project `sirat`) accepts a commit of the rehearsal branch instead, and says so in its first output line; production always keeps the CI gate;
      - no exam window open within ±30 min (psql inside the postgres container, as `backup.sh` does);
      - data services healthy and unchanged. Each data container's compose config hash must match the file; a mismatch stops with "data-service change pending: apply it as its own step". A deploy never starts or recreates data services.
   2. Build the tagged images while the old release serves.
-  3. Take a backup first when the release adds migrations.
+  3. Take a backup first when the release adds migrations: `sudo -n systemctl start sirat-backup.service`, the root-owned unit the backup timer also starts (one sudo rule from `bootstrap.sh`, checked with `visudo -cf`). A failed backup stops the deploy before migrate, and the old release keeps serving.
   4. `run --rm --no-deps migrate`. It must print `config seed done`; on failure the script stops and the old API keeps serving.
   5. `up -d --no-deps --no-build --wait api worker web`. nginx is reloaded only when `infra/nginx` changed.
-  6. **Smoke** through nginx's internal listener (section 3) and the public URL: exact 200s with the expected body (`curl -f` passes a 301); each new API replica's PayStation boot line (section 7); the worker healthy; `migrate status` up to date.
+  6. **Smoke:**
+     - through nginx's internal listener (section 3): exact 200s with the expected body (`curl -f` passes a 301);
+     - through the public URL, after reading `maintenance.sh status`: with the flag off, the same exact 200s; with the flag on (the kill switches, or a critical fix during an incident), the maintenance answers (`/healthz` 200, `/api/ready` 503 `code: MAINTENANCE`), and the script says the public app check waits for maintenance off;
+     - each new API replica's PayStation boot line matches the release's `.env` (read, never printed): with `PAYSTATION_ENV` set, `env=<that value>` with the `.env`'s account label, invoice prefix and https callback and IPN; with it blank, "PayStation disabled" and the "payments are DISABLED" warning, which passes only while `registration_open` is false (psql, as the exam-window check). So deploys before the live switch pass. The `env=live` rule is `prelaunch-check.sh`'s (section 7);
+     - the worker healthy; `migrate status` up to date.
   7. **Success:** record the release and keep the last 3 image sets (never volumes). **Failure:** roll back to the previous tag with no build, smoke again, and print loudly that migrations stay applied. `deploy.sh --rollback` does the same by hand.
 - **RUNBOOK:** §2 rewritten around the script. Every `run --rm migrate` gets `--no-deps`. The lead's dev rule (`$DCD up -d --build --no-deps migrate api worker web nginx`) goes into §0.
-- **Rehearsal without the VPS,** in the throwaway Ubuntu VM that also tests `bootstrap.sh` (its own Docker daemon and real file modes; the owner's OK), or else in its own clone with `-p sirat-rh`. Its settings: nginx on 127.0.0.1:18080/18443, no data ports, throwaway secrets, a self-signed certificate. The steps:
-  1. release A;
+- **Rehearsal without the VPS,** in rehearsal mode as project `sirat-rh`: in the throwaway Ubuntu VM that also tests `bootstrap.sh` (its own Docker daemon and real file modes; Q4), or else in its own clone. Its settings: nginx on 127.0.0.1:18080/18443, no data ports, throwaway secrets, a self-signed certificate, and a release file outside the clone. Commands run by hand use the rehearsal's own `$DC` (`docker compose -p sirat-rh --env-file .env --env-file <its release file> -f infra/docker-compose.yml`), never the dev shell's; before step 3, `$DC ps` must list only `sirat-rh` containers. The steps, each checked for its own stop reason:
+  1. first start, then release A;
   2. release B with a migration, under a request loop;
-  3. the RUNBOOK's scale, create-admin and worker commands exactly as written: every container runs `sirat-*:<B>`, and no build starts;
-  4. a commit whose API fails at boot: automatic rollback, timed; the same commands then give A;
-  5. a failing migration: the script stops before any restart;
-  6. a release that changes PgBouncer's pool size: the preflight stops it;
-  7. maintenance on and off, checked through the internal listener.
+  3. the RUNBOOK's scale, create-admin and worker commands, exactly as written apart from `$DC`: every container runs `sirat-*:<B>`, and no build starts;
+  4. a commit whose API fails at boot: the script rolls back by itself, timed; the same commands then give A;
+  5. a failing migration: the migrate log shows it, and no app container restarted;
+  6. a release that changes PgBouncer's pool size: the exact message "data-service change pending";
+  7. maintenance on and off, checked through the internal listener;
+  8. maintenance on, then `deploy.sh --rollback`: success through the internal listener, the public check named as pending; then maintenance off, and the public smoke passes.
 
-  The data containers' start times must not change. Outside a VM it shares CPU, RAM and the image store with the shared stack: SIRAT_TAG is always set, only its own `<sha>` tags are pruned, and it is announced.
+  One extra run without rehearsal mode: the step-4 commit is refused as "not on origin/main", which exercises the CI gate. The data containers' start times must not change. Outside a VM it shares CPU, RAM and the image store with the shared stack: SIRAT_TAG is always set, only its own `<sha>` tags are pruned, and it is announced.
 - **`bootstrap.sh`** (in L12): idempotent, with `--dry-run` and shellcheck in CI. For Ubuntu 24.04 it sets up:
   - Docker at the versions CI uses;
   - a `deploy` user, SSH keys only, no root login;
@@ -80,15 +90,19 @@ L12 is `bootstrap.sh` + `prelaunch-check.sh` + RUNBOOK §9 (4–5 h). In all: 14
   - fail2ban, chrony, security updates without automatic reboot, swap, `vm.overcommit_memory=1`;
   - a clone with a read-only deploy key, and the release file;
   - `.env` from the example at mode 600, for the owner to type the secrets into;
-  - the backup and monitor timers.
+  - the backup and monitor timers, the root-owned `sirat-backup.service`, and the one sudo rule that lets `deploy` start it.
 
-  It is tested in the throwaway VM and timed against the 1-hour rebuild target (RULEBOOK §3).
+  It is tested in the throwaway VM (Q4) and timed against the 1-hour rebuild target (RULEBOOK §3). Without a VM, its first full run is on the VPS on Sat 7.
 
-**Waits for the VPS.**
-- The specs confirmed (OPEN-QUESTIONS #22). Postgres and the compose limits assume 8 vCPU and 32 GB; a smaller box gets L14 before its data services first start (section 12).
-- bootstrap run and timed; the owner types the secrets.
-- The first deploy on an empty database; the first admins created with the CLI (RUNBOOK §13).
-- Deploy, second deploy, forced rollback and a reboot, rehearsed and timed.
+**Waits for the VPS,** in this order on Sat 7:
+1. The specs confirmed (OPEN-QUESTIONS #22). Postgres and the compose limits assume 8 vCPU and 32 GB; a smaller box gets L14 part 1 first (section 12).
+2. bootstrap run and timed; the owner types the secrets.
+3. The Origin CA key and certificate (section 3).
+4. First start.
+5. Cloudflare (Full (strict) only after the certificate) and the firewall.
+6. The first deploy on an empty database; the first admins created with the CLI (RUNBOOK §13); the outside scan.
+
+Then: deploy, second deploy, forced rollback and a reboot, rehearsed and timed.
 
 **Known limit at launch:** the 10–20 s gap per deploy stays. That departs from RULEBOOK §14 (new containers first, then switch traffic), so it is owner question Q4. Deploys happen off-peak, and with L5 the gap shows the maintenance page instead of a raw 502.
 
@@ -109,7 +123,7 @@ L12 is `bootstrap.sh` + `prelaunch-check.sh` + RUNBOOK §9 (4–5 h). In all: 14
 - Directory mounts instead of single-file mounts. Ports bound to IPv4 only: with no IPv6 listener, Docker never replaces the client address. Add `certs/.gitkeep`.
 - **Headers,** in one include that also serves the `@api_*` error locations and nginx's own pages:
   - nosniff, Referrer-Policy, and HSTS. HSTS comes only from nginx: helmet's is turned off, and an API test checks it.
-  - **Page CSP**, a fixed policy (nonces would make every Next page dynamic): `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`. It runs Report-Only in the rehearsal first and is enforced from the first VPS deploy. The e2e fails on any `securitypolicyviolation` event from login to the move to the fake gateway's `paymentUrl`. A nonce- or hash-based `script-src` comes after launch (a DECISIONS entry).
+  - **Page CSP**, a fixed policy (nonces would make every Next page dynamic): `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`. L3 adds a `securitypolicyviolation` listener to the shared CDP driver (`apps/web/scripts/lib/cdp.mjs`), so every browser script built on it fails on a violation: `e2e.mjs` and `e2e-exam.mjs` now (login, refresh, the dashboards, the exam room), payments' wizard e2e later. The dev and CI site file sends the same policy as Report-Only, which fires the same event. On the VPS the policy stays Report-Only until payments' wizard e2e (PR 4/5, with the fake PayStation service) has passed with it, from the wizard to the fake gateway's `paymentUrl` and back to the result page. Then it is enforced, at the latest in the Thu 12 release candidate; if that e2e is late, A2 runs it against the rehearsal once PR 4 merges. A nonce- or hash-based `script-src` comes after launch (a DECISIONS entry).
   - `Cache-Control: no-store` on `/api`.
 - **Logs (Lead, 22:58):**
   - One explicit access-log format, with every field listed. The path is cut at the first `?` (a `map` on `$request_uri`), and the Referer is dropped. No raw `$request`, `$request_uri` or `$http_referer`.
@@ -239,11 +253,12 @@ The superuser password also sits in every app container through `env_file`. The 
   - a catalog test checks every table's privileges;
   - as `sirat_app`, each of these fails with 42501: TRUNCATE, DISABLE TRIGGER, `session_replication_role`, DDL, `COPY … TO PROGRAM`, reading `_prisma_migrations`, UPDATE/DELETE on the append-only tables;
   - mutation checks on the default privileges, the append-only REVOKE and the timeout re-apply.
+- **Keys, in L2:** the `sirat_app` password key in the root `.env.example` and in the migrate service's environment (optional until L8), and `TEST_APP_DATABASE_URL` in `apps/api/.env.example`.
 - **The shared dev cluster:** roles belong to the whole Postgres cluster, so there is one `sirat_app` password for every session's databases.
-  - Rasel types it once into the root `.env`.
-  - One announced run of `runtime-role.mjs` (a stack turn) sets it.
-  - Test preparation never changes it: it only logs in as `sirat_app` and stops with a clear message if that fails.
-  - Without `TEST_APP_DATABASE_URL`, a session's tests run the app as the superuser, as today. Payments, exam and core are not broken by L2, and each turns the key on when ready.
+  - On a cluster with the development marker, `runtime-role.mjs` sets the password only while the role has none; with an empty key it skips that step with one line and never fails the migrate job. So stack turns from any worktree keep working after L2, and none can reset another's password. Without the marker (production, from L8), an empty key fails.
+  - Rasel types the same value into the root `.env` of every worktree that takes stack turns, and into A2's `apps/api/.env` as `TEST_APP_DATABASE_URL`. The first announced stack turn after L2 merges (A2's) sets it.
+  - Test preparation never changes it: it only logs in as `sirat_app` and stops with a clear message if that fails. CI's database job sets the role's password in its own Postgres before `test:int`.
+  - Without `TEST_APP_DATABASE_URL`, a session's tests run the app as the superuser, as today; payments, exam and core each turn the key on when ready.
 
 **Now, L8 "switch to the role" (1–1.5 h, before the first VPS deploy).**
 - **Connections:**
@@ -251,7 +266,7 @@ The superuser password also sits in every app container through `env_file`. The 
   - `DATABASE_URL` uses it for the API, the worker, the seed and the CLI;
   - `DIRECT_URL` (the superuser) goes only to the migrate job;
   - the API and worker containers get the superuser variables blanked.
-- **Also changes:** both `.env.example` files; the CI docker job (migrate, seed and `/api/ready` through PgBouncer as `sirat_app`); `restore.sh` (section 4); 05-DATABASE; RUNBOOK.
+- **Also changes:** both `.env.example` files (`DATABASE_URL` as `sirat_app`, `DIRECT_URL` for migrate only); the CI docker job (migrate, seed and `/api/ready` through PgBouncer as `sirat_app`); `restore.sh` (section 4); 05-DATABASE; RUNBOOK.
 - **On the shared dev stack** it needs one window that the lead and Rasel pick: PgBouncer is recreated, so the stack's pooled connections drop. Other worktrees connect straight to Postgres and keep working. A worktree moves its own `DATABASE_URL` to `sirat_app` only after it has merged L2 and migrated its own database; otherwise its API gets 42501 on every table. Sessions never read `.env`.
 
 **Waits for the VPS.** The first deploy starts with the role, so there is never a live switch:
@@ -306,14 +321,14 @@ The superuser password also sits in every app container through `env_file`. The 
   - the `ops-check` CLI: table tests for every threshold, and int tests (a backlog with no worker, a failed job, a state change that alerts once);
   - `monitor.sh` with shell tests on faked commands: a critical state calls `/fail` and not the success ping; a clean run calls only the success ping; an `ops-check` that fails to run calls `/fail`;
   - `healthcheck.sh` and `monitor.sh` require exactly 200;
-  - the backup heartbeat;
+  - the daily digest: an 08:00 Asia/Dhaka cron line runs `ops-check --digest`, one email with the last 24 h of alerts by kind (from the audit log, so held-back ones are included), the backup age, disk and payment counts by status; a test checks that it sends once a day;
   - `monitor.sh --dry-run` in the CI docker job;
   - RUNBOOK §1/§7: copy-paste commands and an "alert → action" table.
 
 **Waits for the domain or the VPS.**
 - The outside checks, which need the domain and TLS.
 - Real alert email: the SES domain identity, then production access. Until then the alert inbox is verified as an SES recipient.
-- On the VPS: the cron, and `.env.monitor` with the heartbeat URLs.
+- On the VPS: the cron lines (monitor and digest), and `.env.monitor` with the heartbeat URLs.
 - The fake-alert drill with Rasel present, on both paths (RULEBOOK §13). A stopped worker, a stopped API and a lowered disk threshold must each raise an alert. The stopped-worker alert must arrive through the outside service while the worker is still stopped.
 
 ## 7. Maintenance page and the pre-launch checklist
@@ -341,8 +356,8 @@ The superuser password also sits in every app container through `env_file`. The 
   - an off-server backup and a passed drill; the runtime role;
   - outside monitors and a fake alert received;
   - contacts filled in (RUNBOOK §8); the release SHA green on `main`;
-  - the kill switches, in order: `registration_open=false`, then maintenance on, then `deploy.sh --rollback`, each checked through the internal listener.
-- **The PayStation boot line** (payments' item, RUNBOOK §9) is checked automatically for **each** API replica since the deploy. It must show:
+  - the kill switches, in order: `registration_open=false`, then maintenance on, then `deploy.sh --rollback` (its smoke handles the flag, section 2), each checked through the internal listener; after maintenance off, the public smoke must pass.
+- **The PayStation boot line** (payments' item, RUNBOOK §9) is checked by `prelaunch-check.sh` for **each** API replica since the last deploy; `deploy.sh` only checks that the line matches the `.env` (section 2). Every boot before the live switch raises `payments.disabled_in_production`, which is expected until then. For launch the line must show:
   - `env=live` and the live host;
   - the client's account label and invoice prefix;
   - an https callback and IPN on the domain;
@@ -361,6 +376,7 @@ The superuser password also sits in every app container through `env_file`. The 
   - a clean production database: no fixture users, no test invoices, no published exam, fee 40000, `registration_open` as intended;
   - the newest backup under 26 h old, with its off-server copy;
   - the worker healthy with SES; the page CSP present;
+  - real client IPs (VPS only): access-log lines from the last hour that came through a Cloudflare edge (the outside monitors make some) show a client address that differs from the edge and is not a Docker, private, loopback or Pseudo IPv4 (240.0.0.0/4) address;
   - time synced; disk and swap fine; the age of the Cloudflare IP list; the release SHA.
 
   `--local` marks the VPS-only checks N/A, so it also runs in the rehearsal and in CI.
@@ -374,13 +390,13 @@ The superuser password also sits in every app container through `env_file`. The 
 ## 8. Dashboard pages without data at launch: "coming soon"
 
 **Today.**
-- Production reads the API through the HTTP source (#23). `student.listExams` reads `GET /exams`, so `/dashboard/exam` shows its list or its empty state. Every other method falls back to `unavailable` and throws, so its page shows the error state: "Something went wrong… check your connection", with a retry that can never work (DECISIONS "Web data layer over HTTP" #2).
+- Production reads the API through the HTTP source (#23). `student.listExams` and `student.getExam` read `GET /exams` and `GET /exams/:id` (#23, #24), and `admin.listUsers` and `admin.getUser` read `GET /admin/users` (#26). Every other method falls back to `unavailable` and throws, so its page shows the error state: "Something went wrong… check your connection", with a retry that can never work (DECISIONS "Web data layer over HTTP" #2).
 - `/dashboard` still calls `getHome()`, which no API serves. Core's C4 composes it in the web from `/users/me`, `/exams`, `/announcements` and payments' `/registrations/me` (CORE-PLAN D6, Mon 2 Nov). Until C4 merges, a student who pays and logs in lands on an error page.
 - The error state cannot tell "not built" from "broken", and the alerts do not see it (section 6).
 - `/dashboard/ambassador` shows invented numbers, in English only, until core's C5a merges the real panel.
 - `GET /admin/stats` (the admin home numbers) has no owner (CORE-PLAN §0).
 
-**Now, L1 (1.5–2 h).** It builds on #23 and lands after E4 (#24) and core's C1, which change the same data files and `check-pages.mjs`.
+**Now, L1 (1.5–2 h).** It builds on #23, #24 and #26, which changed the same data files (and E4 `check-pages.mjs`). It lands after core's C3 and C4: L1 adds no guard to the home, and its live rule (below) fails while `/dashboard` still calls the unwired `getHome()`. If C4 is not on `main` by Wed 4 Nov, the lead can let L1 land first with a temporary `/dashboard` exemption in `check-pages` that C4 removes.
 - **Launch table:** `apps/web/src/data/launch.ts` maps each `/dashboard` and `/admin` route to `live` or `soon`, with `isLive()` on top of #23's `createHttpSource`. It builds no new source. Each owner (exam, core, payments) flips its own entries when its area file lands; whoever merges second adds its new routes, and L1's route test enforces it.
 - **`ComingSoon`** in `packages/ui`: `role="status"`, `data-state="coming-soon"`, neutral tokens, no retry button. bn/en strings per Q5; Rasel checks the Bangla.
 - **Page guards** after `requireAccess()` and before any data call, on the pages marked `soon`. L1 does not change the dashboard home: its composition is core's (C4) and its cards are payments'.
@@ -395,15 +411,16 @@ The superuser password also sits in every app container through `env_file`. The 
   - production `isLive` equals the table;
   - `?mock=launch` previews the production view in development.
 - **`check-pages`** reads the table:
-  - prod: a "soon" page must show the marker with HTTP 200, and a "live" page must not show the error state. That rule also guards the home: if C4 has not merged, CI fails;
+  - prod: a "soon" page must show the marker with HTTP 200, and a "live" page must not show the error state. That rule then keeps the home from regressing;
   - `api-down` keeps one "soon" page and still expects the error page there.
 
 | Page | Data on `main` today | 15 Nov | Owner |
 |---|---|---|---|
 | `/dashboard` | `getHome()`, no API: error state | composed in the web (C4), with payments' registration and book cards | core (C4), payments (PR 4, PR 6) |
-| `/dashboard/exam`, `/dashboard/exam/[id]` | the list is live (#23); the room comes with E4 (#24) | live, empty until an exam is published; "soon" only if Rasel asks (Q5) | exam |
+| `/dashboard/exam`, `/dashboard/exam/[id]` | live: the list (#23) and the room (#24) | live, empty until an exam is published; "soon" only if Rasel asks (Q5) | exam |
 | `/dashboard/leaderboard`, `/admin/exams`, `/admin/exams/[id]`, `/admin/leaderboard` | unavailable | live when E5 merges, else coming soon | exam (E5) |
-| `/dashboard/profile`, `/dashboard/profile/edit`, `/dashboard/announcements`, `/dashboard/ambassador`, `/admin/users`, `/admin/announcements`, `/admin/ambassadors` | unavailable (the ambassador page: invented numbers) | live when core's PR merges (C1, C3, C4, C5a are planned before 15 Nov), else coming soon | core |
+| `/admin/users` | live (#26) | live | core |
+| `/dashboard/profile`, `/dashboard/profile/edit`, `/dashboard/announcements`, `/dashboard/ambassador`, `/admin/announcements`, `/admin/ambassadors` | unavailable (the ambassador page: invented numbers) | live when core's PR merges (C3, C4, C5a are planned before 15 Nov), else coming soon | core |
 | `/dashboard/book`; payments' admin pages (lookup, fee, book) | not built | live when merged | payments |
 | `/admin` | `GET /admin/stats`: unavailable, no owner | coming soon (Q5) | — |
 
@@ -453,7 +470,7 @@ Each question has a default; the work goes ahead on the default until Rasel answ
    - **Service:** the free tier of an outside uptime and heartbeat service (for example Better Stack, or UptimeRobot with Healthchecks.io; terms checked first), checking every 3–5 min. RULEBOOK §12 asks for every minute, so the launch interval departs from it; a flat paid plan with 1-minute checks comes before the first exam day.
    - **Who:** Rasel and one backup person, by email and Telegram or the service's phone app. `SECURITY_ALERT_EMAIL` is a group address for both.
    - **Caps:** security, payments and ops alerts get their own cap of 6 emails an hour each (today one shared cap of 6).
-   - **Error tracking and server metrics** (RULEBOOK §12 asks for Sentry or a self-hosted equivalent, and Netdata or Prometheus + Grafana): none at launch. Structured logs, the 5xx, p95, CPU and memory alerts and the host checks stand in until then. Before the exam phase, choose between Netdata bound to localhost (read over SSH) and a self-hosted error tracker, sized on the VPS.
+   - **Error tracking and server metrics** (RULEBOOK §12 asks for Sentry or a self-hosted equivalent, and Netdata or Prometheus + Grafana): none at launch. Structured logs, the 5xx, p95, CPU and memory alerts and the host checks stand in until then. Before the exam phase, add both, sized on the VPS: Netdata bound to localhost (read over SSH) for server metrics, and a self-hosted error tracker for the API and the web. Keeping only one would be a further §12 departure.
    - **Response:** best effort outside exam days (OPEN-QUESTIONS #23).
 3. **Domain and Cloudflare: whose account, which hostname, and may HSTS cover the client's other subdomains?**
    Default:
@@ -468,6 +485,7 @@ Each question has a default; the work goes ahead on the default until Rasel answ
    - **Images:** built on the VPS from the commit CI passed, with SHA tags for rollback. RULEBOOK §14 has the deploy script build, while §18 says "CI deploys a build artifact"; a registry would cost money, so a CI-built artifact comes after launch (a DECISIONS entry).
    - **The deploy gap** (RULEBOOK §14 asks for new containers first, then a traffic switch): at launch `deploy.sh` restarts the replicas in place, 10–20 s, off-peak behind the maintenance page. Zero-downtime switching comes after launch.
    - **Freeze:** 48 h, from Fri 13 Nov 00:00 (RULEBOOK §13). It ends payments' non-critical deploys on Thu 12 instead of Sat 14 (`PAYMENTS-PLAN.md` §10.3). Configuration-only switches (the PayStation live account, the SES keys) and critical fixes still go ahead. After launch, deploys run between 00:00 and 07:00 Asia/Dhaka.
+   - **Rehearsal machine:** a throwaway Ubuntu 24.04 VM for the L9 rehearsal and the `bootstrap.sh` test: a Hyper-V VM on Rasel's PC that he sets up (30–60 min), or a short-lived cloud VM destroyed after use. Without one, the rehearsal runs in its own clone, and `bootstrap.sh` has its first full run on the VPS on Sat 7 (about 1 h more that day).
    - **Admin accounts without 2FA at launch** (RULEBOOK §5: "recommended before launch"): at most two, created with the CLI, with long unique passwords in a password manager. 2FA is the first PR after launch.
 5. **What students and admins see at launch.**
    Default:
@@ -505,12 +523,12 @@ The table assumes about 2 h per medium PR, review rounds included. These are est
 | Day | A2 (estimate) | Outside (owner, client, others) |
 |---|---|---|
 | Sun 1 Nov | L2 role and grants (with one stack turn), L3 TLS-ready nginx, logs and CSP | Rasel answers Q1–Q5 (defaults apply meanwhile) and types the dev `sirat_app` password; core C1; exam E4/E5 PRs |
-| Mon 2 Nov | L4 real IPs and shared IPs, L5 maintenance, L1 coming soon | Domain: Cloudflare zone, SES domain identity, production access requested; core C3 and C4 (the home) |
-| Tue 3 Nov | L6 backups, L7 restore and drill, L8 role switch (stack window) | Bucket and keys; outside monitor account; payments PR 3 (maybe earlier) |
+| Mon 2 Nov | L4 real IPs and shared IPs, L5 maintenance, L6 backups | Domain: Cloudflare zone, SES domain identity, production access requested; core C3 and C4 (the home) |
+| Tue 3 Nov | L1 coming soon (after core's C3 and C4), L7 restore and drill, L8 role switch (stack window) | Bucket and keys; outside monitor account; the rehearsal VM (Q4); payments PR 3 (#27, open) |
 | Wed 4 Nov | L9 `deploy.sh` and the release file, L10 alert categories | Domain at the latest |
-| Thu 5 Nov | L11 `ops-check` and `monitor.sh`, L12 bootstrap (start) | Payments PR 4 (web) |
+| Thu 5 Nov | L11 `ops-check` and `monitor.sh`, L12 bootstrap (start) | Payments PR 4 (web); payments' registration e2e with the CSP listener |
 | Fri 6 Nov | L12 bootstrap, prelaunch-check, RUNBOOK §9; L13 cleanup; L14 part 1 if the specs differ | Sandbox session with Rasel (payments); the VPS specs confirmed (OPEN-QUESTIONS #22) |
-| Sat 7 Nov | VPS with Rasel: bootstrap and first deploy (3–4 h); certificate, Cloudflare, firewall, scan (2–3 h) | VPS target; core's pages go live, and PayStation's review can start |
+| Sat 7 Nov | VPS with Rasel, in the order of section 2: bootstrap, certificate, first start, Cloudflare and firewall, first deploy, first admins, scan (5–7 h in all) | VPS target; core's pages go live, and PayStation's review can start |
 | Sun 8 – Mon 9 Nov | On the VPS: rehearsals (about 2 h); backup timers, first copy, failure alert (about 1 h); monitors and the fake-alert drill (1.5–2 h); real-IP check on the three operators (about 1 h) | |
 | Tue 10 – Wed 11 Nov | Restore drill 1 on another machine (1–1.5 h); k6 with simulated shared IPs, in payments' k6 window, then the trusted generator removed in the same slot; L14 part 2 | VPS at the latest (Tue 10); live merchant; real payment; k6 registration surge (payments) |
 | Thu 12 Nov | Final release candidate deployed, with L14; `prelaunch-check.sh` all PASS | Live merchant at the latest |
@@ -531,7 +549,7 @@ The table assumes about 2 h per medium PR, review rounds included. These are est
 - the VPS delivery (7 Nov, latest 10 Nov);
 - PayStation's live review, which starts only once the site is live on the domain (VPS, first deploy, TLS, core's pages with the client's texts); its length is PayStation's;
 - sessions with Rasel present: bootstrap and first deploy 3–4 h; TLS and firewall 2–3 h; drills 1.5–2 h; each restore drill 1–1.5 h with a key holder;
-- owner accounts: bucket and keys 30–60 min; the monitor service about 30 min; age keys offline 15–30 min;
+- owner accounts and machines: bucket and keys 30–60 min; the monitor service about 30 min; age keys offline 15–30 min; the rehearsal VM 30–60 min (Q4);
 - phone checks on the three mobile operators and IPv6 (about 1 h, with people on those networks);
 - a `main` CI run before each deploy (20–30 min);
 - the lead's review of each PR, and the shared-stack turns (one session at a time);
@@ -541,7 +559,7 @@ The table assumes about 2 h per medium PR, review rounds included. These are est
 ## 13. Shared files, stack turns and merge order
 
 - **Files other sessions also change:**
-  - `apps/web/src/data/*`: #23 landed first. The area files belong to exam (`http/exams.ts`; E4 extends it), core (`users`, `announcements`, `ambassador`) and payments. L1 adds only `launch.ts`, `isLive()` and the guards; whoever merges second adds its routes to the table.
+  - `apps/web/src/data/*`: #23 landed first. The area files belong to exam (`http/exams.ts`, extended by E4 in #24), core (`users` since #26; `announcements`, `ambassador`) and payments. L1 adds only `launch.ts`, `isLive()` and the guards, and merges after core's C3 and C4 (section 8); for everything else, whoever merges second adds its routes to the table.
   - `(student)/dashboard/page.tsx`: core C4 (the composition) and payments (its cards). L1 does not change it. `PAYMENTS-PLAN.md` §16 still calls it "a file A2 owns": the lead tells payments that it is core's now.
   - `apps/web/scripts/check-pages.mjs`: E4 (#24) and core C2 (#25) changed it; L1 adds the per-page expectations.
   - `packages/ui/src/index.ts`: one export line each (core's `Prose` is in; L1 adds `ComingSoon`).
@@ -550,6 +568,7 @@ The table assumes about 2 h per medium PR, review rounds included. These are est
   - Migrations (L2, L13): run `git merge origin/main`, keep both sides, and regenerate a generated migration per `PAYMENTS-PLAN.md` §12.
   - Also `infra/docker-compose.yml`, `ci.yml`, both `.env.example` files, RUNBOOK, 05-DATABASE and 06-API.
   - Only this plan changes `nginx.conf`: L3, then L4, then L5 (and L14 part 2). DECISIONS merges as a union; after each merge, check the blank line before every entry.
+- **The page CSP and payments' e2e:** payments' registration e2e (PR 4/5) runs with L3's CSP listener and must pass before the policy is enforced on the VPS (section 3). The lead tells payments.
 - **Freeze and payments' buffer:** with the freeze from Fri 13 00:00 (Q4), Thu 12 is the last day for non-critical deploys, such as a slipped free-book PR. So the non-critical part of `PAYMENTS-PLAN.md` §10.3's buffer (Sun 8 midday – Sat 14) ends on Thu 12. Critical fixes and configuration-only switches still go ahead. The lead tells payments when this plan merges.
 - **Shared stack:** each of these PRs needs a turn, asked for first, announced in one line and released after:
   - L1: web smoke and e2e;
@@ -563,10 +582,10 @@ The table assumes about 2 h per medium PR, review rounds included. These are est
 
 ## 14. Risks
 
-1. **A late VPS.** Tue 10 Nov is the latest VPS date that still keeps 15 Nov (`PAYMENTS-PLAN.md` §10.2), and even then the VPS work fills 10–12 Nov with no slack (section 12). If the VPS comes later, the sessions with Rasel do not fit before the freeze unless a check is cut. Nothing is cut, so the owner decides the date (`PAYMENTS-PLAN.md` §14, risk 1). Mitigation: everything is rehearsed locally first (the L9 rehearsal, the L7 drill, `prelaunch-check --local`), and the VPS day follows a written script, so a VPS on Tue 10 still fits.
-2. **The dashboard home depends on core's C4.** If C4 is not on `main` by the release candidate (Thu 12), paying students land on an error page. Mitigation: L1's `check-pages` rule fails CI while a live page shows the error state; the lead tracks C4.
+1. **A late VPS.** Tue 10 Nov is the latest VPS date that still keeps 15 Nov (`PAYMENTS-PLAN.md` §10.2), and even then the VPS work fills 10–12 Nov with no slack (section 12). If the VPS comes later, the sessions with Rasel do not fit before the freeze unless a check is cut. Nothing is cut, so the owner decides the date (`PAYMENTS-PLAN.md` §14, risk 1). A VPS on Tue 10 also starts PayStation's live review on Tue 10 at the earliest. The live merchant (latest Thu 12), and with it `prelaunch-check.sh` all PASS, then depends on how fast PayStation reviews. If the live account is late, the release is ready but registration stays closed (`PAYMENTS-PLAN.md` §14, risk 4), and the owner decides the date. Mitigation: everything is rehearsed locally first (the L9 rehearsal, the L7 drill, `prelaunch-check --local`), and the VPS day follows a written script, so the VPS work itself still fits on Tue 10.
+2. **The dashboard home and L1 depend on core's C3 and C4.** If C4 is not on `main` by the release candidate (Thu 12), paying students land on an error page. L1 waits for it too, so until then every page without data keeps the error state. Mitigation: the lead tracks C3 and C4; if the home is late by Wed 4 Nov, L1 lands first with a temporary `/dashboard` exemption that C4 removes (section 8). Once both are in, L1's rule keeps the home from regressing.
 3. **Shared IPs:** one school or operator IP can still hit nginx or API limits during the registration surge. Mitigation: L4, payments' tiers, and the final numbers from k6 with simulated shared IPs (L14); the access log shows who got a 429.
-4. **A silently broken real-IP restore** (an AAAA record or IPv6 listener, a stale Cloudflare list, a Cloudflare setting): everyone shares one bucket. Mitigation: IPv4-only bindings, the Cloudflare checklist, and the access-log check on day one in `prelaunch-check.sh`.
+4. **A silently broken real-IP restore** (an AAAA record or IPv6 listener, a stale Cloudflare list, a Cloudflare setting): everyone shares one bucket. Mitigation: IPv4-only bindings and an A record only; the Cloudflare checklist; the real-IP check on the VPS (section 3); and in `prelaunch-check.sh`, the age of the Cloudflare IP list plus the client addresses in recent access-log lines, run again after k6 removes its trusted generator and on the Thu 12 release candidate.
 5. **The worker confirms every payment.** Without SES keys it will not start, and a stopped worker cannot email its own alert. Mitigation: the IAM keys go into `.env` before opening, even if production access is pending; the monitor heartbeat fails on any critical state, so the outside service reports a stopped worker (section 6).
 6. **Restores:** a lost decryption key makes every copy useless, and a restore older than the newest payments needs a manual match against a PayStation export. Mitigation: two key holders, tested at every drill; hourly dumps; the after-restore steps in `restore.sh`; the role made before `pg_restore`.
 7. **Helmet's HSTS** (1 year, `includeSubDomains`) would go out with the first HTTPS response and cannot be recalled. Mitigation: L3 turns it off before TLS exists.
