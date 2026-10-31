@@ -50,6 +50,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - Payments already started keep their fee snapshot.
 10. **Admin only, not manager,** for payments (payers' contact data) and settings; admin writes 20/min per IP, besides the per-user limit.
 11. **Not in this PR:** an alert for 2001 repeating across payments, and queue depth (LAUNCH-PLAN monitoring); abandoning stale open attempts and clearing their stored form (the cleanup job, plan 4.3).
+
 ## 2026-10-31 — Exam player in the browser (E4; exam session, lead's rules)
 
 1. **Logic without React:** `components/exam/exam-controller.ts` (state, local copy, checkpoints, the one submit), `violations.ts` (leave and return, DevTools keys), `exam-storage.ts`, `exam-api.ts` (browser calls), `exam-logout.ts`. The plan named state/storage/sync/time modules; one controller with an injected clock, timers and API keeps every rule in one place, and `node --test` drives it with a fake clock.
