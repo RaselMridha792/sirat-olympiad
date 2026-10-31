@@ -31,6 +31,25 @@ One short entry per non-obvious technical or product decision. Newest first. For
      - a SCRAM login on a scratch role that is dropped after;
      - eleven statements `sirat_app` must not run (each fails with 42501).
 5. **The boot line** `database role=<name> superuser=<bool>` in the API and the worker makes the RUNBOOK §9 item readable from the logs. In production it warns while the role is a superuser; from L8 a superuser is refused.
+## 2026-11-01 — Free book: API, schema and the cover upload (Claude; payments PR 6a, plan §16, owner B1–B5)
+
+1. **Schema:** `book_orders` (one per student) and `book_images` (covers in Postgres, bytea), migrations `*_book_orders` (generated) and `*_book_checks` (hand-written).
+   - The composite foreign key `(registration_id, user_id)` → `registrations (id, user_id)`: an order exists only for the student's own registration, and a registration only for a paid payment.
+   - CHECKs: the phone, the 64 districts, lengths, and shipped ⇔ `shipped_at` and `shipped_by` both set (both empty otherwise).
+   - Trigger `book_orders_locked_after_shipping`: a new order starts `confirmed`; once shipped, the address, the recipient, the title and the status cannot change.
+2. **One list of districts:** the CHECK holds `BD_DISTRICTS` (the registration form's list); `districts-check.spec.ts` fails if the migration and the constant ever differ.
+3. **The student's routes are "me" only** (`GET /book`, `GET/PUT /book-order/me`; roles student and ambassador).
+   - The user comes from the session. 403 `BOOK_NOT_ELIGIBLE` without a registration. 409 `BOOK_ORDER_SHIPPED` after shipping. 409 `BOOK_ORDER_CHANGED` for a stale `expectedVersion` (or two first saves at once).
+   - The order keeps the title it was confirmed with (B7).
+4. **The cover** (`book-image.ts`, no new dependency):
+   - the type from the magic bytes only (JPEG, PNG, WebP); at most 800 KB (multer memory storage, 413 above); 100–4000 px from the header;
+   - metadata stripped (JPEG APP1/APP13/COM, PNG text/eXIf/tIME, WebP EXIF/XMP with the flags fixed), and bytes after the image's end dropped;
+   - stored once per content (sha256).
+   - Served by `GET /book/cover/:imageId` (public, the only new public route) with the stored type, `nosniff`, `default-src 'none'` and a one-year immutable cache (the id changes with each cover).
+5. **Admin only** (a manager gets 403): the title (with `expected`, 409 `SETTING_CHANGED`), the cover, the orders list (phone in any form, matching the recipient's or the student's; email in any case; district; status), the courier CSV and shipping.
+   - **The CSV:** core's `common/csv.ts` (BOM, CRLF, formula-injection prefix); streamed in batches of 500, never stored; audited with the filter and the count, never the rows.
+6. **No address in logs:** the request logger keeps only the method, the path and the status; the book module has no logger (`book-no-logs.spec.ts`); audit rows carry ids, counts and filters only.
+7. **Seed:** `book_title` ("Sirat Leadership Olympiad book" until an admin sets the real one) and `book_cover_image_id` (null). RUNBOOK §9 asks for both before registration opens.
 
 ## 2026-11-01 — Next's runtime caches are writable by the web's runtime user (Claude; lead's bug report)
 
