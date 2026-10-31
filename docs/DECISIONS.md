@@ -26,6 +26,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - `users-me.int-spec.ts` (12): own profile, options, roles, blocked, allowed fields and the audit, the phone in all forms, the three phone conflicts, refused fields, the grade correction and its refusals.
    - `profile.dto.spec.ts` (the same rules as registration); web: `profile.test.ts`, `http/profile.test.ts`, `save-problem.test.ts`, `grade-problem.test.ts`.
    - **Mutation checks:** without the open-attempt check, without the unique-violation mapping, and without the attempt check, each makes a test fail.
+
 ## 2026-11-01 — Payments queue name per test run (Claude; A2's finding, lead's order)
 
 **What:** `PAYMENTS_QUEUE_NAME` (optional, validated `^[A-Za-z0-9_-]{1,64}$`; blank means `payments`) names the BullMQ queue that both `PaymentQueue` (API) and `PaymentsWorker` read from one provider, so the two can never disagree. Production leaves it blank. The payments test harness gives each run its own name (`payments-test-<random>`).
