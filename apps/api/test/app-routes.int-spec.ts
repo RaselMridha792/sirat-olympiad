@@ -51,6 +51,7 @@ const PUBLIC_ROUTES = new Set([
   // for a status check. The callback carries our invoice in the path (plan 6.7, "06-API changes").
   'GET /api/payments/paystation/callback/:invoice',
   'POST /api/payments/paystation/ipn',
+  'GET /api/book/cover/:imageId', // the free book's cover image (plan 16.3): no personal data, cached a year
   'GET /api/content/*',
   'GET /api/certificates/verify/:code',
 ]);
