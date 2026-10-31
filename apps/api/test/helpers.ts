@@ -36,8 +36,8 @@ export function testPrisma(): PrismaClient {
 }
 
 /**
- * Empties every application table except `audit_logs`, which is append-only (its trigger refuses TRUNCATE; tests
- * tell their audit rows apart by ids). Double-checks the connected database is a *_test database first.
+ * Empties every application table except the append-only `audit_logs` and `payment_events` (their triggers refuse
+ * TRUNCATE; tests tell their rows apart by ids). Double-checks the connected database is a *_test database first.
  */
 export async function truncateAll(prisma: PrismaClient): Promise<void> {
   const [row] = await prisma.$queryRaw<{ db: string }[]>`SELECT current_database() AS db`;
@@ -45,7 +45,8 @@ export async function truncateAll(prisma: PrismaClient): Promise<void> {
   if (!TEST_DB.test(db)) throw new Error(`Refusing to truncate non-test database "${db}"`);
   const tables = await prisma.$queryRaw<{ tablename: string }[]>`
     SELECT tablename FROM pg_tables
-    WHERE schemaname = 'public' AND tablename NOT IN ('_prisma_migrations', 'audit_logs')`;
+    WHERE schemaname = 'public'
+      AND tablename NOT IN ('_prisma_migrations', 'audit_logs', 'payment_events')`;
   if (tables.length === 0) return;
   const list = tables.map((t) => `"public"."${t.tablename}"`).join(', ');
   await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${list} CASCADE`);
@@ -80,15 +81,64 @@ export function examData(
   };
 }
 
+/** A unique invoice number in our format (`^[A-Z0-9]{10,20}$`); `T` marks a test account's invoices. */
+export const testInvoice = (): string =>
+  `T${randomUUID().replace(/-/g, '').slice(0, 15).toUpperCase()}`;
+
+/** A unique valid Bangladeshi mobile number in the stored form (`01XXXXXXXXX`). */
+export const testPhone = (): string =>
+  `019${Math.floor(Math.random() * 1e8)
+    .toString()
+    .padStart(8, '0')}`;
+
+/** An open registration attempt (one per email and per phone while open). */
+export function makeRegistrationAttempt(
+  prisma: PrismaClient,
+  data: Partial<Prisma.PendingRegistrationUncheckedCreateInput> = {},
+) {
+  return prisma.pendingRegistration.create({
+    data: {
+      email: `a-${uniq()}@test.invalid`,
+      phone: testPhone(),
+      name: 'Test Student',
+      startRequestId: randomUUID(),
+      resumeTokenHash: randomUUID(),
+      ...data,
+    },
+  });
+}
+
+/** A new payment row (always `initiated`: the status-transition trigger refuses anything else on insert). */
 export function paymentData(
+  pendingRegistrationId: string,
   data: Partial<Prisma.PaymentUncheckedCreateInput> = {},
 ): Prisma.PaymentUncheckedCreateInput {
   return {
-    invoiceNumber: `INV-${uniq()}`,
-    amountMinor: 50000,
+    pendingRegistrationId,
+    invoiceNumber: testInvoice(),
+    amountMinor: 40000,
+    currency: 'BDT',
+    payWithCharge: false,
+    gatewayAccount: 'test-account',
     expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     ...data,
   };
+}
+
+/** A payment that went the legal way initiated -> pending -> paid, for `userId` (who may own a registration). */
+export async function makePaidPayment(prisma: PrismaClient, userId: string | null = null) {
+  const attempt = await makeRegistrationAttempt(prisma);
+  const payment = await prisma.payment.create({ data: paymentData(attempt.id, { userId }) });
+  await prisma.payment.update({ where: { id: payment.id }, data: { status: 'pending' } });
+  return prisma.payment.update({
+    where: { id: payment.id },
+    data: {
+      status: 'paid',
+      trxId: `TRX${randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase()}`,
+      paidAmountMinor: payment.amountMinor,
+      paidAt: new Date(),
+    },
+  });
 }
 
 // Exam helpers (published exams, questions, attempts, submissions): test/exam-helpers.ts.

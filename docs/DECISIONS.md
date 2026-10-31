@@ -13,6 +13,73 @@ One short entry per non-obvious technical or product decision. Newest first. For
 7. **Refusal codes** travel in `ApiError.details` (a list), so the exception filter stays unchanged.
 8. **`leaderboard_entries` ships now** (empty until E3), so the exam schema lands in one migration pair (`*_exam_engine`, generated, with a guard that stops on existing exam rows; `*_exam_checks`, hand-written).
 
+## 2026-10-31 — PayStation settings at boot, and the sandbox host check S11 (Claude; plan section 3.5)
+
+1. **S11 (Rasel's sandbox account, 10 BDT `XS11…` invoices, never paid):**
+   - sandbox credentials work only on `sandbox.paystation.com.bd`; on `api.paystation.com.bd` they get `"1001"` "Invalid Credential.";
+   - the merchant id works only exactly as issued, with its "-".
+
+   So the host allow-list in `payment.config.ts` stays as it is. The docs' curl example (no "-") and the Postman URL text (`api.…`) are wrong for the sandbox (`SANDBOX-CHECKLIST.md`).
+2. **`PAYSTATION_ENV` blank = payments disabled.** Other environments and sessions without these variables (A2's and the exam session's `.env` files, CI) still boot. Once it is set, every rule applies at boot: `PaymentsModule` builds the settings and a wrong value stops the app.
+3. **Boot log without any part of a credential.** It shows env, host, account label, invoice prefix, callback and IPN. The account label identifies the account, so the plan's "last 4 characters of the merchant id" is dropped.
+4. **Callback:** `http://localhost` is allowed outside production (a browser redirect on the same machine); https otherwise. **IPN URL:** required only in production; blank locally until a tunnel exists.
+5. **`.env.example`:** the PayStation host leaves both files; the values are blank, and `PAYSTATION_PAY_WITH_CHARGE=0`.
+6. **Lead review (19:26)** accepted points 2 and 3, and added:
+   - **Blank `PAYSTATION_ENV` on a production server:** a WARN line and the operator alert `payments.disabled_in_production` at every start (built; a new kind in `SecurityAlerts`). The RUNBOOK launch checklist compares the boot line.
+   - **Initiate `"1001"` is a configuration error, not a failed payment:** a critical alert, a short pause of further initiate calls, "Payments are paused right now" for the student, and no blind retry (built with the gateway client, plan 6.1).
+   - **PR 1 is split:** 1a (schema, fixtures, config) goes to `main` first, because the exam session's migrations build on it; 1b holds the gateway client, the fake server and the selfcheck.
+
+## 2026-10-31 — Free book after payment (owner, via the lead)
+
+1. Every student who pays gets one free book. After a successful payment the student confirms a delivery address. The admin can change the book's title and cover later.
+2. It is part of the 15 November release unless the owner says otherwise. It gets its own migration and PR after the payments work, not PR 1's migrations.
+3. The plan is in `docs/plans/PAYMENTS-PLAN.md` section 16.
+   - **Owner's answers (18:17):**
+     - (ক) Yes: the student may skip the book page after payment and give the address later from the dashboard, which reminds them until they do.
+     - (খ) Yes: the address can change after confirming, until an admin marks the order shipped; after that it cannot.
+   - The other defaults are accepted: the fields, Bangladesh only, one book per student, the admin list and the courier CSV.
+4. **The cover is the system's first upload** (Claude's proposal, in the plan): bytes in Postgres, not on disk or in a pay-per-request service.
+   - The API runs as 4 replicas, which do not share a disk.
+   - `pg_dump` and the restore drill already cover the database.
+   - JPEG, PNG or WebP only, up to 800 KB, decided by magic bytes; metadata stripped; served with `nosniff` and a `default-src 'none'` CSP.
+
+## 2026-10-31 — Payments foundation, database part (Claude; plan section 4, lead review of 17:05)
+
+1. **Three migrations:**
+   - M1 `*_payments_registration`: generated, with a guard at the top;
+   - M2 `*_registration_fee_400`: data;
+   - M3 `*_payments_checks`: CHECKs, partial unique indexes and triggers.
+2. **M1 refuses a database that holds payments or pending registrations.** The new NOT NULL columns have no backfill, and it never deletes data.
+   - **Old dev database** (main's fixtures left 3 paid payments): `db:fixtures:dev --clean`, behind the fixtures' guards, removes only the fixture students' payments and registrations. Then migrate, seed and reload the fixtures (RUNBOOK section 0). On the shared `sirat`, only after Rasel says so.
+   - **`*_test` databases:** `prepare-test-db.mjs` empties the three payment tables while M1 is pending, and marks a failed try rolled back, so `test:int` stays green after a merge.
+   - Proven by `payments-migration.int-spec.ts` and once on `sirat_pay`.
+3. **`payment_events.payment_id` is not a foreign key**, unlike the plan's first text, and follows `audit_logs.actor_id`. With a FK, the table's TRUNCATE trigger makes `payments` untruncatable, which breaks `truncateAll` in every integration test; unknown invoices need NULL anyway. `truncateAll` skips the table.
+4. **Partial-index predicates compare enum literals.** Postgres requires IMMUTABLE functions there, and enum-to-text is only STABLE (error 42P17, checked). A future migration that recreates `PaymentStatus` or `RegistrationAttemptStatus` must drop and recreate the three partial indexes (05-DATABASE).
+5. **The `registrations_payment_paid` trigger also checks the owner:** the payment must be paid and belong to the registration's user.
+6. **Fixtures follow the real rules:** a completed attempt, initiated → pending → paid, 40000 paisa, invoice `FX…`, phones `0170000000n`. A fixture student who lost the registration gets one again. Emails, password and guards are unchanged.
+
+## 2026-10-31 — No refund handling (owner)
+
+1. **The system has no refund flow** (OPEN-QUESTIONS P8, plan Q4). No code moves a payment to `refunded`, the admin reconcile has no refund option, and the dashboard has no refund text; none of this gets tests. The enum value `refunded` stays (no migration), and the status-transition trigger never allows it.
+2. **A refund reported by PayStation** for a paid payment (status API or IPN) does not change the status. `payment_events` records `refund_reported` and a critical alert is raised, with a test. S26 is tried only if it is easy in the sandbox, to see this alert.
+3. **Duplicate payments:** a second or late paid payment (`duplicate_payment`) is still detected, raises a critical alert and shows in the admin list. Whether money is returned is outside our system (client, PayStation panel). This replaces the plan's D3 (refund by an admin).
+4. **So preventing a double charge matters more:** at most one attempt in progress per email and per phone, and the checkout expiry is never shorter than PayStation's link lifetime (S12).
+
+## 2026-10-31 — Duplicate email and phone at registration (owner)
+
+1. **Email with an account:** bn "এই email দিয়ে আগেই রেজিস্ট্রেশন হয়েছে। অনুগ্রহ করে login করুন।", en "Already registered. Please log in." No password-reset wording; the login page link stays as it is. Rate limits as planned (per IP and per email).
+2. **A payment in progress for the same email:** the plan's default stays (plan Q3 b).
+3. **Phone numbers are unique:** one number, one student. This replaces the plan's "phone not unique".
+   - Stored in one form, `01XXXXXXXXX`. The server normalises `017…`, `+88017…` and `88017…` to it, with tests.
+   - `users.phone` is UNIQUE; NULL stays allowed, e.g. admins made by the CLI.
+   - One attempt in progress per phone, via a partial unique index like the email one. Both are in the first payments PR's migrations.
+   - Message: bn "এই ফোন নম্বর দিয়ে আগেই রেজিস্ট্রেশন হয়েছে। অন্য নম্বর দিন।", en "This phone number is already registered. Please use another number." Rate limits as for the email.
+   - The fixture students get distinct phone numbers.
+4. **Final (owner, 2026-10-31 17:35):** email and phone are both unique, and nobody can use another person's email or phone. Nothing beyond that is built: no OTP, no admin tool to free a number, no extra flow.
+   - **Any phone conflict gets that one phone message,** whether the number already has an account or has an attempt in progress under another email.
+   - The partial unique index on open attempts per phone stays. It is not extra logic: it is what makes the rule hold, and with no refunds it stops two people being charged for one number.
+   - The two email messages stay as in points 1 and 2.
+
 ## 2026-10-31 — Exam rules: format, pool, window and grace, rule violations, results (owner)
 
 Answers to OPEN-QUESTIONS #4–#10, through the lead (2026-10-31). Plan: `docs/plans/EXAM-PLAN.md` (section 9; violations in 3.15).
