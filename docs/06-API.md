@@ -6,7 +6,7 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 
 ## Public allow-list (reviewed)
 
-`GET /health`, `GET /ready`, `POST /auth/login`, `POST /auth/refresh` (cookie), `POST /auth/forgot-password`, `POST /auth/reset-password`, `POST /auth/verify-email`, `POST /auth/resend-verification`, `POST /registrations/start`, `GET /payments/paystation/callback`, `POST /payments/paystation/ipn`, `GET /content/*` (public site content), `GET /certificates/verify/:code`.
+`GET /health`, `GET /ready`, `POST /auth/login`, `POST /auth/refresh` (cookie), `POST /auth/forgot-password`, `POST /auth/reset-password`, `POST /auth/verify-email`, `POST /auth/resend-verification`, `POST /registrations/start`, `GET /registrations/info`, `GET /registrations/current`, `POST /registrations/current/{resume,retry,cancel}` (the `sirat_reg` cookie; no id, no personal data), `GET /payments/paystation/callback`, `POST /payments/paystation/ipn`, `GET /content/*` (public site content), `GET /certificates/verify/:code`.
 
 ## Endpoints
 
@@ -21,12 +21,11 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `POST /auth/verify-email` | Public, 30/min per IP | `{token}`. 204; never logs in (no session, no cookie). One 400 for every bad link. Built (A2.1e) |
 | | `POST /auth/change-password` | Auth, login limits | `{currentPassword, newPassword}`. 204 + fresh cookies for this device; one transaction writes the hash, ends every session and retires reset links. 400 for a wrong current password or a refused new one; 429 + `Retry-After` while locked. Built (A2.1d) |
 | users | `GET /users/me`, `PATCH /users/me` | Auth | **Allow-list DTO**: name, phone, district, institution, education, grade, photo |
-| registrations | `POST /registrations/start` | Public, throttled | Creates pending registration + payment, returns `payment_url`. No `role` |
-| payments | `GET /payments/:id/status` | Owner | Reads our DB |
-| | `POST /payments/:id/recheck` | Owner, throttled | Calls PayStation status |
-| | `GET /payments/paystation/callback` | Public | Hint only → status API → settle |
-| | `POST /payments/paystation/ipn` | Public | Re-confirm via status API; idempotent |
-| | `GET /payments/mine` | Auth | |
+| registrations | `GET /registrations/info`, `POST /registrations/start`, `GET /registrations/current`, `POST /registrations/current/{resume,retry,cancel}`, `GET /registrations/me` | Public (cookie) / Auth | Registration and payment section below. Built (payments PR 2) |
+| payments | `GET /payments/mine`, `GET /payments/:id/status` | Auth / Owner | Built (payments PR 2) |
+| | `POST /payments/:id/recheck` | Owner, throttled | Calls PayStation status (payments PR 3) |
+| | `GET /payments/paystation/callback/:invoice` | Public | Hint only → status API → settle (payments PR 3) |
+| | `POST /payments/paystation/ipn` | Public | Re-confirm via status API; idempotent (payments PR 3) |
 | exams | `GET /exams`, `GET /exams/:id` | Role(student, ambassador) | Window state, never questions. Exam engine (below). Built (E2) |
 | attempts | `POST /exams/:id/attempts` | Role(student, ambassador) + verified email + paid registration | Start or resume (server clock). Built (E2) |
 | | `GET /attempts/me?exam=:id` | Owner | Resume. Built (E2) |
@@ -50,6 +49,38 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `CRUD /admin/announcements`, `/admin/ambassadors`, `/admin/tasks`, `/admin/rank-thresholds` | admin | |
 | | `POST /admin/points/adjust` | admin | Compensating ledger entry |
 | | `GET /admin/audit` | admin | |
+
+## Registration and payment (payments PR 2; plan: `docs/plans/PAYMENTS-PLAN.md` 6.1, 6.7)
+
+Pay first, account second: the form waits server-side in a registration attempt; the account is created when a payment is verified paid (PR 3). Errors carry a machine code in `ApiError.code` (`RegistrationErrorCode` in `@sirat/shared`; the owner's bn/en texts in `REGISTRATION_MESSAGES`). No route takes an amount, a fee, a role or a status from the browser.
+
+| Method + path | Guard | Request → response |
+|---|---|---|
+| `GET /registrations/info` | Public | → `{ open, opensAt, closesAt, fee: { amountMinor, currency } \| null, gradeLevels: [{ id, label }], districts, educationTypes }`. Cached 30 s; `open` is false while the fee is invalid or PayStation is not configured |
+| `POST /registrations/start` | Public; 30/min per IP; 10/hour per email and per phone | `{ startRequestId (uuid), name, phone, email, password, district (one of 64), institution, educationType (one of 5), gradeLevelId, promoCode? }` → **201** `{ paymentUrl, invoiceNumber, amountMinor, currency }` and the `sirat_reg` cookie (httpOnly, SameSite=Lax, Path `/api/registrations`, 7 days). Details below |
+| `GET /registrations/current` | Public (cookie) | → `{ state: awaiting_payment \| confirming \| completed \| failed \| expired \| needs_help, invoiceNumber, amountMinor, currency, expiresAt, canResume, canRetry }`; 404 `NO_REGISTRATION` without a cookie. No personal data |
+| `POST /registrations/current/resume` | Public (cookie) | → 200 `{ paymentUrl }` while the checkout is valid; 409 `NOTHING_TO_RESUME` |
+| `POST /registrations/current/retry` | Public (cookie); limits as start | After the last payment failed or expired, while registration is open: a new payment with a new invoice → 201 as start; 409 `RETRY_NOT_ALLOWED` while one is active |
+| `POST /registrations/current/cancel` | Public (cookie) | 204 and the cookie cleared, only while no payment is active (409 `CANNOT_CANCEL`) |
+| `GET /registrations/me` | Auth | `{ registered: false }` or `{ registered: true, registeredAt, category, gradeLevel, payment: { invoiceNumber, amountMinor, currency, status, paidAt } }` |
+| `GET /payments/mine` | Auth | `?page&pageSize` (≤ 50) → `Paginated<{ id, invoiceNumber, amountMinor, currency, status, createdAt, paidAt }>`, only the session user's |
+| `GET /payments/:id/status` | Owner | The same item; another user's payment is 404, never 403 |
+
+**`POST /registrations/start` in detail:**
+- **403 `REGISTRATION_CLOSED`:** the switch is off, or now is outside `registration_opens_at`/`registration_closes_at`. Nothing is written.
+- **503 `PAYMENTS_UNAVAILABLE`:** the fee setting is not valid (10–10,000 BDT, whole taka; an operator alert follows), or PayStation is not configured. PayStation is never called.
+- **503 `PAYMENTS_PAUSED`:** for 10 minutes after PayStation answered "1001" Invalid Credential (a critical operator alert). Nothing retries blindly.
+- **409:**
+  - `EMAIL_REGISTERED` / `PHONE_REGISTERED`: an account has that email or phone.
+  - `EMAIL_IN_PROGRESS`: another browser has a payment in progress for that email.
+  - `PHONE_REGISTERED` also when the phone has an attempt in progress under another email (owner: one text for any phone conflict).
+  - `START_IN_PROGRESS`: a parallel submit is still being prepared.
+- **The same browser** (its `sirat_reg`), with a payment in progress for the same email, gets that checkout back: 201, no second payment.
+- **The same `startRequestId` again** (a double click, a lost response): the same payment, with a fresh cookie token. Used with another email: 400 `START_REQUEST_REUSED`.
+- **400:** a validation error, `GRADE_LEVEL_UNKNOWN`, or `PROMO_INVALID` (only an approved ambassador's code; case-insensitive).
+- **429 `TOO_MANY_ATTEMPTS`:** over 10 an hour for one email or phone.
+- **502 `PAYMENT_START_FAILED`:** PayStation refused or did not answer. The payment is `failed`; the cookie is set, so `retry` works.
+- **The payment row** is written before PayStation is called. It snapshots the fee from `settings` (`amount_minor`), the currency, `pay_with_charge = false` and the account label. Its invoice is `PREFIX + yymmdd + 10 random`. The password is stored only as argon2id inside the attempt and cleared at completion.
 
 ## Exam engine (E2; plan: `docs/plans/EXAM-PLAN.md` §1.1, §3, §3.15)
 

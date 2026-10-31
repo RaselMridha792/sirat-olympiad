@@ -44,6 +44,10 @@ Response: `status_code` is a **string**. `"200"` carries `payment_url`; `"1008"`
 
 - The docs only say the customer is sent back to `callback_url` "with parameters indicating payment outcomes". **Parameter names and values, the HTTP method, and whether cancel/failure also return are not documented** (OPEN-QUESTIONS P1).
 - PayStation's own WooCommerce and OpenCart plugins read GET `status`, `invoice_number`, `trx_id` and treat `status=canceled` as cancelled. That is plugin code, not API documentation.
+- **Seen in the sandbox (2026-10-31, `SANDBOX-CHECKLIST.md` S4, S5):** the browser comes back with **GET**, and the parameters are appended to our path, which already carries the invoice:
+  - success: `?status=Successful&invoice_number=<invoice>&trx_id=<uuid>`;
+  - failure: `?status=Failed&invoice_number=<invoice>&trx_id=&message=Failed`.
+  A cancel has not been seen yet. The `trx_id` is a UUID, and v1 reports the same one. Reopening a paid checkout link shows "Payment already completed.", so a link cannot be paid twice.
 - **Our rule:** `callback_url = <APP_URL>/api/payments/paystation/callback/<invoice_number>`. The invoice in the path is also only a hint. Nothing is marked paid from callback data; we always verify through transaction status.
 
 ## 3. Transaction status

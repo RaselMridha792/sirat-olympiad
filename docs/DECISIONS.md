@@ -2,6 +2,27 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — Registration start and status (Claude; payments PR 2, plan 6.1 and 6.7)
+
+1. **Application error codes:** the global error filter passes on a machine code that a service sets on purpose (`{ code, message }`, `^[A-Z][A-Z0-9_]{2,40}$`, e.g. `EMAIL_REGISTERED`). Every other error keeps its status name. The codes and the owner's bn/en texts live in `@sirat/shared` (`RegistrationErrorCode`, `REGISTRATION_MESSAGES`), so the web maps codes and never raw text.
+2. **District is one of the 64**, in the current official English spelling (`BD_DISTRICTS`). Education type is one of the old wizard's 5. The class comes from `grade_levels`. Free text would break the book's courier list (plan 16) and any later district statistics.
+3. **No route before an account takes an id.** The `sirat_reg` cookie (only its SHA-256 is stored) is the proof of "my attempt"; `current` returns no personal data.
+   - A repeated `startRequestId` hands that browser a fresh cookie token and the same payment: only the browser that sent the form knows the id.
+   - The same browser with a payment in progress for the same email gets its checkout back.
+   - Another browser gets 409. Any phone conflict gets the owner's one phone text.
+4. **Concurrency:**
+   - one start locks the open attempts of the email or phone (`FOR UPDATE`);
+   - an attempt with an active payment means 409; an idle one is abandoned;
+   - two starts at the same moment fall to the partial unique indexes, which become the same 409s;
+   - an invoice collision draws a new number (at most 3 times).
+5. **PayStation is called outside every transaction.** The payment row (with the fee snapshot) exists before the call. The answer is recorded in `payment_events`.
+   - created: `pending` with the URL;
+   - refused or timed out: `failed` (502), and retry works;
+   - `"1001"`: `failed`, a 10-minute pause in the cache Redis with a critical alert, and 503 `PAYMENTS_PAUSED` for every start or retry during the pause.
+6. **Limits:** 30 starts or retries per minute per IP (route tier) and 10 an hour per email and per phone (Redis, failing open like the login limiter). New alert kinds: `payments.fee_invalid`, `payments.credentials_rejected`.
+7. **Recheck moves to PR 3:** `POST /registrations/current/recheck` and `POST /payments/:id/recheck` need the verify job.
+8. **Until reconciliation exists (PR 3)**, a payment past its expiry still counts as in progress for the 409 rule. The reconciliation job then expires it, so no second checkout can start while money may still arrive.
+
 ## 2026-10-31 — PayStation client, fake server, selfcheck and decision rules (Claude; payments PR 1b)
 
 1. **The client speaks only v1** (initiate, transaction-status by invoice). v2 is not used, because the merchant bears the charge.
