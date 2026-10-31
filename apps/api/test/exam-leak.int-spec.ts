@@ -7,7 +7,14 @@ import { randomUUID } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
 import type { AttemptView } from '@sirat/shared';
 import { makeUser, testPrisma } from './helpers';
-import { bootEngineApp, call, type EngineApp, loginAs, seedExam } from './exam-engine-app';
+import {
+  bootEngineApp,
+  call,
+  closeEngineApp,
+  type EngineApp,
+  loginAs,
+  seedExam,
+} from './exam-engine-app';
 
 // Heavy or timing-sensitive on a shared machine (many starts, short real waits): a generous limit, not the 30 s default.
 jest.setTimeout(180_000);
@@ -21,7 +28,7 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
-  await env?.app.close();
+  await closeEngineApp(env);
   await prisma?.$disconnect();
 });
 
