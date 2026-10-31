@@ -2,6 +2,21 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — Payments foundation, database part (Claude; plan section 4, lead review of 17:05)
+
+1. **Three migrations:**
+   - M1 `*_payments_registration`: generated, with a guard at the top;
+   - M2 `*_registration_fee_400`: data;
+   - M3 `*_payments_checks`: CHECKs, partial unique indexes and triggers.
+2. **M1 refuses a database that holds payments or pending registrations.** The new NOT NULL columns have no backfill, and it never deletes data.
+   - **Old dev database** (main's fixtures left 3 paid payments): `db:fixtures:dev --clean`, behind the fixtures' guards, removes only the fixture students' payments and registrations. Then migrate, seed and reload the fixtures (RUNBOOK section 0). On the shared `sirat`, only after Rasel says so.
+   - **`*_test` databases:** `prepare-test-db.mjs` empties the three payment tables while M1 is pending, and marks a failed try rolled back, so `test:int` stays green after a merge.
+   - Proven by `payments-migration.int-spec.ts` and once on `sirat_pay`.
+3. **`payment_events.payment_id` is not a foreign key**, unlike the plan's first text, and follows `audit_logs.actor_id`. With a FK, the table's TRUNCATE trigger makes `payments` untruncatable, which breaks `truncateAll` in every integration test; unknown invoices need NULL anyway. `truncateAll` skips the table.
+4. **Partial-index predicates compare enum literals.** Postgres requires IMMUTABLE functions there, and enum-to-text is only STABLE (error 42P17, checked). A future migration that recreates `PaymentStatus` or `RegistrationAttemptStatus` must drop and recreate the three partial indexes (05-DATABASE).
+5. **The `registrations_payment_paid` trigger also checks the owner:** the payment must be paid and belong to the registration's user.
+6. **Fixtures follow the real rules:** a completed attempt, initiated → pending → paid, 40000 paisa, invoice `FX…`, phones `0170000000n`. A fixture student who lost the registration gets one again. Emails, password and guards are unchanged.
+
 ## 2026-10-31 — No refund handling (owner)
 
 1. **The system has no refund flow** (OPEN-QUESTIONS P8, plan Q4). No code moves a payment to `refunded`, the admin reconcile has no refund option, and the dashboard has no refund text; none of this gets tests. The enum value `refunded` stays (no migration), and the status-transition trigger never allows it.
