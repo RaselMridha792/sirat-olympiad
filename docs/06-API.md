@@ -41,7 +41,8 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `GET /certificates/verify/:code` | Public | |
 | announcements | `GET /announcements` | Auth | |
 | ambassadors | `GET /ambassador/me`, `POST /ambassador/teams`, `GET /ambassador/tasks`, `POST /ambassador/tasks/:id/submit` | Role(ambassador) | Own data only |
-| admin (all `Role(admin)` unless noted) | `GET/PATCH /admin/users[/:id]`, `POST /admin/users/:id/role` | admin | Audited |
+| admin (all `Role(admin)` unless noted) | `GET /admin/users`, `GET /admin/users/:id`, `POST /admin/users/export` | admin | Students list (below). Built (core C1) |
+| | `PATCH /admin/users/:id`, `POST /admin/users/:id/role` | admin | Audited. Not built (role change and block are later admin writes) |
 | | `GET /admin/exams?page=&pageSize=&q=&status=`, `GET /admin/exams/:id`, `POST /admin/exams`, `PATCH /admin/exams/:id`, `POST /admin/exams/:id/{publish,unpublish,archive}`, `POST /admin/exams/:id/questions`, `PUT`/`DELETE /admin/exams/:id/questions/:questionId`, `GET /admin/exams/:id/questions/:questionId/versions` | admin | Exam admin (below). Lock after publish; questions versioned, never deleted once published. Built (E1) |
 | | `GET /admin/settings`, `PUT /admin/settings/:key` | admin | Single writer (`expected`), audited. Built (payments PR 3) |
 | | `GET /admin/payments`, `GET /admin/payments/:id`, `POST /admin/payments/:id/{recheck,reconcile}` | admin | Audited. Built (payments PR 3), below |
@@ -169,6 +170,18 @@ Scoring and the snapshot run in the worker (queue `exam`): each submit queues `s
 | `GET /admin/exams/:id/questions/:questionId/versions` | — | Every version of that question's lineage, oldest first, with `isActive` and `deactivatedAt` |
 
 The database enforces the same lock (triggers `exams_frozen_after_publish`, `questions_frozen_after_publish`, `attempts_guard`; `05-DATABASE.md`), so an API bug cannot change a published exam's timing or rewrite an answered question.
+
+## Admin students list (core C1; plan: `docs/plans/CORE-PLAN.md` §2)
+
+`@Roles('admin')` on every route (manager, jury, ambassador and student get 403), and each request re-reads the acting user in the database, so a demoted or blocked admin gets 403 even with a valid token. Read only: `users` and `grade_levels`, payments' `registrations` and `payments`. Shapes `AdminUserRow`, `AdminUserDetail`, `AdminUserQuery` (`dashboard.ts`) and `AdminUserExportRequest` (`core.ts`) in `@sirat/shared`. No response carries a password hash or a token.
+
+| Method + path | Request | Answers |
+|---|---|---|
+| `GET /admin/users` | `page` (1–10,000), `pageSize` (1–100, default 20), `q` (1–100 characters), `role`, `blocked`, `category`, `registered`, `verified` (booleans as `true`/`false`) | `Paginated<AdminUserRow>`, newest first. `q` matches the name or the email (case-insensitive, contains); also the phone exactly when `q` reads as a Bangladeshi mobile in any form (`normalizeBdMobile`), and the registration's invoice exactly when `q` has the invoice shape. A row: id, name, email, role, blocked, category, district, grade label, created at, `phoneLast3` (the list never carries the full number), `emailVerified`, `registration` (`registeredAt`, `invoiceNumber`, `paymentStatus`, `paidAt`) or null, `needsPaymentReview` (a payment of this user has a review reason; payments' admin page has the details) |
+| `GET /admin/users/:id` | — | `AdminUserDetail`: the row plus the full phone, institution, education type, `emailVerifiedAt`, grade level, the registration's payment (status, invoice, amount, currency, paid at), `referredBy` (name, promo code) and `ambassador` (promo code, approved at), each or null. 404 for an unknown id, 400 for a malformed one |
+| `POST /admin/users/export` | `{ filters, reason }`: `filters` = the list filters without `page`/`pageSize`; `reason` 3–200 characters | 200 `text/csv; charset=utf-8`, a UTF-8 BOM first (Bangla in Excel), `Content-Disposition: attachment`, `Cache-Control: no-store`. Only `student` and `ambassador` accounts, newest first. Columns: user id, name, email, phone, district, institution, education type, grade level, category, role, blocked, email verified, registered at and paid at (Asia/Dhaka), invoice, amount (BDT), payment status, referrer's promo code. A cell starting with `=`, `+`, `-`, `@`, tab or CR gets a `'` prefix. The audit row `users.exported` (admin, IP, filters with `q` replaced by its kind, row count, reason; never the rows) is written before the first byte: without it, 503 and no file. 400 `too_many_rows` over 50,000 matching rows (narrow the filter). 429 after 5 exports per admin per hour |
+
+POST for the export keeps the reason and the search out of URLs (nginx logs query strings) and puts it behind the CSRF header. The browser calls it through `lib/api.ts` and saves the file; the rows are read in keyset batches of 1,000, so no statement comes near the 10 s timeout.
 
 ## DTO and security rules
 
