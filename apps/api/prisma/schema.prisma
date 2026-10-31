@@ -138,6 +138,9 @@ model User {
   announcements       Announcement[]
   registrationAttempt PendingRegistration?  @relation("AttemptUser")
   referredAttempts    PendingRegistration[] @relation("AttemptReferrer")
+  bookOrder           BookOrder?            @relation("BookOrderOwner")
+  bookOrdersShipped   BookOrder[]           @relation("BookOrderShipper")
+  bookImages          BookImage[]           @relation("BookImageUploader")
   leaderboardEntries  LeaderboardEntry[]
 
   @@index([referredById])
@@ -296,14 +299,16 @@ model PendingRegistration {
 /// One paid payment <-> one registration. Replaying a callback can never create a second one.
 /// Raw SQL adds a trigger: the payment must be `paid` and belong to the same user.
 model Registration {
-  id        String   @id @default(uuid(7)) @db.Uuid
-  userId    String   @unique @map("user_id") @db.Uuid
-  paymentId String   @unique @map("payment_id") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-  user      User     @relation(fields: [userId], references: [id])
-  payment   Payment  @relation(fields: [paymentId], references: [id])
+  id        String     @id @default(uuid(7)) @db.Uuid
+  userId    String     @unique @map("user_id") @db.Uuid
+  paymentId String     @unique @map("payment_id") @db.Uuid
+  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  user      User       @relation(fields: [userId], references: [id])
+  payment   Payment    @relation(fields: [paymentId], references: [id])
+  bookOrder BookOrder?
 
+  @@unique([id, userId]) // for book_orders' composite foreign key: an order only for the student's own registration
   @@map("registrations")
 }
 
@@ -654,4 +659,68 @@ model Announcement {
   @@index([publishedAt])
   @@index([createdById])
   @@map("announcements")
+}
+
+// ───────────── Free book (plan section 16) ─────────────
+
+/// confirmed -> shipped (admin). Nothing is tracked after shipping (plan B6).
+enum BookOrderStatus {
+  confirmed
+  shipped
+}
+
+/// A book cover: the system's first upload (RULEBOOK §15, plan 16.5). Kept in Postgres, so every API replica sees it
+/// and the nightly pg_dump backs it up; served only by the API with fixed headers. Old covers stay (the audit trail
+/// points to them). Raw SQL adds CHECKs: the content type (jpeg, png, webp), the size (1 B to 800 KB), the sides
+/// (100 to 4000 px).
+model BookImage {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  sha256      String   @unique
+  contentType String   @map("content_type")
+  byteSize    Int      @map("byte_size")
+  width       Int
+  height      Int
+  data        Bytes
+  uploadedBy  String   @map("uploaded_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  uploader User @relation("BookImageUploader", fields: [uploadedBy], references: [id], onDelete: Restrict)
+
+  @@index([uploadedBy]) // every foreign key has an index (schema invariant)
+  @@map("book_images")
+}
+
+/// One free book per paid student (plan 16, owner 2026-10-31). The composite foreign key (registration_id, user_id)
+/// means an order exists only for the student's own registration, and a registration exists only for a paid payment.
+/// Raw SQL adds: the lengths, the phone format, the district in the 64, shipped <=> shipped_at and shipped_by, and a
+/// trigger that locks the address once shipped (the status never goes back).
+model BookOrder {
+  id             String          @id @default(uuid(7)) @db.Uuid
+  userId         String          @unique @map("user_id") @db.Uuid
+  registrationId String          @unique @map("registration_id") @db.Uuid
+  status         BookOrderStatus @default(confirmed)
+  recipientName  String          @map("recipient_name")
+  recipientPhone String          @map("recipient_phone") // 01XXXXXXXXX; may differ from the student's, not unique
+  district       String
+  upazila        String
+  addressLine    String          @map("address_line")
+  note           String?
+  bookTitle      String          @map("book_title") // the title when confirmed: a later rename never changes it
+  version        Int             @default(1) // +1 per change; the student sends it back (another tab)
+  confirmedAt    DateTime        @default(now()) @map("confirmed_at") @db.Timestamptz
+  shippedAt      DateTime?       @map("shipped_at") @db.Timestamptz
+  shippedBy      String?         @map("shipped_by") @db.Uuid
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  user         User         @relation("BookOrderOwner", fields: [userId], references: [id], onDelete: Restrict)
+  registration Registration @relation(fields: [registrationId, userId], references: [id, userId], onDelete: Restrict)
+  shipper      User?        @relation("BookOrderShipper", fields: [shippedBy], references: [id], onDelete: Restrict)
+
+  @@unique([registrationId, userId]) // Prisma needs it for the one-to-one composite relation (each column is unique too)
+  @@index([status, createdAt])
+  @@index([district])
+  @@index([recipientPhone])
+  @@index([shippedBy]) // every foreign key has an index (schema invariant)
+  @@map("book_orders")
 }
