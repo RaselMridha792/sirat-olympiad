@@ -30,6 +30,9 @@ import {
   type SeededQuestion,
 } from './exam-engine-app';
 
+// Heavy or timing-sensitive on a shared machine (many starts, short real waits): a generous limit, not the 30 s default.
+jest.setTimeout(180_000);
+
 let env: EngineApp;
 let prisma: PrismaClient;
 let jobs: ExamJobs;

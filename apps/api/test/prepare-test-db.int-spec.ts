@@ -32,6 +32,10 @@ async function admin(sql: string): Promise<void> {
 
 const dropScratch = () => admin(`DROP DATABASE IF EXISTS "${scratchName}" WITH (FORCE)`);
 
+// Two `prisma migrate deploy` runs and a database create/drop: seconds alone, but well over a minute when three
+// sessions load this machine (A2 saw 45 s). Generous on purpose; the work inside stays minimal.
+jest.setTimeout(240_000);
+
 afterAll(async () => {
   await dropScratch();
 });
