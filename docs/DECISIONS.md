@@ -2,6 +2,39 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-01 — Announcements and the student home on the API (core C4; plan `docs/plans/CORE-PLAN.md` section 5, D5, D6)
+
+1. **Announcements are data, not a message system** (D5):
+   - **Text:** plain, with its line breaks kept; never HTML, and links are not made clickable.
+   - **Audience and time:** everyone (`category` null) or one category, published now or at a chosen time (at most 1 minute in the past).
+   - **Never deleted:** an announcement is archived and can be restored.
+   - **No email to students** (SES quota).
+   - **Schema:** one migration pair, `*_core_announcements` (generated: `category`, `archived_at`) and `*_core_announcements_checks` (length CHECKs, `archived_at >= created_at`, a partial index for the students' list).
+   - **Module:** `AnnouncementsModule` adds one line to `app.module.ts` (lead's OK).
+2. **Writes:**
+   - **Locking:** every admin write re-reads the admin, locks the row and compares `expectedUpdatedAt` (409 `stale`), so two admins never overwrite each other.
+   - **Audit:** the row is written in the same transaction (title and changed field names).
+   - **Refusals:** an archived announcement is not edited (`archived`); restoring a live one is refused (`not_archived`); a PATCH that changes nothing is `nothing_to_update`.
+3. **Students' reads are cached** per category and page for 60 s in the cache Redis. Every admin write bumps a generation number in the key after its commit, so a change shows at once.
+   - **Schedules:** a scheduled announcement appears within 60 s of its time.
+   - **Redis trouble:** the list falls back to Postgres; if the bump fails, a change waits for the TTL.
+4. **The student home** (D6, and A2's L1 needs it before launch) is composed on the web server from existing endpoints, so no team's module changes:
+   - **The calls:** `/users/me`, `/exams`, `/exams/:id` (only for the next exam's grace), `/announcements` (3) and payments' `/registrations/me`.
+   - **The next exam:** one in progress, else one open, else the earliest upcoming (`pickNextExam`, tested).
+   - **Rounds:** `currentRound` stays null until core C6.
+   - **The registration card** (lead's option (a); payments builds none): status, invoice, fee and date, picked field by field.
+     - A registration exists only for a paid payment (trigger) and there are no refunds, so the card never offers a payment action.
+     - Without a registration, it links to payments' `/register`.
+     - It uses the common payment-status texts; payments' `REGISTRATION_STATE_LABELS` describe the browser's attempt (`/registrations/current`), not a logged-in student's registration.
+5. **Web:**
+   - `data/http/announcements.ts` and `data/http/home.ts` read with shape checks and explicit picks. `DataSource.admin.listAnnouncements` now returns `AdminAnnouncement` with a status filter.
+   - The admin page has status tabs, "New announcement", and edit and archive/restore per row, all writing through `lib/api.ts`.
+   - `TextAreaField` joins `packages/ui`.
+6. **Tests:**
+   - `announcements.int-spec.ts` (11): visibility by time, archive and category; paging; the cache showing a write at once; roles and a blocked or demoted user; create with its audit row; refused input and back-dating; stale, nothing-to-update, archive and restore; the status filter; the database CHECKs and the index.
+   - web: `http/home.test.ts` (composition, next exam, picks, a refused part), `announcement-problem.test.ts`.
+   - **Mutation checks:** without the category filter, without the generation bump, without the stale check, and without the registration pick, each makes a test fail.
+
 ## 2026-11-01 — Student profile and the admin's grade correction (core C3; plan `docs/plans/CORE-PLAN.md` section 4, Q1 default)
 
 1. **What a student may change (Q1 default, until the owner answers):** name, phone, district, institution, education type. Not email (a verified change with A2's tokens, later), not the grade (it sets the category and so the exam), not role, category, promo code or payment fields.
