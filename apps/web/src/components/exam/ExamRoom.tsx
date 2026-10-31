@@ -186,7 +186,16 @@ function WaitingRoom({
   const n = (v: number) => formatNumber(locale, v);
 
   if (exam.state === 'submitted' && exam.attempt?.receipt) {
-    return <Receipt receipt={exam.attempt.receipt} locale={locale} m={m} />;
+    return (
+      <Receipt
+        receipt={exam.attempt.receipt}
+        reviewHref={
+          exam.resultsPublished ? `${EXAM_PATH}/${encodeURIComponent(exam.id)}/review` : null
+        }
+        locale={locale}
+        m={m}
+      />
+    );
   }
   if (exam.state === 'closed' || exam.state === 'submitted') {
     return (
@@ -341,7 +350,7 @@ function Player({
   useEffect(() => watchViolations(controller), [controller]);
 
   if (state.phase === 'submitted' && state.receipt) {
-    return <Receipt receipt={state.receipt} locale={locale} m={m} />;
+    return <Receipt receipt={state.receipt} reviewHref={null} locale={locale} m={m} />;
   }
   if (state.phase === 'closed' || state.phase === 'submitted') {
     return <Closed reason={state.closedReason} examId={examId} m={m} />;
@@ -690,10 +699,13 @@ function Ending({ state, m }: { state: PlayerState; m: ExamPlayerMessages }) {
 
 function Receipt({
   receipt,
+  reviewHref,
   locale,
   m,
 }: {
   receipt: SubmissionReceipt;
+  /** The review page, once the results are published (owner Q5). */
+  reviewHref: string | null;
   locale: Locale;
   m: ExamPlayerMessages;
 }) {
@@ -712,10 +724,17 @@ function Receipt({
           <time dateTime={receipt.submittedAt}>{formatDateTime(locale, receipt.submittedAt)}</time>
         </dd>
       </dl>
-      <p className="text-xs text-ink-muted">{m.receipt.results}</p>
-      <Link href={EXAM_PATH} className={buttonClasses({ variant: 'outline' })}>
-        {m.receipt.back}
-      </Link>
+      {reviewHref ? null : <p className="text-xs text-ink-muted">{m.receipt.results}</p>}
+      <div className="flex flex-wrap gap-3">
+        {reviewHref ? (
+          <Link href={reviewHref} className={buttonClasses()}>
+            {m.receipt.seeResults}
+          </Link>
+        ) : null}
+        <Link href={EXAM_PATH} className={buttonClasses({ variant: 'outline' })}>
+          {m.receipt.back}
+        </Link>
+      </div>
     </Card>
   );
 }

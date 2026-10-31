@@ -18,12 +18,13 @@ Status as of 2026-10-31 (UI port on the dev-only mock data layer; see "Data laye
 | Student dashboard shell | `dashboard/layout.js`, `Sidebar/Sidebar.jsx`, `Dashboard/Dashboard.jsx` | `(student)/dashboard/layout.tsx`, `components/student/UserChip.tsx`, `NavShell`, `AppShell` | **Ported** | Navy top bar + dark sidebar, active item with a right accent bar, user chip | Menu filtered on the server (Ambassador link only for role `ambassador`); bn/en switch; no logout until auth lands |
 | Student dashboard home | `dashboard/page.jsx` | `(student)/dashboard/page.tsx` | **Ported (mock)** | Welcome hero, current-round card, rules | SDG card and "Continue Courses" dropped; rules rendered from the next exam's config |
 | My exams (old "quizzes") | `dashboard/quizzes/page.jsx` | `(student)/dashboard/exam/page.tsx` | **Ported (real API)** | Card grid with a state strip, dates, duration | State (`upcoming/open/in_progress/submitted/closed`) decided by the server clock; each card links to its room: Waiting room, Start, Continue, Receipt (E4) |
-| Leaderboard (student) | `dashboard/leaderboard/page.jsx` | `(student)/dashboard/leaderboard/page.tsx` | **Ported (mock)** | Table (rank, name, institution/status), round tabs, search | Server-side paging/search on a published snapshot (old loaded 4000 rows); "not published yet" state; no scores, times or emails |
+| Leaderboard (student) | `dashboard/leaderboard/page.jsx` | `(student)/dashboard/leaderboard/page.tsx` | **Ported (real API, E5a)** | Table (rank, name, institution/status), tabs, search | One board per exam: tabs are the student's own exams with published results (newest first); server-side paging/search on the snapshot (old loaded 4000 rows); "not published yet" state; no scores, times or emails |
+| Exam review (new) | — | `(student)/dashboard/exam/[id]/review/page.tsx` | **New (real API, E5a)** | Option cards as in the player, correct option green, a wrong choice red | Own score, rank and time; each question with the student's answer, the correct option and the explanation; only after the results are published |
 | Leaderboard (public marketing) | `leaderboard/page.jsx` (reads mock `students.json`) | — | Not ported | — | Only if owner wants a public board; same snapshot API, no mock JSON |
 | Admin shell | `admin/layout.js`, `admin/components/Sidebar.jsx`, `Header.jsx` | `admin/layout.tsx`, `NavShell`, `AppShell` | **Ported** | Dark sidebar, white top bar, user chip | Nav filtered on the server (admin: 6 links, manager: Dashboard + Leaderboard) |
 | Admin dashboard | `admin/page.js`, `adminHome/DashboardHome.jsx`, `ChartStatTable/*` | `admin/page.tsx`, `StatCard`, `@sirat/ui/charts` (`LineChart`, `BarList`) | **Ported (mock)** | Hero with refresh, KPI cards, 45-day registrations trend | Own server-rendered SVG charts (no chart library); SDG curve and donut replaced by category bars and a pipeline |
 | Admin users | `admin/user-management/page.jsx`, `Table.jsx`, `RoleEditModal.jsx` | `admin/users/page.tsx`, `components/RouteDialog.tsx`, `components/admin/ExportUsersButton.tsx`, `DataTable`, `Dialog` | **Built, real API** (core C1, read-only) | Table, role/status badges, search, role filter, detail modal | Server paging, search (name, email, phone, invoice) and filters (category, registration, email verified); registration/payment and email-verified columns; phone masked in the list (last 3 digits), full in the detail; CSV export with a reason (audited). Role change/block/delete/add member hidden until audited admin APIs exist (no plaintext temp-password emails, ever) |
-| Quiz management | `admin/quiz-management/*` | `admin/exams/page.tsx`, `admin/exams/[id]/page.tsx` | **List + view ported (read-only)** | Card grid, view with correct answers highlighted | Add/edit/publish hidden until the versioned-question API exists; lock after publish, never delete/re-create |
+| Quiz management | `admin/quiz-management/*` | `admin/exams/page.tsx`, `admin/exams/[id]/page.tsx` | **List + view on the real API; results and attempts (E5a)** | Card grid, view with correct answers highlighted | Results panel (counts, snapshot, build/publish/unpublish) and attempts with violations, filters and an events dialog (owner Q4); add/edit/publish come with E5b; lock after publish, never delete/re-create |
 | Exam player | `quiz/page.jsx`, `Components/QuizePageComponents/QuizForm.jsx`, `QuizQuestion.jsx`, `StartModal.jsx`, `FinalSubmitModal.jsx`, `TimeUpModal.jsx` | `(student)/dashboard/exam/[id]/page.tsx`, `components/exam/ExamRoom.tsx`, `Countdown` | **Ported (real API, E4)** | Rules dialog + agree, one question at a time with a progress bar, option cards with letter boxes, sticky timer bar, blurred grey exam behind a warning | Server attempt + remaining seconds; local copy at once; checkpoints every 60–120 s; time-up and the 6th violation submit the **current** answers; connection badge; honest rules text (no "AI detection"); question palette added; time-up is an inline "submitting" card, then the receipt |
 | Video evaluation | `admin/video-evaluation/page.jsx` | `admin/jury/*` (TODO) | — | Pending/Evaluated tabs, 10 criteria 0–10 | Judge recorded; history; server totals |
 | Mark controller (promotion) | `admin/mark-controller/page.jsx` | `admin/rounds/*` (TODO) | — | Top-N preview | Idempotent, audited, no overwrite |
@@ -49,14 +50,17 @@ Pages never fetch on their own. Server Components call `getData()` from `apps/we
 | `student.getProfile()` | `GET /users/me` | Auth |
 | `student.getProfileOptions()` | `GET /content/profile-options` (new) | Public or Auth |
 | `student.updateProfile(input)` | `PATCH /users/me` | Auth, allow-list DTO |
-| `student.listExams()` | `GET /exams` | Auth |
+| `student.listExams()` | `GET /exams` (with `resultsPublished`) | Auth |
+| `student.getExam(id)` | `GET /exams/:id` (the waiting room; the own attempt's id) | Auth |
+| `student.getReview(attemptId)` | `GET /attempts/:id/review` | Own attempt; 403 until published |
 | `student.listAnnouncements(q)` | `GET /announcements` | Auth |
 | `student.getAmbassador()` | `GET /ambassador/me` | Role(ambassador) |
-| `leaderboard.get(q)` | `GET /leaderboard?round=&page=&q=` | Auth; 404/403 until published |
+| `leaderboard.get(q)` | `GET /leaderboard?exam=&page=&q=` | Auth; empty and `unpublished` until published |
 | `admin.getStats()` | `GET /admin/stats` | admin/manager |
 | `admin.listUsers(q)`, `admin.getUser(id)` | `GET /admin/users`, `GET /admin/users/:id` | admin |
-| `admin.getLeaderboard(q)` | `GET /admin/leaderboard` (new) | admin/manager |
-| `admin.listExams(q)`, `admin.getExam(id)` | `GET /admin/exams`, `GET /admin/exams/:id` (with questions) | admin |
+| `admin.getLeaderboard(q)` | `GET /admin/leaderboard?exam=&page=&q=` | admin/manager |
+| `admin.listExams(q)`, `admin.getExam(id)` | `GET /admin/exams`, `GET /admin/exams/:id` (with questions and the `updatedAt` token) | admin |
+| `admin.getExamResults(id)`, `admin.listAttempts(id, q)`, `admin.getAttempt(id, attemptId)` | `GET /admin/exams/:id/results`, `/attempts`, `/attempts/:attemptId` | admin |
 | `admin.listAmbassadors(q)` | `GET /admin/ambassadors` | admin |
 | `admin.listAnnouncements(q)` | `GET /admin/announcements` | admin |
 
@@ -81,7 +85,7 @@ Pages never fetch on their own. Server Components call `getData()` from `apps/we
 | Unknown exam id | `/admin/exams/:id` calls `notFound()` and shows the translated not-found card with `noindex`, but answers HTTP 200: the `loading.tsx` boundaries above it start the stream first (Next 16 `loading.md`, "Status codes"). The skeletons stay; a real 404 needs a Proxy check once the exams API exists. |
 | HTTP data source | **Skeleton built** (`data/http/`, DECISIONS "Web data layer over HTTP"): `student.listExams` reads `GET /exams`; every other method is connected by the team that builds its API. The route guards are in place (`requireAccess`, `lib/access.ts`). |
 | API contract | Add `GET /dashboard/home`, `GET /content/profile-options` and `GET /admin/leaderboard` to `06-API.md`; decide the leaderboard tie rule (the mock shares a rank: 1, 2, 2, 4). |
-| Later screens | Results/review, certificates, payment history, video submission, jury evaluation, promotion, admin create/edit flows, the ambassador panel (branch `feat/ui-ambassador`). |
+| Later screens | Certificates, payment history, video submission, jury evaluation, promotion, admin create/edit flows, the ambassador panel (branch `feat/ui-ambassador`). |
 
 ## Old components → shared components
 

@@ -18,6 +18,7 @@ const detail: StudentExamDetail = {
   violationWarnings: 5,
   serverNow: '2026-11-20T05:00:00.000Z',
   attempt: {
+    attemptId: 'att-1',
     phase: 'submitted',
     endsAt: '2026-11-20T04:40:00.000Z',
     receipt: {
@@ -41,6 +42,7 @@ test('the exam room gets only the fields it uses, at every level (nothing else i
     durationMinutes: 30,
     questionsPerAttempt: 20,
     violationWarnings: 5,
+    resultsPublished: false,
     attempt: {
       phase: 'submitted',
       receipt: {

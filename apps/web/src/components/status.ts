@@ -1,6 +1,7 @@
 import type { ComponentProps } from 'react';
 import type { Badge } from '@sirat/ui';
 import type {
+  AttemptStatus,
   EntryStatus,
   ExamStatus,
   PaymentStatus,
@@ -11,6 +12,13 @@ import type {
 
 /** One place that maps every status to a Badge tone, so the same status looks the same everywhere. */
 type Tone = NonNullable<ComponentProps<typeof Badge>['tone']>;
+
+export const attemptStatusTone: Record<AttemptStatus, Tone> = {
+  in_progress: 'info',
+  submitted: 'warning',
+  expired: 'neutral',
+  scored: 'success',
+};
 
 export const examStateTone: Record<StudentExamState, Tone> = {
   upcoming: 'warning',
