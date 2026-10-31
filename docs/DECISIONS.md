@@ -2,6 +2,37 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — Refresh rotation inside a time budget (Lead's order after PR #12; Claude implementation)
+
+1. **The gap:** the API's 25 s request timeout answers 503 but cannot cancel the handler, so a rotation could commit after its answer was gone. The browser kept the retired token, and its next try got 409 (inside the grace) or 401 with the family revoked as reuse. A slow API ended the session.
+2. **Rule:**
+   - A rotation commits only within `REFRESH_ROTATION_BUDGET_MS` (default 8 s, at most 10 s) of the handler's start, so its answer (the only copy of the new cookies) always goes out.
+   - **Margins:** even with Prisma's 5 s margin below, the commit stays far before the 25 s request timeout and nginx's 30 s, and the budget is no longer than the 10 s reuse grace.
+   - **Inside the transaction:**
+     - before each statement the time left bounds it, a wait for a row lock included (`set_config('statement_timeout', …, true)`, transaction-local and safe behind PgBouncer). It only ever lowers the database's own 10 s;
+     - the budget is checked again just before commit;
+     - Prisma's transaction timer runs 5 s past the deadline, so it never cuts a commit the check allowed.
+   - **Past the budget,** or when the database refuses for a passing reason (its 5 s `lock_timeout`, a statement timeout, a serialization failure, a deadlock: `common/db-errors.ts`), the transaction rolls back and the API answers 503.
+     - Nothing changed and the old cookies still work.
+     - The answer has no `Retry-After`, so `/refresh` treats it as "unavailable" and retries with its own growing, jittered pause, which spreads the retries while the database is slow.
+   - **A COMMIT that fails may still have committed.** The successor's row is then looked up: if it exists, the cookies go out (204); if not, 503.
+3. **Reuse detection is unchanged:**
+   - Two tabs inside the 10 s grace get 409.
+   - A retired token after the grace still revokes the family and is audited.
+   - The retirement time is stamped again just before commit, not when the UPDATE was sent (it may have waited for a lock), so the grace counts from when the token really stops working.
+4. **Not chosen:** keeping the successor token (encrypted) in Redis so that a retry gets the same cookies. RULEBOOK §5 stores refresh tokens hashed only, and it would change what a replay inside the window gets.
+5. **Tests:**
+   - `auth-refresh-timeout.int-spec.ts`, scaled down (budget 500 ms, request timeout 1.5 s; another connection holds the session row locked):
+     - the rotation is rolled back: 503, no cookies, no `Retry-After`, and no new row even after the lock is released. The same token then renews and `/auth/me` answers 200;
+     - a short wait inside the budget still rotates, and the token counts as retired from after the wait;
+     - real reuse after the grace still ends the family and is audited.
+   - `auth-refresh-lock-timeout.int-spec.ts` uses the real values (8 s budget, 25 s request timeout). The database's 5 s `lock_timeout` cuts the wait first: 503 and nothing changed, then the token renews.
+   - `db-errors.spec.ts` covers which database errors count as passing.
+   - **Mutation checks:** without the budget, a second session row appears after the timeout's 503. Without the stamp before commit, the retirement time lands before the lock wait. Without the error mapping, the lock timeout answers 500.
+6. **Not covered:**
+   - a COMMIT that stalls for more than the margin before the request timeout (over 10 s);
+   - an answer lost in the network after it was sent. That is not the API being slow.
+
 ## 2026-10-31 — PayStation settings at boot, and the sandbox host check S11 (Claude; plan section 3.5)
 
 1. **S11 (Rasel's sandbox account, 10 BDT `XS11…` invoices, never paid):**
@@ -108,7 +139,7 @@ Answers to OPEN-QUESTIONS #4–#10, through the lead (2026-10-31). Plan: `docs/p
    - **Answers:** 204 is ok. 409 means another tab just rotated; it waits 300 ms and is ok. 401 goes to `/login`. 429, 5xx, a network error or a stuck lock wait count as "unavailable": the browser backs off (honouring Retry-After) and never goes to `/login`.
    - **A slow API never ends the session (Lead):** the refresh POST has no time limit in the browser and is never aborted. Once the API has rotated the token, the new cookies exist only in its answer; cutting it short would lose them, and the next try would send the retired token, which the API treats as reuse and ends the session. After 10 s without an answer, `/refresh` says the server is slow and keeps waiting (nginx answers within its 30 s `proxy_read_timeout`). A unit test pins that the POST carries no abort signal. An e2e case holds the answer 15 s and checks that the page waits, never offers or goes to `/login`, and lands with a live session (Chrome stores the cookies when the headers arrive, so the case cannot replay the lost-cookie path itself).
    - **No way out while a renewal is in flight:** "Try again now" and "Sign in instead" show only between tries. The POST outlives the page (keepalive), so its late answer would overwrite or clear the cookies of a login made meanwhile; on a shared computer, even another student's.
-   - **Gap left on the API side (follow-up, no API change in this PR):** the API's 25 s request timeout answers 503 while the handler cannot be cancelled, so a rotation that commits after 25 s is still lost. Closing it needs an API change: an idempotent rotation within the reuse grace, or no commit after the timeout.
+   - **Gap on the API side (closed by the next PR):** the API's 25 s request timeout answered 503 while the handler could not be cancelled, so a rotation that committed after it was lost. See "Refresh rotation inside a time budget".
    - **Loop guard:** only renewals that worked count. After 2 within 2 minutes for the same page in one tab, the next arrival goes to `/login`. Reloads while the API is unavailable count nothing, so an outage never sends anyone to `/login`. No storage, or storage that throws even when read, fails closed to `/login`.
    - Every browser POST sends `X-Requested-With`, the refresh included (condition f).
 8. **`next=`:**
