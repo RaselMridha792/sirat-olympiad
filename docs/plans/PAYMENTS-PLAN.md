@@ -10,6 +10,7 @@ The five questions that block code are in section 2. Q1–Q4 are answered by the
 
 - **Registration and payment only.** The flow ends when the student logs in and sees their own registration and payment status on the dashboard. No part of the exam engine is needed or touched.
 - **Order change:** this release comes before the exam engine, instead of the phase order in `10-BUILD-PLAN.md` (DECISIONS 2026-10-31 "First release"). The Phase C Definition of Done (17 points) still applies in full (section 11).
+- **Also in scope (owner, 17:37):** a free book after payment, with a delivery address (section 16).
 - **Out of scope:** exam engine, referral points (only the referrer link is stored), certificates, ambassador dashboard, public marketing pages (Phase D).
 - **Dependencies:**
   - A2's web session (web login replacing the mock in `apps/web/src/lib/session.ts`) must be merged before the web steps (step 10, by Wed 4 Nov). The student dashboard needs a real login.
@@ -503,6 +504,8 @@ Checks, unchanged:
 | 12 | Fri 6 Nov | **Sandbox session with Rasel** (10.2):<br>- the S-list and the browser flow on a phone;<br>- the IPN through this worktree's API and a temporary tunnel (8.1), or the staging stack if a VPS exists;<br>- fixes | `fix:` as needed; checklist results | 5 |
 | 13 | Fri 6 Nov | **k6** registration surge + callback/IPN bursts, locally against the fake server (regressions; numbers provisional until the VPS run in 10.3) | `test(load): registration surge` | 5 |
 | 14 | Fri 6 Nov | RUNBOOK (payments, settings changes, account switch), docs 03/06/10, CLAUDE.md state | `docs:` | 5 |
+| 15 | Sat 7 Nov | **Free book, API** (section 16): 06-API contract, M4, cover upload, student and admin endpoints, CSV, tests | `docs: book API contract` · `feat(db): book orders and cover images` · `feat(api): free book orders and admin book` | 6 |
+| 16 | Sat 7 – Sun 8 Nov | **Free book, web**: result-page login button, `/student/book`, dashboard card, admin book and orders pages | `feat(web): free book page and dashboard card` · `feat(web): admin book and orders` | 6 |
 
 The dates assume each PR is reviewed and merged within about half a day. While a PR waits, the next step continues on a branch made from it. That branch opens as a PR after the previous one merges, with `git merge origin/main` first.
 
@@ -522,7 +525,9 @@ The dates assume each PR is reviewed and merged within about half a day. While a
 - Q3 and Q4 are answered, final (section 2).
 - PR reviews by the lead and merges by Rasel, about half a day each.
 
-### 10.3 Buffer: Sat 7 – Sat 14 November (8 days)
+### 10.3 Buffer: Sun 8 (midday) – Sat 14 November (about 6½ days)
+
+It was 8 days. The free book (steps 15–16, section 16.8) takes about 1½ of them.
 
 The days saved by the measured pace are kept at the end for what cannot be compressed or predicted:
 - **Sandbox problems:** S10 showing an amount other than 400, callback or IPN behaving unlike the docs, a second sandbox session.
@@ -544,8 +549,11 @@ Each PR is opened as soon as its steps are done and its checks pass:
 | 3 | 6–9 | Money flow: settle, callback, IPN, reconciliation, admin payments and settings. Kept apart from PR 2, so the review of the paths that mark a payment paid stays readable |
 | 4 | 10–11 | Web: wizard, result page, dashboard status, admin fee dialog and payments page |
 | 5 | 12–14 | Sandbox fixes, local k6, docs |
+| 6 | 15–16 | Free book: M4, API, cover upload, web pages (section 16) |
 
 ## 11. Phase C Definition of Done: step and proof for each point
+
+The 17 points below, plus point 18 for the free book (section 16.7).
 
 | # | Requirement | Step | Proof |
 |---|---|---|---|
@@ -719,3 +727,186 @@ Rules (lead, 2026-10-31):
 **Cleanup after both branches merge:**
 - drop `sirat_pay` and `sirat_pay_test`, and flush Redis DB 1;
 - only with Rasel's OK.
+
+## 16. Free book after payment (owner, 2026-10-31 17:37)
+
+Every student who pays gets one free book. After a successful payment the student confirms a delivery address. The admin can change the book's title and cover later. This is part of the 15 November release unless Rasel says otherwise.
+
+**Rules:**
+- **No migration in PR 1.** The book has its own migration (M4) in its own PR, after the payments migrations. The exam session's migrations come after it.
+- **Own session only:** a student reaches only their own order. There is no `:id` in any student route, and the user id comes from the session cookie.
+- **Admin only:** addresses (a minor's personal data) are visible only to the student and to admins (not `manager`). They never appear in logs or audit rows, and every export is audited.
+
+### 16.1 Questions and defaults
+
+The defaults below were put to Rasel and are **not final**:
+
+| # | Question | Default |
+|---|---|---|
+| B1 | Order fields | recipient name; recipient phone (pre-filled with the student's phone, may differ, **not unique here**); district (one of the 64); upazila/thana; address line; optional note |
+| B2 | Where the book can go | Bangladesh only |
+| B3 | How many books | one per student (`UNIQUE(user_id)`) |
+| B4 | **(ক) Waiting for Rasel:** may the student skip the book page and confirm later from the dashboard? | Yes. The dashboard shows a reminder card until an order exists |
+| B5 | **(খ) Waiting for Rasel:** may the address change after confirming? | Yes, until an admin marks the order shipped. After that the DB refuses changes (trigger) |
+
+Smaller choices, made here (say if you disagree):
+
+| | Default |
+|---|---|
+| B6 | Order statuses: `confirmed` → `shipped` (admin). Nothing is tracked after shipping; `delivered` can be added later |
+| B7 | The order keeps a copy of the book title at confirmation, so a later rename never changes what a student was promised or what the courier list says |
+| B8 | Upazila/thana is free text (2–100 characters); district comes from a fixed list of 64 in `packages/shared` |
+| B9 | Nothing is deleted automatically in this release. When the deliveries are done, the owner decides how long addresses are kept |
+
+### 16.2 Schema (M4 `<ts>_book_orders`, its own PR)
+
+| Table | Columns and constraints |
+|---|---|
+| `book_images` | `id`, `sha256` UNIQUE, `content_type` CHECK in (`image/jpeg`, `image/png`, `image/webp`), `byte_size` CHECK 1–819200 (800 KB), `width`, `height` CHECK 100–4000, `data` bytea, `uploaded_by` (FK users RESTRICT), `created_at`. Old covers stay: they are small, and the audit trail points to them |
+| `settings` (existing) | new keys `book_title` (string, 1–200) and `book_cover_image_id` (uuid or null). Changed only through the admin endpoints below, with `expected` and an audit row (section 3.4) |
+| `book_orders` | `id`; `user_id` UNIQUE; `registration_id` UNIQUE. Composite FK `(registration_id, user_id)` → `registrations (id, user_id)`, so an order exists only for the student's own **paid** registration: a registration exists only for a paid payment (trigger), and there are no refunds. Also: `status` (`BookOrderStatus`: `confirmed`, `shipped`); `recipient_name` (1–100), `recipient_phone` (CHECK `^01[3-9][0-9]{8}$`, not unique), `district` (CHECK in the 64 names), `upazila` (2–100), `address_line` (5–300), `note` (≤ 300, nullable); `book_title` (snapshot); `version` (int, +1 per change); `confirmed_at`, `shipped_at`, `shipped_by` (FK users RESTRICT), `created_at`, `updated_at` |
+| `registrations` | a UNIQUE `(id, user_id)` index, for the composite FK above |
+
+Further rules on `book_orders`:
+- **CHECKs:** `shipped` exactly when `shipped_at` and `shipped_by` are set; lengths; `district` in the list.
+- **Trigger `book_orders_locked_after_shipping`:** once `shipped`, the address columns cannot change, and the status cannot go back.
+- **Indexes:** `(status, created_at)`, `district`, `recipient_phone`.
+
+### 16.3 API contract (goes into `06-API.md` first, at the start of the book PR)
+
+DTOs use `whitelist` + `forbidNonWhitelisted`. Every route has an explicit guard. The phone is normalised with `normalizeBdMobile`.
+
+**Student** (role `student`, logged in; "me" routes only):
+
+| Route | What it does |
+|---|---|
+| `GET /book` | `{ title, coverUrl }` |
+| `GET /book-order/me` | `{ eligible, order }`. `eligible` is true when the student has a registration. `order` is null or the student's own order, including the address |
+| `PUT /book-order/me` | Body `{ recipientName, recipientPhone, district, upazila, addressLine, note?, expectedVersion? }`. Creates the order or updates it (idempotent; `UNIQUE(user_id)`).<br>- 403 without a paid registration;<br>- 409 once shipped (B5) or when `expectedVersion` is stale (another tab);<br>- 400 on unknown fields (`role`, `userId`, `status` …);<br>- audit `book_order.confirmed` / `book_order.updated` with ids only, never the address |
+| `GET /book/cover/:imageId` | **Public.** The cover bytes. `Content-Type` comes from the stored, sniffed type; also `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'` and `Cache-Control: public, max-age=31536000, immutable`. The id changes with every new cover, so caching is safe. A cover is not personal data |
+
+**Admin** (role `admin` only; `manager` gets 403):
+
+| Route | What it does |
+|---|---|
+| `GET /admin/book` | title, current cover, upload limits |
+| `PUT /admin/book/title` | `{ title, expected, reason }`. 409 when `expected` is stale. Audit `book.title_changed` (old, new, reason) |
+| `POST /admin/book/cover` | multipart, one file. Checks in 16.5. Sets `book_cover_image_id`. Audit `book.cover_changed` (old and new image id, sha256, size) |
+| `GET /admin/book-orders?page=&pageSize=&status=&district=&phone=&email=` | Paginated (max 100 per page), newest first.<br>- `phone` is normalised and matches the recipient's or the student's phone;<br>- `email` matches the student's email (citext, exact);<br>- these values are never logged (A2.0 gate 2 already drops query strings) |
+| `GET /admin/book-orders/export.csv?status=&district=` | Streamed CSV for the courier: order code, recipient name, phone, district, upazila, address, note, book title.<br>- UTF-8 with a BOM (Bangla in Excel);<br>- cells starting with `=`, `+`, `-`, `@`, tab or CR are prefixed with `'` (formula injection);<br>- `Cache-Control: no-store`, `Content-Disposition: attachment`;<br>- audit `book_orders.exported`: admin, IP, the filter, the row count, never the rows;<br>- rate-limited |
+| `POST /admin/book-orders/ship` | `{ ids (1–500), reason? }` → `shipped`. Audit `book_orders.shipped` (count, ids) |
+
+### 16.4 Flow
+
+1. **After payment:** the result page polls `/registrations/current` until `completed` (section 6.7). The payment browser has **no session** (D2: no automatic login), so the page says "Payment confirmed. Log in to get your free book." The button goes to `/login?next=/student/book`.
+2. **Login:** the student logs in with the password they chose in the form (A2's login).
+   - Dependency on A2: the login page must accept `next` only as a same-origin path from an allow-list (`/student/…`), never a full URL.
+   - If A2's login has no `next` yet, the student lands on the dashboard, and the reminder card leads to the book.
+3. **`/student/book`** (protected, own session only):
+   - shows the title and cover;
+   - the form is pre-filled from the student's account: name, phone, district;
+   - the student checks it and confirms (`PUT`), and sees "Order confirmed".
+   - If the student has no paid registration, the page shows "Available after your registration payment" (`eligible: false`).
+4. **Dashboard:**
+   - a card shows the order: not yet ordered (with the button, B4), confirmed (district only, plus a "Change address" button until shipped, B5), or shipped (with the date);
+   - the registration and payment status card stays as before.
+5. **Admin:** the book page (title, cover upload with a preview) and the orders page (search, paging, "Export for courier", "Mark shipped" for the selected rows). Every action asks for confirmation and is audited.
+
+### 16.5 The cover image: the system's first upload (RULEBOOK §15)
+
+**Where:** in Postgres, table `book_images` (bytea). Not on disk, and not in Cloudinary or any pay-per-request service. Why:
+- **4 API replicas:** a file written by one container is invisible to the other three. A shared volume would work, but it is a second thing to back up and restore.
+- **Backups for free:** the nightly `pg_dump` (`scripts/backup.sh`) already contains it, and the restore drill restores it. Nothing to change in the backup script.
+- **Outside the web root by construction:** nginx never serves it from a directory. Only the API sends it, with fixed headers.
+- **Tiny:** one cover of at most 800 KB, plus a few old ones.
+
+**Limits and checks (restricted, not scanned):**
+- **Size:** one file, at most 800 KB (multer memory storage with `limits`, already present through `@nestjs/platform-express`). This fits the existing nginx `client_max_body_size 1m`, so nginx does not change.
+- **Type:** JPEG, PNG or WebP only, decided by the file's **magic bytes**, never by the file name or the browser's `Content-Type`. SVG (scriptable), GIF, HEIC and everything else are refused.
+- **Dimensions:** read from the header; 100–4000 px per side.
+- **Metadata stripped before storing** (an admin's phone photo can carry GPS):
+  - JPEG: APP1 (EXIF/XMP), APP13 (IPTC) and COM segments;
+  - PNG: `tEXt`, `zTXt`, `iTXt`, `eXIf` and `tIME` chunks;
+  - WebP: `EXIF` and `XMP` chunks, with the header flags and size fixed.
+  Done in a small `book-image.ts` with unit tests. No new dependency, so `pnpm-lock.yaml` does not change. If the owner prefers a re-encode with `sharp`, that is a new dependency and a lockfile change.
+- **Served** with the sniffed type, `nosniff` and a `default-src 'none'` CSP, so even a crafted polyglot can never run as a page.
+
+**Backup and restore:**
+- The cover is in every `pg_dump`.
+- RUNBOOK's restore drill gets one more check: after the restore, `GET /api/book/cover/<id>` returns the image.
+- CSV exports are streamed and never stored on the server, so there is nothing more to back up or purge. The RUNBOOK tells the admin to delete the downloaded file after handing it to the courier.
+
+### 16.6 Tests
+
+**Unit:**
+- `book-image.spec.ts`:
+  - each allowed type is accepted;
+  - a wrong extension or `Content-Type` makes no difference;
+  - SVG, GIF, HEIC and an HTML/JPEG polyglot are refused or stored as an image only;
+  - over 800 KB and over 4000 px are refused;
+  - GPS EXIF in a JPEG and `tEXt` in a PNG are gone after stripping, and the result is still a valid image.
+- `book-csv.spec.ts`: formula prefixes, quotes, commas, newlines, Bangla, the BOM.
+- `districts.spec.ts`: 64 unique names.
+
+**Integration:**
+- `db-constraints`:
+  - `book_orders UNIQUE(user_id)`;
+  - the composite FK (no order for another user's registration, or without a registration);
+  - the CHECKs;
+  - the shipped lock trigger;
+  - the `book_images` CHECKs.
+- `book-orders.int-spec.ts` (HTTP):
+  - no registration → 403;
+  - first `PUT` creates, the second updates (version +1), a stale `expectedVersion` → 409;
+  - shipped → 409, and the DB trigger refuses too;
+  - unknown fields (`role`, `userId`, `status`) → 400;
+  - phone forms are normalised, a bad district → 400;
+  - another student can never see or change the order (there is no route with an id);
+  - the title snapshot is unchanged after an admin rename;
+  - the audit rows hold no address.
+- `admin-book.int-spec.ts`:
+  - student and manager → 403 on every admin route;
+  - title with a stale `expected` → 409;
+  - cover upload: valid → stored and audited; a wrong type → 400; too large → 413;
+  - the cover response headers;
+  - list paging and search by phone (all three forms), email (any case) and district;
+  - CSV content, escaping and its audit row (count and filter, no rows);
+  - ship → statuses and audit.
+- Logs captured over a full flow contain no address, recipient phone or note.
+- `app-routes`: the cover route is the only new public route.
+
+**Web:**
+- the book page's states: no session → login; not eligible; the form's errors in bn and en; confirmed;
+- the dashboard card's three states;
+- the admin pages' confirmations;
+- `next` only from the allow-list.
+
+### 16.7 Definition of Done: new point 18
+
+| # | Requirement | Step | Proof |
+|---|---|---|---|
+| 18 | Free book:<br>- after a paid registration, the logged-in student confirms one Bangladeshi delivery address and can change it until it is shipped;<br>- the admin changes the title and cover (audited), searches and pages orders, exports a courier CSV (audited) and marks orders shipped;<br>- addresses are seen only by the student and by admins, and never logged | 15, 16 | `book-orders`, `admin-book`, `db-constraints`, `book-image.spec`, `book-csv.spec`, web tests |
+
+### 16.8 Schedule (estimate, at the measured pace)
+
+| Step | Date (estimate) | Work | PR |
+|---|---|---|---|
+| 15 | Sat 7 Nov | 06-API contract; M4; `book-image.ts`; student and admin endpoints; CSV; tests | 6 |
+| 16 | Sat 7 – Sun 8 Nov | Web: the result page's login button, `/student/book`, the dashboard card, the admin book and orders pages | 6 |
+
+- **About one and a half days, taken from the buffer.** It shrinks from 8 days (7–14 Nov) to about 6½ (8 Nov midday – 14 Nov).
+- The book needs no PayStation, so the sandbox session on 6 Nov is not affected. One end-to-end walk (payment → login → book) is added to the buffer's real-payment day.
+
+### 16.9 Files this touches (conflict list; Rasel is told before each push)
+
+| File | Note |
+|---|---|
+| `schema.prisma`, new migration M4 | After PR 1's migrations; the exam session's come later |
+| `apps/api/src/modules/payments/*`, new `apps/api/src/modules/book/*` | `BookModule` is imported by `PaymentsModule`, and admin routes go in `AdminModule`, so `app.module.ts` does not change |
+| `packages/shared/src/index.ts` | one line (`districts`, book types) |
+| `packages/ui` | possibly a file-input component (shared; the UI session is told) |
+| `apps/web`: login `next` handling | **A2's file.** The allow-list is agreed with A2 first; the dashboard card is the fallback |
+| `apps/web`: student dashboard home (the card), new `/student/book`, admin book and orders pages | The dashboard home also changes in A2's web-session work: whoever merges second resolves it |
+| `test/app-routes.int-spec.ts` | the public cover route |
+| `docs/06-API.md`, `05-DATABASE.md`, `RUNBOOK.md` (restore check, CSV handling), `DECISIONS.md` | |
+| Not touched | `app.module.ts`, `package.json`, `pnpm-lock.yaml`, `infra/nginx/*`, `scripts/backup.sh` |

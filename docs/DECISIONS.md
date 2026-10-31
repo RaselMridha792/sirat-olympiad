@@ -2,6 +2,16 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — Free book after payment (owner, via the lead)
+
+1. Every student who pays gets one free book. After a successful payment the student confirms a delivery address. The admin can change the book's title and cover later.
+2. It is part of the 15 November release unless the owner says otherwise. It gets its own migration and PR after the payments work, not PR 1's migrations.
+3. The plan is in `docs/plans/PAYMENTS-PLAN.md` section 16. Its defaults (fields, Bangladesh only, one per student) are not final. Two questions wait for the owner: (ক) skip the page and confirm later from the dashboard; (খ) change the address after confirming, until shipped.
+4. **The cover is the system's first upload** (Claude's proposal, in the plan): bytes in Postgres, not on disk or in a pay-per-request service.
+   - The API runs as 4 replicas, which do not share a disk.
+   - `pg_dump` and the restore drill already cover the database.
+   - JPEG, PNG or WebP only, up to 800 KB, decided by magic bytes; metadata stripped; served with `nosniff` and a `default-src 'none'` CSP.
+
 ## 2026-10-31 — Payments foundation, database part (Claude; plan section 4, lead review of 17:05)
 
 1. **Three migrations:**
