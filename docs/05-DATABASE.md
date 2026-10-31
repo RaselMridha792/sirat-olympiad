@@ -40,6 +40,7 @@ Source of truth: `apps/api/prisma/schema.prisma` (validated; see note at bottom)
 | `settings` CHECK: `registration_fee_minor` is a positive whole-taka number | Raw SQL; the fee is 40000 (owner) |
 | Partial-index predicates compare enum literals (Postgres needs IMMUTABLE there; `::text` is only STABLE) | A migration that recreates `PaymentStatus` or `RegistrationAttemptStatus` must drop and recreate those three indexes |
 | `point_ledger UNIQUE(event_key)` | Points never awarded twice |
+| `point_ledger` append-only: UPDATE, DELETE and TRUNCATE refused (TRUNCATE allowed only in a `*_test` database); `ambassador_profiles` promo code `^[A-Za-z0-9_-]{3,40}$` (`*_core_ambassador_checks`) | Corrections are compensating rows; codes fit payments' registration form (core C5a) |
 | `round_entries UNIQUE(user_id, round_id)` | Promotion never duplicates/overwrites |
 | `task_assignments UNIQUE(task_id, user_id)` | |
 | `ambassador_profiles UNIQUE(user_id)`, `UNIQUE(promo_code)` (CITEXT, case-insensitive) | Promo code uniqueness enforced by DB (old code raced) |
