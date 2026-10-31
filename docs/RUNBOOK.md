@@ -136,7 +136,31 @@ $DC up -d --no-recreate --scale api=6 api   # VERIFIED (1 -> 2): nginx picks up 
 
 ## 4. Maintenance mode
 
-TODO: Nginx `maintenance.html` toggle (return 503 with a friendly page for `/` and `/api`). Document the exact commands here when built.
+**The switch (L5):** while the flag file `infra/nginx/maintenance/on` exists (in the clone, git-ignored), nginx answers the public site with a 503:
+- pages, whatever the method: the bilingual page `infra/nginx/pages/maintenance.html` ("we'll be right back", and "if you just paid, your payment is safe; we confirm it automatically");
+- other `/api` calls: JSON `{"statusCode":503,"code":"MAINTENANCE",...}`;
+- both with `Cache-Control: no-store` (Cloudflare keeps neither), `Retry-After: 120` and the security headers.
+
+**Still passing:** `/healthz`, the PayStation IPN (it records and queues; PayStation retries) and the callback (it records the return; the result page it leads to shows the maintenance page). The worker keeps confirming payments. nginx looks for the file on every request: no reload, no restart.
+
+```bash
+scripts/maintenance.sh on        # maintenance: on (since <UTC time>)
+scripts/maintenance.sh status    # maintenance: on (since ...) | maintenance: off
+scripts/maintenance.sh off
+# Checks from the server go through the internal listener, which the switch never affects:
+$DC exec -T nginx wget -qO- http://127.0.0.1:8081/api/ready   # {"status":"ready"} while visitors see the page
+curl -s -o /dev/null -w '%{http_code}\n' https://<domain>/    # 503 while on, 200 after off
+```
+
+- **The script** touches only the flag file and never runs up, down or restart. It refuses `on` while the page is not world-readable: nginx's workers read it, so keep the clone at umask 022.
+- **The same page replaces nginx's own 502/504** on pages and on the PayStation callback (the status stays 502/504), so a deploy gap or a stopped web shows it too. Other `/api` calls keep their JSON errors.
+- **When:**
+  - the kill switches, in order: `registration_open=false`, then maintenance on, then `deploy.sh --rollback` (L9);
+  - a restore (section 5);
+  - a critical fix during an incident.
+
+  Not during a live exam window without the owner: students keep answering in the browser, but their final submit would get the MAINTENANCE answer.
+- **Tests:** `infra/nginx/test/check-maintenance.sh` (its own containers and fake upstreams; CI's docker job), and a CI step on the stack.
 
 ## 5. Backup and restore
 
@@ -189,13 +213,17 @@ bash scripts/test/run-backup-test.sh               # the tests (own compose proj
   That keeps 7 daily and 4 weekly copies (RULEBOOK §6) plus 2 days of hourly ones.
 - **"The dump is much smaller than the last one":** the run stops when a dump is under half the size of the last one, because a sudden drop usually means lost data. After a deliberate big delete (the first run of the session and token cleanup job, a test-data wipe), check that the drop is expected, then run `sudo /srv/sirat/scripts/backup.sh --accept-smaller` once by hand. It logs that it was used; the timer never passes it, and the next timed runs compare with that copy.
 
-**Restore** (until L7): stop traffic first, restore a decrypted dump (refuses a truncated dump; one transaction), then migrate and start again.
+**Restore** (until L7): maintenance on, stop the app (nginx keeps running and shows the page), restore a decrypted dump (refuses a truncated dump; one transaction), migrate, start the app, check it through the internal listener, then maintenance off.
 
 ```bash
-$DC stop nginx web api
+scripts/maintenance.sh on                 # section 4; visitors get the maintenance page
+$DC stop web api worker                   # the worker too: no job writes during the restore
 scripts/restore.sh <decrypted>.dump  # DESTRUCTIVE, asks for YES (truncated-dump refusal VERIFIED; full restore not yet rehearsed)
-$DC run --rm migrate && $DC exec redis-cache redis-cli FLUSHALL && $DC up -d && scripts/healthcheck.sh https://<domain>
+$DC run --rm --no-deps migrate && $DC exec redis-cache redis-cli FLUSHALL && $DC up -d --no-deps api worker web
+$DC exec -T nginx wget -qO- http://127.0.0.1:8081/api/ready   # {"status":"ready"}
+scripts/maintenance.sh off && scripts/healthcheck.sh https://<domain>
 ```
+While the API is stopped, PayStation's IPN gets nginx's JSON 502 and is retried; reconciliation catches anything missed once the worker is back.
 After a restore drill, also check the free book's cover: `GET /api/book/cover/<id>` (the id is `settings.book_cover_image_id`) returns the image. Covers live in Postgres (`book_images`), so the dump carries them; there is no file directory to restore.
 
 Credentials are read inside the postgres container; nothing secret is typed on the host. Hardening (L7): restore into a fresh database instead of `--clean` over the live schema, and a scripted drill. Before every exam: a fresh backup and a **restore drill on another machine**.

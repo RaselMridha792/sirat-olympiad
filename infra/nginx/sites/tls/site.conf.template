@@ -38,6 +38,7 @@ server {
   ssl_session_tickets off;
 
   include /etc/nginx/sirat/security-headers.conf;
+  include /etc/nginx/sirat/maintenance.conf;
   location = /healthz { return 200 "ok"; }
   include /etc/nginx/sirat/app-locations.conf;
 }
