@@ -72,6 +72,24 @@ export const adminUsersMessages = defineMessages({
         failed: 'The export did not finish. Try again.',
       },
     },
+    grade: {
+      button: 'Correct grade level',
+      title: 'Correct the grade level',
+      intro:
+        'The class sets the category, and so the exam. It can be corrected only before the student’s first exam attempt. The old and the new class are kept in the audit log with your reason.',
+      label: 'Grade level',
+      reason: 'Reason',
+      submit: 'Save the correction',
+      pending: 'Saving…',
+      cancel: 'Cancel',
+      errors: {
+        reason: 'Write a reason of 3 to 200 characters.',
+        hasAttempt: 'This student has already started an exam. The class can no longer be changed.',
+        notStudent: 'Only a student’s or an ambassador’s class can be corrected.',
+        unknown: 'Choose a grade level from the list.',
+        failed: 'The correction was not saved. Try again.',
+      },
+    },
     detail: {
       joinedOn: (date: string) => `Joined ${date}`,
       email: 'Email',
@@ -163,6 +181,24 @@ export const adminUsersMessages = defineMessages({
         tooMany: '৫০,০০০-এর বেশি সারি মিলছে। আগে খোঁজ বা ফিল্টার ছোট করুন।',
         limit: 'এই ঘণ্টায় ৫ বার ডাউনলোড হয়ে গেছে। পরে আবার চেষ্টা করুন।',
         failed: 'ডাউনলোড শেষ হয়নি। আবার চেষ্টা করুন।',
+      },
+    },
+    grade: {
+      button: 'শ্রেণি ঠিক করুন',
+      title: 'শ্রেণি / লেভেল সংশোধন',
+      intro:
+        'শ্রেণি থেকে ক্যাটাগরি, আর তা থেকে পরীক্ষা ঠিক হয়। শিক্ষার্থীর প্রথম পরীক্ষা শুরুর আগেই শুধু এটি ঠিক করা যায়। পুরোনো আর নতুন শ্রেণি আপনার কারণসহ অডিট লগে থাকবে।',
+      label: 'শ্রেণি / লেভেল',
+      reason: 'কারণ',
+      submit: 'সংশোধন সংরক্ষণ করুন',
+      pending: 'সংরক্ষণ হচ্ছে…',
+      cancel: 'বাতিল',
+      errors: {
+        reason: '৩ থেকে ২০০ অক্ষরের মধ্যে কারণ লিখুন।',
+        hasAttempt: 'এই শিক্ষার্থী আগেই পরীক্ষা শুরু করেছে। শ্রেণি আর বদলানো যাবে না।',
+        notStudent: 'শুধু শিক্ষার্থী বা অ্যাম্বাসেডরের শ্রেণি ঠিক করা যায়।',
+        unknown: 'তালিকা থেকে শ্রেণি / লেভেল বেছে নিন।',
+        failed: 'সংশোধন সংরক্ষণ হয়নি। আবার চেষ্টা করুন।',
       },
     },
     detail: {

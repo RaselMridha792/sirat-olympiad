@@ -1,4 +1,5 @@
 import {
+  BD_DISTRICTS,
   EXAM_VIOLATION_WARNINGS,
   type AdminLeaderboardRow,
   type AdminUserDetail,
@@ -204,6 +205,7 @@ export function createMockSource(state: MockState | null): DataSource {
   const profileOptions = (): ProfileOptions => ({
     gradeLevels: GRADE_LEVELS.map(({ id, label, category }) => ({ id, label, category })),
     educationTypes: [...EDUCATION_TYPES],
+    districts: [...BD_DISTRICTS],
   });
 
   const source: DataSource = {
@@ -282,17 +284,6 @@ export function createMockSource(state: MockState | null): DataSource {
         ),
 
       getProfileOptions: () => run(profileOptions, profileOptions),
-
-      updateProfile: (input) =>
-        run(
-          () => {
-            const me = getWorld().me;
-            Object.assign(me, input);
-            me.category = gradeOf(input.gradeLevelId)?.category ?? me.category; // derived on the server
-            return { ok: true as const };
-          },
-          () => ({ ok: true as const }),
-        ),
 
       listExams: () =>
         run(
