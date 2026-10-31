@@ -21,6 +21,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - **The CSV:** core's `common/csv.ts` (BOM, CRLF, formula-injection prefix); streamed in batches of 500, never stored; audited with the filter and the count, never the rows.
 6. **No address in logs:** the request logger keeps only the method, the path and the status; the book module has no logger (`book-no-logs.spec.ts`); audit rows carry ids, counts and filters only.
 7. **Seed:** `book_title` ("Sirat Leadership Olympiad book" until an admin sets the real one) and `book_cover_image_id` (null). RUNBOOK §9 asks for both before registration opens.
+
 ## 2026-11-01 — Next's runtime caches are writable by the web's runtime user (Claude; lead's bug report)
 
 1. **The bug:**
