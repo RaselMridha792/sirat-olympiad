@@ -1,0 +1,15 @@
+# Backup tests only (scripts/test/backup.test.sh): one Postgres like production's, in its own compose project, with no
+# published port and no bind mount (the test drives it from inside a container through the Docker socket).
+name: sirat-backup-test
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: sirat
+      POSTGRES_DB: sirat
+      POSTGRES_PASSWORD: ${BACKUP_TEST_PG_PASSWORD:?set by the test}
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U sirat -d sirat']
+      interval: 2s
+      timeout: 3s
+      retries: 30

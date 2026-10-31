@@ -1,0 +1,19 @@
+# /etc/systemd/system/sirat-backup.service (installed by bootstrap.sh, L12). A oneshot: started by sirat-backup.timer
+# and by deploy.sh before migrate (`sudo -n systemctl start sirat-backup.service`, one sudo rule); it exits non-zero on
+# any failure, so a deploy stops before migrate. Root, because its config (/etc/sirat/backup.env, the put-only upload
+# key) is root-only. The clone path below is the VPS layout (L12); change it if the clone lives elsewhere.
+[Unit]
+Description=Sirat encrypted off-server database backup (scripts/backup.sh)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/sirat
+ExecStart=/srv/sirat/scripts/backup.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=30min
+PrivateTmp=true

@@ -1,5 +1,6 @@
 import {
   BD_DISTRICTS,
+  type AdminAnnouncement,
   EXAM_VIOLATION_WARNINGS,
   type AdminLeaderboardRow,
   BOOK_COVER_LIMITS,
@@ -310,6 +311,15 @@ export function createMockSource(state: MockState | null): DataSource {
                   (e) => e.state === 'in_progress' || e.state === 'open' || e.state === 'upcoming',
                 ) ?? null,
               latestAnnouncements: announcementItems(w).slice(0, 3),
+              registration: w.me.payment
+                ? {
+                    registered: true as const,
+                    registeredAt: w.me.payment.paidAt ?? w.me.createdAt,
+                    category: w.me.category,
+                    gradeLevel: gradeOf(w.me.gradeLevelId)?.label ?? null,
+                    payment: { ...w.me.payment },
+                  }
+                : { registered: false as const },
             };
           },
           () => ({
@@ -317,6 +327,7 @@ export function createMockSource(state: MockState | null): DataSource {
             currentRound: null,
             nextExam: null,
             latestAnnouncements: [],
+            registration: { registered: false as const },
           }),
         ),
 
@@ -865,8 +876,26 @@ export function createMockSource(state: MockState | null): DataSource {
 
       listAnnouncements: (query) =>
         run(
-          () => paginate(announcementItems(getWorld()), query),
-          () => emptyPage<AnnouncementItem>(query),
+          () =>
+            paginate(
+              [...getWorld().announcements]
+                .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
+                .map((a): AdminAnnouncement => ({
+                  id: a.id,
+                  title: a.title,
+                  body: a.body,
+                  category: a.category,
+                  publishedAt: a.publishedAt,
+                  archivedAt: a.archivedAt,
+                  createdAt: a.createdAt,
+                  updatedAt: a.updatedAt,
+                  status: a.archivedAt ? 'archived' : 'published',
+                  authorName: 'Demo Admin',
+                }))
+                .filter((a) => !query.status || a.status === query.status),
+              query,
+            ),
+          () => emptyPage<AdminAnnouncement>(query),
         ),
 
       listPayments: (query) =>

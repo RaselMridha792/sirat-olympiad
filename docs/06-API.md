@@ -40,7 +40,7 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `POST /rounds/:id/video` | Owner | Inside round window |
 | certificates | `GET /certificates/mine`, `GET /certificates/:id/pdf` | Owner | |
 | | `GET /certificates/verify/:code` | Public | |
-| announcements | `GET /announcements` | Auth | |
+| announcements | `GET /announcements` | Role(student, ambassador) | Announcements (below). Built (core C4) |
 | ambassadors | `GET /ambassador/me`, `POST /ambassador/teams`, `GET /ambassador/tasks`, `POST /ambassador/tasks/:id/submit` | Role(ambassador) | Own data only |
 | admin (all `Role(admin)` unless noted) | `GET /admin/users`, `GET /admin/users/:id`, `POST /admin/users/export` | admin | Students list (below). Built (core C1) |
 | | `POST /admin/users/:id/grade-level` | admin | Student profile (below). Built (core C3) |
@@ -51,7 +51,8 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `GET /admin/stats` | admin/manager | Cached |
 | | `POST /admin/rounds/:id/promote` | admin | Idempotent, audited |
 | | `GET/POST /admin/jury/*` | jury/admin | Judge recorded |
-| | `CRUD /admin/announcements`, `/admin/ambassadors`, `/admin/tasks`, `/admin/rank-thresholds` | admin | |
+| | `GET/POST /admin/announcements`, `PATCH /admin/announcements/:id`, `POST /admin/announcements/:id/{archive,restore}` | admin | Announcements (below). Built (core C4) |
+| | `CRUD /admin/ambassadors`, `/admin/tasks`, `/admin/rank-thresholds` | admin | |
 | | `POST /admin/points/adjust` | admin | Compensating ledger entry |
 | | `GET /admin/audit` | admin | |
 
@@ -221,6 +222,20 @@ POST for the export keeps the reason and the search out of URLs (nginx logs quer
 | `POST /admin/users/:id/grade-level` (admin) | `{ gradeLevelId, reason }` (reason 3–200) | 200 `StudentProfile` of that student; the category follows the grade table. 409 `has_attempt` once the student has any exam attempt (a category decides the exam), `not_a_student` for staff; 400 `grade_level_unknown`; 404 unknown user. Audit `user.grade_corrected` (old and new label, category, reason) in the same transaction. The admin is re-read |
 
 Email changes are not offered at launch (they need a verified flow with A2's email tokens; core plan Q1).
+
+## Announcements (core C4; plan: `docs/plans/CORE-PLAN.md` §5)
+
+Plain text (line breaks kept, never rendered as HTML), for everyone (`category` null) or one category, shown from `publishedAt`, archived instead of deleted. Shapes `AnnouncementItem` (`dashboard.ts`), `AdminAnnouncement`, `AnnouncementInput`, `AnnouncementPatch`, `ANNOUNCEMENT_LIMITS`, `ANNOUNCEMENT_REFUSALS` (`core.ts`). Every admin call re-reads the admin (a demoted or blocked one gets 403); every write runs in one transaction with its audit row (`announcement.created|updated|archived|restored`: title and changed field names).
+
+| Method + path | Request | Answers |
+|---|---|---|
+| `GET /announcements` (student, ambassador) | `page`, `pageSize` (≤ 50, default 10) | `Paginated<AnnouncementItem>`: not archived, `publishedAt` ≤ now, for everyone or the student's category, newest first. Cached per category and page in the cache Redis for 60 s; every admin write bumps a generation key, so a change shows at once (a scheduled one appears within 60 s of its time). 403 `account_blocked` |
+| `GET /admin/announcements` | `page`, `pageSize` (≤ 50, default 20), `status` (`scheduled`, `published`, `archived`) | `Paginated<AdminAnnouncement>` with the derived `status`, `category`, `archivedAt`, author name, `updatedAt` |
+| `POST /admin/announcements` | `{ title (3–150, one line), body (1–5,000, line breaks kept), category (null = everyone; required), publishAt? (ISO; default now) }` | 201 `AdminAnnouncement`. 400 `publish_in_past` (more than 1 minute ago), validation; unknown fields → 400 |
+| `PATCH /admin/announcements/:id` | `expectedUpdatedAt` + any create field | 200. 409 `stale` (another admin changed it since the form loaded), `archived`; 400 `nothing_to_update`, `publish_in_past`; 404 |
+| `POST /admin/announcements/:id/archive`, `/restore` | `{ expectedUpdatedAt }` | 200. 409 `stale`, `archived` (archive twice), `not_archived` (restore a live one). Nothing is ever deleted |
+
+The database refuses out-of-range text and an archive time before creation (`*_core_announcements_checks`).
 
 ## DTO and security rules
 

@@ -1,0 +1,3 @@
+# age public keys of the backup key holders (owner Q1), one per line: `age1...`. Public keys only: each private key
+# stays offline with its holder and never comes near a server. backup.sh refuses to run until at least one key is
+# here. A new key arrives by pull request; check its fingerprint with the holder over a second channel first.
