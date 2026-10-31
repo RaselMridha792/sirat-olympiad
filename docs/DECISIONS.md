@@ -17,6 +17,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 7. **Proof:**
    - `check:leak` OK on 10 pages, `check:prod` on 27 (8 still show the polite error state: not connected yet), `check:api-down` on 3, all on the exam session's own services.
    - Extra page checks for the attempt dialog, both filters, both leaderboards, the review, the list link and the receipt link.
+
 ## 2026-10-31 — Settle, callback, IPN, reconciliation and admin payments (Claude; payments PR 3, plan 6.2–6.7; reconcile rule: lead)
 
 1. **Only the worker asks PayStation.** One BullMQ queue `payments` on the queue Redis:
