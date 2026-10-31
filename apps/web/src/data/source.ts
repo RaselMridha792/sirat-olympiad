@@ -25,14 +25,14 @@ import type {
 } from '@sirat/shared';
 
 /**
- * Everything the dashboards read, behind one interface. Pages call `getData()` (server side only);
- * today it returns the dev-only mock source, later an HTTP source that calls the API with the
- * session cookie. Swapping sources never touches a page. No method takes a user id: the API takes
- * the acting user from the session (RULEBOOK §18). Planned endpoints are noted per method; the
+ * Everything the dashboards read, behind one interface. Pages call `getData()` (server side only):
+ * the HTTP source (data/http, the API with the session cookie) in production, the dev-only mock
+ * source in development. Swapping sources never touches a page. No method takes a user id: the API
+ * takes the acting user from the session (RULEBOOK §18). Planned endpoints are noted per method; the
  * full map is in docs/07-UI-MIGRATION.md.
  */
 export interface DataSource {
-  readonly kind: 'mock' | 'unavailable';
+  readonly kind: 'mock' | 'unavailable' | 'http';
   student: {
     /** GET /dashboard/home */
     getHome(): Promise<StudentHome>;

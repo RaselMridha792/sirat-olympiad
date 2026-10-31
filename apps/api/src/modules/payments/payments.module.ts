@@ -1,11 +1,30 @@
 import { Logger, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type Redis from 'ioredis';
 import type { EnvVars } from '../../config/env';
+import { REDIS_CACHE } from '../../redis/redis.module';
 import { AuditModule } from '../audit/audit.module';
-import { buildPaymentConfig, describePaymentConfig, type PaymentEnv } from './payment.config';
+import { AuthModule } from '../auth/auth.module';
+import { PAYMENT_GATEWAY } from './gateway/payment-gateway';
+import { PayStationGateway } from './gateway/paystation.gateway';
+import {
+  buildPaymentConfig,
+  describePaymentConfig,
+  type PaymentConfig,
+  type PaymentEnv,
+} from './payment.config';
 import { PAYMENT_CONFIG, PaymentsBootCheck } from './payments-boot-check';
+import {
+  MyPaymentsController,
+  RegistrationController,
+} from './registration/registration.controller';
+import { RegistrationGuards } from './registration/registration-guards';
+import { RegistrationService } from './registration/registration.service';
 
 export { PAYMENT_CONFIG } from './payments-boot-check';
+
+/** Start or retry attempts one email or one phone may make per hour (the IP has its own throttle tier). */
+const ATTEMPTS_PER_HOUR = 10;
 
 const PAYMENT_ENV_KEYS = [
   'NODE_ENV',
@@ -26,7 +45,8 @@ const PAYMENT_ENV_KEYS = [
  * endpoints in AdminModule, so app.module.ts does not change (plan D10).
  */
 @Module({
-  imports: [AuditModule],
+  imports: [AuditModule, AuthModule],
+  controllers: [RegistrationController, MyPaymentsController],
   providers: [
     {
       // The validated PayStation settings (payment.config.ts). Building them at boot makes a wrong .env stop the app.
@@ -41,8 +61,21 @@ const PAYMENT_ENV_KEYS = [
         return payment;
       },
     },
+    {
+      // Null while payments are disabled: nothing can reach PayStation then.
+      provide: PAYMENT_GATEWAY,
+      inject: [PAYMENT_CONFIG],
+      useFactory: (config: PaymentConfig) =>
+        config.enabled ? new PayStationGateway(config) : null,
+    },
+    {
+      provide: RegistrationGuards,
+      inject: [REDIS_CACHE],
+      useFactory: (redis: Redis) => new RegistrationGuards(redis, ATTEMPTS_PER_HOUR),
+    },
     PaymentsBootCheck,
+    RegistrationService,
   ],
-  exports: [PAYMENT_CONFIG],
+  exports: [PAYMENT_CONFIG, PAYMENT_GATEWAY, RegistrationService],
 })
 export class PaymentsModule {}

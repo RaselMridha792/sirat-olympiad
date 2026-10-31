@@ -2,6 +2,58 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — Public entry page and legal pages (core C2; plan `docs/plans/CORE-PLAN.md` section 3)
+
+1. **Why now, before Phase D:** PayStation's merchant review asks for a live site with an about page, terms, a privacy policy, contact details (one email and at least one phone number) and the registered business name; a refund policy depends on the business. So only these five pages are built (entry, about, privacy, terms, refund policy): no design work, no other marketing sections.
+2. **One source each:**
+   - **The facts:** `content/site.ts` holds the registered name, address, email, phone, effective date and a `placeholder` flag. The client sends the values; until then they are null and the footer says the details follow.
+   - **The texts:** `i18n/messages/legal.ts` (bn mirrors en at compile time, sentence for sentence).
+   - **Placeholder texts claim only what the system does:** the data collected, PayStation for payments, the cookies, the exam rules. The refund page states the owner's rule: "The registration fee is non-refundable." / "রেজিস্ট্রেশন ফি ফেরতযোগ্য নয়।"
+3. **While `placeholder` is true,** every public page carries `noindex` and a visible draft note. Turning it off is part of putting the client's texts in.
+4. **Routes:** English at `/`, `/about`, `/privacy`, `/terms`, `/refund-policy`; Bangla at the same paths under `/bn`, with `hreflang` alternates and a language link on each page.
+   - **Static:** each route file only picks its page and locale, and no cookie or header is read (tested).
+   - **The fee and the open state** on the entry page come from payments' `GET /registrations/info`, fetched server-side without any cookie and revalidated at most every 60 s (ISR). On any failure, including a build with no API, the page shows no fee and keeps its buttons.
+   - **`<html lang>`** stays "en" in the shared root layout (UI port #16); Bangla pages set `lang` on their wrapper.
+5. **No HTML strings:** legal texts are structured data rendered by `Prose` (`packages/ui`). A unit test fails on any `dangerouslySetInnerHTML` in `apps/web/src`.
+6. **Checks:** `check-pages.mjs prod` also opens the ten public routes without a cookie (200, the brand, a heading, no error state, no raw error) (lead's OK). `public.test.ts` covers the routes, the refund sentence in both languages, the HTML scan and the info parser.
+
+## 2026-10-31 — Web data layer over HTTP (Lead's order; core session implementation)
+
+1. **Production reads the API:** `getData()` returns the HTTP source (`apps/web/src/data/http/`). Development keeps the mock unless `DATA_SOURCE=http` (a local web against a local API). The literal `NODE_ENV` check still drops the mock from production builds (`assert-no-mock.mjs`).
+2. **One file per area, one owner each:** `http/exams.ts` (exam session; the example, `student.listExams` → `GET /exams`), and later core's `users.ts`, `announcements.ts`, `ambassador.ts`, payments' own file. `http/index.ts` spreads each area into its group of `DataSource`. A method no area implements stays `unavailable`, so its page keeps the polite error state; the test checks that every method exists.
+3. **Area file pattern:**
+   - `getJson` / `getJsonOrNull` (`http/request.ts`) take the path and a shape check. 404 is null only where the page shows not found. Every other status, or a shape that fails the check, throws `DataRequestError`, so the page shows its error state. The error names a class and a status, never the path, a query value or a body (logs).
+   - The area then picks the fields of the shared type explicitly, so a field the API adds later never reaches a page.
+   - Query strings go through `withQuery`.
+4. **Binding** (`http/server.ts`): only the access cookie, the student's IP and nginx's request id go along (`serverGet`, `lib/server-api.ts`). No cookie or a 401 goes to `/refresh`, as the session lookup does. The access token can expire after the 30 s `/auth/me` cache answered, so a read can see 401. `refreshUrl` is now exported from `lib/session.ts` for this.
+5. **Reads only (Lead):** `data/http` is for server-side reads in Server Components.
+   - **Writes from the browser:** browser-initiated writes, and anything that sets or needs cookies on the student's side (exam start/checkpoint/submit, registration start/retry/cancel, profile save, announcement forms), go through `lib/api.ts`. Same origin, the cookies, and #12's 401 → refresh retry.
+   - **One small file per feature,** such as `components/exam/exam-api.ts`.
+   - **Never proxied through the Next server.**
+   - **The profile edit:** its Server Action (mock only today) moves to this pattern with its API (core plan C3), and `updateProfile` then leaves `DataSource`.
+6. **Tests** (`http/http.test.ts`): query encoding; status and shape refusals; 404 → null; the error text carries no path or value; every `DataSource` method present; `listExams` passes on only the card fields (a canary `score` is dropped); an unknown state, category or type is refused. **Mutation checks:** without the explicit pick, the canary reaches the card; without the status check, a refusal passes as data.
+
+## 2026-10-31 — Registration start and status (Claude; payments PR 2, plan 6.1 and 6.7)
+
+1. **Application error codes:** the global error filter passes on a machine code that a service sets on purpose (`{ code, message }`, `^[A-Z][A-Z0-9_]{2,40}$`, e.g. `EMAIL_REGISTERED`). Every other error keeps its status name. The codes and the owner's bn/en texts live in `@sirat/shared` (`RegistrationErrorCode`, `REGISTRATION_MESSAGES`), so the web maps codes and never raw text.
+2. **District is one of the 64**, in the current official English spelling (`BD_DISTRICTS`). Education type is one of the old wizard's 5. The class comes from `grade_levels`. Free text would break the book's courier list (plan 16) and any later district statistics.
+3. **No route before an account takes an id.** The `sirat_reg` cookie (only its SHA-256 is stored) is the proof of "my attempt"; `current` returns no personal data.
+   - A repeated `startRequestId` hands that browser a fresh cookie token and the same payment: only the browser that sent the form knows the id.
+   - The same browser with a payment in progress for the same email gets its checkout back.
+   - Another browser gets 409. Any phone conflict gets the owner's one phone text.
+4. **Concurrency:**
+   - one start locks the open attempts of the email or phone (`FOR UPDATE`);
+   - an attempt with an active payment means 409; an idle one is abandoned;
+   - two starts at the same moment fall to the partial unique indexes, which become the same 409s;
+   - an invoice collision draws a new number (at most 3 times).
+5. **PayStation is called outside every transaction.** The payment row (with the fee snapshot) exists before the call. The answer is recorded in `payment_events`.
+   - created: `pending` with the URL;
+   - refused or timed out: `failed` (502), and retry works;
+   - `"1001"`: `failed`, a 10-minute pause in the cache Redis with a critical alert, and 503 `PAYMENTS_PAUSED` for every start or retry during the pause.
+6. **Limits:** 300 starts or retries per minute per IP (route tier, sized for shared IPs: a school lab or a mobile operator CGNAT on opening day; lead review), 3,000 per minute for info/current/resume/cancel (the result page polls) and 10 an hour per email and per phone (Redis, failing open like the login limiter). New alert kinds: `payments.fee_invalid`, `payments.credentials_rejected`.
+7. **Recheck moves to PR 3:** `POST /registrations/current/recheck` and `POST /payments/:id/recheck` need the verify job.
+8. **Until reconciliation exists (PR 3)**, a payment past its expiry still counts as in progress for the 409 rule. The reconciliation job then expires it, so no second checkout can start while money may still arrive.
+
 ## 2026-10-31 — DECISIONS.md merges as a union (Lead)
 
 1. Every session adds its entries at the top of this file, which conflicted on every merge that day. `.gitattributes` now gives `docs/DECISIONS.md` git's built-in union merge driver: both sides' added lines are kept, and nobody has to resolve the same conflict again. A union can drop the blank line between two new entries; `pnpm format` restores it, and CI's format check catches it. Only this file: in OPEN-QUESTIONS or other tables, a union could duplicate or garble rows.
@@ -77,6 +129,16 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - It reads env without `validateEnv`, because `tsx` emits no decorator metadata.
    - Run against Rasel's sandbox account: created.
 6. **S10 is half done:** a 400 BDT `pay_with_charge=0` checkout shows "Pay BDT 400.00". Paying with the test card needs Rasel at a browser; the lead is arranging it.
+
+## 2026-10-31 — E3: scoring, the server-side finalize and results (Claude; plan `docs/plans/EXAM-PLAN.md` 3.9–3.12)
+
+1. **One queue, `exam`, in the worker** (`ExamWorkerModule`, one import line in `worker.ts`): `score-attempt` after each submit (job id `score.<attemptId>`), a sweep every minute (one BullMQ job scheduler, so one sweep per minute across workers) and admin-requested `build-results`. The API only enqueues and never throws for it: a submit succeeds with the queue down.
+2. **The sweep does the safety work itself:** it submits attempts still running past `ends_at + grace + 30 s` from the last checkpoint (`server_checkpoint`, with its violation count and events) or with an empty sheet (`server_empty`, owner Q3), scores finalized attempts left unscored for 5 minutes (a lost job), and builds the snapshot of a closed exam once nothing is unfinished. The finalize locks the attempt with `FOR UPDATE SKIP LOCKED` and re-checks status and the existing submission, so two sweeps or a late client submit never make two submissions (mutation-checked). The margins are a provider (tests use 0), not env variables.
+3. **Scoring reads correct keys from Postgres**, maps each answer through the attempt's layout and compares it with the version the student saw (one mark each, no negative marking, owner Q1). Idempotent: only `submitted`/`expired` → `scored`.
+4. **The snapshot** is one `INSERT … SELECT` with `rank()` over `score DESC, time_taken_seconds ASC` (the DECISIONS leaderboard query form), blocked accounts left out, in one transaction that bumps `results_generation`. A rebuild adds a new generation; readers use the current one.
+5. **Publishing is an admin action** with `expectedUpdatedAt`, needs a snapshot and a closed window (the database CHECK refuses an early `results_published_at` too), and is audited; unpublishing hides the board and the reviews again. `settings.leaderboard_public` is not used by the exam board (EXAM-PLAN D7).
+6. **Students:** `GET /leaderboard` returns rank, name and institution only (no score, time or email; owner Q5), pages cached in Redis per generation; `GET /attempts/:id/review` returns the own score, rank and the correct options with explanations, only after publishing.
+7. **Not built:** the delayed warm-up before a window opens (the publish warms the pool, and a cold pool is loaded once under a lock); answer-key corrections with re-scoring (E7).
 
 ## 2026-10-31 — E2: the exam engine for students (Claude; plan `docs/plans/EXAM-PLAN.md` section 3)
 

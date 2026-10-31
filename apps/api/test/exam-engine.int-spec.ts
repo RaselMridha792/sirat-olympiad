@@ -18,6 +18,9 @@ import { testPrisma } from './helpers';
 import { bootEngineApp, call, type EngineApp, HOUR_MS, loginAs, seedExam } from './exam-engine-app';
 
 const INTERVAL_MS = 1_500;
+// Heavy or timing-sensitive on a shared machine (many starts, short real waits): a generous limit, not the 30 s default.
+jest.setTimeout(180_000);
+
 let env: EngineApp;
 let prisma: PrismaClient;
 

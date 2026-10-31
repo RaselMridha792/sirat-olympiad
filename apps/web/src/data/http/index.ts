@@ -1,0 +1,26 @@
+import type { DataSource } from '../source.ts';
+import { unavailableSource } from '../unavailable.ts';
+import { studentExams } from './exams.ts';
+import type { ApiGet } from './request.ts';
+
+/**
+ * The production data source: server-side reads from the API, one file per area (DECISIONS "Web data layer over
+ * HTTP"). A method no area file implements yet stays `unavailable`, so its page keeps showing the error state.
+ * To connect a method: add or extend the area file and spread it into its group below. Pure (no Next imports):
+ * server.ts binds `get` to the page request.
+ */
+export function createHttpSource(get: ApiGet): DataSource {
+  return {
+    kind: 'http',
+    student: {
+      ...unavailableSource.student,
+      ...studentExams(get),
+    },
+    leaderboard: {
+      ...unavailableSource.leaderboard,
+    },
+    admin: {
+      ...unavailableSource.admin,
+    },
+  };
+}

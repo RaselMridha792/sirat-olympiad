@@ -1,8 +1,9 @@
 import type { DataSource } from './source';
 
 /**
- * Production source until the HTTP source lands: the mock is never served in production
- * (owner rule), so every call fails and the page shows its error state.
+ * The HTTP source's fallback for every method no area file implements yet (data/http/index.ts):
+ * the mock is never served in production (owner rule), so such a call fails and the page shows
+ * its error state.
  */
 export class DataSourceUnavailableError extends Error {
   constructor() {

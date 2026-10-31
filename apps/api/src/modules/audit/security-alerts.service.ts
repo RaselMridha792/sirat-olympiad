@@ -11,7 +11,9 @@ import { AuditService } from './audit.service';
 export type SecurityAlertKind =
   | 'login.account_limit' // an account reached its hourly failure limit
   | 'login.distributed' // more distinct IPs than the threshold failed on one account within the hour
-  | 'payments.disabled_in_production'; // PAYSTATION_ENV is blank on a production server (lead, 2026-10-31)
+  | 'payments.disabled_in_production' // PAYSTATION_ENV is blank on a production server (lead, 2026-10-31)
+  | 'payments.fee_invalid' // settings.registration_fee_minor is not a valid fee: no payment can start
+  | 'payments.credentials_rejected'; // PayStation answered "1001": payments paused (lead, 2026-10-31)
 
 export interface SecurityAlertEvent {
   actorId: string | null;
@@ -26,6 +28,10 @@ const TITLES: Record<SecurityAlertKind, string> = {
   'login.account_limit': 'An account reached its hourly limit of failed logins',
   'login.distributed': 'Failed logins on one account from many IP addresses',
   'payments.disabled_in_production': 'Payments are disabled: PAYSTATION_ENV is blank in production',
+  'payments.fee_invalid':
+    'Registration payments stopped: the registration fee setting is not valid',
+  'payments.credentials_rejected':
+    'PayStation refused the merchant credentials (1001): payments are paused for 10 minutes',
 };
 
 /** The operator email: kind, time, account id and counts. No email address and no IP (those stay in the audit log). */

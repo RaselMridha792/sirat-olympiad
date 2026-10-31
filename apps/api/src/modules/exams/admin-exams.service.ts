@@ -35,7 +35,7 @@ import {
 } from './exam-rules';
 import { ExamCache } from './exam-cache';
 
-type Tx = Prisma.TransactionClient;
+export type Tx = Prisma.TransactionClient;
 
 /** Who acts: the session user (never a body field) and the client IP for the audit row. */
 export interface Actor {
@@ -411,7 +411,7 @@ export class AdminExamsService {
 }
 
 /** Roles come from the token (15 min); a write re-reads them, so a demoted or blocked admin stops at once. */
-async function assertAdmin(tx: Tx, userId: string): Promise<void> {
+export async function assertAdmin(tx: Tx, userId: string): Promise<void> {
   const user = await tx.user.findUnique({
     where: { id: userId },
     select: { role: true, isBlocked: true },
@@ -421,7 +421,7 @@ async function assertAdmin(tx: Tx, userId: string): Promise<void> {
 }
 
 /** Locks the exam row for the rest of the transaction, then reads it. */
-async function lockExam(tx: Tx, id: string): Promise<Exam> {
+export async function lockExam(tx: Tx, id: string): Promise<Exam> {
   await tx.$queryRaw`SELECT 1 FROM "exams" WHERE "id" = ${id}::uuid FOR UPDATE`;
   const exam = await tx.exam.findUnique({ where: { id } });
   if (!exam) throw new NotFoundException('Exam not found');
@@ -444,7 +444,7 @@ async function assertRound(tx: Tx, roundId: string | null): Promise<void> {
 }
 
 /** Optimistic concurrency: the screen's copy must be the current one. */
-function assertFresh(current: Date, expected: string): void {
+export function assertFresh(current: Date, expected: string): void {
   if (current.getTime() !== new Date(expected).getTime()) throw refuse('stale');
 }
 
@@ -464,7 +464,7 @@ function questionData(dto: QuestionDto) {
 }
 
 /** The audit row is part of the same transaction: no admin change without its record. */
-async function audit(
+export async function audit(
   tx: Tx,
   actor: Actor,
   action: string,
