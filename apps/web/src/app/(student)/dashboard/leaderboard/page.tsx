@@ -16,6 +16,7 @@ import { common } from '@/i18n/common';
 import { formatDateTime, formatNumber } from '@/i18n/format';
 import { leaderboardMessages } from '@/i18n/messages/leaderboard';
 import { getMessages } from '@/i18n/server';
+import { requireAccess } from '@/lib/session';
 
 const PATH = '/dashboard/leaderboard';
 const PAGE_SIZE = 20;
@@ -37,6 +38,7 @@ export default async function LeaderboardPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  await requireAccess('/dashboard/leaderboard');
   const params = await searchParams;
   const [{ locale, m }, { m: c }, data] = await Promise.all([
     getMessages(leaderboardMessages),

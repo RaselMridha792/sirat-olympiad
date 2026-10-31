@@ -18,6 +18,56 @@ Answers to OPEN-QUESTIONS #4–#10, through the lead (2026-10-31). Plan: `docs/p
    - If the 5th violation should end the exam instead, only the shared constant changes.
 5. **Results (#10):** students see rank, name and institution only (no scores, times or emails); an equal score is ranked by time, and equal score and time share a rank (1, 2, 2, 4). After an admin publishes the results, each student sees their own score, rank and a review with the correct answers and explanations.
 
+## 2026-10-31 — Web session: the real session replaces the mock (Lead approved the plan; Claude implementation)
+
+1. **Server-side lookup:** `getSession()` asks `GET /api/auth/me` straight from the web server to the API inside the stack (`API_INTERNAL_URL`, compose inline `http://api:4000`; required in production, dev default `http://localhost:4000`). Only the access cookie goes along, plus the student's IP and nginx's request id.
+2. **Client IP (Lead's condition a):** nginx sends `X-Real-IP $remote_addr` and `X-Forwarded-For $proxy_add_x_forwarded_for`, whose first entries the client can write. The web reads only `X-Real-IP` and sends exactly one `X-Forwarded-For` value. The API (trust proxy 1) takes the last entry, so it sees the client address that nginx recorded in `X-Real-IP` (`$remote_addr`), never the web container or an entry the client wrote. This applies only in production, behind nginx; in dev, `X-Real-IP` is client input and nothing is forwarded. A test sends a forged `X-Forwarded-For`.
+3. **Failures never log anyone out:** no cookie or a 401 goes to `/refresh`. Anything else (API down, 429, timeout) goes to the error page and never to `/login`, because a busy API must not log a whole exam hall out. `check-pages api-down` proves it with the API stopped.
+4. **/me cache (condition c):**
+   - It lives in the web process for 30 s and is keyed by the SHA-256 of the access cookie, never the cookie itself.
+   - It holds at most 5,000 entries and stores only 200 answers, never errors.
+   - **Trade-off:** a block or a role change can take up to 30 s to show in the web. The API's guards trust the role in the access token and do not check blocks until it expires, up to 15 min (as A2.1d #9 records); `/auth/me`, refresh and login read the database at once.
+5. **One access table (`apps/web/src/lib/access.ts`):** it drives the page guards, the sidebars and the page checks.
+   - Every dashboard page and Server Action calls `requireAccess()` first, because layouts do not re-render on client-side navigation.
+   - The other area sends the user to their own home. A page of their own area that the role may not open is not found.
+   - Under a `loading.tsx` the not-found answer is already streaming with HTTP 200, so the checks look for the not-found page rather than the status.
+   - **Public site (Lead):** that 200 is accepted for the dashboards only. The public site needs a real 404 for search engines, so where its `loading.tsx` files sit is reviewed again in Phase D (the root `app/loading.tsx` wraps the public pages too).
+6. **Proxy (`src/proxy.ts`, condition b):**
+   - The matcher covers `/dashboard` and `/admin` only. `/refresh`, the auth pages, `/api`, `/_next` and the public site are outside it, so it cannot loop and the public pages pay nothing.
+   - A GET or HEAD without the access cookie goes straight to `/refresh?next=`. Server Actions pass through and check the session themselves.
+   - `x-sirat-path` is always overwritten. Next relativizes the redirect Location, so nginx's http/https does not matter.
+7. **Renewal in the browser (`/refresh`, `api()`):** the refresh cookie is only sent to `/api/auth`, so a server render cannot renew the session.
+   - **One refresh at a time:** per tab, plus across tabs with Web Locks. Older phone browsers have no Web Locks, so there it is per tab only (condition d, tested).
+   - **Answers:** 204 is ok. 409 means another tab just rotated; it waits 300 ms and is ok. 401 goes to `/login`. 429, 5xx, a network error or a stuck lock wait count as "unavailable": the browser backs off (honouring Retry-After) and never goes to `/login`.
+   - **A slow API never ends the session (Lead):** the refresh POST has no time limit in the browser and is never aborted. Once the API has rotated the token, the new cookies exist only in its answer; cutting it short would lose them, and the next try would send the retired token, which the API treats as reuse and ends the session. After 10 s without an answer, `/refresh` says the server is slow and keeps waiting (nginx answers within its 30 s `proxy_read_timeout`). A unit test pins that the POST carries no abort signal. An e2e case holds the answer 15 s and checks that the page waits, never offers or goes to `/login`, and lands with a live session (Chrome stores the cookies when the headers arrive, so the case cannot replay the lost-cookie path itself).
+   - **No way out while a renewal is in flight:** "Try again now" and "Sign in instead" show only between tries. The POST outlives the page (keepalive), so its late answer would overwrite or clear the cookies of a login made meanwhile; on a shared computer, even another student's.
+   - **Gap left on the API side (follow-up, no API change in this PR):** the API's 25 s request timeout answers 503 while the handler cannot be cancelled, so a rotation that commits after 25 s is still lost. Closing it needs an API change: an idempotent rotation within the reuse grace, or no commit after the timeout.
+   - **Loop guard:** only renewals that worked count. After 2 within 2 minutes for the same page in one tab, the next arrival goes to `/login`. Reloads while the API is unavailable count nothing, so an outage never sends anyone to `/login`. No storage, or storage that throws even when read, fails closed to `/login`.
+   - Every browser POST sends `X-Requested-With`, the refresh included (condition f).
+8. **`next=`:**
+   - After one decode, any control character or backslash is refused.
+   - The value is parsed against this origin, and only `/dashboard` and `/admin` pages are allowed (never `/login`, `/refresh` or `//`).
+   - The unit tests cover the attack strings.
+9. **Logout in both shells (shared school computers):**
+   - An expired access token is renewed first.
+   - The browser goes to `/login` only after a 204, or after a refresh 401 that cleared the cookies. Otherwise it shows "not logged out yet".
+   - `BroadcastChannel('sirat-auth')` sends the other tabs to `/login`, and a page restored from the back-forward cache reloads.
+10. **Auth pages:**
+    - **Login:** a 429 is the account lock only when the API says "Too many attempts" or Retry-After is a minute or more. nginx's flood 429 (Retry-After 1) reads as "busy".
+    - **Reset and verify:**
+      - The `#token` is read on load, and again when a new emailed link (a hash with `token=`) is opened in the same tab; the form then starts over. Any other hash, such as an in-page anchor, keeps the current token. The token is then dropped from the address bar.
+      - A token that is not the 43-character base64url shape gets the bad-link state with no request.
+      - The POST goes out only on a button press, one at a time.
+      - A bad link is recognised by its exact message.
+    - **Login, forgot, reset and verify forms:** each uses `method="post"` and keeps submit disabled until hydrated. The register form (Phase C, payments) must follow the same rule when it is rebuilt: today a submit before hydration would put its fields in the URL.
+11. **Jury (Lead):** a plain placeholder at `/admin`, with its text from i18n and no stats call.
+12. **Checks (Lead):**
+    - **CI page checks:** real sessions (option A). The API runs in the job with a fixture student and an admin made with the create-admin CLI. The fixtures guard is unchanged; the CI Postgres runs with `-c sirat.environment=test`.
+    - **Browser driver:** one CDP driver (`scripts/lib/cdp.mjs`, option A, no dependency) serves both `check-pages` and `e2e.mjs`.
+    - **e2e only on this machine (Lead):** it changes a student's password, so a base URL or `MAILPIT_URL` whose host is not 127.0.0.1, localhost or ::1 stops it before any request, the same idea as the fixtures guard (tested).
+    - **Web logs (condition e):** no cookie, token, `#token`, `next` value or `/me` body; server-side fetch errors carry class and status only. A CI step greps the production log.
+13. **Per-user API limits (Lead):** not an open question; DECISIONS A1 #8 and 06-API already settle it. It follows as its own small API PR before 2026-11-15: the key is the user id when a verified session exists, otherwise the IP. nginx's `api` zone stays per IP (30 r/s, burst 60); that PR records it as a risk to measure in the load test.
+
 ## 2026-10-31 — Gateway charge: the merchant pays it, `pay_with_charge = 0` (owner)
 
 1. The student pays exactly the fee (400 BDT); the merchant bears PayStation's charge: `pay_with_charge = 0` (OPEN-QUESTIONS P6, plan Q1). This replaces the default `pay_with_charge=1` in OPEN-QUESTIONS #1.

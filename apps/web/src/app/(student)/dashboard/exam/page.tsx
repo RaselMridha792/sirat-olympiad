@@ -9,6 +9,7 @@ import { common } from '@/i18n/common';
 import { formatDateTime, formatNumber } from '@/i18n/format';
 import { studentExamsMessages } from '@/i18n/messages/student-exams';
 import { getMessages } from '@/i18n/server';
+import { requireAccess } from '@/lib/session';
 
 /*
  * "My Exams" (old dashboard/quizzes/page.jsx): one card per exam with a coloured top strip.
@@ -64,6 +65,7 @@ export default async function MyExamsPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  await requireAccess('/dashboard/exam');
   const params = await searchParams;
   const [{ locale, m }, { m: c }, data] = await Promise.all([
     getMessages(studentExamsMessages),

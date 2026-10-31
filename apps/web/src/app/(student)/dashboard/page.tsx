@@ -22,6 +22,7 @@ import { common, type CommonMessages } from '@/i18n/common';
 import { formatDate, formatDateTime, formatNumber } from '@/i18n/format';
 import { studentHomeMessages } from '@/i18n/messages/student-home';
 import { getMessages } from '@/i18n/server';
+import { requireAccess } from '@/lib/session';
 
 /*
  * Student home (old dashboard/page.jsx): navy welcome hero with the current-round card, the next
@@ -59,6 +60,7 @@ export default async function StudentHomePage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  await requireAccess('/dashboard');
   const params = await searchParams;
   const [{ locale, m }, { m: c }, data] = await Promise.all([
     getMessages(studentHomeMessages),

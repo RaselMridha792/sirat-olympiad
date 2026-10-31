@@ -7,42 +7,42 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react';
-import type { Role } from '@sirat/shared';
 import { Avatar, initialOf, type NavItem } from '@sirat/ui';
+import { LogoutButton } from '@/components/auth/LogoutButton';
 import { I18nProvider } from '@/components/I18nProvider';
 import { LanguageSwitch } from '@/components/LanguageSwitch';
 import { NavShell } from '@/components/NavShell';
 import { common } from '@/i18n/common';
 import { adminShellMessages, type AdminShellMessages } from '@/i18n/messages/admin-shell';
 import { getMessages } from '@/i18n/server';
-import { getSession } from '@/lib/session';
+import { canOpen } from '@/lib/access';
+import { requireArea } from '@/lib/session';
 
 /**
- * Sidebar links per role (no `roles` = every role that reaches the admin area). Hiding a link only
- * shapes the UI: each admin route and API endpoint has its own server guard. Screens that are not
+ * Sidebar links, shown to the roles that may open them (lib/access.ts). Hiding a link only shapes the UI: each
+ * admin page checks access itself and each API endpoint has its own server guard. Screens that are not
  * built yet (jury, payments, audit log) are not linked at all.
  */
 const NAV: ReadonlyArray<{
   key: keyof AdminShellMessages['nav'];
   href: string;
   Icon: LucideIcon;
-  roles?: readonly Role[];
 }> = [
   { key: 'dashboard', href: '/admin', Icon: LayoutDashboard },
-  { key: 'users', href: '/admin/users', Icon: Users, roles: ['admin'] },
-  { key: 'exams', href: '/admin/exams', Icon: FileText, roles: ['admin'] },
-  { key: 'leaderboard', href: '/admin/leaderboard', Icon: Trophy, roles: ['admin', 'manager'] },
-  { key: 'ambassadors', href: '/admin/ambassadors', Icon: Award, roles: ['admin'] },
-  { key: 'announcements', href: '/admin/announcements', Icon: Megaphone, roles: ['admin'] },
+  { key: 'users', href: '/admin/users', Icon: Users },
+  { key: 'exams', href: '/admin/exams', Icon: FileText },
+  { key: 'leaderboard', href: '/admin/leaderboard', Icon: Trophy },
+  { key: 'ambassadors', href: '/admin/ambassadors', Icon: Award },
+  { key: 'announcements', href: '/admin/announcements', Icon: Megaphone },
 ];
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const [user, { locale, m }, { m: c }] = await Promise.all([
-    getSession('admin'),
+    requireArea('admin'),
     getMessages(adminShellMessages),
     getMessages(common),
   ]);
-  const items: NavItem[] = NAV.filter(({ roles }) => !roles || roles.includes(user.role)).map(
+  const items: NavItem[] = NAV.filter(({ href }) => canOpen(href, user.role)).map(
     ({ key, href, Icon }) => ({
       href,
       label: m.nav[key],
@@ -71,6 +71,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                   <p className="text-xs text-ink-muted">{roleLabel}</p>
                 </div>
               </div>
+              <LogoutButton locale={locale} tone="surface" />
             </>
           }
           labels={{ nav: c.nav.main, openMenu: c.nav.openMenu, closeMenu: c.nav.closeMenu }}

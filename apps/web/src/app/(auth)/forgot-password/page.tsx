@@ -1,16 +1,15 @@
 import type { Metadata } from 'next';
-import { Button, Field } from '@sirat/ui';
+import { ForgotPasswordForm } from '@/components/auth/ForgotPasswordForm';
+import { authMessages } from '@/i18n/messages/auth';
+import { getMessages } from '@/i18n/server';
 
-export const metadata: Metadata = { title: 'Forgot password' };
-export default function ForgotPasswordPage() {
-  // Response must be identical whether or not the email exists (no account enumeration).
-  return (
-    <form className="space-y-5">
-      <h2 className="text-center text-3xl font-bold">Reset password</h2>
-      <Field label="Email" name="email" type="email" required />
-      <Button type="submit" size="lg" className="w-full">
-        Send reset link
-      </Button>
-    </form>
-  );
+export async function generateMetadata(): Promise<Metadata> {
+  const { m } = await getMessages(authMessages);
+  return { title: m.forgot.title };
+}
+
+export default async function ForgotPasswordPage() {
+  // The answer is identical whether or not the email exists (no account enumeration).
+  const { locale } = await getMessages(authMessages);
+  return <ForgotPasswordForm locale={locale} />;
 }

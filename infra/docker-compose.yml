@@ -32,6 +32,9 @@ services:
     <<: [*restart, *logging]
     build: { context: .., dockerfile: apps/web/Dockerfile }
     # No env_file: the Next.js standalone server needs no secrets (PORT/HOSTNAME come from the image).
+    environment:
+      # Server-side session lookups (GET /api/auth/me) go straight to the API inside the stack, not via nginx.
+      API_INTERNAL_URL: http://api:4000
     healthcheck:
       test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/']
       interval: 15s

@@ -8,6 +8,7 @@ import { common } from '@/i18n/common';
 import { formatDateTime, formatNumber } from '@/i18n/format';
 import { adminAnnouncementsMessages } from '@/i18n/messages/admin-announcements';
 import { getMessages } from '@/i18n/server';
+import { requireAccess } from '@/lib/session';
 
 const PATH = '/admin/announcements';
 const PAGE_SIZE = 10;
@@ -26,6 +27,7 @@ export default async function AdminAnnouncementsPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  await requireAccess('/admin/announcements');
   const params = await searchParams;
   const [{ locale, m }, { m: c }, data] = await Promise.all([
     getMessages(adminAnnouncementsMessages),

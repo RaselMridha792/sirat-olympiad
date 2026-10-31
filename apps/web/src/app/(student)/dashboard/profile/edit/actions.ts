@@ -5,6 +5,7 @@ import { PROFILE_UPDATE_FIELDS } from '@sirat/shared';
 import type { ProfileFormState, ProfileFormValues } from '@/components/profile/ProfileForm';
 import { getData } from '@/data';
 import { parseProfileForm } from '@/data/profile';
+import { requireAccess } from '@/lib/session';
 
 /** Upper bound for echoed text, so a huge post is not sent straight back. */
 const ECHO_MAX = 200;
@@ -28,6 +29,9 @@ export async function updateProfileAction(
   _prev: ProfileFormState,
   formData: FormData,
 ): Promise<ProfileFormState> {
+  // A Server Action is a POST to the page: src/proxy.ts lets it through, so it checks the session itself. An
+  // expired one ends in redirect('/refresh?next=...'), which the browser follows and then comes back here.
+  await requireAccess('/dashboard/profile/edit');
   const input = Object.fromEntries(formData);
   const values = echo(input);
   try {

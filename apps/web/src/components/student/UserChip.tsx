@@ -4,7 +4,7 @@ import { Avatar } from '@sirat/ui';
 /**
  * Top-bar user chip of the student dashboard (old Dashboard.jsx header, navy bar): initials avatar
  * plus the name, linking to the profile. The name is hidden on small screens, so the link carries
- * an accessible name (`label`) that starts with the visible text. No logout here: auth owns that.
+ * an accessible name (`label`) that starts with the visible text. Logout is its neighbour (LogoutButton).
  */
 export function UserChip({
   name,
