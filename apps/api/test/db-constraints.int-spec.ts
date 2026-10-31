@@ -461,7 +461,9 @@ describe('identity and foreign keys', () => {
   it('rejects links to users that do not exist (no soft links)', async () => {
     const admin = await makeUser(prisma);
     await expect(
-      prisma.announcement.create({ data: { title: 't', body: 'b', createdById: randomUUID() } }),
+      prisma.announcement.create({
+        data: { title: 'Title', body: 'b', createdById: randomUUID() },
+      }),
     ).rejects.toMatchObject(FOREIGN_KEY);
 
     const round = await prisma.round.findUniqueOrThrow({ where: { sortOrder: 1 } });

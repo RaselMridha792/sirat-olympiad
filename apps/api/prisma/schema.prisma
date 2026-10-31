@@ -636,15 +636,20 @@ model TaskAssignment {
   @@map("task_assignments")
 }
 
+/// Admin-written notices for students (core C4). Plain text; for everyone (category NULL) or one category; shown
+/// from published_at on; archived instead of deleted. Raw SQL (*_core_announcements_checks) adds length CHECKs and a
+/// partial index for the students' list.
 model Announcement {
-  id          String   @id @default(uuid(7)) @db.Uuid
+  id          String    @id @default(uuid(7)) @db.Uuid
   title       String
   body        String
-  publishedAt DateTime @default(now()) @map("published_at") @db.Timestamptz
-  createdById String   @map("created_by_id") @db.Uuid
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-  createdBy   User     @relation(fields: [createdById], references: [id])
+  category    Category? // NULL = everyone
+  publishedAt DateTime  @default(now()) @map("published_at") @db.Timestamptz
+  archivedAt  DateTime? @map("archived_at") @db.Timestamptz
+  createdById String    @map("created_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  createdBy   User      @relation(fields: [createdById], references: [id])
 
   @@index([publishedAt])
   @@index([createdById])

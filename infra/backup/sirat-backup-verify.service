@@ -1,0 +1,10 @@
+# /etc/systemd/system/sirat-backup-verify.service: checks the newest local copy against its manifest (sha256), that it
+# is an age file, and that it is under 26 h old (`backup.sh --verify`). A failure pings the backup heartbeat's /fail.
+[Unit]
+Description=Sirat backup check (scripts/backup.sh --verify)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/sirat
+ExecStart=/srv/sirat/scripts/backup.sh --verify
+PrivateTmp=true

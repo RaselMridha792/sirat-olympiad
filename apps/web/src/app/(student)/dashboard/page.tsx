@@ -12,9 +12,14 @@ import {
   TriangleAlert,
   Trophy,
 } from 'lucide-react';
-import { EXAM_MAX_DURATION_MINUTES, type AnnouncementItem, type StudentHome } from '@sirat/shared';
+import {
+  EXAM_MAX_DURATION_MINUTES,
+  REGISTRATION_STATE_LABELS,
+  type AnnouncementItem,
+  type StudentHome,
+} from '@sirat/shared';
 import { Badge, buttonClasses, Card, cn, DetailList } from '@sirat/ui';
-import { entryStatusTone, examStateTone } from '@/components/status';
+import { entryStatusTone, examStateTone, paymentStatusTone } from '@/components/status';
 import { getData } from '@/data';
 import type { SearchParams } from '@/data/query';
 import type { Locale } from '@/i18n';
@@ -72,10 +77,64 @@ export default async function StudentHomePage({
   return (
     <>
       <Hero name={home.user.name} round={home.currentRound} copy={copy} />
+      <RegistrationCard registration={home.registration} copy={copy} />
       <NextExamCard exam={home.nextExam} copy={copy} />
       <ExamRules exam={home.nextExam} copy={copy} />
       <LatestAnnouncements items={home.latestAnnouncements} copy={copy} />
     </>
+  );
+}
+
+/**
+ * The student's registration and its payment (payments' GET /registrations/me; core C4). A registration exists only
+ * for a paid payment (the registrations_payment_paid trigger) and there are no refunds, so a registered student's
+ * payment is "paid". Without one the card links to payments' registration; nothing here starts or changes a payment.
+ */
+function RegistrationCard({
+  registration,
+  copy: { locale, m, c },
+}: {
+  registration: StudentHome['registration'];
+  copy: Copy;
+}) {
+  const r = m.registration;
+  if (!registration.registered) {
+    return (
+      <Card className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-ink">{r.title}</h2>
+          <p className="mt-1 text-sm text-ink-muted">{r.none}</p>
+        </div>
+        <Link href="/register" className={buttonClasses({ size: 'sm' })}>
+          {r.register}
+        </Link>
+      </Card>
+    );
+  }
+  const { payment } = registration;
+  return (
+    <Card className="mb-6 flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-bold text-ink">{r.title}</h2>
+        <Badge tone={paymentStatusTone[payment.status]}>
+          {/* payments' own wording, as on their result page */}
+          {payment.status === 'paid'
+            ? REGISTRATION_STATE_LABELS.completed[locale]
+            : c.paymentStatus[payment.status]}
+        </Badge>
+      </div>
+      <DetailList
+        items={[
+          { label: r.registeredOn, value: formatDate(locale, registration.registeredAt) },
+          { label: r.payment, value: c.paymentStatus[payment.status] },
+          { label: r.invoice, value: <span className="font-mono">{payment.invoiceNumber}</span> },
+          {
+            label: r.amount,
+            value: `${formatNumber(locale, payment.amountMinor / 100)} ${payment.currency}`,
+          },
+        ]}
+      />
+    </Card>
   );
 }
 

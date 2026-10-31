@@ -66,7 +66,10 @@ export class EnvVars {
 
   /** Operator inbox for security alerts. Unset: alerts go to the audit log and the log only. */
   @IsOptional() @IsEmail() SECURITY_ALERT_EMAIL?: string;
-  /** Owner: at most one alert email per kind per 10 minutes, and at most this many alert emails per hour. */
+  /**
+   * Owner: at most one alert email per kind per 10 minutes, and at most this many alert emails per hour in each
+   * category (security, payments, ops; owner Q2: 6 each), so a flood of one never silences another.
+   */
   @IsInt() @Min(1) @Max(60) SECURITY_ALERT_EMAILS_PER_HOUR: number = 6;
   /** Optional override of the pino level (default: info in production, debug elsewhere). */
   @IsOptional()
@@ -140,12 +143,24 @@ export function validateEnv(raw: Record<string, unknown>): EnvVars {
   if (env.NODE_ENV === 'production' && !env.APP_URL) {
     throw new Error('APP_URL is required in production: email links are built from it');
   }
+  if (env.NODE_ENV === 'production' && env.APP_URL && !isHttpsOrLocal(env.APP_URL)) {
+    throw new Error(
+      'APP_URL must start with https:// in production (email links, the payment return and nginx take it); ' +
+        'plain http only for localhost, 127.0.0.1 or [::1]',
+    );
+  }
   if (env.NODE_ENV === 'production' && env.COOKIE_SECURE === 'false') {
     throw new Error(
       'COOKIE_SECURE=false is for local development only, never with NODE_ENV=production',
     );
   }
   return env;
+}
+
+/** https, or plain http on this machine only (the local stack runs in production mode on http://localhost:8080). */
+function isHttpsOrLocal(appUrl: string): boolean {
+  const url = new URL(appUrl);
+  return url.protocol === 'https:' || ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
 }
 
 /** Why the worker cannot send email with this configuration, or null. Never includes a key. */

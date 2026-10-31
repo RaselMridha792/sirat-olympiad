@@ -14,6 +14,99 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - A/B with the same image: with the two folders handed back to root (main's state), 6 EACCES lines; with this change none, and the regenerated pages appear under `route-cache/APP_PAGE`.
    - No write was attempted anywhere else in `.next`.
 
+## 2026-11-01 — Alert categories, their own caps, and the ops-alert command (L10; exam session, A2's plan and handover)
+
+1. **Categories:** `security`, `payments`, `ops`. `ALERT_CATEGORY` is a `Record<SecurityAlertKind, AlertCategory>`, so a new kind without a category fails typecheck (payments' kinds included). The email subject names the category. The "Account:" line names the account when there is one. Without one, a login alert keeps "no account with that email" (owner-approved, #7: someone is trying an email that has no account). Payments and ops alerts then have no Account line: they carry their own details, and the login wording would mislead there (a payment set aside for `email_taken`, for example).
+2. **Caps per category (owner Q2, launch-plan default 6 each):** the limiter's hourly key is per category, so a flood of failed logins can never use up the cap and silence a payment or backup alert. `SECURITY_ALERT_EMAILS_PER_HOUR` keeps its name and now means "per category". The 10-minute pause per kind is unchanged.
+3. **Audit actions keep `security.<kind>`** (for example `security.ops.backup_failed`), so payments' and A2's existing queries and tests stay valid.
+4. **Boot warning:** a production server (`NODE_ENV=production`) with a blank `SECURITY_ALERT_EMAIL` logs one warning at boot from `SecurityAlerts.onModuleInit`; `main.ts` is unchanged. It never logs an address.
+5. **`ops-alert` CLI** (`apps/api/src/cli/ops-alert.ts`, `pnpm --filter @sirat/api ops:alert`):
+   - **Allowed kinds:** only those of the `ops` category, so a script can't forge a security or payments alert. Today that is `ops.backup_failed`, `ops.monitor_failed` and `ops.alert_test`.
+   - **Details:** numeric `key=value` only (at most 10), so no text, and so no personal data, reaches an email.
+   - **Before raising:** it checks the database and both Redis, because the audit write never throws, and the limiter and the email queue skip a Redis that is not ready yet. Then it waits until the email is queued.
+6. **`backup.sh` uses it** on any failure, after the heartbeat's `/fail`: `ops-alert --kind ops.backup_failed --meta step=<n>`, with a number per step and a 60 s timeout.
+   - **Best effort (lead):** when the API cannot raise it (the api container down is a likely moment for a failed backup), the run still exits non-zero, and the heartbeat, which does not depend on the app, is the alert.
+   - **Tests:** the call and its step number; an ops-alert that fails; no api service at all; successful runs raise nothing.
+
+## 2026-11-01 — TLS behind Cloudflare, security headers and nginx logs (Claude; LAUNCH-PLAN L3, lead review)
+
+1. **Certificate:** Cloudflare SSL mode Full (strict) with a free Cloudflare Origin CA certificate. It needs no ACME client and no API token on the server, and Cloudflare trusts it for 15 years. No Cloudflare Tunnel (an untested component in the critical path). Authenticated Origin Pulls come after launch. A Let's Encrypt fallback (DNS-01) is only documented (RUNBOOK §15).
+2. **Two sites, one set of locations:**
+   - `infra/nginx/sites/tls` (production):
+     - Port 80 answers `/healthz` for any name and redirects only the site's own name. Any other name has its connection closed.
+     - A default 443 server refuses any other name during the handshake.
+     - So a scanner on the server's IP never sees the host name, on 80 or on 443. A targeted scan that sends the host name can still find the origin, so the Cloudflare-only firewall (L4) and Authenticated Origin Pulls stay the full answer.
+     - The real 443 server runs HTTP/2 and TLS 1.2/1.3.
+   - `sites/plain` (dev and CI) is plain http, so e2e and the smoke tests on http://127.0.0.1:8080 do not change.
+   - Both include `app-locations.conf`. The site is rendered at start by the image's entrypoint. `PUBLIC_HOST` comes from `APP_URL` (`entrypoint/15-public-host.envsh`), one source of truth, and the container stops with a message if it is not `https://<host>`.
+3. **A folder mount:** compose mounts the whole `infra/nginx` folder at `/etc/nginx/sirat` and starts `nginx -c /etc/nginx/sirat/nginx.conf`. `nginx -s reload` then sees files that git or the refresh script replaced (single-file mounts kept the old inode). A changed site template or entrypoint hook still needs a recreate, because they are read at start.
+4. **IPv4-only published ports** (`0.0.0.0:80`, `0.0.0.0:443`). An IPv6 listener would make Docker's proxy replace the client address.
+5. **An internal listener, `127.0.0.1:8081`:** in the container, never published, with no redirect. Checks from the server use it: the deploy smoke, maintenance and restores (LAUNCH-PLAN L5, L7, L9). A client-address exception on the public servers would be unreachable on the VPS, because host requests never arrive from the container's loopback.
+6. **Headers:** one include (`security-headers.conf`), at server level and in every location with its own `add_header`, nginx's JSON errors included. API answers are the exception: helmet already sends nosniff, a Referrer-Policy and its own CSP there, so the `/api` locations add only HSTS (`api-headers.conf`, whose `add_header` also stops the server-level set). Each header then appears once (payments' smoke checks this on `/api/book/cover`; the CI smoke checks it on `/api/health`).
+   - nosniff and Referrer-Policy.
+   - HSTS only on https (a map on `$https`), 300 s at launch, without `includeSubDomains` (owner question Q3 sets the ramp). Helmet's HSTS is off (`strictTransportSecurity: false`): its default of 1 year with `includeSubDomains` would bind every subdomain of the client's domain with the first https answer, and browsers keep it.
+   - A fixed page CSP, `Content-Security-Policy-Report-Only` until payments' wizard e2e has passed with it, then enforced. Inline scripts need `'unsafe-inline'`, because nonces would make every Next page dynamic; a nonce or hash policy comes after launch.
+   - The API sends `Cache-Control: no-store` on every answer unless a route sets its own, so neither a browser nor a Cloudflare "cache everything" rule can store one student's answer for the next.
+7. **Logs** (lead, 2026-10-31):
+   - One explicit access-log format: the path is cut at the first `?` and the Referer is dropped. A browser sends the full page URL as the Referer, so an admin's `/admin/users?q=<name or phone>` would otherwise reach the log through the next request.
+   - The format adds the Cloudflare edge address, the request and upstream times, the upstream status and the request id. `/healthz` is not logged.
+   - Error logs: nginx appends the whole request line and the referrer to every error line written for a request, at any level (an upstream failure is error, a full temp disk crit, running out of connections alert). So request-level errors log only at `emerg` (inside `http`), and the main error log keeps `crit` for process-level problems such as a worker that died. Lost: the request-level crit and alert diagnostics. The access log (status, upstream status, times) and the host monitor (disk, connections) cover them.
+   - `infra/nginx/test/check-sites.sh` (in CI) and the CI smoke test assert that random `?q=` values in the URL and in the Referer appear in no log: for a 200, for an upstream-down 502 (error level), and for a full temp disk, a 500 at crit level (a 64 KB tmpfs). Mutation checks: the `combined` format, the default error level, or no `emerg` inside `http` fails them.
+8. **`APP_URL` must be https in production,** except for localhost, 127.0.0.1 and [::1]. The local stack runs in production mode on http://localhost:8080.
+9. **CSP in the browser tests:** the CDP driver (`scripts/lib/cdp.mjs`) records every `securitypolicyviolation` through a binding added before any page script. `e2e.mjs` and `e2e-exam.mjs` pass the CSP step (`cspReport`) only if every document carried nginx's page policy, at least one did, and no violation was seen. A run against a bare Next therefore fails instead of passing without testing anything. Payments' wizard e2e will use the same check (LAUNCH-PLAN §13).
+10. **Not used:** a per-IP `limit_conn` (it would refuse a school behind one address; `limit_req` already covers RULEBOOK §11) and Cloudflare Turnstile.
+
+## 2026-11-01 — Announcements and the student home on the API (core C4; plan `docs/plans/CORE-PLAN.md` section 5, D5, D6)
+
+1. **Announcements are data, not a message system** (D5):
+   - **Text:** plain, with its line breaks kept; never HTML, and links are not made clickable.
+   - **Audience and time:** everyone (`category` null) or one category, published now or at a chosen time (at most 1 minute in the past).
+   - **Never deleted:** an announcement is archived and can be restored.
+   - **No email to students** (SES quota).
+   - **Schema:** one migration pair, `*_core_announcements` (generated: `category`, `archived_at`) and `*_core_announcements_checks` (length CHECKs, `archived_at >= created_at`, a partial index for the students' list).
+   - **Module:** `AnnouncementsModule` adds one line to `app.module.ts` (lead's OK).
+2. **Writes:**
+   - **Locking:** every admin write re-reads the admin, locks the row and compares `expectedUpdatedAt` (409 `stale`), so two admins never overwrite each other.
+   - **Audit:** the row is written in the same transaction (title and changed field names).
+   - **Refusals:** an archived announcement is not edited (`archived`); restoring a live one is refused (`not_archived`); a PATCH that changes nothing is `nothing_to_update`.
+3. **Students' reads are cached** per category and page for 60 s in the cache Redis. Every admin write bumps a generation number in the key after its commit, so a change shows at once.
+   - **Schedules:** a scheduled announcement appears within 60 s of its time.
+   - **Redis trouble:** the list falls back to Postgres; if the bump fails, a change waits for the TTL.
+4. **The student home** (D6, and A2's L1 needs it before launch) is composed on the web server from existing endpoints, so no team's module changes:
+   - **The calls:** `/users/me`, `/exams`, `/exams/:id` (only for the next exam's grace), `/announcements` (3) and payments' `/registrations/me`.
+   - **The next exam:** one in progress, else one open, else the earliest upcoming (`pickNextExam`, tested).
+   - **Rounds:** `currentRound` stays null until core C6.
+   - **The registration card** (lead's option (a); payments builds none): status, invoice, fee and date, picked field by field.
+     - A registration exists only for a paid payment (trigger) and there are no refunds, so the card never offers a payment action.
+     - Without a registration, it links to payments' `/register`.
+     - It shows payments' own wording, so it matches their result page: `REGISTRATION_STATE_LABELS.completed` for a paid registration, the common payment-status text otherwise. It renders payments' `MyRegistration` (`registration.ts`), and core's first copy of that type was dropped in the merge.
+5. **Web:**
+   - `data/http/announcements.ts` and `data/http/home.ts` read with shape checks and explicit picks. `DataSource.admin.listAnnouncements` now returns `AdminAnnouncement` with a status filter.
+   - The admin page has status tabs, "New announcement", and edit and archive/restore per row, all writing through `lib/api.ts`.
+   - `TextAreaField` joins `packages/ui`.
+6. **Tests:**
+   - `announcements.int-spec.ts` (11): visibility by time, archive and category; paging; the cache showing a write at once; roles and a blocked or demoted user; create with its audit row; refused input and back-dating; stale, nothing-to-update, archive and restore; the status filter; the database CHECKs and the index.
+   - web: `http/home.test.ts` (composition, next exam, picks, a refused part), `announcement-problem.test.ts`.
+   - **Mutation checks:** without the category filter, without the generation bump, without the stale check, and without the registration pick, each makes a test fail.
+
+## 2026-11-01 — Encrypted off-server backups (L6; exam session, A2's plan and handover)
+
+1. **Configuration only in `/etc/sirat/backup.env`** (root, 0600; `backup.sh` refuses anything else), never the app's `.env`, which reaches every API replica: the put-only upload key and the heartbeat URL stay with root. The file is read as `KEY=VALUE` lines, never run as shell. Every compose call passes `-p` from `BACKUP_PROJECT`.
+2. **Counts from the dump itself:** the manifest's row counts and migration list come from reading the whole archive back (`pg_restore --data-only`), so they describe the same snapshot as the dump. A second query would not, because writes happen in between. That read also refuses a truncated dump, which `--list` alone would pass.
+3. **Encryption:** `age` to public keys in `infra/backup/recipients.txt`; the private keys stay offline with the key holders (Q1). The manifest's `sha256` is of the encrypted file, so anyone can check a copy without decrypting it. The local copies are encrypted too. A completed run, failed or not, leaves no plain dump. A run killed mid-dump leaves its partial plain dump in an owner-only `.work.*` directory under the 0700 backup directory, until the next run removes it.
+4. **Upload:** with a put-only key, `rclone` cannot list, read back or delete. It uploads the dump first and the manifest last, so a manifest always names a complete file. Locally the newest 3 are kept.
+   - **Tier prefixes (lead's review):** a lifecycle on one prefix can only expire by age, so it cannot keep hourly, daily and weekly copies. Every run goes to `hourly/`; the first run of the Asia/Dhaka day at or after 03:00 also goes to `daily/` (the same file, a second put); that run on a Sunday also goes to `weekly/`.
+   - Three bucket lifecycle rules (2, 8 and 35 days; RUNBOOK §5) then keep 7 daily and 4 weekly copies (RULEBOOK §6) and work with the hourly timer and the later 03:30 daily drop-in.
+   - "At or after 03:00, once a day", rather than "in the 03:00 hour": a failed 03:00 run is made up by the next one. `.last-daily` in the backup directory remembers the day.
+   - Dhaka time is computed as UTC+6 (no daylight saving since 2009), so no time zone database is needed.
+5. **Refusals:** a run whose dump is under half the last one's size fails (`BACKUP_MIN_SIZE_PERCENT`, default 50), because a sudden drop means lost data more often than cleanup.
+   - **The way out (lead's review):** after a deliberate big delete, `backup.sh --accept-smaller` once, by hand. It is logged; the timer never passes it.
+   - **A failure** pings `/fail` with the step's name only and exits non-zero, so `deploy.sh` stops before migrate. Before the store step it leaves no new copy; a failed upload keeps the local encrypted copy, stored first.
+6. **`BACKUP_REMOTE=none`** is an explicit local-only mode, until the bucket exists: it warns and pings nothing. An empty value is refused.
+7. **The verify timer** (A2 named one; the plan does not describe it): daily at 07:30 Asia/Dhaka, `backup.sh --verify` checks the newest local copy against its manifest, that it is an age file, that its `created_at` has the `YYYY-MM-DDTHH:MM:SSZ` shape (an empty one would read as today's midnight), and that it is under 26 h old; it pings `/fail` if not. The upload itself cannot be read back with a put-only key; the drill (L7) reads the bucket with a read-only key.
+8. **Schedule:** the timer is hourly while registration is open; afterwards a drop-in makes it daily (RUNBOOK §5). The units expect the clone at `/srv/sirat` (L12 can change the path).
+9. **Tests:** `scripts/test/backup.test.sh` (24 cases, on a fixed clock given by `SIRAT_BACKUP_NOW`, which only tests set) runs in a throwaway Alpine container with the tools (age, rclone, Docker CLI) against its own compose project `sirat-backup-test`: a Postgres with no port and no bind mount, a throwaway key, an rclone `local` remote, and fake `curl` and `docker` shims. The same runner runs in CI's docker job, whose image scan now also refuses `*.age`.
+
 ## 2026-11-01 — Registration and payment pages, admin payments and settings (Claude; payments PR 4, plan 6.7, lead's rules)
 
 1. **The wizard** (`/register`): three steps on one form, then PayStation.
