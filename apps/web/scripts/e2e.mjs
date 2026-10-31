@@ -161,15 +161,24 @@ try {
     const context = await browser.newContext();
     const page = await context.newPage();
     await uiLogin(page, STUDENT, '/login?next=%2F%2Fevil.example%2Fdashboard', '/dashboard');
+    await page.close();
+    // Each string in its own tab: they all fall back to /dashboard, and the loop guard rightly allows only two
+    // renewals per page per tab. Encoded once, so the page really receives the backslash and the tab character.
     for (const next of [
       'https://evil.example/dashboard',
-      '/%5Cevil.example',
-      '/%09/evil.example',
+      '/\\evil.example',
+      '/\t/evil.example',
+      '//evil.example/dashboard',
     ]) {
+      const tab = await context.newPage();
       await context.deleteCookie('sirat_access');
-      await page.goto(`${BASE}/refresh?next=${encodeURIComponent(next)}`);
-      await page.waitFor(shows('/dashboard'));
-      check(new URL(await page.url()).origin === new URL(BASE).origin, `left the site for ${next}`);
+      await tab.goto(`${BASE}/refresh?next=${encodeURIComponent(next)}`);
+      await tab.waitFor(shows('/dashboard'));
+      check(
+        new URL(await tab.url()).origin === new URL(BASE).origin,
+        `left the site for ${js(next)}`,
+      );
+      await tab.close();
     }
     await context.close();
   });
