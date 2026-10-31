@@ -24,7 +24,7 @@ Owner = Rasel Mridha. Client = GLTS Leadership × Sirat Olympiad. Add the answer
 | 14 | Round structure after Round 1 (video? final? how many?) and jury count/criteria (old: 10 criteria 0–10) | Rounds | Data-driven; port old criteria |
 | 15 | Certificates: types, wording, who gets which, signatures | Certificates | Participation + promotion + winner, server-issued |
 | 16 | ~~Email provider~~ **Answered 2026-10-31: Amazon SES** (DECISIONS "Email provider: Amazon SES"; replaces Resend, chosen on 2026-10-30). Still open: the sending domain and its SPF/DKIM/DMARC setup | Notifications | Mailpit in dev until the domain is verified |
-| 17 | Domain, Cloudflare available? TLS plan | Nginx | HTTP in compose, TLS TODO |
+| 17 | Domain, Cloudflare available? TLS plan | Nginx | TLS plan decided (DECISIONS "TLS behind Cloudflare": Origin CA, Full (strict)); the domain and the Cloudflare account wait for the owner (LAUNCH-PLAN Q3) |
 | 18 | Off-server backup target (S3-compatible or second machine) | Backups | Local dump + TODO |
 | 19 | Import old Season 2 users/results, or start fresh? | Migration | Start fresh |
 | 20 | Teachers/schools: dashboards, bulk registration? | Scope | Out of scope |
