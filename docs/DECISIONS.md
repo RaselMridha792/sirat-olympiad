@@ -13,6 +13,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 5. **The same page replaces nginx's own 502/504** on pages and on the callback, with the status kept so checks see the real code. Other `/api` calls, the IPN included, keep the JSON errors: PayStation retries.
 6. **Both answers** carry `Cache-Control: no-store` (Cloudflare must not keep them), `Retry-After: 120` and each security header once.
 7. **The text:** a generic bn/en "we'll be right back" with the "your payment is safe" line and no contact details (LAUNCH-PLAN §10 default; Rasel checks the Bangla). Plain HTML with inline styles and no scripts or fonts, so it needs nothing from the web container.
+
 ## 2026-11-01 — Server checks: ops-check, monitor.sh and the daily digest (L11; exam session, A2's plan and handover)
 
 1. **Thresholds in TypeScript** (`apps/api/src/modules/ops/ops-rules.ts`, the launch defaults of LAUNCH-PLAN §6): pure functions with table tests for every threshold, the two-run rules (CPU, memory, containers, workers) and the alert transitions. L14 retunes the numbers after k6.
