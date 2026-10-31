@@ -2,6 +2,35 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-01 — Ambassadors: admin approval, server promo codes and the panel (core C5a; plan `docs/plans/CORE-PLAN.md` section 6, Q2 default)
+
+1. **A promo code is attribution only** (lead, owner decision). It records who brought a registration and changes no fee, amount or payment. Anything that would make it a discount goes to the lead and the owner first.
+2. **Approval** follows Q2's default (OPEN-QUESTIONS #12 is still open). An admin makes a paid student an ambassador from the student's detail or the ambassadors list; there is no application form.
+   - **One transaction:** re-read the admin, lock the user `FOR UPDATE`, refuse `wrong_role`, `blocked` or `not_paid_student`; create the profile with a server code (`SR-` + 6 Crockford characters from `crypto.randomInt`) or re-approve the old row; role → `ambassador`; audit `ambassador.approved` with the reason.
+   - **A code collision** (P2002) aborts the Postgres transaction, so the whole transaction is retried, at most 3 times.
+   - **Already approved:** 200, nothing is written.
+3. **Revoking keeps the row:** `approved_at` → NULL, role → `student`, audit `ambassador.revoked`.
+   - Payments' `referrer()` accepts a code only while `approved_at` is set, so the code stops working for new registrations at once.
+   - Earlier referrals and points stay. The code (UNIQUE) is never given to anyone else, and a re-approval gives the same code back.
+4. **The panel** (`GET /ambassador/me`) re-reads the role and the block on every call, so a revoked ambassador with an old token gets 403.
+   - Referrals show only the name, institution and date.
+   - Points and rank come from `point_ledger` and `rank_thresholds`; team and tasks stay empty until C5b.
+5. **Database:** one hand-written migration, `*_core_ambassador_checks`. It adds the promo-code format CHECK (payments' DTO pattern) and append-only triggers on `point_ledger`: UPDATE, DELETE and TRUNCATE are refused, except TRUNCATE in a `*_test` database.
+6. **Web:**
+   - **The panel:** the held branch `feat/ui-ambassador` was merged in (lead's OK), not rewritten; its page now calls `requireAccess`. `data/http/ambassador.ts` reads the panel and the admin list with shape checks and explicit picks.
+   - **Admin:** approve and revoke buttons with a reason dialog, in the student detail and the ambassadors list, through `lib/api.ts`.
+   - **The student home falls back per section.** Only the profile is required. Exams, announcements and the registration card each show their own empty or "could not be loaded" state when their call fails, so an outage in one area does not take the whole home down.
+     - `DashboardHome.registration` is null when payments' answer could not be read.
+     - A redirect or not-found raised inside a section is passed on, never swallowed.
+7. **The leak check** follows the lead's conditions:
+   - `check:leak` also scans the pages only an ambassador may open, with `CHECK_AMBASSADOR_EMAIL` / `_PASSWORD`; missing variables fail the run.
+   - In CI the admin approves `student2@fixtures.invalid` through the real endpoint, in the job's throwaway database only (no fourth fixture user). A failed approve fails the job with its HTTP status and refusal code.
+   - The ambassador's password is the fixture password, set and masked in the same step as the others.
+8. **Tests:**
+   - `ambassadors.int-spec.ts` (9): only admins; each refusal; one transaction (role, profile and audit together); an idempotent approve; revoke and re-approve; the list and the panel from rows; a revoked ambassador's old token; the CHECK and the ledger triggers.
+   - **The promo rule** runs through payments' real `RegistrationService.referrer()`, the same check `POST /registrations/start` makes, in any letter case. It does not run the whole start route: that needs a full form and the gateway, and payments' own tests cover it.
+   - **web:** `http/ambassador.test.ts` (canaries, shape refusals, the admin pick), `ambassador-problem.test.ts`, and `http/home.test.ts` (each section falls back on its own; a redirect is not swallowed).
+
 ## 2026-11-01 — Announcements and the student home on the API (core C4; plan `docs/plans/CORE-PLAN.md` section 5, D5, D6)
 
 1. **Announcements are data, not a message system** (D5):
