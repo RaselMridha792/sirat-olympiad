@@ -41,7 +41,8 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | certificates | `GET /certificates/mine`, `GET /certificates/:id/pdf` | Owner | |
 | | `GET /certificates/verify/:code` | Public | |
 | announcements | `GET /announcements` | Role(student, ambassador) | Announcements (below). Built (core C4) |
-| ambassadors | `GET /ambassador/me`, `POST /ambassador/teams`, `GET /ambassador/tasks`, `POST /ambassador/tasks/:id/submit` | Role(ambassador) | Own data only |
+| ambassadors | `GET /ambassador/me` | Role(ambassador) | Ambassadors (below). Built (core C5a) |
+| | `POST /ambassador/teams`, `GET /ambassador/tasks`, `POST /ambassador/tasks/:id/submit` | Role(ambassador) | Own data only. Core C5b |
 | admin (all `Role(admin)` unless noted) | `GET /admin/users`, `GET /admin/users/:id`, `POST /admin/users/export` | admin | Students list (below). Built (core C1) |
 | | `POST /admin/users/:id/grade-level` | admin | Student profile (below). Built (core C3) |
 | | `PATCH /admin/users/:id`, `POST /admin/users/:id/role` | admin | Audited. Not built (role change and block are later admin writes) |
@@ -52,7 +53,8 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `POST /admin/rounds/:id/promote` | admin | Idempotent, audited |
 | | `GET/POST /admin/jury/*` | jury/admin | Judge recorded |
 | | `GET/POST /admin/announcements`, `PATCH /admin/announcements/:id`, `POST /admin/announcements/:id/{archive,restore}` | admin | Announcements (below). Built (core C4) |
-| | `CRUD /admin/ambassadors`, `/admin/tasks`, `/admin/rank-thresholds` | admin | |
+| | `GET /admin/ambassadors`, `POST /admin/ambassadors/:userId/{approve,revoke}` | admin | Ambassadors (below). Built (core C5a) |
+| | `CRUD /admin/tasks`, `/admin/rank-thresholds` | admin | Core C5b |
 | | `POST /admin/points/adjust` | admin | Compensating ledger entry |
 | | `GET /admin/audit` | admin | |
 
@@ -236,6 +238,19 @@ Plain text (line breaks kept, never rendered as HTML), for everyone (`category` 
 | `POST /admin/announcements/:id/archive`, `/restore` | `{ expectedUpdatedAt }` | 200. 409 `stale`, `archived` (archive twice), `not_archived` (restore a live one). Nothing is ever deleted |
 
 The database refuses out-of-range text and an archive time before creation (`*_core_announcements_checks`).
+
+## Ambassadors (core C5a; plan: `docs/plans/CORE-PLAN.md` §6, owner Q2 default)
+
+**Attribution only:** a promo code tells which ambassador brought a student; it never changes the fee or any payment amount (a discount would be an owner decision). Payments' registration accepts a code exactly while the ambassador's `approved_at` is set (case-insensitive) and stores the referrer. Revoking clears `approved_at` and keeps the row, so a code is never given to anyone else. Referral counts and points are derived from rows (`users.referred_by_id`, `point_ledger`), never stored. Shapes `AdminAmbassadorRow`, `AmbassadorOverview` (`dashboard.ts`), `AmbassadorState`, `AMBASSADOR_REFUSALS` (`core.ts`).
+
+| Method + path | Request | Answers |
+|---|---|---|
+| `POST /admin/ambassadors/:userId/approve` (admin, re-read) | `{ reason }` (3–200) | 200 `AmbassadorState`. One transaction locks the student, then creates the profile with a server code (`SR-` + 6 Crockford characters; a collision draws again, at most 3 times) or re-approves the old code, sets `role` to `ambassador` and writes `ambassador.approved` (code, reason). Already approved: 200 and nothing changes. 409 `not_paid_student` (no registration), `blocked`, `wrong_role` (staff); 404. The client never chooses a code (`promoCode` in the body → 400) |
+| `POST /admin/ambassadors/:userId/revoke` (admin) | `{ reason }` | 200: `approved_at` cleared, `role` back to `student`, `ambassador.revoked` audited. Earlier referrals and points stay. 409 `not_ambassador` |
+| `GET /admin/ambassadors` (admin) | `page`, `pageSize` (≤ 50), `q` (name, email or the exact code), `status` (`approved`, `revoked`) | `Paginated<AdminAmbassadorRow>` with `referralCount`, `points` and `rankName` from the rows and `rank_thresholds` |
+| `GET /ambassador/me` (ambassador) | — | `AmbassadorOverview`: code, referral count, the 5 latest referrals (name, institution, date; no contact details), points, rank (current and next threshold); `team` null and `tasks` empty until C5b. The user is re-read, so a revoked ambassador is refused (403) even with a token minted before the revocation. A newly approved student sees the panel after the next token renewal (≤ 15 min) |
+
+The database refuses a code outside `^[A-Za-z0-9_-]{3,40}$`, and `point_ledger` refuses UPDATE, DELETE and TRUNCATE (except TRUNCATE in a `*_test` database) (`*_core_ambassador_checks`).
 
 ## DTO and security rules
 
