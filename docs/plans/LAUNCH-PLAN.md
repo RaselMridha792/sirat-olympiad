@@ -4,13 +4,13 @@ Plan only, no product code (2026-10-31, branch `feat/a2-launch-plan`, A2 session
 
 **Launch:** registration and payment only (Lead, 2026-10-31). A student registers, pays, logs in and sees their own registration and payment status. All times below are estimates at the measured pace (section 12), not promises.
 
-Sources: RULEBOOK §3, §5, §6, §9, §11–§14, §18; RUNBOOK §2–§5, §7, §9, §10, §12, §13; `plans/PAYMENTS-PLAN.md` §10, §13, §16; `plans/EXAM-PLAN.md`; `plans/CORE-PLAN.md`; DECISIONS (A1 approval, A2.1b, A2.1e, "Per-user API limits", "Registration start and status", "Web data layer over HTTP", "Public entry page and legal pages"); OPEN-QUESTIONS #17, #18, #22, #23, #27. Six read-only passes over `main` at aef64c9 (deploy, TLS, backups, DB role and cleanup, monitoring, dashboards) established today's state. An independent review then checked every claim again against `main` at a6876ec, after #19, #21, #22, #23 and #25 had merged, and a second review at f952ade, after #24 and #26. `main` moves several times a day: the lead re-reads the "Today" lines at review.
+Sources: RULEBOOK §3, §5, §6, §9, §11–§14, §18; RUNBOOK §2–§5, §7, §9, §10, §12, §13; `plans/PAYMENTS-PLAN.md` §10, §13, §16; `plans/EXAM-PLAN.md`; `plans/CORE-PLAN.md`; DECISIONS (A1 approval, A2.1b, A2.1e, "Per-user API limits", "Registration start and status", "Web data layer over HTTP", "Public entry page and legal pages"); OPEN-QUESTIONS #17, #18, #22, #23, #27. Six read-only passes over `main` at aef64c9 (deploy, TLS, backups, DB role and cleanup, monitoring, dashboards) established today's state. An independent review then checked every claim again against `main` at a6876ec, after #19, #21, #22, #23 and #25 had merged, and a second review at f952ade, after #24 and #26; #27 merged after that and is reflected below. `main` moves several times a day: the lead re-reads the "Today" lines at review.
 
 ## 0. Scope, dependencies and dates
 
 - **This plan (A2):** the eight areas the lead listed on 2026-10-31 (22:26), the email (SES) items of the checklist, and nginx logs without query strings (Lead, 22:58).
 - **Other sessions:**
-  - **payments:** the money flow (PR 3), the wizard and the dashboard status (PR 4), the PayStation live switch, the real payment, the k6 registration surge and the free book (`PAYMENTS-PLAN.md` §10.4, §13). The per-IP tiers of `/registrations/*` were set in #21 (DECISIONS "Registration start and status" #6); section 3 shows how they sit against nginx.
+  - **payments:** the money flow is merged (PR 3, #27: verify job, settle, callback, IPN, reconciliation, admin payments and settings). Still to come: the wizard and the dashboard status (PR 4), the PayStation live switch, the real payment, the k6 registration surge and the free book (`PAYMENTS-PLAN.md` §10.4, §13). The per-IP tiers of `/registrations/*` were set in #21 (DECISIONS "Registration start and status" #6); section 3 shows how they sit against nginx.
   - **exam:** the student exam list (`GET /exams`, #23) and the exam room (`GET /exams/:id`, E4, #24) are on `main`. The leaderboard and admin exam pages come with E5 and say "coming soon" until then (section 8).
   - **core:** the public entry page and the privacy, terms and refund-policy pages are merged with placeholder texts (#25), and so is the admin students list (C1, #26). Planned before 15 Nov: the profile (C3), announcements together with the student dashboard home (C4, composed in the web from existing endpoints, so `GET /dashboard/home` is dropped: CORE-PLAN D6) and ambassador approval (C5a).
     - PayStation's live review needs these pages live on the client's domain with the client's texts (CORE-PLAN Q5 and risk 2). They go live with the first VPS deploy and TLS (Sat 7). `PAYMENTS-PLAN.md` §10.2 lists only the domain for the live merchant; the lead aligns the two plans.
@@ -306,7 +306,7 @@ The superuser password also sits in every app container through `env_file`. The 
   - API p95 above 1 s warns;
   - certificate: under 14 days warns;
   - backups: the newest older than 26 h is critical.
-- **Payment alerts** (the decision levels, payments stuck past expiry, a late reconciliation) come with payments PR 3, their step 8. `ops-check` adds only the generic part: the payments queue has workers and the reconciliation job ran recently (about 0.5 h, after payments PR 3 merges).
+- **Payment alerts** came with payments PR 3 (#27): money set aside for an admin raises the critical `payments.needs_review`, and warnings go to the audit log without email. `ops-check` adds only the generic part: the payments queue has workers, and the reconciliation job ran within 3 of its intervals.
 - PgBouncer waiting clients, slow queries and lock metrics stay manual (RUNBOOK §7) until server metrics exist (Q2).
 
 **PRs.**
@@ -316,7 +316,7 @@ The superuser password also sits in every app container through `env_file`. The 
   - a production boot warning when `SECURITY_ALERT_EMAIL` is blank;
   - an `ops-alert` CLI with an allow-list of kinds.
 
-  The category map is typed per kind, so a kind that payments PR 3 adds without a category fails typecheck after `git merge origin/main`. The two merge in either order (section 13).
+  Every existing kind gets a category, including payments' `payments.needs_review` (#27). The category map is typed per kind, so a later kind without a category fails typecheck after `git merge origin/main`.
 - **L11 (4 h):**
   - the `ops-check` CLI: table tests for every threshold, and int tests (a backlog with no worker, a failed job, a state change that alerts once);
   - `monitor.sh` with shell tests on faked commands: a critical state calls `/fail` and not the success ping; a clean run calls only the success ping; an `ops-check` that fails to run calls `/fail`;
@@ -430,7 +430,7 @@ The superuser password also sits in every app container through `env_file`. The 
 
 **Today.**
 - There is no cleanup. `sessions` gains a row at every login and refresh and keeps minors' IPs and browsers; `auth_tokens` keeps expired tokens. Neither has an index on `expires_at` or `revoked_at`.
-- Since #19 the worker has a database client (`ExamWorkerModule` imports `PrismaModule`) and one BullMQ job scheduler, the exam sweep every minute.
+- Since #19 and #27 the worker has a database client (`ExamWorkerModule` imports `PrismaModule`) and two BullMQ job schedulers: the exam sweep every minute and payments' reconciliation.
 - The recorded rule (DECISIONS A2.1b #9) deletes rows that expired or were revoked more than 30 days ago. A rotated row counts as revoked, so it goes 30 days after its rotation, even in a family that is still alive. A returning user is not affected: the refresh cookie expires with its token after 7 days, so a browser never sends an older one.
   - The only loss is one signal. A copied token replayed more than 30 days after its rotation is still refused, but it no longer ends the live family or writes `auth.refresh_reuse`.
   - A per-family rule would keep that signal, but also every retired row (IP, browser) of a live family for as long as the family lives, which has no limit because the 7-day expiry slides. That works against the privacy reason for the job. **Default: keep A2.1b #9 as recorded**; the lead can choose the per-family rule instead.
@@ -516,7 +516,7 @@ These are technical choices inside the RULEBOOK. Each is recorded in DECISIONS w
 - Medium PRs took 1.3–2.0 h from the first commit to the merge: A2 #15 2.0 h and #20 1.3 h; exam #16 1.9 h and #17 1.6 h.
 - Bigger ones took 3.9 h (#14) and 5.5 h (#12, which waited on #10).
 - PRs merged 5–60 min after they opened, once CI was green and the lead had reviewed them.
-- Three sessions made 48 commits (merges not counted) on 30 Oct and 110 on 31 Oct. Payments is about 2 days ahead of its own plan: #21 (steps 4–5) merged Sat 31 Oct instead of Mon 2 Nov.
+- Three sessions made 48 commits (merges not counted) on 30 Oct and 110 on 31 Oct. Payments is about 2 days ahead of its own plan: #21 (steps 4–5) merged Sat 31 Oct instead of Mon 2 Nov, and #27 (steps 6–9) on Sun 1 Nov instead of Tue 3 – Wed 4.
 
 The table assumes about 2 h per medium PR, review rounds included. These are estimates, not commitments.
 
@@ -524,7 +524,7 @@ The table assumes about 2 h per medium PR, review rounds included. These are est
 |---|---|---|
 | Sun 1 Nov | L2 role and grants (with one stack turn), L3 TLS-ready nginx, logs and CSP | Rasel answers Q1–Q5 (defaults apply meanwhile) and types the dev `sirat_app` password; core C1; exam E4/E5 PRs |
 | Mon 2 Nov | L4 real IPs and shared IPs, L5 maintenance, L6 backups | Domain: Cloudflare zone, SES domain identity, production access requested; core C3 and C4 (the home) |
-| Tue 3 Nov | L1 coming soon (after core's C3 and C4), L7 restore and drill, L8 role switch (stack window) | Bucket and keys; outside monitor account; the rehearsal VM (Q4); payments PR 3 (#27, open) |
+| Tue 3 Nov | L1 coming soon (after core's C3 and C4), L7 restore and drill, L8 role switch (stack window) | Bucket and keys; outside monitor account; the rehearsal VM (Q4) |
 | Wed 4 Nov | L9 `deploy.sh` and the release file, L10 alert categories | Domain at the latest |
 | Thu 5 Nov | L11 `ops-check` and `monitor.sh`, L12 bootstrap (start) | Payments PR 4 (web); payments' registration e2e with the CSP listener |
 | Fri 6 Nov | L12 bootstrap, prelaunch-check, RUNBOOK §9; L13 cleanup; L14 part 1 if the specs differ | Sandbox session with Rasel (payments); the VPS specs confirmed (OPEN-QUESTIONS #22) |
@@ -563,8 +563,8 @@ The table assumes about 2 h per medium PR, review rounds included. These are est
   - `(student)/dashboard/page.tsx`: core C4 (the composition) and payments (its cards). L1 does not change it. `PAYMENTS-PLAN.md` §16 still calls it "a file A2 owns": the lead tells payments that it is core's now.
   - `apps/web/scripts/check-pages.mjs`: E4 (#24) and core C2 (#25) changed it; L1 adds the per-page expectations.
   - `packages/ui/src/index.ts`: one export line each (core's `Prose` is in; L1 adds `ComingSoon`).
-  - `security-alerts.service.ts`: payments PR 3 (step 8) adds alert kinds, and L10 adds categories. They merge in either order: whoever merges second runs `git merge origin/main` and gives every `payments.*` kind its category (typecheck enforces it). If the lead wants PR 3's kinds capped from the start, L10 moves ahead of PR 3.
-  - `worker.ts`: payments PR 3 (step 6), L13, and core C5b and C6c after launch: one import line each, keep all.
+  - `security-alerts.service.ts`: payments PR 3 (#27) added `payments.needs_review`; L10 gives every kind a category, and a later kind without one fails typecheck, whoever adds it.
+  - `worker.ts`: the exam and payments worker modules are in (#19, #27); L13 adds its own, and core C5b and C6c follow after launch: one import line each, keep all.
   - Migrations (L2, L13): run `git merge origin/main`, keep both sides, and regenerate a generated migration per `PAYMENTS-PLAN.md` §12.
   - Also `infra/docker-compose.yml`, `ci.yml`, both `.env.example` files, RUNBOOK, 05-DATABASE and 06-API.
   - Only this plan changes `nginx.conf`: L3, then L4, then L5 (and L14 part 2). DECISIONS merges as a union; after each merge, check the blank line before every entry.
