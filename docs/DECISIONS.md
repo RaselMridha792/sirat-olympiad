@@ -21,6 +21,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - **The CSV:** core's `common/csv.ts` (BOM, CRLF, formula-injection prefix); streamed in batches of 500, never stored; audited with the filter and the count, never the rows.
 6. **No address in logs:** the request logger keeps only the method, the path and the status; the book module has no logger (`book-no-logs.spec.ts`); audit rows carry ids, counts and filters only.
 7. **Seed:** `book_title` ("Sirat Leadership Olympiad book" until an admin sets the real one) and `book_cover_image_id` (null). RUNBOOK §9 asks for both before registration opens.
+
 ## 2026-11-01 — Alert categories, their own caps, and the ops-alert command (L10; exam session, A2's plan and handover)
 
 1. **Categories:** `security`, `payments`, `ops`. `ALERT_CATEGORY` is a `Record<SecurityAlertKind, AlertCategory>`, so a new kind without a category fails typecheck (payments' kinds included). The email subject names the category. The "Account:" line names the account when there is one. Without one, a login alert keeps "no account with that email" (owner-approved, #7: someone is trying an email that has no account). Payments and ops alerts then have no Account line: they carry their own details, and the login wording would mislead there (a payment set aside for `email_taken`, for example).
