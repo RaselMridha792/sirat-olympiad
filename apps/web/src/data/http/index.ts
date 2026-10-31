@@ -3,6 +3,7 @@ import { unavailableSource } from '../unavailable.ts';
 import { adminExams } from './admin-exams.ts';
 import { adminAmbassadors, studentAmbassador } from './ambassador.ts';
 import { adminAnnouncements, studentAnnouncements } from './announcements.ts';
+import { adminBook, studentBook } from './book.ts';
 import { studentExams } from './exams.ts';
 import { studentHome } from './home.ts';
 import { adminLeaderboard, leaderboard } from './leaderboard.ts';
@@ -24,6 +25,7 @@ export function createHttpSource(get: ApiGet): DataSource {
       ...unavailableSource.student,
       ...studentExams(get),
       ...studentProfile(get),
+      ...studentBook(get),
       ...studentAnnouncements(get),
       ...studentHome(get),
       ...studentAmbassador(get),
@@ -40,6 +42,7 @@ export function createHttpSource(get: ApiGet): DataSource {
       ...adminAnnouncements(get),
       ...adminAmbassadors(get),
       ...adminPayments(get),
+      ...adminBook(get),
     },
   };
 }

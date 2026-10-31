@@ -1,11 +1,13 @@
 import {
   Award,
+  BookOpen,
   CreditCard,
   FileText,
   LayoutDashboard,
   Megaphone,
   Settings,
   Trophy,
+  Truck,
   Users,
   type LucideIcon,
 } from 'lucide-react';
@@ -38,6 +40,8 @@ const NAV: ReadonlyArray<{
   { key: 'announcements', href: '/admin/announcements', Icon: Megaphone },
   { key: 'payments', href: '/admin/payments', Icon: CreditCard },
   { key: 'settings', href: '/admin/settings', Icon: Settings },
+  { key: 'book', href: '/admin/book', Icon: BookOpen },
+  { key: 'bookOrders', href: '/admin/book-orders', Icon: Truck },
 ];
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {

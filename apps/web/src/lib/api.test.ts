@@ -91,3 +91,18 @@ test('as: blob returns the body as a file, with the CSRF header on the POST', as
   );
   assert.equal((sent as Headers | null)?.get('X-Requested-With'), 'sirat-web');
 });
+
+test('a FormData body (a file upload) keeps the multipart type of the browser; JSON bodies get application/json', async () => {
+  const sent: Headers[] = [];
+  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    sent.push(new Headers(init?.headers));
+    return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as typeof fetch;
+  const form = new FormData();
+  form.append('file', new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }), 'cover.png');
+  await api('/admin/book/cover', { method: 'POST', body: form });
+  await api('/admin/book/title', { method: 'PUT', body: JSON.stringify({ title: 'x' }) });
+  assert.equal(sent[0]?.get('Content-Type'), null);
+  assert.equal(sent[0]?.get('X-Requested-With'), 'sirat-web');
+  assert.equal(sent[1]?.get('Content-Type'), 'application/json');
+});

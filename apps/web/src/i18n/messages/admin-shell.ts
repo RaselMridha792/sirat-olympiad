@@ -14,6 +14,8 @@ export const adminShellMessages = defineMessages({
       announcements: 'Announcements',
       payments: 'Payments',
       settings: 'Settings',
+      book: 'Free book',
+      bookOrders: 'Book orders',
     },
   },
   bn: {
@@ -29,6 +31,8 @@ export const adminShellMessages = defineMessages({
       announcements: 'ঘোষণা',
       payments: 'পেমেন্ট',
       settings: 'সেটিংস',
+      book: 'ফ্রি বই',
+      bookOrders: 'বইয়ের অর্ডার',
     },
   },
 });

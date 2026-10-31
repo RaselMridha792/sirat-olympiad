@@ -19,6 +19,7 @@ import {
   type StudentHome,
 } from '@sirat/shared';
 import { Badge, buttonClasses, Card, cn, DetailList } from '@sirat/ui';
+import { BookOrderCard } from '@/components/book/BookOrderCard';
 import { entryStatusTone, examStateTone, paymentStatusTone } from '@/components/status';
 import { getData } from '@/data';
 import type { SearchParams } from '@/data/query';
@@ -78,6 +79,7 @@ export default async function StudentHomePage({
     <>
       <Hero name={home.user.name} round={home.currentRound} copy={copy} />
       <RegistrationCard registration={home.registration} copy={copy} />
+      <BookOrderCard data={data} locale={locale} />
       <NextExamCard exam={home.nextExam} copy={copy} />
       <ExamRules exam={home.nextExam} copy={copy} />
       <LatestAnnouncements items={home.latestAnnouncements} copy={copy} />

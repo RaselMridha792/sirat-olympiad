@@ -21,6 +21,8 @@ export const PAGE_ROLES: ReadonlyArray<{ path: string; roles: readonly Role[] }>
   { path: '/admin/announcements', roles: ['admin'] },
   { path: '/admin/payments', roles: ['admin'] },
   { path: '/admin/settings', roles: ['admin'] },
+  { path: '/admin/book', roles: ['admin'] },
+  { path: '/admin/book-orders', roles: ['admin'] },
   { path: '/admin/leaderboard', roles: ['admin', 'manager'] },
 ];
 

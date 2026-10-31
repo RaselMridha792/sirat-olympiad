@@ -36,6 +36,23 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - `ambassadors.int-spec.ts` (9): only admins; each refusal; one transaction (role, profile and audit together); an idempotent approve; revoke and re-approve; the list and the panel from rows; a revoked ambassador's old token; the CHECK and the ledger triggers.
    - **The promo rule** runs through payments' real `RegistrationService.referrer()`, the same check `POST /registrations/start` makes, in any letter case. It does not run the whole start route: that needs a full form and the gateway, and payments' own tests cover it.
    - **web:** `http/ambassador.test.ts` (canaries, shape refusals, the admin pick), `ambassador-problem.test.ts`, and `http/home.test.ts` (each section falls back on its own; a redirect is not swallowed).
+## 2026-11-01 — Free book on the web (Claude; payments PR 6b, plan §16.4, lead's rules)
+
+1. **`/dashboard/book`:** the title and the cover, then the address form, pre-filled from the student's own name, phone and district.
+   - The form posts and waits for hydration.
+   - Once an order exists, every save sends the version the page showed (`expectedVersion`). An old tab then gets 409 `BOOK_ORDER_CHANGED`; it never overwrites a newer address (lead, 2026-11-01).
+   - After shipping the page is read only (409 `BOOK_ORDER_SHIPPED` if a stale form tries).
+2. **The result page sends a paid student to log in, then to the book:** `/login?next=/dashboard/book`. There is no session after paying (D2), and A2's `safeNext` accepts the path (`links.test.ts`).
+3. **The dashboard card** (`components/book/BookOrderCard.tsx`) is a server component core's home composes with one line (`<BookOrderCard data={data} locale={locale} />`); whoever lands second adds it (lead). It shows the status and the district only, never the address.
+4. **Admin only** (`/admin/book`, `/admin/book-orders`):
+   - the title with `expected` and a reason;
+   - the cover with a local preview and a quick size and type check before sending (the API decides by the bytes);
+   - the orders list with GET filters;
+   - "Export for courier" (the current status and district, saved as a file; the page reminds the admin to delete it afterwards);
+   - "Mark shipped" for the ticked confirmed orders, after a confirmation that says it cannot be undone.
+5. **`lib/api.ts`:** a `FormData` body keeps the browser's multipart type (the cover upload); JSON bodies still get `application/json` (A2's file, one line plus a test).
+6. **Data layer:** `data/http/book.ts` picks fields one by one. A cover URL is accepted only as our own `/api/book/cover/<uuid>` path, so a page never loads an image from elsewhere. The mock serves the demo student's order, and `?mock=leak` covers the student methods.
+7. **`e2e:register`** now continues after "Registration complete": it logs in from the result page, confirms an address on `/dashboard/book` and changes it. The dev web needs `DATA_SOURCE=http` for that step (RUNBOOK §0).
 
 ## 2026-11-01 — Server checks: ops-check, monitor.sh and the daily digest (L11; exam session, A2's plan and handover)
 

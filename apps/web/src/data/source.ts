@@ -2,6 +2,11 @@ import type {
   AdminAnnouncement,
   AdminAnnouncementQuery,
   AdminAmbassadorRow,
+  AdminBookInfo,
+  AdminBookOrderQuery,
+  AdminBookOrderRow,
+  BookInfo,
+  MyBookOrder,
   AdminExamCard,
   AdminAttemptDetail,
   AdminAttemptQuery,
@@ -62,6 +67,10 @@ export interface DataSource {
     listAnnouncements(query: PageQuery): Promise<Paginated<AnnouncementItem>>;
     /** GET /ambassador/me (role ambassador) */
     getAmbassador(): Promise<AmbassadorOverview>;
+    /** GET /book (the free book's title and cover) */
+    getBook(): Promise<BookInfo>;
+    /** GET /book-order/me (eligible, and the student's own order) */
+    getBookOrder(): Promise<MyBookOrder>;
   };
   leaderboard: {
     /** GET /leaderboard?exam=&page=&q= (one exam's snapshot; rank, name, institution; search by name/institution) */
@@ -96,5 +105,9 @@ export interface DataSource {
     getPayment(id: string): Promise<AdminPaymentDetail | null>;
     /** GET /admin/settings (the keys an admin may change) */
     listSettings(): Promise<AdminSetting[]>;
+    /** GET /admin/book (title, cover, upload limits) */
+    getBook(): Promise<AdminBookInfo>;
+    /** GET /admin/book-orders?page=&pageSize=&status=&district=&phone=&email= */
+    listBookOrders(query: AdminBookOrderQuery): Promise<Paginated<AdminBookOrderRow>>;
   };
 }
