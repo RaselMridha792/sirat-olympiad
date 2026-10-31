@@ -74,7 +74,20 @@ $DC logs -f --tail=200 api        # also: worker web nginx postgres pgbouncer re
 $DC restart api                    # restart one service
 scripts/healthcheck.sh https://<domain>
 df -h; free -m; docker stats --no-stream
+scripts/monitor.sh --dry-run       # the server checks now: the host facts, and each critical or warning check (raises nothing)
+cat /var/lib/sirat/monitor-state.json   # the checks' state kept between runs (levels and when they last alerted)
 ```
+
+**Server checks (L11):**
+- **Schedule** (cron, set up by L12): `scripts/monitor.sh` every 5 minutes, and `scripts/monitor.sh --digest` at 08:00 Asia/Dhaka.
+- **Configuration:** `.env.monitor` in the clone (git-ignored, `chmod 600`; names in `infra/monitor/monitor.env.example`): the compose project, the env files (the VPS adds `/var/lib/sirat/release.env`) and the heartbeat URL.
+- **What a run does:**
+  1. collects the host facts;
+  2. runs `ops-check` in the api container, which adds the queues, workers, failed jobs, the reconciliation schedule and the queue Redis memory, decides each check's level (thresholds: LAUNCH-PLAN §6), and raises an `ops.<check>` alert on a change, hourly while it holds, and once when resolved;
+  3. pings the heartbeat: success with no critical check, `/fail` with the check names otherwise.
+- **A run that cannot reach ops-check** counts as critical (`monitor`).
+- **During a deploy** (`deploy.sh` holds `/var/lib/sirat/deploy.lock`), `/fail` is held back.
+- **The digest** comes every morning (alerts of the last 24 h by kind, the backup age, the disk, payments by status). A morning without it means the alert email path is broken.
 
 ## 2. Deploy and rollback
 
@@ -185,6 +198,26 @@ Credentials are read inside the postgres container; nothing secret is typed on t
 `scripts/bootstrap.sh` (scaffold prints the steps; implement and rehearse). Needs: repo, `.env`, latest backup.
 
 ## 7. Exam-day incident steps
+
+**Ops alert → what to do** (`[Sirat] Ops alert:`; `level: 2` critical, `1` warning, `0` resolved; the same kinds are in the heartbeat's `/fail` body):
+
+| Check | Means | First steps |
+|---|---|---|
+| `disk` | 80% used (warning), 90% (critical) | `df -h`; `docker system df`; prune old images (`docker image prune -a` after a deploy); old local backups are only 3 |
+| `swap`, `memory`, `cpu` | swap in use; memory or CPU above 85% on two checks (memory over 95%: critical) | `docker stats --no-stream`; find the service; scale or restart it (section 3); before an exam, L14's sizing |
+| `containers` | a service not running or unhealthy on two checks | `$DC ps -a`; `$DC logs --tail=100 <service>`; `$DC up -d --no-build <service>` |
+| `workers` | a job queue (email, payments, exam) has no worker on two checks | `$DC ps worker`; `$DC logs --tail=100 worker`; `$DC up -d --no-build worker`. Payments are confirmed only by the worker: critical |
+| `queue_backlog` | over 500 waiting, or the oldest over 5 min (warning); a payments or email job waiting 15 min while workers are connected (critical: a stuck worker) | worker logs; restart the worker; the queue Redis memory |
+| `failed_jobs` | jobs failed for good since the last check (a payment verify job: critical) | worker logs by job name; payments: the review list (section 11) |
+| `reconciliation` | the payments reconciliation is more than 3 intervals late | worker running? `$DC logs worker \| grep reconcile` |
+| `queue_redis_memory` | the queue Redis over 300 MB (warning), 400 MB of 512 (critical) | failed jobs piling up; `redis-cli INFO memory` in `redis-queue` |
+| `http_5xx` | over 2% (warning) or 10% (critical) of at least 50 requests in 5 min | `$DC logs --since 10m nginx api`; `/api/ready`; recent deploy? |
+| `app_errors` | API 5xx or web render errors in the logs | `$DC logs --since 10m api web` |
+| `api_p95` | the API's p95 over 1 s | "Site slow" below |
+| `certificate` | the origin certificate ends within 14 days | section 3 of LAUNCH-PLAN / the TLS steps in this runbook |
+| `backup_age` | no off-server backup in 26 h (critical) | `journalctl -u sirat-backup.service -n 50` (section 5) |
+| `time_sync` | the clock is not synchronised | `timedatectl`; `systemctl restart systemd-timesyncd` |
+| `monitor` (heartbeat only) | ops-check could not run | the api container: `$DC ps api`, `$DC logs --tail=50 api` |
 
 **Site slow:** `docker stats` (CPU/RAM) → PgBouncer waiting clients (`SHOW POOLS;`) → slow queries (log > 500 ms) → queue depth/failed jobs (BullMQ) → API p95 in monitoring → consider `--scale api=N`, then tell the owner.
 **Site down:** `$DC ps` → Nginx logs → `df -h` (disk full?) → Postgres/Redis health → restart failing service → if data loss suspected, restore plan (section 5).

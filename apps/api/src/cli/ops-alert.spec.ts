@@ -1,3 +1,4 @@
+import { ALERT_CATEGORY } from '../modules/audit/security-alerts.service';
 import { OPS_ALERT_KINDS, OpsAlertUsageError, parseOpsAlertArgs } from './ops-alert';
 
 /* The ops-alert command's arguments (LAUNCH-PLAN §6, L10): ops kinds only, numeric details only. */
@@ -22,7 +23,8 @@ describe('ops-alert arguments', () => {
     });
   });
 
-  it('allow only the ops category: no forged security or payments alert', () => {
+  it('allow only three ops kinds: no forged security, payments or check alert', () => {
+    for (const kind of OPS_ALERT_KINDS) expect(ALERT_CATEGORY[kind]).toBe('ops');
     expect([...OPS_ALERT_KINDS].sort()).toEqual([
       'ops.alert_test',
       'ops.backup_failed',
@@ -32,6 +34,7 @@ describe('ops-alert arguments', () => {
       'login.account_limit',
       'payments.needs_review',
       'ops.nope',
+      'ops.disk',
       'OPS.ALERT_TEST',
     ])
       expect(() => parseOpsAlertArgs(['--kind', kind])).toThrow(OpsAlertUsageError);

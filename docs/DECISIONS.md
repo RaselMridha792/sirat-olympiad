@@ -36,6 +36,29 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - `ambassadors.int-spec.ts` (9): only admins; each refusal; one transaction (role, profile and audit together); an idempotent approve; revoke and re-approve; the list and the panel from rows; a revoked ambassador's old token; the CHECK and the ledger triggers.
    - **The promo rule** runs through payments' real `RegistrationService.referrer()`, the same check `POST /registrations/start` makes, in any letter case. It does not run the whole start route: that needs a full form and the gateway, and payments' own tests cover it.
    - **web:** `http/ambassador.test.ts` (canaries, shape refusals, the admin pick), `ambassador-problem.test.ts`, and `http/home.test.ts` (each section falls back on its own; a redirect is not swallowed).
+## 2026-11-01 — Server checks: ops-check, monitor.sh and the daily digest (L11; exam session, A2's plan and handover)
+
+1. **Thresholds in TypeScript** (`apps/api/src/modules/ops/ops-rules.ts`, the launch defaults of LAUNCH-PLAN §6): pure functions with table tests for every threshold, the two-run rules (CPU, memory, containers, workers) and the alert transitions. L14 retunes the numbers after k6.
+2. **Alerts on transitions:** an `ops.<check>` alert when a check changes level, an hourly reminder while it stays warn or critical, and one "resolved" alert (`level: 0`). They go through the ops category's own cap (L10); the digest counts the held-back ones from the audit log.
+3. **State in a file on the host,** kept by `monitor.sh` (`/var/lib/sirat/monitor-state.json`) and handed to ops-check on stdin: no table and no cache key. A lost state means one repeated alert at worst.
+4. **ops-check reads the app facts from the queue Redis only:**
+   - workers per queue;
+   - waiting jobs and the oldest one's age;
+   - jobs failed for good since the last run (BullMQ keeps a job in "failed" only after its last attempt);
+   - payments' reconciliation, from its job scheduler's next run time: late by more than 3 intervals is critical;
+   - the queue Redis memory.
+
+   It touches no payments file.
+5. **Host facts in bash** (`scripts/monitor.sh`):
+   - plain awk only (Ubuntu's mawk has no capture groups); nginx's access line is split on double quotes, so retried upstreams (`"0.002, 0.004"`) and nginx's own answers (`"-"`) parse;
+   - memory from MemAvailable, so the page cache does not count;
+   - the backup age from a root-owned, world-readable `/var/lib/sirat/last-backup` (`created_at` and `sha256` only), which `backup.sh` writes after each upload that worked: the backup directory stays root-only, and a failed run never makes the check look fresh.
+6. **The heartbeat:** success only with no critical check; otherwise `/fail` with the check names (never values). ops-check that cannot run counts as critical (`monitor`). While `deploy.sh` holds its lock, `/fail` is held back.
+7. **The digest:** once per Asia/Dhaka day, guarded by an `ops.digest` audit row carrying the date (YYYYMMDD), not by a cache key that could be evicted. Counts and kinds only.
+8. **The ops commands read their settings explicitly** (`apps/api/src/cli/ops-env.ts`). `validateEnv` cannot run outside the Nest app: it converts numbers through decorator metadata, which tsx does not emit and which needs `reflect-metadata`.
+   - This also fixes L10's `ops-alert`, whose `main()` failed on every numeric setting; its integration test called `raiseOpsAlert` directly and never ran `main()`. Both commands now ran end to end against the test database and Redis.
+   - Their email queue is created after the Redis clients connect: BullMQ connected the client itself first, so `connect()` threw.
+9. **`healthcheck.sh`'s exact 200** came with L3 (#37), so L11 leaves it alone.
 
 ## 2026-11-01 — Free book: API, schema and the cover upload (Claude; payments PR 6a, plan §16, owner B1–B5)
 
