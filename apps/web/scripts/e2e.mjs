@@ -10,7 +10,7 @@
 // API allows one reset email per address per minute and five per hour. It runs only against this machine: a base
 // URL or MAILPIT_URL that is not 127.0.0.1, localhost or ::1 stops it before any request.
 import { randomBytes } from 'node:crypto';
-import { launchBrowser } from './lib/cdp.mjs';
+import { cspReport, launchBrowser } from './lib/cdp.mjs';
 import { isLoopbackUrl } from './lib/local-only.mjs';
 
 const BASE = process.argv[2] ?? process.env.APP_URL ?? 'http://127.0.0.1:8080';
@@ -410,13 +410,9 @@ try {
   await browser.close();
 }
 
-const csp = browser.cspViolations();
-results.push(csp.length === 0);
-console.log(
-  csp.length
-    ? `  FAIL  no Content-Security-Policy violations: ${JSON.stringify(csp.slice(0, 5))}`
-    : '  ok    no Content-Security-Policy violations',
-);
+const csp = cspReport(browser); // LAUNCH-PLAN §3: the page CSP is delivered and never broken
+results.push(csp.ok);
+console.log(csp.line);
 
 const failed = results.filter((ok) => !ok).length;
 console.log(`e2e: ${results.length - failed}/${results.length} passed`);

@@ -99,13 +99,23 @@ export async function launchBrowser() {
     });
   });
   const conn = await connect(wsUrl);
-  // Content-Security-Policy violations seen by any page (enforced or Report-Only): every script built on this
-  // driver checks the list once at the end, so a page CSP that would break a flow fails the run (LAUNCH-PLAN §3).
+  // Content-Security-Policy, seen by every page: the violations (enforced or Report-Only) and which documents carried
+  // nginx's page policy. e2e.mjs and e2e-exam.mjs check both once at the end (cspReport below, LAUNCH-PLAN §3).
   const cspViolations = [];
+  const cspDocuments = { withPolicy: 0, withoutPolicy: [] };
+  const onDocument = ({ hasPolicy, path }) => {
+    if (hasPolicy) cspDocuments.withPolicy += 1;
+    else cspDocuments.withoutPolicy.push(path);
+  };
 
   return {
     /** The CSP violations recorded so far, across every page of this browser. */
     cspViolations: () => [...cspViolations],
+    /** How many documents carried the page CSP, and the paths of those that did not. */
+    cspDocuments: () => ({
+      withPolicy: cspDocuments.withPolicy,
+      withoutPolicy: [...cspDocuments.withoutPolicy],
+    }),
     /** A separate cookie jar. */
     async newContext() {
       const { browserContextId } = await conn.send('Target.createBrowserContext', {
@@ -113,7 +123,7 @@ export async function launchBrowser() {
       });
       return {
         id: browserContextId,
-        newPage: () => openPage(conn, browserContextId, (v) => cspViolations.push(v)),
+        newPage: () => openPage(conn, browserContextId, (v) => cspViolations.push(v), onDocument),
         /** Sets a cookie for `url`'s host (host-only, like the API's cookies). */
         setCookie: (url, name, value, extra = {}) =>
           conn.send('Storage.setCookies', {
@@ -173,7 +183,49 @@ function hostOf(url) {
 
 const CSP_BINDING = '__siratCspViolation';
 
-async function openPage(conn, browserContextId, onCspViolation = () => {}) {
+/**
+ * The end-of-run CSP verdict for e2e scripts. It fails when a document lacked nginx's page policy, when no document had
+ * it (a run against a bare Next or an nginx without security-headers.conf would otherwise pass without testing
+ * anything), or when any violation was seen.
+ */
+export function cspReport(browser) {
+  const violations = browser.cspViolations();
+  const { withPolicy, withoutPolicy } = browser.cspDocuments();
+  if (withPolicy === 0) {
+    return {
+      ok: false,
+      line: "  FAIL  no document carried the page Content-Security-Policy (not behind nginx's site?)",
+    };
+  }
+  if (withoutPolicy.length) {
+    return {
+      ok: false,
+      line: `  FAIL  ${withoutPolicy.length} documents without the page Content-Security-Policy: ${JSON.stringify(withoutPolicy.slice(0, 5))}`,
+    };
+  }
+  if (violations.length) {
+    return {
+      ok: false,
+      line: `  FAIL  ${violations.length} Content-Security-Policy violations: ${JSON.stringify(violations.slice(0, 5))}`,
+    };
+  }
+  return {
+    ok: true,
+    line: `  ok    the page Content-Security-Policy on all ${withPolicy} documents, no violations`,
+  };
+}
+
+/** nginx's page policy: the Report-Only header, or an enforced one with script/default rules (Next's own header has only frame-ancestors). */
+function hasPagePolicy(headers) {
+  const lower = Object.fromEntries(
+    Object.entries(headers ?? {}).map(([k, v]) => [k.toLowerCase(), String(v)]),
+  );
+  if ('content-security-policy-report-only' in lower) return true;
+  const enforced = lower['content-security-policy'] ?? '';
+  return enforced.includes('script-src') || enforced.includes('default-src');
+}
+
+async function openPage(conn, browserContextId, onCspViolation = () => {}, onDocument = () => {}) {
   const { targetId } = await conn.send('Target.createTarget', {
     url: 'about:blank',
     browserContextId,
@@ -204,6 +256,17 @@ async function openPage(conn, browserContextId, onCspViolation = () => {}) {
       } catch {
         onCspViolation({ directive: 'unreadable report' });
       }
+    }
+    if (
+      msg.sessionId === sessionId &&
+      msg.method === 'Network.responseReceived' &&
+      msg.params.type === 'Document' &&
+      /^https?:/.test(msg.params.response.url)
+    ) {
+      onDocument({
+        hasPolicy: hasPagePolicy(msg.params.response.headers),
+        path: new URL(msg.params.response.url).pathname,
+      });
     }
   });
 

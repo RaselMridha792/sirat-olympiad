@@ -11,7 +11,7 @@
 // ("E2E exam <time>", a 15-minute window; an exam is archived only after its results are published). Loopback
 // URLs only.
 import { randomBytes } from 'node:crypto';
-import { apiLogin, launchBrowser } from './lib/cdp.mjs';
+import { apiLogin, cspReport, launchBrowser } from './lib/cdp.mjs';
 import { isLoopbackUrl } from './lib/local-only.mjs';
 
 const BASE = process.argv[2] ?? process.env.APP_URL ?? 'http://127.0.0.1:8080';
@@ -290,13 +290,9 @@ try {
   await browser.close();
 }
 
-const csp = browser.cspViolations(); // LAUNCH-PLAN §3: a page CSP must never break the exam room
-results.push(csp.length === 0);
-console.log(
-  csp.length
-    ? `  FAIL  no Content-Security-Policy violations: ${JSON.stringify(csp.slice(0, 5))}`
-    : '  ok    no Content-Security-Policy violations',
-);
+const csp = cspReport(browser); // LAUNCH-PLAN §3: the page CSP is delivered and never broken
+results.push(csp.ok);
+console.log(csp.line);
 
 const failed = results.filter((ok) => !ok).length;
 console.log(
