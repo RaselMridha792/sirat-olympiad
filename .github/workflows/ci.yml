@@ -277,6 +277,29 @@ jobs:
           if $DCD logs web 2>&1 | grep -E 'EACCES|Failed to update prerender cache'; then
             echo "::error::the web cannot write its cache"; exit 1
           fi
+      - name: Maintenance switch (L5) - nginx in its own containers with fake upstreams; pages, API, IPN, callback, deploy gap
+        run: infra/nginx/test/check-maintenance.sh
+      - name: Maintenance switch on the stack - the page and MAINTENANCE through nginx; the IPN and callback reach the API
+        # Through the published port (the plain site). The internal listener keeps serving and no data service restarts.
+        run: |
+          data() { docker inspect -f '{{.Name}} {{.State.StartedAt}}' $($DCD ps -q postgres pgbouncer redis-cache redis-queue) | sort; }
+          before=$(data)
+          scripts/maintenance.sh on
+          code=$(curl -s -o /tmp/page.html -w '%{http_code}' http://127.0.0.1:8080/)
+          [ "$code" = 503 ] && grep -q 'data-sirat-page="maintenance"' /tmp/page.html || { echo "::error::no maintenance page ($code)"; exit 1; }
+          ready=$(curl -s -w ' %{http_code}' http://127.0.0.1:8080/api/ready)
+          echo "$ready" | grep -q '"code":"MAINTENANCE".* 503$' || { echo "::error::/api/ready while on: $ready"; exit 1; }
+          [ "$(curl -s http://127.0.0.1:8080/healthz)" = ok ] || { echo "::error::/healthz while on"; exit 1; }
+          ipn=$(curl -s -w ' %{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8080/api/payments/paystation/ipn)
+          [ "$ipn" = '{"received":true} 200' ] || { echo "::error::the IPN did not reach the API: $ipn"; exit 1; }
+          callback=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' http://127.0.0.1:8080/api/payments/paystation/callback/not-an-invoice)
+          echo "$callback" | grep -q '^303 .*/register/result$' || { echo "::error::the callback did not reach the API: $callback"; exit 1; }
+          inner=$($DCD exec -T nginx wget -qO- http://127.0.0.1:8081/api/ready)
+          [ "$inner" = '{"status":"ready"}' ] || { echo "::error::the internal listener while on: $inner"; exit 1; }
+          scripts/maintenance.sh off
+          curl -fsS http://127.0.0.1:8080/api/ready
+          curl -fsS -o /dev/null http://127.0.0.1:8080/
+          [ "$(data)" = "$before" ] || { echo "::error::a data service restarted"; exit 1; }
       - name: Backups are encrypted, checked and uploaded; a killed dump, a bad remote or a shrunken dump fails (L6)
         # Its own compose project (sirat-backup-test), a throwaway age key and an rclone local remote; see the script.
         run: bash scripts/test/run-backup-test.sh

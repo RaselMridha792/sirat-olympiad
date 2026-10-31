@@ -170,7 +170,7 @@ answer_headers() { # no-store, Retry-After and each security header exactly once
   done
   grep -qi '^cache-control: no-store' "$tmp/h" || return 1
   if [ "$site" = plain ]; then
-    ! grep -qi '^strict-transport-security:' "$tmp/h"
+    if grep -qi '^strict-transport-security:' "$tmp/h"; then return 1; fi
   else
     [ "$(grep -ci '^strict-transport-security: max-age=300' "$tmp/h")" = 1 ]
   fi
@@ -211,7 +211,7 @@ for site in plain tls; do
   check "$site, on: a deep page with a query gets it" page 503 "$site" '/dashboard/exam/1?x=1'
   check "$site, on: a form POST gets it, not a 405" page 503 "$site" /register -X POST -d a=b
   check "$site, on: a static asset gets it" page 503 "$site" /_next/static/chunks/main.js
-  check "$site, on: the page's own path gets it" page 503 "$site" /_sirat/maintenance.html
+  check "$site, on: the page's internal path stays unreachable" status_is 404 "$site" /_sirat/maintenance.html
   check "$site, on: /api/ready gets the JSON MAINTENANCE" maintenance_json "$site" /api/ready
   check "$site, on: a login POST gets it" maintenance_json "$site" /api/auth/login -X POST "${json[@]}" -d '{}'
   check "$site, on: /healthz answers 200 ok" status_is 200 "$site" /healthz
@@ -229,6 +229,8 @@ for site in plain tls; do
   check "$site, on: the callback without an invoice gets it" maintenance_json "$site" /api/payments/paystation/callback/
   check "$site, on: more after the IPN path gets it" maintenance_json "$site" /api/payments/paystation/ipn/x
   check "$site, on: another case of the IPN path gets the page" page 503 "$site" /API/payments/paystation/ipn -X POST
+  check "$site, on: another case of the callback gets it" page 503 "$site" /Api/payments/paystation/callback/T261101ABCDEFGHIJ
+  check "$site, on: another case of /healthz gets it" page 503 "$site" /HEALTHZ
 done
 check "on: the internal listener still serves the API" internal_reaches api "$name-tls" /api/ready
 check "on: the internal listener still serves pages" internal_reaches web "$name-tls" /
