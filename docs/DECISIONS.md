@@ -15,6 +15,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - Every dashboard page and Server Action calls `requireAccess()` first, because layouts do not re-render on client-side navigation.
    - The other area sends the user to their own home. A page of their own area that the role may not open is not found.
    - Under a `loading.tsx` the not-found answer is already streaming with HTTP 200, so the checks look for the not-found page rather than the status.
+   - **Public site (Lead):** that 200 is accepted for the dashboards only. The public site needs a real 404 for search engines, so where its `loading.tsx` files sit is reviewed again in Phase D (the root `app/loading.tsx` wraps the public pages too).
 6. **Proxy (`src/proxy.ts`, condition b):**
    - The matcher covers `/dashboard` and `/admin` only. `/refresh`, the auth pages, `/api`, `/_next` and the public site are outside it, so it cannot loop and the public pages pay nothing.
    - A GET or HEAD without the access cookie goes straight to `/refresh?next=`. Server Actions pass through and check the session themselves.
