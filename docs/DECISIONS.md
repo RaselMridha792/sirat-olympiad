@@ -2,6 +2,27 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-01 — Registration and payment pages, admin payments and settings (Claude; payments PR 4, plan 6.7, lead's rules)
+
+1. **The wizard** (`/register`): three steps on one form, then PayStation.
+   - Nothing is stored in the browser. The form goes once to `POST /registrations/start`; the API keeps it server-side.
+   - The form posts (never GET) and its button waits for hydration (A2's rule).
+   - The browser checks the DTO's rules first, so a mistake shows on its own step. The owner's duplicate texts (`REGISTRATION_MESSAGES`) appear next to the email or the phone.
+2. **One `startRequestId` per submit.** It is kept after a network error (the outcome is unknown, so a repeat replays) and renewed after a definite refusal or a changed field. After "the payment could not start" the attempt exists (the API set `sirat_reg`), so the button retries it (`current/retry`, a new invoice) instead of starting another; a repeated start of that attempt answers `NOTHING_TO_RESUME` and switches to the same retry.
+3. **This browser's earlier attempt** is read once on load (`GET /registrations/current`; the cookie's path means only the browser has it, never the Next server). It offers to continue a checkout in progress, to try again or start over after a failure, or to see the status.
+4. **The result page** (`/register/result`; the API's callback 303s here with nothing in the URL):
+   - it never reads a result from the address;
+   - it polls `current` every 2 s, then 5 s, then 10 s, stops after 2 minutes, and then offers "Check my payment status" (`current/recheck`), which starts the schedule again.
+5. **The checkout URL is followed only when it is https** (or http outside production, for the fake), so an unexpected scheme can never run in the page.
+6. **`GET /registrations/info` is read by the page's server** with no cookie and no client header, cached 30 s (the API caches 30 s too): the same for every visitor, so traffic never multiplies the calls.
+7. **The dashboard card is core's** (C4, lead 2026-11-01): core composes it from `GET /registrations/me`. Its short bn/en state labels are `REGISTRATION_STATE_LABELS` in `@sirat/shared`, and the API shapes (`MyRegistration`, `CurrentRegistration`, …) are there too.
+8. **Admin payments and settings are admin only** (page roles as the API). The data layer picks fields one by one: an event's stored gateway answer and the admin's id never reach the page (only "by an admin").
+   - Filters reach the API only when well formed: a typo is ignored, not a 400 error page.
+   - The manual reconcile is offered only for a success without a trx_id, in a pending, failed or expired payment; the API checks the rule again.
+9. **The fee is typed in whole taka** (Bangla digits and thousands commas accepted) and sent in paisa with `expected` and a reason. The dialog shows ৳old → ৳new and says that started payments keep their amount. A 409 asks the admin to reload.
+10. **The dev `/api` rewrite follows `API_INTERNAL_URL`** (default `localhost:4000`), so a session running its own API port can run its own dev web.
+11. **`e2e:register`** drives the whole flow in a browser against the fake PayStation (RUNBOOK §0): a payment to "Registration complete" and the first login, then a failed checkout and "Try again". Once A2's L3 driver records CSP violations, it fails on any (`browser.cspViolations()`, used when present).
+
 ## 2026-10-31 — Settle, callback, IPN, reconciliation and admin payments (Claude; payments PR 3, plan 6.2–6.7; reconcile rule: lead)
 
 1. **Only the worker asks PayStation.** One BullMQ queue `payments` on the queue Redis:
