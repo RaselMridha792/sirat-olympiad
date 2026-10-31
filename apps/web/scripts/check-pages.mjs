@@ -59,7 +59,7 @@ const LEAK_NEEDLES = [
 ];
 
 // Sample values for dynamic segments (ids that exist in the dev mock), by route path.
-const SAMPLE = { 'admin/exams/[id]': 'ex-r1-amb' };
+const SAMPLE = { 'admin/exams/[id]': 'ex-r1-amb', 'dashboard/exam/[id]': 'ex-practice' };
 
 /** Every page as { url, route }: `route` keeps the [segment] (the access table's key), `url` has the sample. */
 function discoverRoutes(dir, parts = [], routeParts = []) {
