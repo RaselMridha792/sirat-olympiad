@@ -70,8 +70,8 @@ const TITLES: Record<SecurityAlertKind, string> = {
 };
 
 /**
- * The operator email: kind, time, the account id when there is one, and the event's values. No email address and no
- * IP (those stay in the audit log). The subject names the category.
+ * The operator email: kind, time, the account (for a login alert also "no account with that email"), and the event's
+ * values. No email address and no IP (those stay in the audit log). The subject names the category.
  */
 export function securityAlertMessage(
   to: string,
@@ -79,11 +79,15 @@ export function securityAlertMessage(
   event: SecurityAlertEvent,
   at: Date,
 ): EmailMessage {
+  // A login alert without an account keeps its line (owner-approved, #7): it tells the operator that someone is
+  // trying an email that has no account. Payments and ops alerts without one carry their own details instead.
+  const account =
+    event.actorId ?? (ALERT_CATEGORY[kind] === 'security' ? 'no account with that email' : null);
   const lines = [
     TITLES[kind],
     '',
     `Time: ${at.toISOString()}`,
-    ...(event.actorId ? [`Account: ${event.actorId}`] : []),
+    ...(account ? [`Account: ${account}`] : []),
     ...Object.entries(event.meta).map(([key, value]) => `${key}: ${String(value)}`),
     '',
     `Details: audit log, action security.${kind}.`,

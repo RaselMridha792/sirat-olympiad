@@ -33,22 +33,43 @@ describe('alert categories', () => {
     expect(ALERT_CATEGORY['ops.backup_failed']).toBe('ops');
   });
 
-  it('write the Account line only when there is an account', () => {
-    const none = securityAlertMessage(
+  it('keep the Account line of login alerts for an email with no account; drop it for payments and ops', () => {
+    const at = new Date(0);
+    for (const kind of ['login.account_limit', 'login.distributed'] as const) {
+      const text = securityAlertMessage(TO, kind, { actorId: null, meta: {} }, at).text;
+      expect(text).toContain('Account: no account with that email');
+    }
+    const payments = securityAlertMessage(
       TO,
       'payments.needs_review',
       { actorId: null, meta: { amountMinor: 40_000 } },
-      new Date(0),
-    );
-    expect(none.text).not.toContain('Account:');
-    expect(none.text).toContain('amountMinor: 40000');
-    const some = securityAlertMessage(
+      at,
+    ).text;
+    expect(payments).not.toContain('Account:');
+    expect(payments).toContain('amountMinor: 40000');
+    const ops = securityAlertMessage(
       TO,
+      'ops.backup_failed',
+      { actorId: null, meta: { step: 3 } },
+      at,
+    ).text;
+    expect(ops).not.toContain('Account:');
+  });
+
+  it('name the account whenever there is one, in every category', () => {
+    for (const kind of [
       'login.account_limit',
-      { actorId: 'user-1', meta: {} },
-      new Date(0),
-    );
-    expect(some.text).toContain('Account: user-1');
+      'payments.needs_review',
+      'ops.alert_test',
+    ] as const) {
+      const text = securityAlertMessage(
+        TO,
+        kind,
+        { actorId: 'user-1', meta: {} },
+        new Date(0),
+      ).text;
+      expect(text).toContain('Account: user-1');
+    }
   });
 });
 
