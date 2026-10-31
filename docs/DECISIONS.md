@@ -23,6 +23,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - **The student home falls back per section.** Only the profile is required. Exams, announcements and the registration card each show their own empty or "could not be loaded" state when their call fails, so an outage in one area does not take the whole home down.
      - `DashboardHome.registration` is null when payments' answer could not be read.
      - A redirect or not-found raised inside a section is passed on, never swallowed.
+     - Payments' book card (#42) reads its own data, so the home wraps it (`BookSection`): when `GET /book-order/me` fails, only that card says it cannot be shown. Checked in a control run: without the wrapper the whole home failed.
 7. **The leak check** follows the lead's conditions:
    - `check:leak` also scans the pages only an ambassador may open, with `CHECK_AMBASSADOR_EMAIL` / `_PASSWORD`; missing variables fail the run.
    - In CI the admin approves `student2@fixtures.invalid` through the real endpoint, in the job's throwaway database only (no fourth fixture user). A failed approve fails the job with its HTTP status and refusal code.
