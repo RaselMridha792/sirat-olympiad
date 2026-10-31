@@ -27,11 +27,11 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `GET /payments/paystation/callback` | Public | Hint only → status API → settle |
 | | `POST /payments/paystation/ipn` | Public | Re-confirm via status API; idempotent |
 | | `GET /payments/mine` | Auth | |
-| exams | `GET /exams`, `GET /exams/:id` | Auth | Window state, never questions |
-| attempts | `POST /exams/:id/attempts` | Auth + paid + verified | Start (server clock) |
-| | `GET /attempts/me?exam=:id` | Owner | Resume |
-| | `PUT /attempts/:id/checkpoint` | Owner | Redis only |
-| | `POST /attempts/:id/submit` | Owner | Idempotent by `request_id` |
+| exams | `GET /exams`, `GET /exams/:id` | Role(student, ambassador) | Window state, never questions. Exam engine (below). Built (E2) |
+| attempts | `POST /exams/:id/attempts` | Role(student, ambassador) + verified email + paid registration | Start or resume (server clock). Built (E2) |
+| | `GET /attempts/me?exam=:id` | Owner | Resume. Built (E2) |
+| | `PUT /attempts/:id/checkpoint` | Owner | Redis only. Built (E2) |
+| | `POST /attempts/:id/submit` | Owner | Idempotent by attempt and `requestId`. Built (E2) |
 | | `GET /attempts/:id/review` | Owner | 403 until window closed for everyone |
 | leaderboard | `GET /leaderboard?round=&page=&q=` | Auth | Snapshot; 404/403 until published |
 | rounds | `GET /rounds/me` | Auth | |
@@ -50,6 +50,19 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `CRUD /admin/announcements`, `/admin/ambassadors`, `/admin/tasks`, `/admin/rank-thresholds` | admin | |
 | | `POST /admin/points/adjust` | admin | Compensating ledger entry |
 | | `GET /admin/audit` | admin | |
+
+## Exam engine (E2; plan: `docs/plans/EXAM-PLAN.md` §1.1, §3, §3.15)
+
+`@Roles('student', 'ambassador')`; each request re-reads the student (a blocked account gets 403 `account_blocked` with a valid token). A student sees published exams for everyone or for their own category; any other exam is 404. Another user's attempt is 404, never 403. Shapes in `@sirat/shared` (`exam.ts`). Refusals carry reason codes in `details`. **No student response contains a question id, an option key, a correct key, an explanation or a score** (`exam-leak.int-spec.ts`).
+
+| Method + path | Body | Answers |
+|---|---|---|
+| `GET /exams` | — | `StudentExamListItem[]`: card, `state` (`upcoming`/`open`/`in_progress`/`submitted`/`closed`, from the server clock), `resultsPublished` |
+| `GET /exams/:id` | — | `StudentExamDetail`: card, grace, `violationWarnings` (5), `serverNow`, the student's attempt (`phase`, `endsAt`, receipt) |
+| `POST /exams/:id/attempts` | — | 201 new / 200 existing `AttemptView`: questions as texts in this attempt's order, options as texts in their shuffled order, `remainingSeconds` and `serverNow` from the server, the last checkpoint's answers and the server's violation count. 403 `email_unverified`, `registration_required` (no paid registration: read only from payments' tables); 409 `not_open_yet` / `window_closed`. An existing attempt in any phase answers 200 (a submitted one carries its receipt and no questions) |
+| `GET /attempts/me?exam=:id` | — | The same `AttemptView` (resume after a reload or on another device); 404 when none |
+| `PUT /attempts/:id/checkpoint` | `seq`, `answers` (one option position or null per question), `violationCount`, `events` (≤ 300 `{type, at}`) | Redis only, no database write. 200 `{savedSeq, violationCount, remainingSeconds, serverNow}`; an older `seq` changes nothing. 429 `too_soon` + `Retry-After` within 20 s of the last stored checkpoint (the violation count is kept even then; it never goes down). 409 `time_over` (after `ends_at` + grace), `already_submitted`; 400 `answers_invalid`; 503 `checkpoint_unavailable` (the client keeps its local copy and retries) |
+| `POST /attempts/:id/submit` | `requestId` (uuid), `answers`, `endReason` (`submitted`, `time_up`, `violations`), `violationCount`, `events` | One transaction. 200 `{receiptId, submittedAt, endReason, alreadySubmitted}`; a repeat answers the first receipt. 409 `time_over` (after `ends_at` + grace), `request_id_conflict`; 400 `answers_invalid`, `violations_not_reached` (`violations` needs more than 5). `time_taken` is computed by the server and never passes `ends_at` |
 
 ## Exam admin (E1; plan: `docs/plans/EXAM-PLAN.md` §1.2, §4)
 

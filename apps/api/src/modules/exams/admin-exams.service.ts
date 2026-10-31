@@ -4,6 +4,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, type Exam, type Question } from '@prisma/client';
@@ -16,6 +17,7 @@ import {
   type Paginated,
   type QuestionOption,
 } from '@sirat/shared';
+import { errorLogFields } from '../../common/all-exceptions.filter';
 import { PrismaService } from '../../prisma/prisma.service';
 import type {
   CreateExamDto,
@@ -31,6 +33,7 @@ import {
   unpublishProblems,
   windowProblems,
 } from './exam-rules';
+import { ExamCache } from './exam-cache';
 
 type Tx = Prisma.TransactionClient;
 
@@ -73,7 +76,12 @@ type ExamWithQuestions = Prisma.ExamGetPayload<{ include: typeof examInclude }>;
  */
 @Injectable()
 export class AdminExamsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(AdminExamsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cache: ExamCache,
+  ) {}
 
   async list(query: ExamListQueryDto): Promise<Paginated<AdminExamCard>> {
     const page = query.page ?? 1;
@@ -186,6 +194,7 @@ export class AdminExamsService {
         ...(extended ? { reason: dto.reason ?? null } : {}),
       });
     });
+    await this.afterWrite(id);
     return this.get(id);
   }
 
@@ -209,6 +218,7 @@ export class AdminExamsService {
         contentVersion: exam.contentVersion,
       });
     });
+    await this.afterWrite(id, { warm: true });
     return this.get(id);
   }
 
@@ -230,6 +240,7 @@ export class AdminExamsService {
       await tx.exam.update({ where: { id }, data: { status: 'draft' } });
       await audit(tx, actor, 'exam.unpublished', id, {});
     });
+    await this.afterWrite(id);
     return this.get(id);
   }
 
@@ -244,12 +255,13 @@ export class AdminExamsService {
       await tx.exam.update({ where: { id }, data: { status: 'archived' } });
       await audit(tx, actor, 'exam.archived', id, { from: exam.status });
     });
+    await this.afterWrite(id);
     return this.get(id);
   }
 
   async addQuestion(examId: string, dto: QuestionDto, actor: Actor): Promise<AdminQuestion> {
     assertQuestion(dto);
-    return this.run(async (tx) => {
+    const created = await this.run(async (tx) => {
       await assertAdmin(tx, actor.id);
       const exam = await lockExam(tx, examId);
       if (exam.status === 'archived') throw refuse('exam_archived');
@@ -273,6 +285,8 @@ export class AdminExamsService {
       });
       return toQuestion(question);
     });
+    await this.afterWrite(examId);
+    return created;
   }
 
   /** Draft: in place. Published: a new version; attempts already started keep the version they were given. */
@@ -283,7 +297,7 @@ export class AdminExamsService {
     actor: Actor,
   ): Promise<AdminQuestion> {
     assertQuestion(dto);
-    return this.run(async (tx) => {
+    const saved = await this.run(async (tx) => {
       await assertAdmin(tx, actor.id);
       const exam = await lockExam(tx, examId);
       if (exam.status === 'archived') throw refuse('exam_archived');
@@ -321,6 +335,8 @@ export class AdminExamsService {
       });
       return toQuestion(next);
     });
+    await this.afterWrite(examId, { questionId });
+    return saved;
   }
 
   /** Draft: deleted. Published: retired (deactivated), only from a random-draw pool that stays large enough. */
@@ -349,6 +365,7 @@ export class AdminExamsService {
         lineageId: current.lineageId,
       });
     });
+    await this.afterWrite(examId, { questionId });
   }
 
   async versions(examId: string, questionId: string): Promise<AdminQuestion[]> {
@@ -358,6 +375,24 @@ export class AdminExamsService {
       orderBy: { version: 'asc' },
     });
     return rows.map(toQuestion);
+  }
+
+  /**
+   * After a committed write: the exam's cached config is dropped (pools are keyed by content version), a draft
+   * question's cached text too, and a publish loads the pool ahead of the first start. Best effort: a cache that does
+   * not answer only means the next read goes to Postgres.
+   */
+  private async afterWrite(
+    examId: string,
+    opts: { questionId?: string; warm?: boolean } = {},
+  ): Promise<void> {
+    try {
+      if (opts.questionId) await this.cache.invalidateQuestion(opts.questionId);
+      if (opts.warm) await this.cache.warm(examId);
+      else await this.cache.invalidateExam(examId);
+    } catch (e) {
+      this.logger.warn({ msg: 'exam cache refresh failed', ...errorLogFields(e) });
+    }
   }
 
   /**
