@@ -34,7 +34,10 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - One attempt in progress per phone, via a partial unique index like the email one. Both are in the first payments PR's migrations.
    - Message: bn "এই ফোন নম্বর দিয়ে আগেই রেজিস্ট্রেশন হয়েছে। অন্য নম্বর দিন।", en "This phone number is already registered. Please use another number." Rate limits as for the email.
    - The fixture students get distinct phone numbers.
-4. **No phone verification (OTP).** What happens when someone enters another person's number awaits the owner's answer; nothing is built for it now.
+4. **Final (owner, 2026-10-31 17:35):** email and phone are both unique, and nobody can use another person's email or phone. Nothing beyond that is built: no OTP, no admin tool to free a number, no extra flow.
+   - **Any phone conflict gets that one phone message,** whether the number already has an account or has an attempt in progress under another email.
+   - The partial unique index on open attempts per phone stays. It is not extra logic: it is what makes the rule hold, and with no refunds it stops two people being charged for one number.
+   - The two email messages stay as in points 1 and 2.
 
 ## 2026-10-31 — Gateway charge: the merchant pays it, `pay_with_charge = 0` (owner)
 

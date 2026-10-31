@@ -32,13 +32,13 @@ The five questions that block code are in section 2. Q1–Q4 are answered by the
 Status (lead, 2026-10-31):
 - **Q1–Q4 are answered** by Rasel: DECISIONS "Gateway charge", "Registration form fields", "Duplicate email and phone at registration" and "No refund handling".
 - Q5 keeps its default (lead, 2026-10-31).
-- Still open, nothing is built for it now: what happens when a student types another person's phone number (there is no OTP).
+- **Final (owner, 17:35):** email and phone are both unique; nobody can use another person's email or phone. Nothing else is built: no OTP, no admin tool to free a number, no extra flow.
 
 | # | Question | Answer, or proposed default | Blocks |
 |---|---|---|---|
 | Q1 | ~~**`pay_with_charge` (P6):** does the student (1) or the merchant (0) pay PayStation's charge?~~ | **Answered (Rasel, 2026-10-31): `0`.** The student pays only 400 BDT; the merchant bears the charge. Only `0` is built; any other value stops the API at boot. Still verified in the sandbox (S10). | Step 1 (config), step 3 (amount rule), step 12 (S10) |
 | Q2 | ~~**Registration form fields:** which fields, which required?~~ | **Answered (Rasel, 2026-10-31): the default is approved.** The old wizard's set (07-UI-MIGRATION): name, phone (BD mobile, `01XXXXXXXXX`), district, institution, education type, grade level (the 17 rows of `grade_levels`), email, password (8–128), promo code (optional). All required except the promo code. Nothing else: no date of birth, gender, guardian or photo (minimum data for minors). | Step 4 |
-| Q3 | ~~**Duplicate email/phone messages (DoD #4):** what does the student see?~~ | **Answered (Rasel, 2026-10-31):**<br>(a) **The email already has an account:** bn "এই email দিয়ে আগেই রেজিস্ট্রেশন হয়েছে। অনুগ্রহ করে login করুন।", en "Already registered. Please log in." No password-reset wording; the login page link stays as it is. Rate-limited per IP and per email, as planned.<br>(b) **The same email has a payment in progress** from another browser: the default stays. "A payment for this email is already in progress. Continue in the browser where you started, or try again after it expires (at most 60 minutes)." The same browser resumes automatically.<br>(c) **Phone numbers are unique:** one number, one student. Stored in one form `01XXXXXXXXX`; the server normalises `017…`, `+88017…` and `88017…` to it. Message: bn "এই ফোন নম্বর দিয়ে আগেই রেজিস্ট্রেশন হয়েছে। অন্য নম্বর দিন।", en "This phone number is already registered. Please use another number." Rate-limited like the email.<br>(d) **The same phone has a payment in progress** under another email. Proposed text, to confirm before step 4: (b) with "this phone number" in place of "this email". | Step 1 (constraints), step 4 |
+| Q3 | ~~**Duplicate email/phone messages (DoD #4):** what does the student see?~~ | **Answered (Rasel, 2026-10-31):**<br>(a) **The email already has an account:** bn "এই email দিয়ে আগেই রেজিস্ট্রেশন হয়েছে। অনুগ্রহ করে login করুন।", en "Already registered. Please log in." No password-reset wording; the login page link stays as it is. Rate-limited per IP and per email, as planned.<br>(b) **The same email has a payment in progress** from another browser: the default stays. "A payment for this email is already in progress. Continue in the browser where you started, or try again after it expires (at most 60 minutes)." The same browser resumes automatically.<br>(c) **Phone numbers are unique:** one number, one student. Stored in one form `01XXXXXXXXX`; the server normalises `017…`, `+88017…` and `88017…` to it. Message: bn "এই ফোন নম্বর দিয়ে আগেই রেজিস্ট্রেশন হয়েছে। অন্য নম্বর দিন।", en "This phone number is already registered. Please use another number." Rate-limited like the email.<br>(d) **Any phone conflict** (an account has the number, or an attempt under another email is in progress) gets the one message of (c); there is no separate text (owner, final). | Step 1 (constraints), step 4 |
 | Q4 | ~~**Refund → access (P8):** what happens to a refunded student?~~ | **Answered (Rasel, 2026-10-31): no refund handling.**<br>- No code moves a payment to `refunded`, no admin reconcile to it, no refund text on the dashboard, and no tests for them. The enum value stays (no migration), and the transition trigger never allows it.<br>- When PayStation reports a refund for a paid payment (status API or IPN), the status does not change: `payment_events` gets `refund_reported` and a critical alert is raised (tested). | Step 3, step 6 |
 | Q5 | **Checkout expiry:** after how long is an unpaid payment given up? | 60 minutes (`settings.payment_expiry_minutes`, already seeded), raised to PayStation's link lifetime once the sandbox shows it (S12); never shorter than that lifetime (D3). Expired and failed payments keep being re-checked for 48 h for a late success. | Step 8 |
 
@@ -194,7 +194,7 @@ Why it is not free in `.env` (lead review): with a free URL, a dev machine with 
 - Partial unique indexes:
   - `payments (pending_registration_id) WHERE status IN ('initiated','pending')`: one active payment per attempt;
   - `pending_registrations (email) WHERE status = 'open'`: one attempt in progress per email (Q3 b);
-  - `pending_registrations (phone) WHERE status = 'open'`: one attempt in progress per phone (Q3 d).
+  - `pending_registrations (phone) WHERE status = 'open'`: one attempt in progress per phone (Q3 d). Not extra logic: it is what makes "one number, one student" hold, and with no refunds it stops two people being charged for one number.
 - Phone format (Q3 c): `users.phone IS NULL OR users.phone ~ '^01[3-9][0-9]{8}$'`, and the same pattern on `pending_registrations.phone`. One stored form makes the uniqueness real: `017…`, `+88017…` and `88017…` can never sit side by side.
 - Triggers: `payments_status_transition` (a new row must be `initiated`; refuses any status change not in section 5); `registrations_payment_paid` (a registration's payment must be `paid`; the Phase C item deferred in the A1 review); append-only on `payment_events` (UPDATE, DELETE, TRUNCATE refused, like `audit_logs`).
 - `settings`: the fee CHECK from section 3.2.
@@ -280,7 +280,7 @@ Rules: never hold a DB transaction across an HTTP call to PayStation. Every stat
    Rate limits per IP, per email and per phone.
 3. The same `start_request_id` again → the same result. The same browser (live `sirat_reg` cookie) with an active payment for this email → that payment's URL (resume).
 4. argon2id on the password.
-5. Transaction 1: lock any open attempt for this email or this phone. Active, unexpired payment → 409 (Q3 b for the email, Q3 d for the phone). All its payments final → mark it `abandoned`. Insert the attempt (`open`) and the payment (`initiated`, new invoice, fee and currency snapshot from `settings`, `pay_with_charge` and `gateway_account` snapshots, `expires_at` from `payment_expiry_minutes`). Commit.
+5. Transaction 1: lock any open attempt for this email or this phone. Active, unexpired payment → 409 (Q3 b for the email; for the phone, the one phone message of Q3 c, d). All its payments final → mark it `abandoned`. Insert the attempt (`open`) and the payment (`initiated`, new invoice, fee and currency snapshot from `settings`, `pay_with_charge` and `gateway_account` snapshots, `expires_at` from `payment_expiry_minutes`). Commit.
 6. `gateway.initiate` outside the transaction; record the event.
    - Created → transaction 2: `pending` + `payment_url`. Answer 201 `{ paymentUrl }` and set `sirat_reg` (httpOnly, Secure, SameSite=Lax so it returns on PayStation's top-level redirect, Path `/api/registrations`, 7 days).
    - Refused or timed out → `failed`, 502 "The payment could not start. Please try again."
@@ -456,7 +456,7 @@ Each protection is mutation-checked as in A2: its test fails with the protection
   - rolled back, clean, migrate, reload works;
   - `prepare-test-db.mjs` empties the leftovers of a `*_test` database and clears a failed try.
 - `registration-start.int-spec.ts`: closed (flag, before `opens_at`, after `closes_at`) → 403, nothing written; fee 0/invalid → 503, PayStation never called; `role`, `amount`, `fee`, `payment_amount` in the body → 400; the snapshot equals the settings fee; after an admin fee change, an old pending payment still verifies against its own snapshot; the payment row exists before initiate reaches the fake server; password only as argon2id; promo validation; Q3:
-  - each answer's exact bn and en text: email taken, phone taken, email in progress, phone in progress;
+  - each answer's exact bn and en text: email taken, email in progress, and the one phone text for both phone taken and phone in progress under another email;
   - the phone is normalised before the checks (`+8801…` finds an account stored as `01…`);
   - rate limits per email and per phone.
 - `payments-callback.int-spec.ts`: **double callback** (twice, and 10 in parallel) → one transition, one user, one registration; callback with `status=success` while the status API says failed → not paid; redirect `Location` = `APP_URL` + `PAYMENT_RESULT_PATH` from config, also when registration closed after start.
@@ -519,7 +519,7 @@ The dates assume each PR is reviewed and merged within about half a day. While a
 
 **Team dependencies** (ours, but not this session's):
 - A2's web session merged by Wed 4 Nov (step 10 needs the real login).
-- Q3 and Q4 are answered (section 2). The Q3 d text (the same phone in progress under another email) is confirmed before step 4 (Mon 2 Nov).
+- Q3 and Q4 are answered, final (section 2).
 - PR reviews by the lead and merges by Rasel, about half a day each.
 
 ### 10.3 Buffer: Sat 7 – Sat 14 November (8 days)
@@ -662,7 +662,7 @@ Results go into `SANDBOX-CHECKLIST.md` (a "client account" column) and DECISIONS
 9. **Personal data of minors** in attempts and gateway payloads: minimum fields (Q2), scrubbing, masked payer phone, never logged.
 10. **Someone registers with another person's email.** They pay for nothing they can use: the inbox owner can reset the password, and lazy verification keeps the exam closed without the inbox.
 11. **Account enumeration at start (Q3 a, c).** The owner accepts it. Rate limits per IP, per email and per phone.
-12. **A student types another person's phone number.** That number is then blocked for its real owner (Q3 c), and there is no OTP. Waiting for the owner's answer; nothing is built for it now.
+12. **A student types another person's phone number.** That number is then taken for its real owner (Q3 c). The owner's final decision (DECISIONS, 17:35): email and phone are both unique, nobody can use another person's, and nothing more is built (no OTP, no admin tool to free a number, no extra flow). Accepted as is.
 13. **argon2 at start during a surge.** Measured with k6.
 14. **A wrong fee by an admin.** Bounds, the confirmation dialog, `expected`, the audit row; already-started payments keep their snapshot.
 15. **Account switch with payments in flight** (13.2) and **Rasel's account sending IPNs to production** (13.1 #5).
