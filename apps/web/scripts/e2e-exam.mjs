@@ -8,7 +8,8 @@
 //   pnpm --filter @sirat/web e2e:exam [baseUrl]
 //
 // The local stack is shared: say so before running this (RUNBOOK §0). It leaves one published exam behind
-// ("E2E exam <time>", window of 15 minutes, archived at the end when the API allows it). Loopback URLs only.
+// ("E2E exam <time>", a 15-minute window; an exam is archived only after its results are published). Loopback
+// URLs only.
 import { randomBytes } from 'node:crypto';
 import { apiLogin, launchBrowser } from './lib/cdp.mjs';
 import { isLoopbackUrl } from './lib/local-only.mjs';
@@ -286,19 +287,6 @@ try {
 
   await context.close();
 } finally {
-  if (exam?.id && admin) {
-    try {
-      const fresh = await adminApi(admin, 'GET', `/admin/exams/${exam.id}`);
-      await adminApi(admin, 'POST', `/admin/exams/${exam.id}/archive`, {
-        expectedUpdatedAt: fresh.updatedAt,
-      });
-      console.log('        (the test exam is archived)');
-    } catch (error) {
-      console.log(
-        `        (the test exam stays published until its window ends: ${error.message.slice(0, 80)})`,
-      );
-    }
-  }
   await browser.close();
 }
 
