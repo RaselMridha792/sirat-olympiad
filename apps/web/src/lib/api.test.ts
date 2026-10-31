@@ -70,3 +70,24 @@ test('a renewal that works repeats the request once', async () => {
     'POST /api/auth/logout',
   ]);
 });
+
+test('as: blob returns the body as a file, with the CSRF header on the POST', async () => {
+  const csv = '\uFEFFa,b\r\n';
+  let sent: Headers | null = null;
+  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    sent = new Headers(init?.headers);
+    return new Response(csv, { status: 200, headers: { 'content-type': 'text/csv' } });
+  }) as typeof fetch;
+  const file = await api<Blob>('/admin/users/export', {
+    method: 'POST',
+    body: JSON.stringify({ filters: {}, reason: 'monthly report' }),
+    as: 'blob',
+  });
+  assert.ok(file instanceof Blob);
+  // Bytes, not text(): decoding drops the BOM, and the saved file must keep it (Bangla in Excel).
+  assert.deepEqual(
+    Buffer.from(await file.arrayBuffer()),
+    Buffer.from([0xef, 0xbb, 0xbf, 0x61, 0x2c, 0x62, 0x0d, 0x0a]),
+  );
+  assert.equal((sent as Headers | null)?.get('X-Requested-With'), 'sirat-web');
+});

@@ -51,6 +51,8 @@ const MAX_REFRESHES = 2;
 export interface ApiInit extends RequestInit {
   /** When the session is over: go to /login (default), or throw SessionExpiredError (the caller decides). */
   onExpired?: 'login' | 'throw';
+  /** The success body as JSON (default) or as a Blob (a file download, e.g. a CSV export). */
+  as?: 'json' | 'blob';
 }
 
 function send(path: string, init: RequestInit): Promise<Response> {
@@ -77,7 +79,7 @@ function goToLogin(): void {
 }
 
 export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
-  const { onExpired = 'login', ...request } = init;
+  const { onExpired = 'login', as = 'json', ...request } = init;
   let res = await send(path, request);
   for (let refreshes = 0; res.status === 401 && !NO_REFRESH.has(path); refreshes += 1) {
     if (refreshes >= MAX_REFRESHES) break; // thrown below as the 401 it is, never as "expired"
@@ -96,5 +98,6 @@ export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
     res = await send(path, request);
   }
   if (!res.ok) throw await toError(res);
+  if (as === 'blob') return (await res.blob()) as T;
   return (res.status === 204 ? undefined : await res.json()) as T;
 }
