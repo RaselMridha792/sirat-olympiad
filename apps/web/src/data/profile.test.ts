@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { REGISTRATION_MESSAGES, type ProfileOptions } from '@sirat/shared';
 import { profileMessages } from '../i18n/messages/profile.ts';
-import { parseProfileForm, profileSelectOptions } from './profile.ts';
+import { LEAK_CANARY, withLeakCanaries } from './mock/leak.ts';
+import { parseProfileForm, profileSelectOptions, toProfileFormProps } from './profile.ts';
 
 const options: ProfileOptions = {
   gradeLevels: [{ id: 'gl-06', label: 'Class 10 / MYP 5', category: 'ambassador' }],
@@ -131,4 +132,39 @@ test("the taken-phone message is the owner's text in both languages", () => {
     profileMessages.bn.form.fieldErrors.phone.taken,
     REGISTRATION_MESSAGES.PHONE_REGISTERED!.bn,
   );
+});
+
+test('the form props carry only what the form shows, never another field of the profile or the options', () => {
+  // Every object gets the canary fields (score, time, email, phone, correct key, hash) the leak check looks for.
+  const profile = withLeakCanaries({
+    name: 'Nafis Ahmed',
+    email: 'nafis@test.invalid',
+    phone: null,
+    district: 'Dhaka',
+    institution: 'Dhaka College',
+    educationType: 'Bangla Medium (Bangla & English Version)',
+    category: 'ambassador' as const,
+    role: 'student' as const,
+    emailVerifiedAt: null,
+    createdAt: '2026-11-01T04:00:00.000Z',
+    gradeLevel: { id: 'gl-06', label: 'Class 10 / MYP 5' },
+    currentRound: null,
+  });
+  const props = toProfileFormProps(profile, withLeakCanaries(options));
+  const sent = JSON.stringify(props);
+  for (const canary of [
+    LEAK_CANARY.text,
+    LEAK_CANARY.email,
+    String(LEAK_CANARY.score),
+    String(LEAK_CANARY.seconds),
+  ])
+    assert.equal(sent.includes(canary), false, canary);
+  assert.deepEqual(props.initial, {
+    name: 'Nafis Ahmed',
+    phone: '',
+    district: 'Dhaka',
+    institution: 'Dhaka College',
+    educationType: 'Bangla Medium (Bangla & English Version)',
+  });
+  assert.equal(props.gradeLabel, 'Class 10 / MYP 5');
 });

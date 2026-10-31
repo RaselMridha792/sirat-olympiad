@@ -1,12 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type {
-  ProfileFieldError,
-  ProfileOptions,
-  ProfileUpdate,
-  StudentProfile,
-} from '@sirat/shared';
+import type { ProfileFieldError, ProfileUpdate, StudentProfile } from '@sirat/shared';
 import { Button, Field, SelectField, type SelectOption } from '@sirat/ui';
 import { useHydrated } from '@/components/auth/useHydrated';
 import { parseProfileForm } from '@/data/profile';
@@ -53,7 +48,7 @@ export function ProfileForm({
   initial,
   email,
   gradeLabel,
-  options,
+  lists,
   educationTypes,
   districts,
   text,
@@ -61,7 +56,8 @@ export function ProfileForm({
   initial: ProfileFormValues;
   email: string;
   gradeLabel: string | null;
-  options: ProfileOptions;
+  /** The server lists the form checks against: strings only, so no other field can reach the browser. */
+  lists: { districts: string[]; educationTypes: string[] };
   educationTypes: SelectOption[];
   districts: SelectOption[];
   text: ProfileFormText;
@@ -91,7 +87,7 @@ export function ProfileForm({
     event.preventDefault();
     if (pending) return;
     const input = Object.fromEntries(new FormData(event.currentTarget));
-    const { value, result } = parseProfileForm(input, options);
+    const { value, result } = parseProfileForm(input, lists);
     setFormError(false);
     if (!result.ok) {
       setFieldErrors(result.fieldErrors);

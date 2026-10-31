@@ -468,7 +468,7 @@ function UserDetails({
             locale={locale}
             userId={user.id}
             currentGradeId={user.gradeLevel?.id ?? null}
-            gradeLevels={gradeLevels}
+            gradeLevels={gradeLevels.map(({ id, label }) => ({ id, label }))}
           />
         </div>
       ) : null}

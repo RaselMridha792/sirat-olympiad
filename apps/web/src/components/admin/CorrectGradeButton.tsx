@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { ProfileOptions, StudentProfile } from '@sirat/shared';
+import type { StudentProfile } from '@sirat/shared';
 import { Button, Dialog, Field, SelectField } from '@sirat/ui';
 import type { Locale } from '@/i18n';
 import { pick } from '@/i18n/messages';
@@ -23,7 +23,7 @@ export function CorrectGradeButton({
   locale: Locale;
   userId: string;
   currentGradeId: string | null;
-  gradeLevels: ProfileOptions['gradeLevels'];
+  gradeLevels: Array<{ id: string; label: string }>;
 }) {
   const m = pick(adminUsersMessages, locale).grade;
   const router = useRouter();

@@ -31,7 +31,7 @@ function length(value: string, limits: { min: number; max: number }): ProfileFie
 
 export function parseProfileForm(
   input: Record<string, unknown>,
-  options: ProfileOptions,
+  options: Pick<ProfileOptions, 'districts' | 'educationTypes'>,
 ): { value: ProfileUpdate; result: ProfileUpdateResult } {
   const errors: Partial<Record<keyof ProfileUpdate, ProfileFieldError>> = {};
 
@@ -91,5 +91,45 @@ export function profileSelectOptions(
   return {
     educationTypes: withStored(options.educationTypes, stored.educationType),
     districts: withStored(options.districts, stored.district),
+  };
+}
+
+/** Everything the client ProfileForm receives, beside its translated text. */
+export interface ProfileFormProps {
+  initial: Record<keyof Required<ProfileUpdate>, string>;
+  email: string;
+  gradeLabel: string | null;
+  /** The lists the form checks against: strings only. */
+  lists: { districts: string[]; educationTypes: string[] };
+  educationTypes: ProfileSelectOption[];
+  districts: ProfileSelectOption[];
+}
+
+/**
+ * The client form's props, picked field by field from the server's profile and option lists. A client component's
+ * props are serialized into the page (the RSC payload), so passing whole objects would send every field the API
+ * ever adds to the browser (the leak check's canaries proved it). Pure, for node --test.
+ */
+export function toProfileFormProps(
+  profile: StudentProfile,
+  options: ProfileOptions,
+): ProfileFormProps {
+  const { educationTypes, districts } = profileSelectOptions(profile, options);
+  return {
+    initial: {
+      name: profile.name,
+      phone: profile.phone ?? '',
+      district: profile.district ?? '',
+      institution: profile.institution ?? '',
+      educationType: profile.educationType ?? '',
+    },
+    email: profile.email,
+    gradeLabel: profile.gradeLevel?.label ?? null,
+    lists: {
+      districts: options.districts.filter((d) => typeof d === 'string'),
+      educationTypes: options.educationTypes.filter((t) => typeof t === 'string'),
+    },
+    educationTypes,
+    districts,
   };
 }
