@@ -19,6 +19,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 5. **`lib/api.ts`:** a `FormData` body keeps the browser's multipart type (the cover upload); JSON bodies still get `application/json` (A2's file, one line plus a test).
 6. **Data layer:** `data/http/book.ts` picks fields one by one. A cover URL is accepted only as our own `/api/book/cover/<uuid>` path, so a page never loads an image from elsewhere. The mock serves the demo student's order, and `?mock=leak` covers the student methods.
 7. **`e2e:register`** now continues after "Registration complete": it logs in from the result page, confirms an address on `/dashboard/book` and changes it. The dev web needs `DATA_SOURCE=http` for that step (RUNBOOK §0).
+
 ## 2026-11-01 — Server checks: ops-check, monitor.sh and the daily digest (L11; exam session, A2's plan and handover)
 
 1. **Thresholds in TypeScript** (`apps/api/src/modules/ops/ops-rules.ts`, the launch defaults of LAUNCH-PLAN §6): pure functions with table tests for every threshold, the two-run rules (CPU, memory, containers, workers) and the alert transitions. L14 retunes the numbers after k6.
