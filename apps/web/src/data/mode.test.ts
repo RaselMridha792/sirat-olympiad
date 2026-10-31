@@ -30,5 +30,6 @@ test('getData gates the mock module behind a literal NODE_ENV check', () => {
     source,
     /if \(process\.env\.NODE_ENV !== 'production'\) \{\s*const \{ createMockSource \} = await import\('\.\/mock\/index'\);/,
   );
-  assert.match(source, /return unavailableSource;/);
+  // Outside that branch (production) only the HTTP source is returned, never the mock.
+  assert.match(source, /\n {2}\}\n {2}return createHttpSource\(pageApiGet\);\n\}/);
 });
