@@ -19,6 +19,25 @@ type Answer =
 /** The status_code PayStation sends for a wrong merchant id or password on initiate (S11; not in the docs). */
 export const INVALID_CREDENTIAL_CODE = '1001';
 
+export type StatusData = Omit<Extract<StatusResult, { kind: 'found' }>, 'kind' | 'raw'>;
+
+/**
+ * The fields of a v1 transaction-status `data` object. Also reads a stored answer (payment_events.payload.data) for
+ * the admin reconcile, so a stored answer and a live one are read the same way.
+ */
+export function readStatusData(d: Record<string, unknown>): StatusData {
+  const text = (v: unknown) =>
+    typeof v === 'string' || typeof v === 'number' ? String(v).trim() : '';
+  return {
+    invoiceNumber: text(d.invoice_number),
+    trxStatus: text(d.trx_status).toLowerCase(),
+    trxId: text(d.trx_id) || null,
+    paymentMinor: parseAmountToMinor(d.payment_amount),
+    reference: text(d.reference) || null,
+    paymentMethod: text(d.payment_method) || null,
+  };
+}
+
 /**
  * PayStation over HTTP (docs/paystation/PAYSTATION-NOTES.md). Host, credentials and URLs come only from
  * PaymentConfig. The password is sent only with initiate-payment; status calls carry only the merchantId header.
@@ -92,17 +111,9 @@ export class PayStationGateway implements PaymentGateway {
         this.logger.warn({ msg: 'paystation answered 200 without data', op: 'status_v1' });
         return { kind: 'unavailable', reason: 'bad_response', raw: answer.raw };
       }
-      const d = data as Record<string, unknown>;
-      const text = (v: unknown) =>
-        typeof v === 'string' || typeof v === 'number' ? String(v).trim() : '';
       return {
         kind: 'found',
-        invoiceNumber: text(d.invoice_number),
-        trxStatus: text(d.trx_status).toLowerCase(),
-        trxId: text(d.trx_id) || null,
-        paymentMinor: parseAmountToMinor(d.payment_amount),
-        reference: text(d.reference) || null,
-        paymentMethod: text(d.payment_method) || null,
+        ...readStatusData(data as Record<string, unknown>),
         raw: answer.raw,
       };
     }
