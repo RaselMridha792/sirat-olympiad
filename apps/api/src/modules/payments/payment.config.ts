@@ -198,3 +198,29 @@ export function describePaymentConfig(config: PaymentConfig): string {
     'payWithCharge=0',
   ].join(' ');
 }
+
+const PAYMENT_STRING_KEYS = [
+  'PAYSTATION_ENV',
+  'PAYSTATION_BASE_URL',
+  'PAYSTATION_MERCHANT_ID',
+  'PAYSTATION_PASSWORD',
+  'PAYSTATION_ACCOUNT_LABEL',
+  'PAYSTATION_INVOICE_PREFIX',
+  'PAYSTATION_CALLBACK_URL',
+  'PAYSTATION_IPN_URL',
+  'PAYSTATION_PAY_WITH_CHARGE',
+] as const;
+
+/**
+ * The payment variables straight from process.env, for CLIs run with tsx (which does not emit the decorator
+ * metadata validateEnv needs). Blank means unset, as in validateEnv.
+ */
+export function paymentEnvFromProcess(env: NodeJS.ProcessEnv): PaymentEnv {
+  const out: Record<string, string | number | undefined> = { NODE_ENV: env.NODE_ENV ?? '' };
+  for (const key of PAYMENT_STRING_KEYS) out[key] = env[key] === '' ? undefined : env[key];
+  const timeout = Number(env.PAYSTATION_TIMEOUT_MS || 10_000);
+  if (!Number.isInteger(timeout) || timeout < 1_000 || timeout > 30_000)
+    fail('PAYSTATION_TIMEOUT_MS must be an integer between 1000 and 30000');
+  out.PAYSTATION_TIMEOUT_MS = timeout;
+  return out as unknown as PaymentEnv;
+}
