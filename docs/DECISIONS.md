@@ -13,6 +13,40 @@ One short entry per non-obvious technical or product decision. Newest first. For
 3. **Never during a live exam window.** The owner is told after each merge.
 4. **The owner can hold any PR, or merge one themselves.**
 
+## 2026-10-31 — Per-user API limits (Lead's order; Claude implementation)
+
+1. **Key:** `UserOrIpThrottlerGuard` replaces the global `ThrottlerGuard`.
+   - A request whose access cookie **verifies** (signature and expiry, the same check as AuthGuard) counts against its user.
+   - Anything else counts against the client IP: no cookie, or a forged, expired or malformed token. The IP is the one nginx recorded, grouped by /64 for IPv6 as the library does. So nobody can spread one IP's requests over invented user keys.
+   - It only counts requests: authorization stays with AuthGuard.
+   - The Redis storage and the key shape (route, throttler, tracker) are unchanged.
+2. **Signed-in users:** 120 requests per minute per route each (`API_LIMIT_PER_USER_PER_MINUTE`), whatever IP they share. That leaves room for:
+   - the exam checkpoint (every 60–120 s);
+   - a signed-in payment status poll (every 2–10 s);
+   - the web's `/auth/me` (cached 30 s).
+   A route's own `@Throttle()` tier still wins.
+3. **Per client IP, for routes used without a session.** Thousands of students can share one IP: a school, or a Bangladeshi mobile operator's carrier-grade NAT.
+   - **login:** no request limit at the API (unchanged). The login limiter counts only failures (10 per account+IP pair, 50 per account per hour, 100 per IP per minute), and nginx's auth zone caps the rate. Tested: 500 different accounts log in from one IP within a minute, none refused.
+   - **refresh:** 3,000 per minute, above nginx's api zone (30 r/s), so behind nginx the API never refuses a renewal first. The refresh token is 256-bit, and reuse is detected.
+   - **forgot-password, resend-verification, reset-password, verify-email:** 300 per minute each (were 60 and 30). Abuse is bounded by the per-address email caps, 256-bit single-use tokens refused before argon2, and nginx's auth zone.
+   - **every other anonymous route:** 600 per minute (the module default, unchanged).
+4. **Registration routes (payments, later)** need their own tiers sized for shared IPs. The public payment status poll `GET /registrations/current` (every 2–10 s for up to 2 min) would share 600 per minute per IP, which is about 20 people paying at once behind one IP.
+   - Proposal for the payments PR: an explicit tier keyed on the registration cookie, with a high per-IP cap behind it.
+5. **Risks, not changed in this PR:**
+   - nginx's per-IP zones under carrier-grade NAT:
+     - `auth` (20 r/s, burst 200: login and the email-link routes) refuses an operator IP beyond 200 at once and 20 per second after. Students see "busy" and retry.
+     - `api` (30 r/s, burst 60) covers every signed-in browser call, including the coming exam checkpoint and submit, and is shared by every student behind the IP.
+     - Proposal: measure in the load test, then raise both per-IP zones (for example api 200 r/s burst 2,000; auth 100 r/s burst 1,000) and leave the precise per-user limits to the API, or give known operator ranges a higher limit through a `geo` map.
+   - The login limiter's 100 failures per IP per minute (owner rule) can also refuse a large operator IP for up to a minute if many students mistype at exam start. Changing it is an owner decision.
+6. **Tests:**
+   - unit: `user-or-ip-throttler.guard.spec.ts`;
+   - integration (`api-per-user-limits.int-spec.ts`, each case on its own client IP through X-Forwarded-For):
+     - two users behind one IP each get their own budget;
+     - 600 anonymous requests then 429, while a session from that IP still passes;
+     - 600 forged tokens naming 600 different users, plus an expired real-key token, all share the IP bucket, and the named real user's budget is untouched;
+     - 500 logins from one IP within a minute.
+   - **Mutation checks:** a tracker that decodes instead of verifies lets the forgeries spread (401 instead of 429); the plain ThrottlerGuard shares one budget (200 instead of 429).
+
 ## 2026-10-31 — Refresh rotation inside a time budget (Lead's order after PR #12; Claude implementation)
 
 1. **The gap:** the API's 25 s request timeout answers 503 but cannot cancel the handler, so a rotation could commit after its answer was gone. The browser kept the retired token, and its next try got 409 (inside the grace) or 401 with the family revoked as reuse. A slow API ended the session.
@@ -231,7 +265,7 @@ Each protection has a test that fails without it (mutation-checked); forgot/rese
 2. **reset-password:** a bad link is refused before argon2 runs. One transaction uses the token, sets the hash, marks the email verified (the link proved the inbox), retires the other reset links and ends every session; only after the commit is the account unlocked everywhere (owner). No automatic login. A password refused by the policy leaves the link usable.
 3. **verify-email:** sets `email_verified_at` in the same transaction that uses the token; never creates a session or sets a cookie (tested). A valid link for an already verified address answers 204 and changes nothing.
 4. **Bad links:** unknown, malformed, used, expired, other-type and blocked-account links all get one 400 ("This link is invalid or has expired"). Exactly one of two simultaneous uses of a link succeeds.
-5. **Throttle tiers** (per route and client IP, on top of the per-address caps): 60/min for the two link requests (sized for a school behind one IP), 30/min for reset and verify.
+5. **Throttle tiers** (superseded by "Per-user API limits": 300/min each now) (per route and client IP, on top of the per-address caps): 60/min for the two link requests (sized for a school behind one IP), 30/min for reset and verify.
 6. **Operator alert emails** (owner): the `security.<kind>` audit row and a warn log line marked `alert` come first and are the source of truth. The email to `SECURITY_ALERT_EMAIL` (unset: no email) goes out from the background, so it never slows or blocks a login: at most one per alert kind per 10 minutes and `SECURITY_ALERT_EMAILS_PER_HOUR` (6) in all, through the cache Redis. If that limit cannot be checked, the email is held back. It names the kind, the time, the account id and counts; never an email address or an IP.
 7. **BackgroundTasks:** work after the response logs failures by class only and may finish on SIGTERM (up to 10 s); a crash in between loses that email, and the user asks again.
 

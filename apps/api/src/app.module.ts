@@ -1,13 +1,14 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import type Redis from 'ioredis';
 import { LoggerModule } from 'nestjs-pino';
 import { BackgroundModule } from './common/background/background-tasks';
 import { pinoHttpOptions } from './common/logging/pino-http.options';
 import { DrainService } from './common/shutdown/drain.service';
 import { RedisThrottlerStorage } from './common/throttler/redis-throttler.storage';
+import { UserOrIpThrottlerGuard } from './common/throttler/user-or-ip-throttler.guard';
 import { validateEnv } from './config/env';
 import { PrismaModule } from './prisma/prisma.module';
 import { REDIS_CACHE, RedisModule } from './redis/redis.module';
@@ -62,7 +63,7 @@ import { CertificatesModule } from './modules/certificates/certificates.module';
   // Global guards, run in this order on every route: rate limit, CSRF header on state-changing requests, then
   // the session (deny by default; @Public() opens a route, @Roles() narrows it).
   providers: [
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: UserOrIpThrottlerGuard },
     { provide: APP_GUARD, useClass: CsrfGuard },
     { provide: APP_GUARD, useClass: AuthGuard },
     DrainService,
