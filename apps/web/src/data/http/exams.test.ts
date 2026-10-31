@@ -32,6 +32,7 @@ const detail: StudentExamDetail = {
   violationWarnings: 5,
   serverNow: '2026-11-20T05:00:00.000Z',
   attempt: {
+    attemptId: 'a7f3c9d2-1b4e-4c8a-9f6d-2e5b8c1a7d40',
     phase: 'submitted',
     endsAt: '2026-11-20T04:40:00.000Z',
     receipt: {
@@ -72,6 +73,7 @@ test('student.getExam refuses an unknown phase or end reason and passes refusals
   const before = { ...detail, state: 'open' as const, attempt: null };
   for (const bad of [
     { ...detail, attempt: { ...detail.attempt, phase: 'started' } },
+    { ...detail, attempt: { ...detail.attempt, attemptId: 7 } },
     {
       ...detail,
       attempt: { ...detail.attempt, receipt: { ...detail.attempt!.receipt, endReason: 'x' } },

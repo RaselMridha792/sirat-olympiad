@@ -65,7 +65,13 @@ export type StudentExamDetail = StudentExamListItem & {
   graceSeconds: number;
   violationWarnings: number;
   serverNow: string;
-  attempt: { phase: AttemptPhase; endsAt: string; receipt: SubmissionReceipt | null } | null;
+  /** The student's own attempt (its id opens the review once results are published). */
+  attempt: {
+    attemptId: string;
+    phase: AttemptPhase;
+    endsAt: string;
+    receipt: SubmissionReceipt | null;
+  } | null;
 };
 
 /** Start, resume. No question ids, no option keys, no correct answers, no explanations, no scores. */

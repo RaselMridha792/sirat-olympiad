@@ -5,6 +5,7 @@ import {
   STUDENT_EXAM_STATES,
   type StudentExamCard,
   type StudentExamDetail,
+  type StudentExamListItem,
   type SubmissionReceipt,
 } from '@sirat/shared';
 import type { DataSource } from '../source.ts';
@@ -37,8 +38,12 @@ function isExamCard(value: unknown): value is StudentExamCard {
   );
 }
 
-const isExamCardList = (value: unknown): value is StudentExamCard[] =>
-  Array.isArray(value) && value.every(isExamCard);
+const isExamListItem = (value: unknown): value is StudentExamListItem =>
+  isExamCard(value) &&
+  typeof (value as { resultsPublished?: unknown }).resultsPublished === 'boolean';
+
+const isExamList = (value: unknown): value is StudentExamListItem[] =>
+  Array.isArray(value) && value.every(isExamListItem);
 
 const pickExamCard = (exam: StudentExamCard): StudentExamCard => ({
   id: exam.id,
@@ -71,6 +76,7 @@ function isExamDetail(value: unknown): value is StudentExamDetail {
     isText(v.serverNow) &&
     (attempt === null ||
       (isRecord(attempt) &&
+        isText(attempt.attemptId) &&
         oneOf(ATTEMPT_PHASES, attempt.phase) &&
         isText(attempt.endsAt) &&
         (attempt.receipt === null || isReceipt(attempt.receipt))))
@@ -85,6 +91,7 @@ const pickExamDetail = (exam: StudentExamDetail): StudentExamDetail => ({
   violationWarnings: exam.violationWarnings,
   serverNow: exam.serverNow,
   attempt: exam.attempt && {
+    attemptId: exam.attempt.attemptId,
     phase: exam.attempt.phase,
     endsAt: exam.attempt.endsAt,
     receipt: exam.attempt.receipt && {
@@ -99,7 +106,10 @@ export function studentExams(get: ApiGet): Pick<DataSource['student'], 'listExam
   return {
     /** GET /exams: the student's exams, state from the server clock (E2). */
     async listExams() {
-      return (await getJson(get, '/exams', isExamCardList)).map(pickExamCard);
+      return (await getJson(get, '/exams', isExamList)).map((exam) => ({
+        ...pickExamCard(exam),
+        resultsPublished: exam.resultsPublished,
+      }));
     },
 
     /** GET /exams/:id: the waiting room; null (not found) for an unknown, hidden or malformed id (E2). */

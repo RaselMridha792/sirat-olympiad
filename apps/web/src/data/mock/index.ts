@@ -8,7 +8,7 @@ import {
   type LeaderboardRound,
   type LeaderboardRow,
   type ProfileOptions,
-  type StudentExamCard,
+  type StudentExamListItem,
   type StudentExamDetail,
   type StudentExamState,
   type StudentProfile,
@@ -60,7 +60,7 @@ const STATE_ORDER: Record<StudentExamState, number> = {
   closed: 4,
 };
 
-function studentExams(w: MockWorld): Array<StudentExamCard & { graceSeconds: number }> {
+function studentExams(w: MockWorld): Array<StudentExamListItem & { graceSeconds: number }> {
   const now = Date.now();
   return w.exams
     .filter((e) => e.status !== 'draft' && (e.category === null || e.category === w.me.category))
@@ -74,6 +74,7 @@ function studentExams(w: MockWorld): Array<StudentExamCard & { graceSeconds: num
       windowEnd: e.windowEnd,
       graceSeconds: e.graceSeconds,
       state: examState(e, now),
+      resultsPublished: e.resultsPublishedAt !== null,
     }))
     .sort(
       (a, b) =>
@@ -227,6 +228,7 @@ export function createMockSource(state: MockState | null): DataSource {
                 windowStart,
                 windowEnd,
                 state,
+                resultsPublished,
               }) => ({
                 id,
                 title,
@@ -236,6 +238,7 @@ export function createMockSource(state: MockState | null): DataSource {
                 windowStart,
                 windowEnd,
                 state,
+                resultsPublished,
               }),
             ),
           () => [],
@@ -250,6 +253,7 @@ export function createMockSource(state: MockState | null): DataSource {
             const attempt: StudentExamDetail['attempt'] =
               exam.state === 'submitted'
                 ? {
+                    attemptId: `att-${exam.id}`,
                     phase: 'submitted',
                     endsAt: exam.windowEnd,
                     receipt: {
@@ -263,6 +267,7 @@ export function createMockSource(state: MockState | null): DataSource {
                   }
                 : exam.state === 'in_progress'
                   ? {
+                      attemptId: `att-${exam.id}`,
                       phase: 'in_progress',
                       endsAt: new Date(now + exam.durationMinutes * 60_000).toISOString(),
                       receipt: null,
@@ -277,7 +282,7 @@ export function createMockSource(state: MockState | null): DataSource {
               windowStart: exam.windowStart,
               windowEnd: exam.windowEnd,
               state: exam.state,
-              resultsPublished: false,
+              resultsPublished: exam.resultsPublished,
               graceSeconds: exam.graceSeconds,
               violationWarnings: EXAM_VIOLATION_WARNINGS,
               serverNow: new Date(now).toISOString(),

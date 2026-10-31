@@ -19,7 +19,7 @@ import type {
   ProfileOptions,
   ProfileUpdate,
   ProfileUpdateResult,
-  StudentExamCard,
+  StudentExamListItem,
   StudentExamDetail,
   StudentHome,
   StudentProfile,
@@ -43,8 +43,8 @@ export interface DataSource {
     getProfileOptions(): Promise<ProfileOptions>;
     /** PATCH /users/me (allow-list DTO) */
     updateProfile(input: ProfileUpdate): Promise<ProfileUpdateResult>;
-    /** GET /exams (state decided by the server clock) */
-    listExams(): Promise<StudentExamCard[]>;
+    /** GET /exams (state decided by the server clock; resultsPublished opens the review) */
+    listExams(): Promise<StudentExamListItem[]>;
     /** GET /exams/:id: the waiting room (never questions); null = not found or not visible to this student */
     getExam(id: string): Promise<StudentExamDetail | null>;
     /** GET /announcements */

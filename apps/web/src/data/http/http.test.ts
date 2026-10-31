@@ -101,14 +101,16 @@ test('student.listExams reads GET /exams and passes on only the card fields', as
   });
   const cards = await createHttpSource(get).student.listExams();
   assert.deepEqual(get.calls, ['/exams']);
-  assert.deepEqual(cards, [exam]);
+  assert.deepEqual(cards, [{ ...exam, resultsPublished: false }]);
 });
 
 test('student.listExams refuses an exam with an unknown state or category', async () => {
   for (const bad of [
-    { ...exam, state: 'started' },
-    { ...exam, category: 'sdg' },
-    { ...exam, durationMinutes: '30' },
+    { ...exam, resultsPublished: false, state: 'started' },
+    { ...exam, resultsPublished: false, category: 'sdg' },
+    { ...exam, resultsPublished: false, durationMinutes: '30' },
+    { ...exam, resultsPublished: 'no' },
+    exam, // resultsPublished missing
   ]) {
     const get = fakeApi({ '/exams': { status: 200, body: [bad] } });
     await assert.rejects(createHttpSource(get).student.listExams(), DataRequestError);
