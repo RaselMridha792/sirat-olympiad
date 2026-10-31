@@ -39,6 +39,13 @@ const PUBLIC_ROUTES = new Set([
   'POST /api/auth/verify-email',
   'POST /api/auth/resend-verification',
   'POST /api/registrations/start',
+  // Payments plan 6.7: before an account exists, the sirat_reg cookie is the only proof of "my attempt"; no route
+  // takes an id, and none returns personal data.
+  'GET /api/registrations/info',
+  'GET /api/registrations/current',
+  'POST /api/registrations/current/resume',
+  'POST /api/registrations/current/retry',
+  'POST /api/registrations/current/cancel',
   'GET /api/payments/paystation/callback',
   'POST /api/payments/paystation/ipn',
   'GET /api/content/*',
