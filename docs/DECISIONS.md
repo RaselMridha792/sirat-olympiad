@@ -21,6 +21,17 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - **The CSV:** core's `common/csv.ts` (BOM, CRLF, formula-injection prefix); streamed in batches of 500, never stored; audited with the filter and the count, never the rows.
 6. **No address in logs:** the request logger keeps only the method, the path and the status; the book module has no logger (`book-no-logs.spec.ts`); audit rows carry ids, counts and filters only.
 7. **Seed:** `book_title` ("Sirat Leadership Olympiad book" until an admin sets the real one) and `book_cover_image_id` (null). RUNBOOK §9 asks for both before registration opens.
+## 2026-11-01 — Next's runtime caches are writable by the web's runtime user (Claude; lead's bug report)
+
+1. **The bug:**
+   - Since #25 the public pages revalidate every 60 s, so Next regenerates them at runtime. It writes the pages to `.next/server/route-cache` and fetch results to `.next/cache`.
+   - The image copied `.next` as root and runs as `node`.
+   - So every regeneration logged `Failed to update prerender cache … EACCES` and stored nothing. The pages still answered 200, but every request after the 60 s tried to regenerate again.
+2. **The fix:** the image creates only those two folders and gives them to `node`. The rest of `.next` stays root-owned, so a compromised server process cannot rewrite the built app.
+3. **Proof:**
+   - CI's docker job requests a public page, waits past the 60 s revalidation, requests it again, and fails on any EACCES in the web log.
+   - A/B with the same image: with the two folders handed back to root (main's state), 6 EACCES lines; with this change none, and the regenerated pages appear under `route-cache/APP_PAGE`.
+   - No write was attempted anywhere else in `.next`.
 
 ## 2026-11-01 — Alert categories, their own caps, and the ops-alert command (L10; exam session, A2's plan and handover)
 
