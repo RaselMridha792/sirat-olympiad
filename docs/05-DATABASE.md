@@ -21,6 +21,7 @@ Source of truth: `apps/api/prisma/schema.prisma` (validated; see note at bottom)
 | Rounds | `rounds`, `round_entries`, `jury_scores`, `certificates` | Data-driven rounds; append-only jury history |
 | Ambassadors | `ambassador_profiles`, `point_ledger`, `teams`, `team_members`, `admin_tasks`, `task_assignments` | Ledger append-only |
 | Content | `announcements` | |
+| Free book | `book_orders` (one per paid student), `book_images` (covers, bytea) | `book_orders` UNIQUE(user_id) and a composite FK `(registration_id, user_id)` → `registrations (id, user_id)`: an order only for the student's own paid registration. CHECKs: the phone, the 64 districts (the same list as `BD_DISTRICTS`, pinned by `districts-check.spec.ts`), lengths, shipped ⇔ `shipped_at` and `shipped_by`. Trigger `book_orders_locked_after_shipping`: a new order starts `confirmed`; once `shipped` nothing changes. `book_images` CHECKs: JPEG/PNG/WebP, ≤ 800 KB, 100–4000 px, sha256. Migrations `*_book_orders` + `*_book_checks` (PAYMENTS-PLAN §16.2) |
 
 ## Constraints that MUST exist (asserted by `apps/api/test/db-constraints.int-spec.ts`)
 

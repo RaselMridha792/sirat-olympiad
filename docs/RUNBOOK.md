@@ -122,6 +122,8 @@ $DC stop nginx web api
 scripts/restore.sh backups/<file>.dump  # DESTRUCTIVE, asks for YES (truncated-dump refusal VERIFIED; full restore not yet rehearsed)
 $DC run --rm migrate && $DC exec redis-cache redis-cli FLUSHALL && $DC up -d && scripts/healthcheck.sh https://<domain>
 ```
+After a restore drill, also check the free book's cover: `GET /api/book/cover/<id>` (the id is `settings.book_cover_image_id`) returns the image. Covers live in Postgres (`book_images`), so the dump carries them; there is no file directory to restore.
+
 Credentials are read inside the postgres container; nothing secret is typed on the host. One-time on hosts with older backups: `chmod 700 backups && chmod 600 backups/*.dump`. Hardening phase: restore into a fresh database instead of `--clean` over the live schema. Before every exam: fresh backup + **restore drill on another machine**. Keep ≥ 7 daily + 4 weekly. Alert on failure.
 
 ## 6. Rebuild on a fresh VPS (< 1 hour)
@@ -156,6 +158,7 @@ Also before launch:
 - [ ] The API connects to Postgres with a **non-superuser runtime role** (OPEN-QUESTIONS #27); the bootstrap superuser is used only for migrations, backup and restore.
 - [ ] PayStation sandbox checklist done (`docs/paystation/SANDBOX-CHECKLIST.md`) and the accepted `trx_status` values confirmed.
 - [ ] `PAYSTATION_ENV=live` on the VPS, and the boot log's PayStation line matches the client account: `$DC logs api | grep "PayStation env="` shows `env=live`, the live host, the client's account label and invoice prefix, and the production callback and IPN URLs. It never shows any part of the merchant id or password. A `payments are DISABLED` WARN, or a `payments.disabled_in_production` alert, means PAYSTATION_ENV is blank: no registration can be paid.
+- [ ] The free book: an admin has set the real title and uploaded the cover (`/admin/book`), before registration opens.
 - [ ] `paystation:selfcheck` on the VPS ends with `initiate: created` and exits 0. It leaves one unpaid 10 BDT `X…` invoice in the client's panel. The command: `$DC run --rm --no-deps -T api node dist/cli/paystation-selfcheck.js`; locally `pnpm --filter @sirat/api paystation:selfcheck`.
   - Exit 2 means the settings are wrong or payments are disabled; the line says which variable and rule.
   - `credentials rejected (status_code 1001)` means a wrong merchant id or password, or the wrong `PAYSTATION_ENV` for the account. The merchant id must be used exactly as issued, with any "-".
@@ -208,6 +211,8 @@ After go-live, confirm in the nginx access log that client addresses are real us
 1. Re-check. If PayStation now reports success with our invoice and exactly our amount, the re-check marks it paid and makes the account; nothing else to do.
 2. If it reports success without a `trx_id`: the reconcile row above.
 3. If the amount or the invoice does not match, or `2001` keeps coming back: do **not** mark it paid. Contact PayStation support with the invoice number and `trx_id`.
+
+**The free book's courier list:** `GET /api/admin/book-orders/export.csv?status=confirmed` (admin only; audited with the filter and the row count). It holds minors' addresses and phone numbers: hand it to the courier, then delete the downloaded file. Nothing is stored on the server. After the pickup, mark those orders shipped (`POST /api/admin/book-orders/ship`); from then on the student cannot change the address.
 
 **Changing the fee or the registration window:** `PUT /admin/settings/:key` with the value the form showed as `expected` (409 if someone changed it meanwhile); the fee needs a reason. Payments already started keep their amount.
 

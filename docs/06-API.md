@@ -6,7 +6,7 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 
 ## Public allow-list (reviewed)
 
-`GET /health`, `GET /ready`, `POST /auth/login`, `POST /auth/refresh` (cookie), `POST /auth/forgot-password`, `POST /auth/reset-password`, `POST /auth/verify-email`, `POST /auth/resend-verification`, `POST /registrations/start`, `GET /registrations/info`, `GET /registrations/current`, `POST /registrations/current/{resume,retry,recheck,cancel}` (the `sirat_reg` cookie; no id, no personal data), `GET /payments/paystation/callback/:invoice`, `POST /payments/paystation/ipn` (the only CSRF-exempt route; neither is trusted, see below), `GET /content/*` (public site content), `GET /certificates/verify/:code`.
+`GET /health`, `GET /ready`, `POST /auth/login`, `POST /auth/refresh` (cookie), `POST /auth/forgot-password`, `POST /auth/reset-password`, `POST /auth/verify-email`, `POST /auth/resend-verification`, `POST /registrations/start`, `GET /registrations/info`, `GET /registrations/current`, `POST /registrations/current/{resume,retry,recheck,cancel}` (the `sirat_reg` cookie; no id, no personal data), `GET /payments/paystation/callback/:invoice`, `POST /payments/paystation/ipn` (the only CSRF-exempt route; neither is trusted, see below), `GET /book/cover/:imageId` (the free book's cover image, no personal data), `GET /content/*` (public site content), `GET /certificates/verify/:code`.
 
 ## Endpoints
 
@@ -124,6 +124,30 @@ Role `admin` only (not manager). Writes: 20/min per IP, besides the per-user lim
 | `POST /admin/payments/:id/reconcile` | `{ trxId (as PayStation shows it), reason (10–200) }` → 200 `{ applied, payment }`. Only for a pending, failed or expired payment whose automatic check stopped on `success_without_trx_id` **and** whose latest status answer shows a success with our invoice, reference and exactly our amount but no trx_id (lead, 2026-10-31). Then the same settlement as the automatic path. 409 `RECONCILE_NOT_ALLOWED` otherwise; 409 `TRX_ID_IN_USE` for a trx_id another payment holds; a paid payment answers `applied: false` (never a second settle). Audit `payments.reconciled` |
 | `GET /admin/settings` | `[{ key, value, updatedAt }]` for the editable keys |
 | `PUT /admin/settings/:key` | `{ value, expected, reason? }`. Keys: `registration_fee_minor` (10–10,000 BDT in whole taka, as paisa; `reason` 3–200 required), `registration_open` (boolean), `registration_opens_at` / `registration_closes_at` (ISO UTC or null; opens before closes), `payment_expiry_minutes` (5–1,440). 409 `SETTING_CHANGED` when the value is no longer `expected`; 400 `SETTING_INVALID` / `REASON_REQUIRED`; 404 for any other key. Audit `settings.changed` (old, new, reason); the registration info cache is cleared. Payments already started keep their amount |
+
+## Free book (payments PR 6a; plan: `docs/plans/PAYMENTS-PLAN.md` §16, owner B1–B5)
+
+Every student who paid gets one free book: they confirm a Bangladeshi delivery address and may change it until an admin marks it shipped. Addresses (a minor's personal data) are seen only by the student and by admins, and never logged. Shapes: `packages/shared/src/book.ts`.
+
+**Student** (roles student and ambassador; "me" routes only, no id anywhere):
+
+| Method + path | Request → response |
+|---|---|
+| `GET /book` | `{ title, coverUrl }` (`/api/book/cover/<id>` or null) |
+| `GET /book-order/me` | `{ eligible, order }`: `eligible` once the student has a (paid) registration; `order` is null or `{ status, recipientName, recipientPhone, district, upazila, addressLine, note, bookTitle, version, confirmedAt, shippedAt }` |
+| `PUT /book-order/me` | `{ recipientName (1–100), recipientPhone (any Bangladeshi form, stored 01XXXXXXXXX), district (one of the 64), upazila (2–100), addressLine (5–300), note? (≤ 300), expectedVersion? }` → 200 the order. Creates it, or changes the address (version + 1). 403 `BOOK_NOT_ELIGIBLE` without a registration; 409 `BOOK_ORDER_SHIPPED` once shipped; 409 `BOOK_ORDER_CHANGED` for a stale `expectedVersion`; 400 for unknown fields (`role`, `userId`, `status`, `bookTitle` …). The order keeps the title it was confirmed with. Audit `book_order.confirmed` / `book_order.updated` (ids and version only) |
+| `GET /book/cover/:imageId` | **Public**; 600/min per IP. The image bytes with the stored, sniffed `Content-Type`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'`, `Cache-Control: public, max-age=31536000, immutable`. 404 unknown, 400 malformed id |
+
+**Admin** (role `admin` only; a manager gets 403; writes 20/min per IP):
+
+| Method + path | Request → response |
+|---|---|
+| `GET /admin/book` | `{ title, cover: { id, url, contentType, width, height, byteSize, uploadedAt } \| null, limits }` |
+| `PUT /admin/book/title` | `{ title (1–200), expected (the title the form showed), reason (3–200) }` → as `GET`. 409 `SETTING_CHANGED` when stale. Audit `book.title_changed` (old, new, reason) |
+| `POST /admin/book/cover` | multipart, one field `file`. JPEG, PNG or WebP by magic bytes (never the name or the browser's type), ≤ 800 KB (413 above), 100–4000 px a side; metadata stripped; stored once per content. 400 `COVER_MISSING`, `COVER_UNSUPPORTED_TYPE`, `COVER_UNREADABLE`, `COVER_BAD_DIMENSIONS`; 413 `COVER_TOO_LARGE`. Audit `book.cover_changed` (old and new image id, sha256, size, type) |
+| `GET /admin/book-orders` | `?page&pageSize (≤ 100)&status&district&phone&email` → `Paginated<order + { id, code, student: { name, email, phone } }>`, newest first. `phone` in any Bangladeshi form matches the recipient's or the student's phone; `email` the student's (any case) |
+| `GET /admin/book-orders/export.csv` | `?status&district` → the courier CSV, streamed: Order, Recipient, Phone, District, Upazila/Thana, Address, Note, Book. UTF-8 with a BOM, CRLF, formula-injection safe (`common/csv.ts`), `Content-Disposition: attachment`, `Cache-Control: no-store`; 10/min. Audit `book_orders.exported` (filter and row count, never the rows) |
+| `POST /admin/book-orders/ship` | `{ ids (1–500 uuids), reason? }` → `{ shipped }`: confirmed → shipped; already shipped ones are left. Audit `book_orders.shipped` (count, ids, reason) |
 
 ## Exam engine (E2; plan: `docs/plans/EXAM-PLAN.md` §1.1, §3, §3.15)
 
