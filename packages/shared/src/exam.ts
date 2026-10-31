@@ -1,6 +1,11 @@
-import type { AdminExamDetail, StudentExamCard } from './dashboard';
+import type {
+  AdminExamDetail,
+  AdminLeaderboardRow,
+  LeaderboardRow,
+  StudentExamCard,
+} from './dashboard';
 import type { QuestionOption, QuestionRecord } from './records';
-import type { Category } from './index';
+import type { AttemptStatus, Category, Paginated } from './index';
 
 // ───────────── Student side (E2; EXAM-PLAN 1.1, 1.3, 3.15) ─────────────
 
@@ -120,8 +125,87 @@ export const EXAM_STUDENT_REFUSALS = [
   'violations_not_reached',
   'request_id_conflict',
   'checkpoint_unavailable',
+  'results_not_published',
 ] as const;
 export type ExamStudentRefusal = (typeof EXAM_STUDENT_REFUSALS)[number];
+
+// ───────────── Results (E3; EXAM-PLAN 3.10–3.12, owner Q5) ─────────────
+
+/** GET /attempts/:id/review, only after the exam's results are published. */
+export interface ReviewView {
+  attemptId: string;
+  examId: string;
+  title: string;
+  endReason: EndReason;
+  score: number;
+  questionCount: number;
+  /** From the published snapshot; null if the attempt is not in it (e.g. the account was blocked). */
+  rank: number | null;
+  timeTakenSeconds: number | null;
+  /** In the attempt's order; positions as the student saw them. */
+  questions: Array<{
+    text: string;
+    options: string[];
+    chosen: number | null;
+    correct: number;
+    explanation: string | null;
+  }>;
+}
+
+export type ExamLeaderboardExam = { id: string; title: string; category: Category | null };
+
+/** GET /leaderboard?exam=: rank, name and institution only (owner Q5); empty until the results are published. */
+export type ExamLeaderboard = Paginated<LeaderboardRow> & {
+  exam: ExamLeaderboardExam | null;
+  status: 'unpublished' | 'published';
+  snapshotAt: string | null;
+};
+
+/** GET /admin/leaderboard?exam=: the snapshot with emails, scores and times, also before it is public. */
+export type AdminExamLeaderboard = Paginated<AdminLeaderboardRow> & {
+  exam: ExamLeaderboardExam | null;
+  isPublic: boolean;
+  snapshotAt: string | null;
+  generation: number;
+};
+
+/** GET /admin/exams/:id/results. */
+export interface ExamResultsStatus {
+  examId: string;
+  /** window_end + grace has passed: no attempt can still be running. */
+  windowClosed: boolean;
+  counts: Record<AttemptStatus, number>;
+  snapshotAt: string | null;
+  generation: number;
+  publishedAt: string | null;
+  canBuild: boolean;
+  canPublish: boolean;
+}
+
+/** GET /admin/exams/:id/attempts (owner Q4: each student's violations and how the exam ended). */
+export interface AdminAttemptRow {
+  attemptId: string;
+  userId: string;
+  name: string;
+  email: string;
+  status: AttemptStatus;
+  endReason: EndReason | null;
+  violationCount: number | null;
+  startedAt: string;
+  endsAt: string;
+  submittedAt: string | null;
+  timeTakenSeconds: number | null;
+  score: number | null;
+}
+export type AdminAttemptDetail = AdminAttemptRow & { events: ExamEvent[] };
+
+export const EXAM_RESULTS_REFUSALS = [
+  'window_open',
+  'attempts_unfinished',
+  'no_snapshot',
+  'results_published',
+] as const;
+export type ExamResultsRefusal = (typeof EXAM_RESULTS_REFUSALS)[number];
 
 // ───────────── Admin side (E1) ─────────────
 

@@ -1,13 +1,16 @@
 /**
  * The required leak test (RULEBOOK §7, §18; EXAM-PLAN 6.1): no correct answer, explanation, score or time taken
  * reaches a student before the results are published. Every student response of the exam engine is scanned for the
- * field names and for canary values planted in the database. The review and leaderboard endpoints join this list in E3.
+ * field names and for canary values planted in the database, the leaderboard and the review included (E3).
  */
 import { randomUUID } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
 import type { AttemptView } from '@sirat/shared';
 import { makeUser, testPrisma } from './helpers';
 import { bootEngineApp, call, type EngineApp, loginAs, seedExam } from './exam-engine-app';
+
+// Heavy or timing-sensitive on a shared machine (many starts, short real waits): a generous limit, not the 30 s default.
+jest.setTimeout(180_000);
 
 let env: EngineApp;
 let prisma: PrismaClient;
@@ -82,6 +85,19 @@ describe('nothing secret reaches a student before results', () => {
     });
     await record('start after submit', 'POST', `/exams/${exam.id}/attempts`);
     await record('GET /exams/:id after submit', 'GET', `/exams/${exam.id}`);
+    // E3: before the results are published, the leaderboard is empty and the review is refused.
+    const board = await record(
+      'leaderboard before publishing',
+      'GET',
+      `/leaderboard?exam=${exam.id}`,
+    );
+    expect(board.json).toMatchObject({ status: 'unpublished', items: [] });
+    const review = await record(
+      'review before publishing',
+      'GET',
+      `/attempts/${view.attemptId}/review`,
+    );
+    expect(review.status).toBe(403);
 
     for (const { label, text } of responses) {
       expect({ label, leak: FORBIDDEN_FIELDS.exec(text)?.[0] ?? null }).toEqual({

@@ -1,9 +1,16 @@
 import { Module } from '@nestjs/common';
+import { AttemptsModule } from '../attempts/attempts.module';
+import { ExamsModule } from '../exams/exams.module';
+import { AdminResultsController, LeaderboardController } from './results.controller';
+import { ResultsService } from './results.service';
 
 /**
- * leaderboard module — SCAFFOLD STUB.
- * Spec: docs/04-FEATURES.md and docs/06-API.md. Rules: docs/RULEBOOK.md (sections 4-9, 18, 19).
- * Add: controller (explicit guard on every route), service, DTOs (class-validator), tests.
+ * Results (E3): the admin's results controls and attempts list, the leaderboards and the student's review.
+ * Plan: docs/plans/EXAM-PLAN.md 3.12; contract: docs/06-API.md "Results".
  */
-@Module({})
+@Module({
+  imports: [ExamsModule, AttemptsModule],
+  controllers: [LeaderboardController, AdminResultsController],
+  providers: [ResultsService],
+})
 export class LeaderboardModule {}
