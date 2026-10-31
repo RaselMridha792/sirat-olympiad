@@ -14,7 +14,7 @@ Students register and pay as the browser would:
 - the result page, polling until "completed".
 
 Rules:
-- Only against the **fake** PayStation. The script stops if the checkout is anything else (never load-test PayStation).
+- Only against the **fake** PayStation (never load-test PayStation). `setup()` makes one start before any load, and its checkout must be the fake's page; otherwise the test stops there with "no load was sent". A misconfigured API (sandbox or live) gets that single initiate and nothing more. During the load, a checkout on any other host than setup's stops the test too.
 - Never against production.
 - Registration must already be open. The script opens nothing and needs no admin.
 

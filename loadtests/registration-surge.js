@@ -3,12 +3,15 @@
 // One iteration is one student, as the browser would do it:
 //   1. GET  /api/registrations/info: the register page (cached 30 s on the server).
 //   2. POST /api/registrations/start: the argon2 hash and the PayStation initiate run inside this request.
-//   3. PAY_SHARE of the students open the checkout and pay. The FAKE PayStation only: the script stops if the
-//      checkout is anything else (never load-test PayStation). Pay posts the IPN to the API; the browser then comes
+//   3. PAY_SHARE of the students open the checkout and pay. Pay posts the IPN to the API; the browser then comes
 //      back through the callback, twice (a refresh, S14).
 //   4. The result page polls GET /api/registrations/current on its own schedule (web poll.ts: 2 s, then 5 s,
 //      then 10 s, stop at 2 min) until "completed": the worker verified the payment and created the account.
 //   The others leave the checkout open; reconciliation settles them later.
+//
+// The FAKE PayStation only (never load-test PayStation). setup() makes one start before any load; its checkout
+// must be the fake's page, or the test stops there. The load phase begins only after that, and a checkout on any
+// other host stops it too.
 //
 // Needs: an API with PAYSTATION_ENV=fake, the fake PayStation (apps/api/test/fake-paystation/run.ts) with
 // FAKE_PAYSTATION_IPN_URL pointing at that API, its worker, and registration open. Never production. RUNBOOK §0.
@@ -85,14 +88,12 @@ function ipFor(n) {
   return `10.${(n >> 16) & 255}.${(n >> 8) & 255}.${n & 255}`;
 }
 
-/** The fake's checkout page says so; anything else stops the whole test before a single payment. */
-function assertFakeCheckout(paymentUrl, headers) {
+const originOf = (url) => (/^https?:\/\/[^/]+/i.exec(String(url)) ?? [''])[0].toLowerCase();
+
+/** The student opens the checkout; true when it is the fake PayStation's page (it says so). */
+function openCheckout(paymentUrl, headers) {
   const page = http.get(paymentUrl, { headers, tags: { name: 'fake_checkout', kind: 'fake' } });
-  if (page.status !== 200 || !String(page.body).includes('FAKE PayStation')) {
-    exec.test.abort(
-      `the checkout at ${paymentUrl.split('/checkout/')[0]} is not the fake PayStation`,
-    );
-  }
+  return page.status === 200 && String(page.body).includes('FAKE PayStation');
 }
 
 export function setup() {
@@ -104,13 +105,33 @@ export function setup() {
   if (!body.gradeLevels.length) exec.test.abort('no grade levels (run the config seed)');
   // Distinct per run, so a rerun on the same database gets new emails and phones.
   const runId = String(Date.now() % 1_000_000).padStart(6, '0');
-  return {
+  const data = {
     runId,
     fee: body.fee.amountMinor,
     districts: body.districts,
     educationTypes: body.educationTypes,
     gradeLevelIds: body.gradeLevels.map((g) => g.id),
   };
+
+  // The gateway guard, before any load: one start, whose checkout must be the fake's page. A misconfigured API
+  // (sandbox or live) gets this one initiate and nothing more; the load phase never begins.
+  const probe = http.post(
+    `${BASE}/api/registrations/start`,
+    JSON.stringify({
+      ...student(data, 0),
+      name: 'Load Test setup',
+      phone: `018${runId.padStart(8, '0')}`,
+      email: `load-${runId}-setup@load.invalid`,
+    }),
+    { headers: { 'content-type': 'application/json', 'x-requested-with': 'k6' }, ...api('setup') },
+  );
+  if (probe.status !== 201) exec.test.abort(`the setup start answered ${probe.status}`);
+  const paymentUrl = probe.json('paymentUrl');
+  if (!openCheckout(paymentUrl, {}))
+    exec.test.abort(
+      `the checkout at ${originOf(paymentUrl)} is not the fake PayStation; no load was sent`,
+    );
+  return { ...data, fakeOrigin: originOf(paymentUrl) };
 }
 
 function student(data, n) {
@@ -157,14 +178,15 @@ export default function (data) {
   if (!ok) return;
   started.add(1);
   const { paymentUrl } = res.json();
+  // The API cannot switch gateways mid-run; a checkout on another host than setup's fake stops the test anyway.
+  if (originOf(paymentUrl) !== data.fakeOrigin)
+    exec.test.abort(`a checkout at ${originOf(paymentUrl)}, not the fake at ${data.fakeOrigin}`);
 
-  if (Math.random() >= PAY_SHARE) {
-    // Leaves at the checkout: the page is opened, nothing is paid.
-    assertFakeCheckout(paymentUrl, headers);
-    return;
-  }
+  const fake = openCheckout(paymentUrl, headers);
+  check(fake, { 'the checkout is the fake': (f) => f });
+  // Leaves at the checkout: the page is opened, nothing is paid.
+  if (!fake || Math.random() >= PAY_SHARE) return;
 
-  assertFakeCheckout(paymentUrl, headers);
   sleep(PAY_DELAY + Math.random() * 2);
   const paid = http.post(`${paymentUrl}/pay`, null, {
     redirects: 0,
