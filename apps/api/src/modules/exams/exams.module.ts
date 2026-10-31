@@ -1,9 +1,13 @@
 import { Module } from '@nestjs/common';
+import { AdminExamsController } from './admin-exams.controller';
+import { AdminExamsService } from './admin-exams.service';
 
 /**
- * exams module — SCAFFOLD STUB.
- * Spec: docs/04-FEATURES.md and docs/06-API.md. Rules: docs/RULEBOOK.md (sections 4-9, 18, 19).
- * Add: controller (explicit guard on every route), service, DTOs (class-validator), tests.
+ * Exams: admin management of exams and questions (E1). The student endpoints (GET /exams, attempts) follow in E2.
+ * Plan: docs/plans/EXAM-PLAN.md; contract: docs/06-API.md "Exam admin".
  */
-@Module({})
+@Module({
+  controllers: [AdminExamsController],
+  providers: [AdminExamsService],
+})
 export class ExamsModule {}
