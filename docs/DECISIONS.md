@@ -30,6 +30,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - `ambassadors.int-spec.ts` (9): only admins; each refusal; one transaction (role, profile and audit together); an idempotent approve; revoke and re-approve; the list and the panel from rows; a revoked ambassador's old token; the CHECK and the ledger triggers.
    - **The promo rule** runs through payments' real `RegistrationService.referrer()`, the same check `POST /registrations/start` makes, in any letter case. It does not run the whole start route: that needs a full form and the gateway, and payments' own tests cover it.
    - **web:** `http/ambassador.test.ts` (canaries, shape refusals, the admin pick), `ambassador-problem.test.ts`, and `http/home.test.ts` (each section falls back on its own; a redirect is not swallowed).
+
 ## 2026-11-01 — Next's runtime caches are writable by the web's runtime user (Claude; lead's bug report)
 
 1. **The bug:**
