@@ -34,6 +34,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - `announcements.int-spec.ts` (11): visibility by time, archive and category; paging; the cache showing a write at once; roles and a blocked or demoted user; create with its audit row; refused input and back-dating; stale, nothing-to-update, archive and restore; the status filter; the database CHECKs and the index.
    - web: `http/home.test.ts` (composition, next exam, picks, a refused part), `announcement-problem.test.ts`.
    - **Mutation checks:** without the category filter, without the generation bump, without the stale check, and without the registration pick, each makes a test fail.
+
 ## 2026-11-01 — Encrypted off-server backups (L6; exam session, A2's plan and handover)
 
 1. **Configuration only in `/etc/sirat/backup.env`** (root, 0600; `backup.sh` refuses anything else), never the app's `.env`, which reaches every API replica: the put-only upload key and the heartbeat URL stay with root. The file is read as `KEY=VALUE` lines, never run as shell. Every compose call passes `-p` from `BACKUP_PROJECT`.
