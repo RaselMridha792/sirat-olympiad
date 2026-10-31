@@ -135,6 +135,19 @@ export const REGISTRATION_MESSAGES: Partial<
 export type RegistrationState =
   'awaiting_payment' | 'confirming' | 'completed' | 'failed' | 'expired' | 'needs_help';
 
+/**
+ * Short bn/en labels of each state, for a badge or a card (core's dashboard card, C4). The result page
+ * (/register/result) shows the longer texts and the actions; a card links there for the states that need one.
+ */
+export const REGISTRATION_STATE_LABELS: Record<RegistrationState, { bn: string; en: string }> = {
+  awaiting_payment: { bn: 'পেমেন্টের অপেক্ষায়', en: 'Waiting for payment' },
+  confirming: { bn: 'পেমেন্ট নিশ্চিত করা হচ্ছে', en: 'Confirming the payment' },
+  completed: { bn: 'রেজিস্ট্রেশন সম্পন্ন', en: 'Registered' },
+  failed: { bn: 'পেমেন্ট সম্পন্ন হয়নি', en: 'Payment not completed' },
+  expired: { bn: 'পেমেন্টের সময় শেষ', en: 'Payment time ran out' },
+  needs_help: { bn: 'আমাদের দেখতে হবে', en: 'We are checking your payment' },
+};
+
 // ───────────── API shapes (docs/06-API.md "Registration and payment", "Admin payments and settings") ─────────────
 
 /** The form's limits, as the API's StartRegistrationDto checks them. The web checks the same before it sends. */

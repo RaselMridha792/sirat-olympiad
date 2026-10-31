@@ -169,7 +169,7 @@ export function RegisterWizard({ locale, info }: { locale: Locale; info: WizardI
   return (
     <div className="space-y-5">
       <div className="text-center">
-        <h1 className="text-3xl font-bold">{m.title}</h1>
+        <h2 className="text-3xl font-bold">{m.title}</h2>
         <p className="mt-2 text-sm text-ink-muted">{m.fee(amount)}</p>
       </div>
       <PreviousAttempt m={m} />
@@ -188,14 +188,20 @@ export function RegisterWizard({ locale, info }: { locale: Locale; info: WizardI
         ))}
       </ol>
       {/* method="post": even a submit that slipped past the disabled button never puts the form in a URL. */}
-      <form method="post" onSubmit={onSubmit} noValidate className="space-y-4">
+      <form
+        id="registration-form"
+        method="post"
+        onSubmit={onSubmit}
+        noValidate
+        className="space-y-4"
+      >
         <div>
           <p className="text-xs font-semibold text-ink-muted">
             {m.step(formatNumber(locale, index + 1), formatNumber(locale, STEPS.length))}
           </p>
-          <h2 ref={heading} tabIndex={-1} className="text-xl font-bold outline-none">
+          <h3 ref={heading} tabIndex={-1} className="text-xl font-bold outline-none">
             {m.steps[step]}
-          </h2>
+          </h3>
         </div>
 
         {step === 'you' ? (
@@ -399,10 +405,10 @@ function Summary({
   return (
     <section className="rounded-control border border-line p-4">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="flex items-center gap-2 text-sm font-bold text-ink">
+        <h4 className="flex items-center gap-2 text-sm font-bold text-ink">
           {icon}
           {title}
-        </h3>
+        </h4>
         <button
           type="button"
           onClick={onEdit}
@@ -415,7 +421,7 @@ function Summary({
         {rows.map(([label, value]) => (
           <div key={label} className="flex flex-wrap justify-between gap-x-3">
             <dt className="text-ink-muted">{label}</dt>
-            <dd className="break-all font-medium text-ink">{value}</dd>
+            <dd className="break-words font-medium text-ink">{value}</dd>
           </div>
         ))}
       </dl>

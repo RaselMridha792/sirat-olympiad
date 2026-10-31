@@ -65,3 +65,17 @@ export async function readRegistrationInfo(): Promise<RegistrationInfo | null> {
     return null;
   }
 }
+
+/** When registration is closed now but has a future opening time: that time, else null. */
+export function upcomingOpening(info: RegistrationInfo, now: number): string | null {
+  return !info.open && info.opensAt && Date.parse(info.opensAt) > now ? info.opensAt : null;
+}
+
+/** The page's data: the info (null when it cannot be read), and an opening time still ahead. */
+export async function readRegistrationPage(): Promise<{
+  info: RegistrationInfo | null;
+  opensAt: string | null;
+}> {
+  const info = await readRegistrationInfo();
+  return { info, opensAt: info ? upcomingOpening(info, Date.now()) : null };
+}

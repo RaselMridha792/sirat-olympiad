@@ -2,8 +2,9 @@ import { REGISTRATION_MESSAGES } from '@sirat/shared';
 import { defineMessages } from '../messages.ts';
 
 /*
- * Registration and payment (payments PR 4): the wizard on /register, the result page PayStation sends the student
- * back to (/register/result), and the registration card on the student dashboard. The client components import this
+ * Registration and payment (payments PR 4): the wizard on /register and the result page PayStation sends the student
+ * back to (/register/result). The dashboard's registration card is core's (C4); its state labels are in
+ * @sirat/shared (REGISTRATION_STATE_LABELS). The client components import this
  * module and pick the language themselves (the page passes only the locale). The owner's texts for an email or a
  * phone already registered, and for paused payments, come from @sirat/shared (REGISTRATION_MESSAGES), word for word.
  */
@@ -143,20 +144,6 @@ export const registrationMessages = defineMessages({
       login: 'Log in',
       retryLoad: 'Try again',
     },
-    card: {
-      title: 'Registration',
-      registered: 'Registered',
-      registeredOn: 'Registered on',
-      category: 'Category',
-      grade: 'Class',
-      payment: 'Payment',
-      invoice: 'Invoice',
-      amount: 'Amount paid',
-      paidOn: 'Paid on',
-      notRegisteredTitle: 'No registration yet',
-      notRegisteredText:
-        'This account has no registration. If you paid, contact us with your invoice number.',
-    },
   },
   bn: {
     metaTitle: 'রেজিস্ট্রেশন',
@@ -287,20 +274,6 @@ export const registrationMessages = defineMessages({
       register: 'রেজিস্ট্রেশন করুন',
       login: 'Login করুন',
       retryLoad: 'আবার চেষ্টা করুন',
-    },
-    card: {
-      title: 'রেজিস্ট্রেশন',
-      registered: 'রেজিস্টার্ড',
-      registeredOn: 'রেজিস্ট্রেশনের তারিখ',
-      category: 'ক্যাটাগরি',
-      grade: 'শ্রেণি',
-      payment: 'পেমেন্ট',
-      invoice: 'ইনভয়েস',
-      amount: 'পরিশোধিত পরিমাণ',
-      paidOn: 'পেমেন্টের তারিখ',
-      notRegisteredTitle: 'এখনো রেজিস্ট্রেশন হয়নি',
-      notRegisteredText:
-        'এই অ্যাকাউন্টের কোনো রেজিস্ট্রেশন নেই। পেমেন্ট করে থাকলে ইনভয়েস নম্বরসহ আমাদের সাথে যোগাযোগ করুন।',
     },
   },
 });
