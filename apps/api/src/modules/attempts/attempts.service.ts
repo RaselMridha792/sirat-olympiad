@@ -23,6 +23,7 @@ import type { AuthUser } from '../auth/access-token.service';
 import { type ExamConfig, ExamCache } from '../exams/exam-cache';
 import { hasPaidRegistration, studentAccount, visibleTo } from '../exams/student-access';
 import { type AttemptMeta, AttemptStore, type CheckpointOutcome } from './attempt-store';
+import { ExamQueue } from './exam-queue';
 import type { CheckpointDto, SubmitDto } from './dto/attempt.dto';
 import { attemptPhase, remainingSeconds, timeTakenSeconds, withinGrace } from './exam-time';
 import {
@@ -58,6 +59,7 @@ export class AttemptsService {
     private readonly prisma: PrismaService,
     private readonly cache: ExamCache,
     private readonly store: AttemptStore,
+    private readonly queue: ExamQueue,
   ) {}
 
   /** POST /exams/:id/attempts. `created` false = the student already had this attempt (resume, any phase). */
@@ -227,7 +229,8 @@ export class AttemptsService {
     }
     const meta = await this.store.meta(attemptId);
     if (meta) await this.store.markSubmitted(meta);
-    // Scoring is queued here once the worker exists (E3); until then the sweep finds unscored attempts.
+    // After the commit, never inside it. If the queue is down the submit still succeeds; the sweep scores it later.
+    if (!result.alreadySubmitted) await this.queue.score(attemptId);
     return result;
   }
 
