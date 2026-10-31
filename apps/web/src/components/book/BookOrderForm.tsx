@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { MapPin, Phone, User } from 'lucide-react';
 import { BD_DISTRICTS, BOOK_ORDER_LIMITS, type MyBookOrderView } from '@sirat/shared';
-import { Badge, Button, DetailList, Field, SelectField } from '@sirat/ui';
+import { Button, DetailList, Field, SelectField } from '@sirat/ui';
 import { useHydrated } from '@/components/auth/useHydrated';
 import type { Locale } from '@/i18n';
 import { formatDate } from '@/i18n/format';
@@ -95,14 +95,9 @@ export function BookOrderForm({
     const shipped = order.status === 'shipped';
     return (
       <section className="space-y-4" aria-labelledby="book-order-title">
-        <div className="flex flex-wrap items-center gap-3">
-          <h2 id="book-order-title" className="text-lg font-bold text-ink">
-            {shipped ? m.order.shippedTitle : m.order.confirmedTitle}
-          </h2>
-          <Badge tone={shipped ? 'success' : 'info'}>
-            {shipped ? m.order.shippedTitle : m.order.confirmedTitle}
-          </Badge>
-        </div>
+        <h2 id="book-order-title" className="text-lg font-bold text-ink">
+          {shipped ? m.order.shippedTitle : m.order.confirmedTitle}
+        </h2>
         <p className="text-sm text-ink-muted">
           {shipped && order.shippedAt
             ? m.order.shippedOn(formatDate(locale, order.shippedAt))
