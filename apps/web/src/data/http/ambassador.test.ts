@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { withLeakCanaries } from '../mock/leak.ts';
-import { pickOverview } from './ambassador.ts';
+import { isRoleBehind, pickOverview } from './ambassador.ts';
 import { createHttpSource } from './index.ts';
 import { DataRequestError, type ApiGet, type ApiResult } from './request.ts';
 
@@ -42,6 +42,23 @@ test('student.getAmbassador reads GET /ambassador/me and refuses a wrong shape o
     const source = createHttpSource(fakeApi({ '/ambassador/me': { status, body } }));
     await assert.rejects(source.student.getAmbassador(), DataRequestError);
   }
+});
+
+test('only a 403 from GET /ambassador/me means the token is behind the role (the panel renews it once)', async () => {
+  const refused = async (status: number) =>
+    createHttpSource(fakeApi({ '/ambassador/me': { status, body: null } }))
+      .student.getAmbassador()
+      .catch((error: unknown) => error);
+  assert.equal(isRoleBehind(await refused(403)), true);
+  for (const status of [404, 429, 500, 503])
+    assert.equal(isRoleBehind(await refused(status)), false);
+  const wrongShape = await createHttpSource(
+    fakeApi({ '/ambassador/me': { status: 200, body: { ...overview, points: 'x' } } }),
+  )
+    .student.getAmbassador()
+    .catch((error: unknown) => error);
+  assert.equal(isRoleBehind(wrongShape), false);
+  assert.equal(isRoleBehind(new Error('x')), false);
 });
 
 test('admin.listAmbassadors passes on only the row fields', async () => {

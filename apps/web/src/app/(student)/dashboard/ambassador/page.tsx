@@ -1,16 +1,18 @@
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 import { ClipboardList, Medal, Star, UserPlus, Users, UsersRound } from 'lucide-react';
 import { Badge, Card, DataTable, EmptyState, StatCard } from '@sirat/ui';
 import { CopyCode } from '@/components/ambassador/CopyCode';
 import { rankStanding } from '@/components/ambassador/rank';
 import { rankTone, taskStatusTone } from '@/components/status';
 import { getData } from '@/data';
+import { isRoleBehind } from '@/data/http/ambassador';
 import type { SearchParams } from '@/data/query';
 import { common } from '@/i18n/common';
 import { formatDate, formatNumber } from '@/i18n/format';
 import { ambassadorMessages } from '@/i18n/messages/ambassador';
 import { getMessages } from '@/i18n/server';
-import { requireAccess } from '@/lib/session';
+import { refreshUrl, requireAccess } from '@/lib/session';
 
 export async function generateMetadata(): Promise<Metadata> {
   const { m } = await getMessages(ambassadorMessages);
@@ -34,7 +36,11 @@ export default async function AmbassadorPage({
     getMessages(common),
     getData(params),
   ]);
-  const amb = await data.student.getAmbassador();
+  const amb = await data.student.getAmbassador().catch(async (error: unknown) => {
+    // Just approved: the token still carries the old role, so renew it and come back (isRoleBehind).
+    if (isRoleBehind(error)) redirect(await refreshUrl());
+    throw error;
+  });
 
   const n = (value: number) => formatNumber(locale, value);
   // Three distinct cases: climbing (incl. a new ambassador at 0 points), top rank, no tiers/data.

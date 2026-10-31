@@ -1,6 +1,6 @@
 import type { AdminAmbassadorRow, AmbassadorOverview, Paginated } from '@sirat/shared';
 import type { DataSource } from '../source.ts';
-import { getJson, isRecord, withQuery, type ApiGet } from './request.ts';
+import { DataRequestError, getJson, isRecord, withQuery, type ApiGet } from './request.ts';
 
 /*
  * Ambassadors (core C5a; 06-API "Ambassadors"). Reads only: approving and revoking are admin writes from the browser
@@ -98,6 +98,16 @@ const isRowPage = (v: unknown): v is Paginated<AdminAmbassadorRow> =>
   count(v.page) &&
   count(v.pageSize) &&
   count(v.total);
+
+/**
+ * GET /ambassador/me refused with 403 although the session lets this user open the panel: the session's role is read
+ * from the database (GET /auth/me), the API's guard reads the access token, and a token issued before an admin's
+ * approval still says "student" until it is renewed (at most the access TTL, 15 minutes). The panel renews it once
+ * through /refresh, whose loop guard ends at /login. A blocked account (also 403 here) fails the renewal: /login.
+ */
+export function isRoleBehind(error: unknown): boolean {
+  return error instanceof DataRequestError && error.status === 403;
+}
 
 export function studentAmbassador(get: ApiGet): Pick<DataSource['student'], 'getAmbassador'> {
   return {
