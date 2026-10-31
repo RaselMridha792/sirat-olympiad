@@ -6,7 +6,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 
 1. **Target 15 November 2026.** The first release is registration and payment only. It ends when a student logs in and sees their own registration and payment status on the dashboard. No part of the exam engine is needed.
 2. **Order change:** this release comes before the exam engine. For it, the phase order of `10-BUILD-PLAN.md` (A backend → B dashboards → C registration/payment) is replaced: the registration and payment API, the web wizard, the payment result page and the dashboard status are built now. The public marketing site stays Phase D. The Phase C Definition of Done (17 points) applies in full.
-3. Plan, day-by-day order and the proof for each DoD point: `docs/plans/PAYMENTS-PLAN.md`. Pull requests only when the owner says so.
+3. Plan, day-by-day order and the proof for each DoD point: `docs/plans/PAYMENTS-PLAN.md`. The plan and these decisions reach `main` in a docs-only pull request before any code (lead review, 2026-10-31); the code pull requests follow the split in the plan's section 10.
 
 ## 2026-10-31 — Registration fee: 400 BDT, stored in settings (owner)
 
@@ -19,8 +19,9 @@ One short entry per non-obvious technical or product decision. Newest first. For
 
 ## 2026-10-31 — PayStation account settings from env (owner)
 
-1. Sandbox work uses the owner's own PayStation test account now; the client's account replaces it later. Credentials, base URL, callback URL and IPN URL all come from `.env`; the code holds no PayStation host name. `PAYSTATION_ENV` stays only as a label for the guards (live only with `NODE_ENV=production`). Supersedes "base URL derived from `PAYSTATION_ENV`" (2026-10-30).
-2. Each payment records the account it belongs to, and invoice numbers carry an account prefix, so test data never mixes with live data. The switch checklist (what to re-verify, how test data stays apart): `docs/plans/PAYMENTS-PLAN.md` section 13.
+1. Sandbox work uses the owner's own PayStation test account now; the client's account replaces it later. Credentials, account label, invoice prefix, callback URL and IPN URL come from `.env`, so switching accounts changes `.env` only.
+2. **The host is not free in `.env`** (lead review, 2026-10-31). PayStation's host is the same for every merchant, so `payment.config.ts` holds a two-entry allow-list (sandbox, live) and `PAYSTATION_ENV` picks the entry, as decided on 2026-10-30. `live` is refused unless `NODE_ENV=production`. If `PAYSTATION_BASE_URL` is set for `sandbox` or `live`, it must equal that label's host or the API does not boot. Only `fake` (the dev/CI fake server, never in production) accepts any URL. Why: with a free base URL, a dev machine with `PAYSTATION_ENV=sandbox`, the live host and live credentials would take real money, and no guard would notice. No other source file contains a PayStation host (a source scan checks this). If the sandbox shows a different host (S11), one line of the allow-list changes. This replaces the same day's first idea of a free base URL from `.env`, which was never built.
+3. Each payment records the account it belongs to, and invoice numbers carry an account prefix, so test data never mixes with live data. The switch checklist (what to re-verify, how test data stays apart): `docs/plans/PAYMENTS-PLAN.md` section 13.
 
 ## 2026-10-31 — A2.1e email-link endpoints and operator alert emails (Claude; owner rules of 2026-10-31)
 
