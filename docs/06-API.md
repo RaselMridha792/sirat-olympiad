@@ -41,7 +41,7 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | announcements | `GET /announcements` | Auth | |
 | ambassadors | `GET /ambassador/me`, `POST /ambassador/teams`, `GET /ambassador/tasks`, `POST /ambassador/tasks/:id/submit` | Role(ambassador) | Own data only |
 | admin (all `Role(admin)` unless noted) | `GET/PATCH /admin/users[/:id]`, `POST /admin/users/:id/role` | admin | Audited |
-| | `CRUD /admin/exams`, `/admin/exams/:id/questions` | admin | Lock after publish |
+| | `GET /admin/exams?page=&pageSize=&q=&status=`, `GET /admin/exams/:id`, `POST /admin/exams`, `PATCH /admin/exams/:id`, `POST /admin/exams/:id/{publish,unpublish,archive}`, `POST /admin/exams/:id/questions`, `PUT`/`DELETE /admin/exams/:id/questions/:questionId`, `GET /admin/exams/:id/questions/:questionId/versions` | admin | Exam admin (below). Lock after publish; questions versioned, never deleted once published. Built (E1) |
 | | `GET/PUT /admin/settings` | admin | Single writer |
 | | `GET /admin/payments`, `POST /admin/payments/:id/reconcile` | admin | Audited |
 | | `GET /admin/stats` | admin/manager | Cached |
@@ -50,6 +50,26 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `CRUD /admin/announcements`, `/admin/ambassadors`, `/admin/tasks`, `/admin/rank-thresholds` | admin | |
 | | `POST /admin/points/adjust` | admin | Compensating ledger entry |
 | | `GET /admin/audit` | admin | |
+
+## Exam admin (E1; plan: `docs/plans/EXAM-PLAN.md` §1.2, §4)
+
+`@Roles('admin')` on every route (a manager or student gets 403); each write also re-reads the acting user in the database (a demoted or blocked admin gets 403 even with a valid token). Every write is audit-logged in the same transaction (`exam.*`, `question.*`: admin id, IP, old and new values). Shapes: `AdminExamCard`, `AdminExamView`, `AdminQuestion` in `@sirat/shared`. Refusals that the admin screen must tell apart are 409 with `details`: a list of reason codes.
+
+| Method + path | Body | Rules and answers |
+|---|---|---|
+| `GET /admin/exams` | — | `Paginated<AdminExamCard>`, newest window first; `q` searches the title; `status` filters. `questionCount` = active questions; `locked` = not a draft |
+| `GET /admin/exams/:id` | — | `AdminExamView`: config, `updatedAt` (the concurrency token), active questions **with** correct keys and explanations. 404 if unknown |
+| `POST /admin/exams` | `title`, `category` (null = everyone), `roundId` (null or a round), `windowStart`, `windowEnd` (ISO), `durationMinutes` (1–30), `questionsPerAttempt` (1–200), `graceSeconds` (0–300), `randomDraw` | 201 `AdminExamView` of a new `draft`. 400 if the window is not at least one duration long or the round does not exist |
+| `PATCH /admin/exams/:id` | `expectedUpdatedAt` + any create field; `reason` for a published exam | Draft: any field. Published: only `title`, and `windowEnd` later than now and than before, while the window is still open (`reason` required). 409 `stale` (someone changed it), 409 `exam_published` / `exam_archived` (field not changeable) |
+| `POST /admin/exams/:id/publish` | `expectedUpdatedAt` | Draft → published. 409 with the failed checks: `question_count` (active questions must equal `questionsPerAttempt`, or be at least that with `randomDraw`), `window_too_short`, `window_over`, `duplicate_question_text` |
+| `POST /admin/exams/:id/unpublish` | `expectedUpdatedAt` | Published → draft, only before `window_start − 5 min` and without attempts. 409 `window_started` / `has_attempts` |
+| `POST /admin/exams/:id/archive` | `expectedUpdatedAt` | A draft, or a published exam whose results are published. 409 `results_not_published` |
+| `POST /admin/exams/:id/questions` | `text`, `options` (2–6 `{key: A–Z, text}`, unique keys), `correctKey` (one of the keys), `explanation` (null or text), `keepOptionOrder` | 201 `AdminQuestion`. Draft, or a published exam with `randomDraw`. 409 `pool_fixed` (published without `randomDraw`), `exam_archived` |
+| `PUT /admin/exams/:id/questions/:questionId` | the question fields + `expectedUpdatedAt` (the question's) | Draft: edited in place. Published: a **new version** (same lineage and position, version + 1; the old row is deactivated, attempts keep theirs); returns the new `AdminQuestion`. 409 `stale`, `not_active` (already replaced), `exam_archived` |
+| `DELETE /admin/exams/:id/questions/:questionId` | — | 204. Draft: deleted. Published: **retired** (deactivated, never deleted), only with `randomDraw` and while at least `questionsPerAttempt` stay active. 409 `pool_fixed`, `pool_too_small`, `not_active`, `exam_archived` |
+| `GET /admin/exams/:id/questions/:questionId/versions` | — | Every version of that question's lineage, oldest first, with `isActive` and `deactivatedAt` |
+
+The database enforces the same lock (triggers `exams_frozen_after_publish`, `questions_frozen_after_publish`, `attempts_guard`; `05-DATABASE.md`), so an API bug cannot change a published exam's timing or rewrite an answered question.
 
 ## DTO and security rules
 
