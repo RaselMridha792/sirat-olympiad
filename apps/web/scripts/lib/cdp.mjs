@@ -99,8 +99,13 @@ export async function launchBrowser() {
     });
   });
   const conn = await connect(wsUrl);
+  // Content-Security-Policy violations seen by any page (enforced or Report-Only): every script built on this
+  // driver checks the list once at the end, so a page CSP that would break a flow fails the run (LAUNCH-PLAN §3).
+  const cspViolations = [];
 
   return {
+    /** The CSP violations recorded so far, across every page of this browser. */
+    cspViolations: () => [...cspViolations],
     /** A separate cookie jar. */
     async newContext() {
       const { browserContextId } = await conn.send('Target.createBrowserContext', {
@@ -108,7 +113,7 @@ export async function launchBrowser() {
       });
       return {
         id: browserContextId,
-        newPage: () => openPage(conn, browserContextId),
+        newPage: () => openPage(conn, browserContextId, (v) => cspViolations.push(v)),
         /** Sets a cookie for `url`'s host (host-only, like the API's cookies). */
         setCookie: (url, name, value, extra = {}) =>
           conn.send('Storage.setCookies', {
@@ -166,7 +171,9 @@ function hostOf(url) {
   return { domain: u.hostname, path: '/', secure: u.protocol === 'https:' };
 }
 
-async function openPage(conn, browserContextId) {
+const CSP_BINDING = '__siratCspViolation';
+
+async function openPage(conn, browserContextId, onCspViolation = () => {}) {
   const { targetId } = await conn.send('Target.createTarget', {
     url: 'about:blank',
     browserContextId,
@@ -176,6 +183,29 @@ async function openPage(conn, browserContextId) {
   await send('Page.enable');
   await send('Runtime.enable');
   await send('Network.enable');
+  // Each new document reports its CSP violations through a binding, before any page script runs.
+  await send('Runtime.addBinding', { name: CSP_BINDING });
+  await send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `document.addEventListener('securitypolicyviolation', (e) => {
+      try {
+        ${CSP_BINDING}(JSON.stringify({ directive: e.violatedDirective, blocked: e.blockedURI,
+          source: e.sourceFile, line: e.lineNumber, page: location.pathname }));
+      } catch {}
+    });`,
+  });
+  conn.on((msg) => {
+    if (
+      msg.sessionId === sessionId &&
+      msg.method === 'Runtime.bindingCalled' &&
+      msg.params.name === CSP_BINDING
+    ) {
+      try {
+        onCspViolation(JSON.parse(msg.params.payload));
+      } catch {
+        onCspViolation({ directive: 'unreadable report' });
+      }
+    }
+  });
 
   const page = {
     send,

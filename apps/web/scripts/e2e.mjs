@@ -410,6 +410,14 @@ try {
   await browser.close();
 }
 
+const csp = browser.cspViolations();
+results.push(csp.length === 0);
+console.log(
+  csp.length
+    ? `  FAIL  no Content-Security-Policy violations: ${JSON.stringify(csp.slice(0, 5))}`
+    : '  ok    no Content-Security-Policy violations',
+);
+
 const failed = results.filter((ok) => !ok).length;
 console.log(`e2e: ${results.length - failed}/${results.length} passed`);
 process.exit(failed ? 1 : 0);
