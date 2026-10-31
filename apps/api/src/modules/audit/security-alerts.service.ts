@@ -17,7 +17,23 @@ export type SecurityAlertKind =
   | 'payments.needs_review' // money taken but set aside for an admin (amount, invoice, duplicate, account conflict)
   | 'ops.backup_failed' // backup.sh: a run or its daily check failed (the heartbeat's /fail as well)
   | 'ops.monitor_failed' // monitor.sh: ops-check could not run, so nothing was checked
-  | 'ops.alert_test'; // ops-alert --kind ops.alert_test: proves the email path (the fake-alert drill)
+  | 'ops.alert_test' // ops-alert --kind ops.alert_test: proves the email path (the fake-alert drill)
+  | 'ops.disk' // a server check (ops-check, L11): see RUNBOOK §7
+  | 'ops.swap' // a server check (ops-check, L11): see RUNBOOK §7
+  | 'ops.cpu' // a server check (ops-check, L11): see RUNBOOK §7
+  | 'ops.memory' // a server check (ops-check, L11): see RUNBOOK §7
+  | 'ops.containers' // a server check (ops-check, L11): see RUNBOOK §7
+  | 'ops.queue_redis_memory' // a server check (ops-check, L11): see RUNBOOK §7
+  | 'ops.workers' // a server check (ops-check, L11): see RUNBOOK §7
+  | 'ops.queue_backlog' // a server check (ops-check, L11): see RUNBOOK §7
+  | 'ops.failed_jobs' // a server check (ops-check, L11): see RUNBOOK §7
+  | 'ops.reconciliation' // a server check (ops-check, L11): see RUNBOOK §7
+  | 'ops.http_5xx' // a server check (ops-check, L11): see RUNBOOK §7
+  | 'ops.app_errors' // a server check (ops-check, L11): see RUNBOOK §7
+  | 'ops.api_p95' // a server check (ops-check, L11): see RUNBOOK §7
+  | 'ops.certificate' // a server check (ops-check, L11): see RUNBOOK §7
+  | 'ops.backup_age' // a server check (ops-check, L11): see RUNBOOK §7
+  | 'ops.time_sync'; // a server check (ops-check, L11): see RUNBOOK §7;
 
 /** Alert categories: each has its own hourly email cap (LAUNCH-PLAN §6, owner Q2) and its own subject. */
 export const ALERT_CATEGORIES = ['security', 'payments', 'ops'] as const;
@@ -34,6 +50,22 @@ export const ALERT_CATEGORY: Record<SecurityAlertKind, AlertCategory> = {
   'ops.backup_failed': 'ops',
   'ops.monitor_failed': 'ops',
   'ops.alert_test': 'ops',
+  'ops.disk': 'ops',
+  'ops.swap': 'ops',
+  'ops.cpu': 'ops',
+  'ops.memory': 'ops',
+  'ops.containers': 'ops',
+  'ops.queue_redis_memory': 'ops',
+  'ops.workers': 'ops',
+  'ops.queue_backlog': 'ops',
+  'ops.failed_jobs': 'ops',
+  'ops.reconciliation': 'ops',
+  'ops.http_5xx': 'ops',
+  'ops.app_errors': 'ops',
+  'ops.api_p95': 'ops',
+  'ops.certificate': 'ops',
+  'ops.backup_age': 'ops',
+  'ops.time_sync': 'ops',
 };
 
 const SUBJECT_PREFIX: Record<AlertCategory, string> = {
@@ -67,6 +99,22 @@ const TITLES: Record<SecurityAlertKind, string> = {
     'A database backup or its daily check failed: see the backup service log (RUNBOOK §5)',
   'ops.monitor_failed': 'The server checks could not run, so nothing was checked (RUNBOOK §7)',
   'ops.alert_test': 'Test alert: the alert email path works',
+  'ops.disk': 'Disk usage on the server',
+  'ops.swap': 'The server is using swap',
+  'ops.cpu': 'CPU busy above 85% on two checks in a row',
+  'ops.memory': 'Memory in use on the server',
+  'ops.containers': 'A container is not running or unhealthy (two checks in a row)',
+  'ops.queue_redis_memory': 'The queue Redis is filling up (of 512 MB)',
+  'ops.workers': 'A job queue has no worker (two checks in a row)',
+  'ops.queue_backlog': 'Jobs are waiting too long in a queue',
+  'ops.failed_jobs': 'Background jobs failed for good',
+  'ops.reconciliation': 'The payments reconciliation did not run on time',
+  'ops.http_5xx': 'Server errors (5xx) in the last 5 minutes',
+  'ops.app_errors': 'API or web errors in the logs of the last 5 minutes',
+  'ops.api_p95': 'API responses are slow (p95 over 1 s)',
+  'ops.certificate': 'The TLS certificate expires soon',
+  'ops.backup_age': 'No database backup in the last 26 hours',
+  'ops.time_sync': 'The server clock is not synchronised',
 };
 
 /**
@@ -89,6 +137,7 @@ export function securityAlertMessage(
     `Time: ${at.toISOString()}`,
     ...(account ? [`Account: ${account}`] : []),
     ...Object.entries(event.meta).map(([key, value]) => `${key}: ${String(value)}`),
+    ...('level' in event.meta ? ['(level: 2 = critical, 1 = warning, 0 = resolved)'] : []),
     '',
     `Details: audit log, action security.${kind}.`,
     'Alert emails of this kind pause for 10 minutes after each one, and each category (security, payments, ops)',

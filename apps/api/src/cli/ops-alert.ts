@@ -15,22 +15,23 @@
 import { PrismaClient } from '@prisma/client';
 import Redis from 'ioredis';
 import { BackgroundTasks } from '../common/background/background-tasks';
-import { validateEnv } from '../config/env';
 import { AlertEmailLimiter } from '../modules/audit/alert-email-limiter';
 import { AuditService } from '../modules/audit/audit.service';
-import {
-  ALERT_CATEGORY,
-  SecurityAlerts,
-  type SecurityAlertKind,
-} from '../modules/audit/security-alerts.service';
+import { SecurityAlerts, type SecurityAlertKind } from '../modules/audit/security-alerts.service';
 import { EmailQueue } from '../modules/notifications/email-queue.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import { CACHE_REDIS_OPTIONS, QUEUE_REDIS_OPTIONS } from '../redis/redis.module';
+import { OpsEnvError, opsEnv, type OpsEnv } from './ops-env';
 
-/** The kinds this command may raise: the `ops` category, and nothing else. */
-export const OPS_ALERT_KINDS: readonly SecurityAlertKind[] = (
-  Object.keys(ALERT_CATEGORY) as SecurityAlertKind[]
-).filter((kind) => ALERT_CATEGORY[kind] === 'ops');
+/**
+ * The kinds a script may raise: three ops kinds, nothing of another category. The server checks raise their own
+ * kinds inside ops-check, so a script can neither forge a security or payments alert nor fake a check's state.
+ */
+export const OPS_ALERT_KINDS = [
+  'ops.backup_failed',
+  'ops.monitor_failed',
+  'ops.alert_test',
+] as const satisfies readonly SecurityAlertKind[];
 
 const MAX_META = 10;
 const META_KEY = /^[a-z][A-Za-z0-9_]{0,31}$/;
@@ -93,16 +94,25 @@ async function main(): Promise<number> {
     console.error(`ops-alert: ${e.message}`);
     return 2;
   }
-  const env = validateEnv(process.env);
+  let env: OpsEnv;
+  try {
+    env = opsEnv();
+  } catch (e) {
+    if (!(e instanceof OpsEnvError)) throw e;
+    console.error(`ops-alert: ${e.message}`);
+    return 2;
+  }
   const prisma = new PrismaClient();
   const cache = new Redis(env.REDIS_CACHE_URL, { ...CACHE_REDIS_OPTIONS, lazyConnect: true });
   const queue = new Redis(env.REDIS_QUEUE_URL, { ...QUEUE_REDIS_OPTIONS, lazyConnect: true });
-  const emails = new EmailQueue(queue);
+  let emails: EmailQueue | undefined;
   try {
     // Reachable before anything is raised: the limiter and the email queue skip a Redis that is not ready yet, and
     // the audit write never throws.
     await prisma.$queryRaw`SELECT 1`;
     await Promise.all([cache.connect(), queue.connect()]);
+    // Only now: BullMQ would otherwise connect the client itself, and connect() above would then fail.
+    emails = new EmailQueue(queue);
     const background = new BackgroundTasks();
     const alerts = new SecurityAlerts(
       new AuditService(prisma as unknown as PrismaService),
@@ -120,7 +130,7 @@ async function main(): Promise<number> {
     );
     return 1;
   } finally {
-    await emails.onApplicationShutdown().catch(() => undefined);
+    await emails?.onApplicationShutdown().catch(() => undefined);
     cache.disconnect();
     queue.disconnect();
     await prisma.$disconnect();
