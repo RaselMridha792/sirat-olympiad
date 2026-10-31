@@ -2,6 +2,7 @@ import type {
   AdminExamDetail,
   AdminLeaderboardRow,
   LeaderboardRow,
+  PageQuery,
   StudentExamCard,
 } from './dashboard';
 import type { QuestionOption, QuestionRecord } from './records';
@@ -65,7 +66,13 @@ export type StudentExamDetail = StudentExamListItem & {
   graceSeconds: number;
   violationWarnings: number;
   serverNow: string;
-  attempt: { phase: AttemptPhase; endsAt: string; receipt: SubmissionReceipt | null } | null;
+  /** The student's own attempt (its id opens the review once results are published). */
+  attempt: {
+    attemptId: string;
+    phase: AttemptPhase;
+    endsAt: string;
+    receipt: SubmissionReceipt | null;
+  } | null;
 };
 
 /** Start, resume. No question ids, no option keys, no correct answers, no explanations, no scores. */
@@ -199,6 +206,14 @@ export interface AdminAttemptRow {
   score: number | null;
 }
 export type AdminAttemptDetail = AdminAttemptRow & { events: ExamEvent[] };
+
+/** GET /admin/exams/:id/attempts filters (q: name or email). */
+export interface AdminAttemptQuery extends PageQuery {
+  status?: AttemptStatus;
+  endReason?: EndReason;
+  /** At least this many violations (owner Q4). */
+  minViolations?: number;
+}
 
 export const EXAM_RESULTS_REFUSALS = [
   'window_open',

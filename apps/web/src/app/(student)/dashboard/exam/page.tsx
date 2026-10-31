@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CalendarClock, CalendarDays, CalendarX2, Clock, ListChecks } from 'lucide-react';
-import type { StudentExamState } from '@sirat/shared';
+import type { StudentExamListItem, StudentExamState } from '@sirat/shared';
 import { Badge, buttonClasses, cn, EmptyState, PageHeader } from '@sirat/ui';
 import { examStateTone } from '@/components/status';
 import { getData } from '@/data';
@@ -56,7 +56,20 @@ function helperLine(state: StudentExamState, m: ExamsMessages): string | null {
   }
 }
 
-/** The card's link into the exam room. A closed exam has none (its results come with E5). */
+/** The card's link: the exam room, or the review once the results are published. A closed exam has none. */
+function action(
+  exam: StudentExamListItem,
+  m: ExamsMessages,
+): { label: string; href: string; primary: boolean } | null {
+  const room = `/dashboard/exam/${encodeURIComponent(exam.id)}`;
+  if (exam.state === 'submitted' && exam.resultsPublished)
+    return { label: m.action.results, href: `${room}/review`, primary: true };
+  const label = actionLabel(exam.state, m);
+  return label
+    ? { label, href: room, primary: exam.state === 'open' || exam.state === 'in_progress' }
+    : null;
+}
+
 function actionLabel(state: StudentExamState, m: ExamsMessages): string | null {
   switch (state) {
     case 'upcoming':
@@ -104,7 +117,7 @@ export default async function MyExamsPage({
           {exams.map((exam) => {
             const tone = examStateTone[exam.state];
             const helper = helperLine(exam.state, m);
-            const action = actionLabel(exam.state, m);
+            const link = action(exam, m);
             return (
               <li
                 key={exam.id}
@@ -161,19 +174,16 @@ export default async function MyExamsPage({
                   <div className="mt-auto flex flex-col items-start gap-2 border-t border-line pt-3">
                     <Badge tone={tone}>{c.examState[exam.state]}</Badge>
                     {helper ? <p className="text-xs text-ink-muted">{helper}</p> : null}
-                    {action ? (
+                    {link ? (
                       <Link
-                        href={`/dashboard/exam/${encodeURIComponent(exam.id)}`}
+                        href={link.href}
                         className={buttonClasses({
-                          variant:
-                            exam.state === 'open' || exam.state === 'in_progress'
-                              ? 'primary'
-                              : 'outline',
+                          variant: link.primary ? 'primary' : 'outline',
                           size: 'sm',
                           className: 'mt-1',
                         })}
                       >
-                        {action}
+                        {link.label}
                       </Link>
                     ) : null}
                   </div>

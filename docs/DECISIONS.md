@@ -2,6 +2,22 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-01 — Results on the web (E5a; exam session, lead's rules)
+
+1. **E5 is two pull requests (lead):** E5a results on the web (review, leaderboards, results panel, attempts); E5b admin authoring (create, edit, versions, publish dialogs).
+2. **Leaderboards per exam:** the web's round-based leaderboard types (`LeaderboardView`, `LeaderboardRound`, `AdminLeaderboardView`, `AdminLeaderboardQuery`) are gone; the pages use E3's `ExamLeaderboard` and `AdminExamLeaderboard` with `?exam=`.
+   - **Student tabs** are the student's own exams with published results, from `GET /exams` (`resultsPublished` now passes the pick), newest window first. With none, the page asks the API for nothing.
+   - **No category select** (the plan had one, the lead agreed to drop it): each category has its own exam, and a student lists only their own.
+   - **Admin tabs:** the 8 most recent non-draft exams plus the one shown (older ones open from their exam page). The category tabs are gone; the status card now says whether this exam's results are published.
+   - The mock ranks each exam's participants on their own (1, 2, 2, 4), as the real snapshot does.
+3. **Review:** `StudentExamDetail.attempt` gains `attemptId`, the student's own attempt only; the review route checks ownership. The page calls `GET /attempts/:id/review` only when the results are published and an attempt exists; 404 and 403 both mean "no review". The exam list shows "Results", and the receipt links to the review once results are out.
+4. **Admin reads over HTTP** live in `data/http/admin-exams.ts`, a second file in the exam area so `exams.ts` stays readable. `admin.getExam` returns the API's `AdminExamView`, whose `updatedAt` is the write token. `admin.listExams` is connected too: the admin leaderboard tabs need it.
+5. **Results actions** are browser writes through `lib/api.ts`. Publish and unpublish send `expectedUpdatedAt`. Refusals are shown in words by code: `window_open`, `attempts_unfinished`, `no_snapshot`, `results_published`, `stale`. The buttons only follow `canBuild` and `canPublish`.
+6. **Attempts (owner Q4):** filters "ended by violations" and "3 or more violations" (half way to the 6th), search by name or email, paging, and a URL dialog (`?attempt=`) with the events and their times; violations are marked.
+7. **Proof:**
+   - `check:leak` OK on 10 pages, `check:prod` on 27 (8 still show the polite error state: not connected yet), `check:api-down` on 3, all on the exam session's own services.
+   - Extra page checks for the attempt dialog, both filters, both leaderboards, the review, the list link and the receipt link.
+
 ## 2026-11-01 — Payments queue name per test run (Claude; A2's finding, lead's order)
 
 **What:** `PAYMENTS_QUEUE_NAME` (optional, validated `^[A-Za-z0-9_-]{1,64}$`; blank means `payments`) names the BullMQ queue that both `PaymentQueue` (API) and `PaymentsWorker` read from one provider, so the two can never disagree. Production leaves it blank. The payments test harness gives each run its own name (`payments-test-<random>`).

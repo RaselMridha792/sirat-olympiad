@@ -19,7 +19,7 @@ test('the server pages: never more than pageSize rows, ranks ascending with shar
   assert.equal(view.status, 'published');
   if (view.status !== 'published') return;
   assert.equal(view.items.length, 50);
-  assert.ok(view.total > 1000);
+  assert.ok(view.total > 100); // one exam, one category: still many pages
   const ranks = view.items.map((r) => r.rank);
   assert.deepEqual(
     ranks,
@@ -39,9 +39,19 @@ test('students cannot search the leaderboard by email', async () => {
   assert.ok(byEmail.status === 'published' && byEmail.total === 0);
 });
 
-test('rounds without a published snapshot are reported as unpublished', async () => {
-  const view = await source.leaderboard.get({ page: 1, pageSize: 20, roundId: 'rd-3' });
+test('an exam without published results is reported as unpublished', async () => {
+  const view = await source.leaderboard.get({ page: 1, pageSize: 20, exam: 'ex-r2-check' });
   assert.equal(view.status, 'unpublished');
+  assert.equal(view.exam?.id, 'ex-r2-check');
+  assert.equal(view.items.length, 0);
+});
+
+test('each exam ranks its own participants (one category), with shared ties', async () => {
+  const view = await source.leaderboard.get({ page: 1, pageSize: 50, exam: 'ex-r1-act' });
+  assert.equal(view.status, 'published');
+  assert.equal(view.items[0]?.rank, 1);
+  const admin = await source.admin.getLeaderboard({ page: 1, pageSize: 50, exam: 'ex-r1-act' });
+  assert.ok(admin.items.length > 0 && admin.items.every((r) => r.category === 'activist'));
 });
 
 test('student exam cards never include questions or answers', async () => {
