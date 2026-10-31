@@ -17,6 +17,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 7. **Proof:**
    - `check:leak` OK on 10 pages, `check:prod` on 27 (8 still show the polite error state: not connected yet), `check:api-down` on 3, all on the exam session's own services.
    - Extra page checks for the attempt dialog, both filters, both leaderboards, the review, the list link and the receipt link.
+
 ## 2026-11-01 — Payments queue name per test run (Claude; A2's finding, lead's order)
 
 **What:** `PAYMENTS_QUEUE_NAME` (optional, validated `^[A-Za-z0-9_-]{1,64}$`; blank means `payments`) names the BullMQ queue that both `PaymentQueue` (API) and `PaymentsWorker` read from one provider, so the two can never disagree. Production leaves it blank. The payments test harness gives each run its own name (`payments-test-<random>`).
