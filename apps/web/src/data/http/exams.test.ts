@@ -1,0 +1,89 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import type { StudentExamDetail } from '@sirat/shared';
+import { createHttpSource } from './index.ts';
+import { DataRequestError, type ApiGet, type ApiResult } from './request.ts';
+
+/* GET /exams/:id through the HTTP source (E4): the waiting room passes on only its own fields. */
+
+const ID = '0b9f6c1e-4a7d-4c2b-9e3f-1a2b3c4d5e6f';
+
+function fakeApi(answers: Record<string, ApiResult>): ApiGet & { calls: string[] } {
+  const calls: string[] = [];
+  const get = (async (path: string) => {
+    calls.push(path);
+    return answers[path] ?? { status: 404, body: null };
+  }) as ApiGet & { calls: string[] };
+  get.calls = calls;
+  return get;
+}
+
+const detail: StudentExamDetail = {
+  id: ID,
+  title: 'Round 1',
+  category: null,
+  durationMinutes: 30,
+  questionsPerAttempt: 20,
+  windowStart: '2026-11-20T04:00:00.000Z',
+  windowEnd: '2026-11-21T16:00:00.000Z',
+  state: 'submitted',
+  resultsPublished: false,
+  graceSeconds: 30,
+  violationWarnings: 5,
+  serverNow: '2026-11-20T05:00:00.000Z',
+  attempt: {
+    phase: 'submitted',
+    endsAt: '2026-11-20T04:40:00.000Z',
+    receipt: {
+      receiptId: 'c0ffee00-0000-4000-8000-000000000001',
+      submittedAt: '2026-11-20T04:31:00.000Z',
+      endReason: 'violations',
+    },
+  },
+};
+
+test('student.getExam reads GET /exams/:id and passes on only the waiting-room fields', async () => {
+  // Canaries for what a waiting room must never carry, at every level.
+  const body = {
+    ...detail,
+    score: 17,
+    questions: [{ text: 'Q', correctKey: 'A' }],
+    attempt: {
+      ...detail.attempt,
+      answers: [1, 2],
+      receipt: { ...detail.attempt!.receipt, score: 17, rank: 1 },
+    },
+  };
+  const get = fakeApi({ [`/exams/${ID}`]: { status: 200, body } });
+  assert.deepEqual(await createHttpSource(get).student.getExam(ID), detail);
+  assert.deepEqual(get.calls, [`/exams/${ID}`]);
+});
+
+test('student.getExam: not found (null) for an unknown or hidden exam and a malformed id', async () => {
+  const get = fakeApi({});
+  const source = createHttpSource(get).student;
+  assert.equal(await source.getExam(ID), null);
+  assert.equal(await source.getExam('ex-practice'), null);
+  assert.equal(await source.getExam('../admin/exams'), null);
+  assert.deepEqual(get.calls, [`/exams/${ID}`], 'a malformed id sends no request');
+});
+
+test('student.getExam refuses an unknown phase or end reason and passes refusals on', async () => {
+  const before = { ...detail, state: 'open' as const, attempt: null };
+  for (const bad of [
+    { ...detail, attempt: { ...detail.attempt, phase: 'started' } },
+    {
+      ...detail,
+      attempt: { ...detail.attempt, receipt: { ...detail.attempt!.receipt, endReason: 'x' } },
+    },
+    { ...before, violationWarnings: '5' },
+    { ...before, serverNow: undefined },
+  ]) {
+    const get = fakeApi({ [`/exams/${ID}`]: { status: 200, body: bad } });
+    await assert.rejects(createHttpSource(get).student.getExam(ID), DataRequestError);
+  }
+  const get = fakeApi({ [`/exams/${ID}`]: { status: 200, body: before } });
+  assert.deepEqual(await createHttpSource(get).student.getExam(ID), before);
+  const blocked = fakeApi({ [`/exams/${ID}`]: { status: 403, body: null } });
+  await assert.rejects(createHttpSource(blocked).student.getExam(ID), DataRequestError);
+});

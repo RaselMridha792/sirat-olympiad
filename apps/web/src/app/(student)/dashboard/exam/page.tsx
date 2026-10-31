@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { CalendarClock, CalendarDays, CalendarX2, Clock, ListChecks } from 'lucide-react';
 import type { StudentExamState } from '@sirat/shared';
-import { Badge, cn, EmptyState, PageHeader } from '@sirat/ui';
+import { Badge, buttonClasses, cn, EmptyState, PageHeader } from '@sirat/ui';
 import { examStateTone } from '@/components/status';
 import { getData } from '@/data';
 import type { SearchParams } from '@/data/query';
@@ -13,9 +14,9 @@ import { requireAccess } from '@/lib/session';
 
 /*
  * "My Exams" (old dashboard/quizzes/page.jsx): one card per exam with a coloured top strip.
- * The server decides each exam's state from its clock; this page only shows it. The exam player
- * is not built yet, so there is no Start button and no link to a player route. The old
- * browser-side search and hard-coded exam dates are dropped (the list is short and server-made).
+ * The server decides each exam's state from its clock; this page only shows it, and links to the
+ * exam room (/dashboard/exam/<id>), where the server decides again. The old browser-side search
+ * and hard-coded exam dates are dropped (the list is short and server-made).
  */
 
 type ExamsMessages = (typeof studentExamsMessages)['en'];
@@ -55,6 +56,22 @@ function helperLine(state: StudentExamState, m: ExamsMessages): string | null {
   }
 }
 
+/** The card's link into the exam room. A closed exam has none (its results come with E5). */
+function actionLabel(state: StudentExamState, m: ExamsMessages): string | null {
+  switch (state) {
+    case 'upcoming':
+      return m.action.upcoming;
+    case 'open':
+      return m.action.open;
+    case 'in_progress':
+      return m.action.inProgress;
+    case 'submitted':
+      return m.action.submitted;
+    case 'closed':
+      return null;
+  }
+}
+
 export async function generateMetadata(): Promise<Metadata> {
   const { m } = await getMessages(studentExamsMessages);
   return { title: m.title };
@@ -87,6 +104,7 @@ export default async function MyExamsPage({
           {exams.map((exam) => {
             const tone = examStateTone[exam.state];
             const helper = helperLine(exam.state, m);
+            const action = actionLabel(exam.state, m);
             return (
               <li
                 key={exam.id}
@@ -143,6 +161,21 @@ export default async function MyExamsPage({
                   <div className="mt-auto flex flex-col items-start gap-2 border-t border-line pt-3">
                     <Badge tone={tone}>{c.examState[exam.state]}</Badge>
                     {helper ? <p className="text-xs text-ink-muted">{helper}</p> : null}
+                    {action ? (
+                      <Link
+                        href={`/dashboard/exam/${encodeURIComponent(exam.id)}`}
+                        className={buttonClasses({
+                          variant:
+                            exam.state === 'open' || exam.state === 'in_progress'
+                              ? 'primary'
+                              : 'outline',
+                          size: 'sm',
+                          className: 'mt-1',
+                        })}
+                      >
+                        {action}
+                      </Link>
+                    ) : null}
                   </div>
                 </div>
               </li>
