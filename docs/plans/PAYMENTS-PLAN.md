@@ -1,10 +1,10 @@
 # Registration + PayStation payments: plan
 
-Plan only, no product code (2026-10-31, branch `feat/payments-plan`). Revised the same day after the lead's review (git rules, dev fixtures, host allow-list, local isolation, IPN without a VPS, PR split). It reaches `main` in a docs-only pull request before any code. Day 1's code then starts from `main` on a new branch (`feat/payments-foundation`). Target: **15 November 2026**.
+Written on 2026-10-31 on branch `feat/payments-plan` and revised the same day after the lead's review (git rules, dev fixtures, host allow-list, local isolation, IPN without a VPS, PR split). Merged into `main` as docs-only PR #11. The schedule (section 10) was rewritten the same day at the measured pace, in the first commit on `feat/payments-foundation`. Target: **15 November 2026**.
 
 Sources: RULEBOOK §7.1, §8, §18; `10-BUILD-PLAN.md` Phase C Definition of Done; `05-DATABASE.md`; `06-API.md`; `paystation/PAYSTATION-NOTES.md`; `paystation/SANDBOX-CHECKLIST.md`; DECISIONS (A1, PayStation 2026-10-30, A2.1d/e and the 2026-10-31 entries this plan adds). Nothing is copied from `reference/` (the old code had an unauthenticated refund endpoint, among other bugs): ideas are ported, never code. No PayStation credential appears in any file, note or log.
 
-The five questions that block code are in section 2. Everything else uses the defaults listed there; the owner can override any of them at review.
+The five questions that block code are in section 2. Q1 and Q2 are answered and Q5 keeps its default. Q3 and Q4 need answers: if they are still open before step 4, the lead is asked. The smaller choices D1–D10 there use their defaults; the owner can override any of them at review.
 
 ## 0. Scope of the first release
 
@@ -12,7 +12,7 @@ The five questions that block code are in section 2. Everything else uses the de
 - **Order change:** this release comes before the exam engine, instead of the phase order in `10-BUILD-PLAN.md` (DECISIONS 2026-10-31 "First release"). The Phase C Definition of Done (17 points) still applies in full (section 11).
 - **Out of scope:** exam engine, referral points (only the referrer link is stored), certificates, ambassador dashboard, public marketing pages (Phase D).
 - **Dependencies:**
-  - A2's web session (web login replacing the mock in `apps/web/src/lib/session.ts`) must be merged before the web steps (day 10). The student dashboard needs a real login.
+  - A2's web session (web login replacing the mock in `apps/web/src/lib/session.ts`) must be merged before the web steps (step 10, by Wed 4 Nov). The student dashboard needs a real login.
   - Production email needs the SES sending domain (OPEN-QUESTIONS #16); until then only Mailpit.
   - DoD #16's "one real small payment" needs the client's PayStation account (section 13).
   - The VPS (OPEN-QUESTIONS #22) has not been delivered. Without it, there is no staging stack and no deployment. Section 8.1 explains how to test the IPN without it.
@@ -31,17 +31,17 @@ The five questions that block code are in section 2. Everything else uses the de
 
 Status (lead, 2026-10-31):
 - **Q1 and Q2 are answered** by Rasel (DECISIONS "Gateway charge" and "Registration form fields").
-- Q3 and Q4 answers are on their way.
-- Q5 keeps its default.
-- Any question still unanswered when its day comes uses the default below.
+- Q3 and Q4 answers are on their way. Step 4 needs them (Mon 2 Nov, section 10).
+- **If Q3 or Q4 is still open before step 4 starts, ask the lead.** Their defaults below are proposals only and are never taken as final without an answer (lead, 2026-10-31).
+- Q5 keeps its default (lead, 2026-10-31).
 
-| # | Question | Default if unanswered | Blocks |
+| # | Question | Answer, or proposed default | Blocks |
 |---|---|---|---|
-| Q1 | ~~**`pay_with_charge` (P6):** does the student (1) or the merchant (0) pay PayStation's charge?~~ | **Answered (Rasel, 2026-10-31): `0`.** The student pays only 400 BDT; the merchant bears the charge. Only `0` is built; any other value stops the API at boot. Still verified in the sandbox (S10). | Day 1 (config), day 3 (amount rule), day 12 (S10) |
-| Q2 | ~~**Registration form fields:** which fields, which required?~~ | **Answered (Rasel, 2026-10-31): the default is approved.** The old wizard's set (07-UI-MIGRATION): name, phone (BD mobile, `01XXXXXXXXX`), district, institution, education type, grade level (the 17 rows of `grade_levels`), email, password (8–128), promo code (optional). All required except the promo code. Nothing else: no date of birth, gender, guardian or photo (minimum data for minors). | Day 4 |
-| Q3 | **Duplicate email/phone messages (DoD #4):** what does the student see? | (a) The email already has an account: "This email is already registered. Log in, or reset your password." This reveals that the account exists; rate-limited per IP and per email. (b) The same email has a payment in progress from another browser: "A payment for this email is already in progress. Continue in the browser where you started, or try again after it expires (at most 60 minutes)." The same browser resumes automatically. (c) Phone numbers are not unique (siblings often share a parent's phone): no message. | Day 4 |
-| Q4 | **Refund → access (P8):** what happens to a refunded student? | The payment becomes `refunded`; the account stays and can log in; the dashboard shows "Payment refunded: registration cancelled". The registration counts as inactive, so the exam engine will refuse it later (access needs a `paid` payment). No second registration on the same account (`registrations UNIQUE(user_id)`); an admin handles exceptions. | Day 9, day 11 |
-| Q5 | **Checkout expiry:** after how long is an unpaid payment given up? | 60 minutes (`settings.payment_expiry_minutes`, already seeded), raised to PayStation's link lifetime once the sandbox shows it (S12). Expired and failed payments keep being re-checked for 48 h for a late success. | Day 8 |
+| Q1 | ~~**`pay_with_charge` (P6):** does the student (1) or the merchant (0) pay PayStation's charge?~~ | **Answered (Rasel, 2026-10-31): `0`.** The student pays only 400 BDT; the merchant bears the charge. Only `0` is built; any other value stops the API at boot. Still verified in the sandbox (S10). | Step 1 (config), step 3 (amount rule), step 12 (S10) |
+| Q2 | ~~**Registration form fields:** which fields, which required?~~ | **Answered (Rasel, 2026-10-31): the default is approved.** The old wizard's set (07-UI-MIGRATION): name, phone (BD mobile, `01XXXXXXXXX`), district, institution, education type, grade level (the 17 rows of `grade_levels`), email, password (8–128), promo code (optional). All required except the promo code. Nothing else: no date of birth, gender, guardian or photo (minimum data for minors). | Step 4 |
+| Q3 | **Duplicate email/phone messages (DoD #4):** what does the student see? | (a) The email already has an account: "This email is already registered. Log in, or reset your password." This reveals that the account exists; rate-limited per IP and per email. (b) The same email has a payment in progress from another browser: "A payment for this email is already in progress. Continue in the browser where you started, or try again after it expires (at most 60 minutes)." The same browser resumes automatically. (c) Phone numbers are not unique (siblings often share a parent's phone): no message. | Step 4 |
+| Q4 | **Refund → access (P8):** what happens to a refunded student? | The payment becomes `refunded`; the account stays and can log in; the dashboard shows "Payment refunded: registration cancelled". The registration counts as inactive, so the exam engine will refuse it later (access needs a `paid` payment). No second registration on the same account (`registrations UNIQUE(user_id)`); an admin handles exceptions. | Step 9, step 11 |
+| Q5 | **Checkout expiry:** after how long is an unpaid payment given up? | 60 minutes (`settings.payment_expiry_minutes`, already seeded), raised to PayStation's link lifetime once the sandbox shows it (S12). Expired and failed payments keep being re-checked for 48 h for a late success. | Step 8 |
 
 **Defaults taken in this plan (not blocking; say if you disagree):**
 
@@ -148,7 +148,7 @@ Why it is not free in `.env` (lead review): with a free URL, a dev machine with 
 
 - **One accessor:** `PaymentConfig` (`apps/api/src/modules/payments/payment.config.ts`), built from `EnvVars`. A source scan (a unit test over `apps/` and `packages/`, also covering both `.env.example` files) fails if `paystation.com.bd` appears in any file other than `payment.config.ts`. The docs are not scanned.
 - **Where:** both `.env.example` files get a "Registration and payments" block appended at the end, with `PAYSTATION_BASE_URL` blank. The root file's `PAYSTATION_BASE_URL=https://sandbox.paystation.com.bd` line is removed. The CI integration job gets `PAYSTATION_ENV=fake`. Compose needs nothing (`api` and `worker` load `../.env`).
-- **If S11 shows that the sandbox uses the live host:** the allow-list then cannot tell sandbox from live. The guard falls back to credential discipline (13.1 #6) and the boot log, and the owner is asked before day 12.
+- **If S11 shows that the sandbox uses the live host:** the allow-list then cannot tell sandbox from live. The guard falls back to credential discipline (13.1 #6) and the boot log, and the owner is asked before step 12.
 - **Local sandbox tests:** the callback is a browser redirect, so `localhost` works; the IPN is server-to-server and needs a public `https://` URL (D8, section 8.1).
 
 ## 4. Migrations, from the existing schema
@@ -163,7 +163,7 @@ Why it is not free in `.env` (lead review): with a free URL, a dev machine with 
 | `settings` | `key` PK, `value` json, timestamps. Seeded keys include `registration_fee_minor = 0` (placeholder). |
 | `PaymentStatus` enum | `initiated`, `pending`, `paid`, `failed`, `expired`, `refunded` (kept as is: no enum migration). |
 
-### 4.2 Migrations needed (all on day 1, in this order)
+### 4.2 Migrations needed (all on step 1, in this order)
 
 **M1 `<ts>_payments_registration`** (generated by Prisma)
 - Starts with a guard: if `payments` has any row, stop with a clear message (pre-launch only: the new NOT NULL columns have no meaningful backfill). Dev databases with leftover test rows: ask the owner before a reset.
@@ -198,7 +198,7 @@ The test helper `paymentData()` (`apps/api/test/helpers.ts`), `db-constraints.in
 
 On completion `payload` becomes NULL at once (the account holds the data now; the password hash leaves the pending row). Abandoned attempts: a daily job clears `payload` after 30 days; email, phone and name stay while a payment of the attempt exists (payment lookups).
 
-### 4.4 Dev fixtures (day 1, with M1–M3)
+### 4.4 Dev fixtures (step 1, with M1–M3)
 
 **Today**, `apps/api/prisma/fixtures/dev-fixtures.ts` creates three verified students (`student1..3@fixtures.invalid`, password `FIXTURE_PASSWORD`). Each has a paid payment and a registration. The payment uses the old columns: amount 100, invoice `FIXTURE-INV-n`, trx `FIXTURE-TRX-n`, no attempt.
 
@@ -360,7 +360,7 @@ Adapters only translate HTTP. The decision (6.3) is a pure function `decide(paym
 
 ## 8. VERIFY: needs the sandbox
 
-S1–S17 exist in `SANDBOX-CHECKLIST.md`; S18–S30 are added there on day 2. If Rasel's sandbox credentials are in the local `.env` on day 2, the API-only checks (S1–S3, S6, S7, S11, S15, S17, S21) run then through the contract suite. S10 needs one sandbox checkout in a browser; it is done by hand on day 2 if possible, so the amount rule (day 3) is confirmed early, and again in the full browser flow on day 12.
+S1–S17 exist in `SANDBOX-CHECKLIST.md`; S18–S30 are added there on step 2. If Rasel's sandbox credentials are in the local `.env` on step 2, the API-only checks (S1–S3, S6, S7, S11, S15, S17, S21) run then through the contract suite. S10 needs one sandbox checkout in a browser; it is done by hand on step 2 if possible, so the amount rule (step 3) is confirmed early, and again in the full browser flow on step 12.
 
 | # | Question | Affects |
 |---|---|---|
@@ -386,7 +386,7 @@ S1–S17 exist in `SANDBOX-CHECKLIST.md`; S18–S30 are added there on day 2. If
 | S29 | Where the IPN URL is registered for a test account; more than one allowed? | 3.5, section 13 |
 | S30 | Must callback domains be whitelisted in the panel? | 3.5, section 13 |
 
-### 8.1 Without the VPS: testing the IPN (day 12)
+### 8.1 Without the VPS: testing the IPN (step 12)
 
 The staging stack in D8 needs a VPS, and the client has not delivered one yet (OPEN-QUESTIONS #22). Until it arrives:
 
@@ -407,8 +407,8 @@ The staging stack in D8 needs a VPS, and the client has not delivered one yet (O
 **Still open until the VPS (and its domain) exist:**
 - the IPN through our real nginx with TLS: body limit, per-IP limit, the real client IP behind a proxy;
 - S29 and S30 for the production domain: IPN URL registration and callback domain whitelisting;
-- k6 on the target hardware (DoD #17). Day 13 still runs k6 locally against the fake server, to catch regressions. The numbers are provisional and DoD #17 is closed only on the VPS;
-- the deployment on day 15 and DoD #16's real payment, which needs the VPS and the client's account.
+- k6 on the target hardware (DoD #17). Step 13 still runs k6 locally against the fake server, to catch regressions. The numbers are provisional and DoD #17 is closed only on the VPS;
+- the deployment and DoD #16's real payment, which need the VPS and the client's account (10.2, 10.3).
 
 ## 9. Tests
 
@@ -444,45 +444,85 @@ Each protection is mutation-checked as in A2: its test fails with the protection
 - `app-routes.int-spec.ts`: the new public routes are in the allow-list; only the IPN is CSRF-exempt.
 - Logs: captured logs of a full flow contain no password, merchant credentials, raw payload, email or phone.
 
-**Web** (`node --test`, as today): every API error code maps to a Bangla and an English message, never raw text; result page states; the fee dialog sends `expected`. **Sandbox (day 12):** the browser flow on a phone. **k6 (day 13):** `loadtests/registration-surge.js` against the staging stack with the fake server (never load-test PayStation). Without the VPS it runs locally, and its numbers are provisional (8.1).
+**Web** (`node --test`, as today): every API error code maps to a Bangla and an English message, never raw text; result page states; the fee dialog sends `expected`. **Sandbox (step 12):** the browser flow on a phone. **k6 (step 13):** `loadtests/registration-surge.js` against the staging stack with the fake server (never load-test PayStation). Without the VPS it runs locally, and its numbers are provisional (8.1).
 
-## 10. Day-by-day order (target 15 November 2026)
+## 10. Schedule at the measured pace (target 15 November 2026)
 
-Every commit: `tsc --noEmit` in `apps/api` (and `apps/web` for web commits), lint on the changed files, the related tests, reported in one line. Before a PR: the full `pnpm typecheck && pnpm lint && pnpm test && pnpm build`, `pnpm --filter @sirat/api test:int` and the docker smoke test. The smoke test and e2e use the shared docker stack, so they run only when Rasel says so, always with `--build` (section 15).
+Revised on 2026-10-31 (lead). The first version spread the code over 15 days at a human pace. The steps below are sized from the pace measured in git instead.
+- Everything on `main` before this work took about 22 hours (30 October 17:36 to 31 October 16:00, 93 commits): foundation, auth, the first-admin CLI and 18 dashboard pages, with tests.
+- Samples: auth A2.0–A2.1e took about 4.5 hours. That covered guard rails, passwords and sessions, the email queue and SES, login limits, email-link endpoints and alerts, with tests. The 18 dashboard pages took about 3 hours; the first-admin CLI about 1 hour.
 
-| Day | Date | Work | Commits |
-|---|---|---|---|
-| 0 | Sat 31 Oct | This plan; DECISIONS (first release, fee, account settings); the lead's review; the docs-only PR. Local isolation set up (section 15). | `docs:` |
-| 1 | Sun 1 Nov | After the docs PR merges: new branch `feat/payments-foundation` from `main`. Foundation every later step needs: M1–M3, seed 40000, dev fixtures on the new schema (4.4: `student1..3@fixtures.invalid` keep logging in with `FIXTURE_PASSWORD`; `ALLOW_DEV_FIXTURES` and the server-marker guard unchanged; after `git merge origin/main` the CI "Dashboard pages" job stays green), `PaymentConfig` (env, host allow-list), helpers and constraint tests, 05-DATABASE | `feat(db): registration attempts, payment columns, payment events` · `feat(db): registration fee 400 BDT in settings` · `feat(db): payment checks and triggers` · `fix(db): dev fixtures on the new payment schema` · `feat(api): PayStation account settings from env` |
-| 2 | Mon 2 Nov | **PayStation client:** interface, real adapter, in-memory fake, stub-server tests, fake PayStation server (+ dev compose service), `paystation:selfcheck`; early sandbox API checks if credentials are there; S18–S30 into the checklist | `feat(api): PaymentGateway and the PayStation adapter` · `chore(tools): fake PayStation server` |
-| 3 | Tue 3 Nov | **Payment state machine and invoice:** transitions, `decide()`, amount parser, invoice generator | `feat(api): payment state machine and decision rules` · `feat(api): invoice numbers` |
-| 4 | Wed 4 Nov | **`registrations/start` and `pending_registrations`:** 06-API first, then DTO (Q2), open check, fee snapshot, idempotency, cookie, Q3, promo, `GET /registrations/info` | `docs: registration and payment API contract` · `feat(api): registration start and info` |
-| 5 | Thu 5 Nov | Current/resume/retry/recheck/cancel; `GET /registrations/me`, `GET /payments/mine`, payment status | `feat(api): registration status for students` |
-| 6 | Fri 6 Nov | **Settle transaction:** verify job, account creation, conflicts, emails after commit | `feat(worker): payment verification and settlement` |
-| 7 | Sat 7 Nov | **Callback and IPN** with the race tests | `feat(api): PayStation callback` · `feat(api): PayStation IPN` |
-| 8 | Sun 8 Nov | **Reconciliation job:** expiry, late watch, alerts | `feat(worker): payment reconciliation` |
-| 9 | Mon 9 Nov | **Admin:** payments lookup/recheck/reconcile; settings PUT with `expected` and audit | `feat(api): admin payments` · `feat(api): admin settings with confirmation` |
-| 10 | Tue 10 Nov | **Web wizard** (3 steps, bn/en, error states) on the real API; needs A2's web session merged | `feat(web): registration wizard` |
-| 11 | Wed 11 Nov | **Web result page**, dashboard registration/payment status, admin fee dialog and payments lookup page | `feat(web): payment result and dashboard status` · `feat(web): admin fee and payments` |
-| 12 | Thu 12 Nov | **Sandbox** on Rasel's test account: the S-list and the browser flow; the IPN via the staging stack, or without a VPS via this worktree's API and a temporary tunnel (8.1); fixes | `fix:` as needed; checklist results |
-| 13 | Fri 13 Nov | **k6** registration surge + callback/IPN bursts (on the VPS if it exists, otherwise locally, with provisional numbers); fixes | `test(load): registration surge` |
-| 14 | Sat 14 Nov | Buffer; full checks; RUNBOOK (payments, settings changes, account switch), docs 03/06/10, CLAUDE.md state | `docs:` |
-| 15 | Sun 15 Nov | **Target:** release ready, deployed with registration closed. Registration opens after the client account's checks and one real small payment (section 13). | |
+**All dates are estimates.** Nothing is cut to meet them: every DoD point (section 11), test, mutation check and security check (section 9) stays as written. Step numbers are labels for the work; the rest of this plan refers to them.
 
-**Pull requests** (lead, 2026-10-31). Each is opened as soon as its days are done and its checks pass:
+Checks, unchanged:
+- **Every commit:** `tsc --noEmit` in `apps/api` (and `apps/web` for web commits), lint on the changed files, the related tests, reported in one line.
+- **Before a PR:** the full `pnpm typecheck && pnpm lint && pnpm test && pnpm build`, `pnpm --filter @sirat/api test:int` and the docker smoke test.
+- The smoke test and e2e use the shared docker stack, so they run only when Rasel says so, always with `--build` (section 15).
+- **Before each push:** Rasel gets one line naming the shared files that changed: `schema.prisma`, migrations, `seed.ts`, fixtures, and `app.module.ts` or `apps/api/package.json` if touched.
 
-| PR | Days | Content |
+### 10.1 Code steps (in our hands)
+
+| Step | Date (estimate) | Work | Commits | PR |
+|---|---|---|---|---|
+| 0 | Sat 31 Oct | This plan and its decisions; the lead's reviews | `docs:` | #11 (merged) |
+| 1 | Sat 31 Oct – Sun 1 Nov | On `feat/payments-foundation` from `main`. Foundation every later step needs:<br>- M1–M3 and the seed default 40000;<br>- dev fixtures on the new schema (4.4): `student1..3@fixtures.invalid` keep logging in with `FIXTURE_PASSWORD`, `ALLOW_DEV_FIXTURES` and the server-marker guard stay unchanged, and after `git merge origin/main` the CI "Dashboard pages" job stays green;<br>- `PaymentConfig` (env, host allow-list);<br>- helpers and constraint tests, 05-DATABASE | `docs: payments plan at the measured pace` · `feat(db): registration attempts, payment columns, payment events` · `feat(db): registration fee 400 BDT in settings` · `feat(db): payment checks and triggers` · `fix(db): dev fixtures on the new payment schema` · `feat(api): PayStation account settings from env` | 1 |
+| 2 | Sun 1 Nov | **PayStation client:**<br>- interface, real adapter, in-memory fake, stub-server tests;<br>- fake PayStation server (+ dev compose service), `paystation:selfcheck`;<br>- early sandbox checks (S10, S11) if credentials are there;<br>- S18–S30 into the checklist | `feat(api): PaymentGateway and the PayStation adapter` · `chore(tools): fake PayStation server` | 1 |
+| 3 | Sun 1 Nov | **Payment state machine and invoice:** transitions, `decide()`, amount parser, invoice generator | `feat(api): payment state machine and decision rules` · `feat(api): invoice numbers` | 1 |
+| 4 | Mon 2 Nov | **`registrations/start` and `pending_registrations`:** 06-API first, then:<br>- DTO (Q2), open check, fee snapshot, idempotency, cookie;<br>- Q3, promo;<br>- `GET /registrations/info` | `docs: registration and payment API contract` · `feat(api): registration start and info` | 2 |
+| 5 | Mon 2 Nov | Current/resume/retry/recheck/cancel; `GET /registrations/me`, `GET /payments/mine`, payment status | `feat(api): registration status for students` | 2 |
+| 6 | Tue 3 Nov | **Settle transaction:** verify job, account creation, conflicts, emails after commit | `feat(worker): payment verification and settlement` | 3 |
+| 7 | Tue 3 Nov | **Callback and IPN** with the race tests | `feat(api): PayStation callback` · `feat(api): PayStation IPN` | 3 |
+| 8 | Wed 4 Nov | **Reconciliation job:** expiry, late watch, alerts | `feat(worker): payment reconciliation` | 3 |
+| 9 | Wed 4 Nov | **Admin:** payments lookup/recheck/reconcile; settings PUT with `expected` and audit | `feat(api): admin payments` · `feat(api): admin settings with confirmation` | 3 |
+| 10 | Thu 5 Nov | **Web wizard** (3 steps, bn/en, error states) on the real API; needs A2's web session merged | `feat(web): registration wizard` | 4 |
+| 11 | Thu 5 Nov | **Web result page**, dashboard registration/payment status, admin fee dialog and payments lookup page | `feat(web): payment result and dashboard status` · `feat(web): admin fee and payments` | 4 |
+| 12 | Fri 6 Nov | **Sandbox session with Rasel** (10.2):<br>- the S-list and the browser flow on a phone;<br>- the IPN through this worktree's API and a temporary tunnel (8.1), or the staging stack if a VPS exists;<br>- fixes | `fix:` as needed; checklist results | 5 |
+| 13 | Fri 6 Nov | **k6** registration surge + callback/IPN bursts, locally against the fake server (regressions; numbers provisional until the VPS run in 10.3) | `test(load): registration surge` | 5 |
+| 14 | Fri 6 Nov | RUNBOOK (payments, settings changes, account switch), docs 03/06/10, CLAUDE.md state | `docs:` | 5 |
+
+The dates assume each PR is reviewed and merged within about half a day. While a PR waits, the next step continues on a branch made from it. That branch opens as a PR after the previous one merges, with `git merge origin/main` first.
+
+### 10.2 Not in our hands: needed by
+
+| What | From | Needed by | Latest that still keeps 15 Nov | Used for |
+|---|---|---|---|---|
+| **Sandbox access:** Rasel's PayStation sandbox credentials typed into this worktree's `.env` (section 15); a test IPN URL can be registered in his panel (S29) | Rasel | Sun 1 Nov (S10 and S11 checked while steps 2–3 are written) | Thu 5 Nov | Steps 2, 12 |
+| **Sandbox session with Rasel present** (about 2–3 hours): checkout in a browser and on a phone, the IPN through a tunnel (`cloudflared` installed on his PC), the S-list | Rasel | Fri 6 Nov | Mon 9 Nov (leaves time for fixes and a second session) | Step 12; the sandbox part of DoD #6, #7, #9–#11, #14, #16 |
+| **VPS and domain** (DNS, TLS) | client, through Rasel | Sat 7 Nov | Tue 10 Nov | Deployment; the IPN through nginx and TLS; S29/S30 for the production domain; k6 on the target hardware (DoD #17); SES domain verification |
+| **Live merchant:** the client's PayStation account approved for live, methods enabled, credentials to Rasel (D9), the production IPN URL registered, the callback domain whitelisted (S30) | client, PayStation | Tue 10 Nov | Thu 12 Nov | `paystation:selfcheck`, the re-verification in 13.4, one real small payment (DoD #16) |
+| **SES production access:** sending domain verified (SPF, DKIM, DMARC) and the account out of the SES sandbox (OPEN-QUESTIONS #16) | Rasel (AWS); needs the domain | Requested the day the domain exists; granted by Wed 11 Nov | Fri 13 Nov | Completion and verification emails to real students (DoD #13 in production). If late, registration and login still work, but no email reaches students, and the owner decides whether to open registration |
+
+**Team dependencies** (ours, but not this session's):
+- A2's web session merged by Wed 4 Nov (step 10 needs the real login).
+- Q3 and Q4 answered by Sun 1 Nov evening (step 4 starts Mon 2 Nov). If they are still open, ask the lead; the defaults are not taken as final (section 2).
+- PR reviews by the lead and merges by Rasel, about half a day each.
+
+### 10.3 Buffer: Sat 7 – Sat 14 November (8 days)
+
+The days saved by the measured pace are kept at the end for what cannot be compressed or predicted:
+- **Sandbox problems:** S10 showing an amount other than 400, callback or IPN behaving unlike the docs, a second sandbox session.
+- **Deployment on the VPS** with registration closed, and the IPN through the real nginx and TLS.
+- **The switch to the client's account** (section 13) and **one real small payment** (DoD #16), then its refund (S26).
+- **k6 on the VPS** (DoD #17) and any fixes it shows.
+
+**Sun 15 Nov, target:** the release is deployed. Registration opens after the client account's checks and the real payment pass (section 13).
+
+### 10.4 Pull requests (lead, 2026-10-31)
+
+Each PR is opened as soon as its steps are done and its checks pass:
+
+| PR | Steps | Content |
 |---|---|---|
-| 0 | 0 | This plan, the three DECISIONS entries, OPEN-QUESTIONS #2 (docs only) |
-| 1 | 1–3 | Foundation: migrations, fixtures, config, gateway client, fake server, state machine, invoice. Small and early, so the conflict window with A2 stays short |
+| #11 | 0 | This plan, the DECISIONS entries, OPEN-QUESTIONS #1, #2, P6 (docs only; merged 31 Oct) |
+| 1 | 1–3 | Foundation: this schedule, migrations, fixtures, config, gateway client, fake server, state machine, invoice. Small and early, so the conflict window with A2 stays short |
 | 2 | 4–5 | Start and status: `registrations/start`, `info`, `current/*`, `registrations/me`, `payments/mine` |
 | 3 | 6–9 | Money flow: settle, callback, IPN, reconciliation, admin payments and settings. Kept apart from PR 2, so the review of the paths that mark a payment paid stays readable |
 | 4 | 10–11 | Web: wizard, result page, dashboard status, admin fee dialog and payments page |
-| 5 | 12–14 | Sandbox fixes, k6, docs |
+| 5 | 12–14 | Sandbox fixes, local k6, docs |
 
 ## 11. Phase C Definition of Done: step and proof for each point
 
-| # | Requirement | Day | Proof |
+| # | Requirement | Step | Proof |
 |---|---|---|---|
 | 1 | Form stored server-side; survives PayStation round trip, other device, cleared browser | 4, 6 | `registration-start` (payload stored before redirect); `payments-settle` (account built from the DB payload by a request without cookies); other device: the completion email and login work anywhere; sandbox S13 |
 | 2 | Open/closed, fee, currency from `settings`, enforced by the API | 1, 4, 9 | `registration-start` (closed → 403; fee 0 → 503; currency ≠ BDT refused; snapshot = setting); `settings-fee`; `admin-settings` |
@@ -497,7 +537,7 @@ Every commit: `tsc --noEmit` in `apps/api` (and `apps/web` for web commits), lin
 | 11 | Success/failure redirect targets are config, e2e-tested | 7, 11 | `payments-callback` (Location from config, also when closed after start); web result page test; sandbox run |
 | 12 | Promo validated server-side; referral credit only after payment | 4, 6 | `registration-start` (invalid/unapproved → 400); `payments-settle` (referrer set only at completion). Points are not awarded in this release (rules: OPEN-QUESTIONS #13); the ambassador module derives them later with event key `referral_paid:<paymentId>`. |
 | 13 | Verification + welcome email queued, retried, never blocking | 6 | `payments-settle` (enqueued after commit; queue down → registration still completes); existing email worker tests |
-| 14 | Mobile-first, weak network, bn/en, clear errors | 10, 11 | web tests (error-code → bn/en message, no raw text); phone check on day 12 |
+| 14 | Mobile-first, weak network, bn/en, clear errors | 10, 11 | web tests (error-code → bn/en message, no raw text); phone check on step 12 |
 | 15 | Admin lookup by invoice/trx/phone; manual reconcile audited | 9 | `admin-payments` |
 | 16 | Sandbox end to end, then one real small payment | 12, 15 | `SANDBOX-CHECKLIST.md` results; real payment on the client's account (section 13) |
 | 17 | k6 registration surge passes (p95 < 500 ms, errors < 0.5 %) | 13 | k6 report recorded in DECISIONS; counts only when run on the VPS (8.1) |
@@ -510,30 +550,30 @@ State on 2026-10-31 (lead): the first-admin CLI (PR #10, `admin:create`) is merg
 
 | File | When this work changes it | Handling |
 |---|---|---|
-| `apps/api/prisma/schema.prisma` | Day 1 only, one commit | Our edit to `User` is back-relation lines at the end of its relation list. If A2 later changes the schema (e.g. admin 2FA), whoever merges second regenerates (next row). |
-| `apps/api/prisma/migrations/*` | Day 1 only (M1–M3) | Whoever merges second follows these steps:<br>1. `git merge origin/main`.<br>2. Delete its own not-yet-merged generated migration (M1).<br>3. Regenerate it on a fresh local DB (`prisma migrate dev --create-only` against `sirat_pay`, section 15), so its timestamp is the newest.<br>4. Commit that as a new commit.<br>The hand-written M2 and M3, also not yet merged, are renamed to timestamps after M1 in the same commit; their SQL does not change. A migration on `main` is never edited. The CI drift check must be green. |
-| `apps/api/prisma/seed.ts` | Day 1 | Fee placeholder 40000, two new keys. |
-| `apps/api/prisma/fixtures/dev-fixtures.ts`, new `test/dev-fixtures.int-spec.ts` | Day 1 (4.4) | **Conflict point with A2:** on A2's web-session branch, the CI "Dashboard pages" job and the e2e log in for real as `student1@fixtures.invalid`, so A2 may change the fixtures or the CI step that loads them. The fixture emails, `FIXTURE_PASSWORD` and the guards do not change (4.4), and "Dashboard pages" must be green after the merge. Whoever merges second adapts to the other's version after `git merge origin/main`:<br>- If A2 merges first, our PR 1 runs A2's page check against the new fixtures before it opens.<br>- If we merge first, A2's page check runs on the new fixtures as they are. |
-| `apps/api/package.json` | Day 2 (`paystation:selfcheck` script) | `admin:create` is already on `main`, so our line goes in next to it, one line only (DECISIONS "Launch target"). Any later conflict is resolved with `git merge origin/main`. |
+| `apps/api/prisma/schema.prisma` | Step 1 only, one commit | Our edit to `User` is back-relation lines at the end of its relation list. If A2 later changes the schema (e.g. admin 2FA), whoever merges second regenerates (next row). |
+| `apps/api/prisma/migrations/*` | Step 1 only (M1–M3) | Whoever merges second follows these steps:<br>1. `git merge origin/main`.<br>2. Delete its own not-yet-merged generated migration (M1).<br>3. Regenerate it on a fresh local DB (`prisma migrate dev --create-only` against `sirat_pay`, section 15), so its timestamp is the newest.<br>4. Commit that as a new commit.<br>The hand-written M2 and M3, also not yet merged, are renamed to timestamps after M1 in the same commit; their SQL does not change. A migration on `main` is never edited. The CI drift check must be green. |
+| `apps/api/prisma/seed.ts` | Step 1 | Fee placeholder 40000, two new keys. |
+| `apps/api/prisma/fixtures/dev-fixtures.ts`, new `test/dev-fixtures.int-spec.ts` | Step 1 (4.4) | **Conflict point with A2:** on A2's web-session branch, the CI "Dashboard pages" job and the e2e log in for real as `student1@fixtures.invalid`, so A2 may change the fixtures or the CI step that loads them. The fixture emails, `FIXTURE_PASSWORD` and the guards do not change (4.4), and "Dashboard pages" must be green after the merge. Whoever merges second adapts to the other's version after `git merge origin/main`:<br>- If A2 merges first, our PR 1 runs A2's page check against the new fixtures before it opens.<br>- If we merge first, A2's page check runs on the new fixtures as they are. |
+| `apps/api/package.json` | Step 2 (`paystation:selfcheck` script) | `admin:create` is already on `main`, so our line goes in next to it, one line only (DECISIONS "Launch target"). Any later conflict is resolved with `git merge origin/main`. |
 | `pnpm-lock.yaml` | No change planned (Node `fetch`, BullMQ, argon2, class-validator already present; k6 is a separate binary) | If a dependency becomes necessary: its own commit right after `git merge origin/main`; the lockfile is regenerated by `pnpm install`, never hand-merged. |
 | `apps/api/src/app.module.ts` | No change planned (D10) | — |
-| `apps/api/src/worker.ts` | Day 6 (one import of the payments worker module) | Day 8 adds to that module, not to `worker.ts`. A2's cleanup job may add an import next to ours. |
-| `apps/api/src/config/env.ts`, both `.env.example` | Day 1 | Our block at the end, own heading. |
-| `apps/api/test/helpers.ts`, `db-constraints.int-spec.ts`, `seed.int-spec.ts` | Day 1 | A2 should not touch the payment helpers. |
-| `apps/api/test/app-routes.int-spec.ts` | Days 4, 5, 7 | Allow-list entries only. |
-| `.github/workflows/*.yml` | Day 1 (`PAYSTATION_ENV=fake` for integration tests) | A2 adds the fixture load and the page check to CI: the second to merge resolves it with `git merge origin/main`, keeping both steps. |
-| `infra/docker-compose.dev.yml` | Day 2 (fake PayStation, 127.0.0.1 only); the PgBouncer wildcard for the dev DB names if Rasel approves it (section 15) | Shared stack: changed only after telling Rasel. |
-| `apps/web/**` | Days 10–11 | Start only after A2's web session (`lib/session.ts`, login, API client) is merged. |
-| `docs/DECISIONS.md` | Day 0 (five entries, in the docs PR), day 14 | Entries go at the top. A2's web-session branch also has a new entry, so whoever merges later runs `git merge origin/main` and keeps both sides' entries, newest first. |
-| `docs/RUNBOOK.md` | Day 14 only, one commit | |
-| `docs/05-DATABASE.md` day 1; `06-API.md` day 4; `03-HOW-IT-WORKS.md`, `10-BUILD-PLAN.md`, `CLAUDE.md` §4 day 14 | | |
-| Local dev database | Day 1 | This work migrates only its own `sirat_pay` and `sirat_pay_test` (section 15). A2's dev database and Rasel's data are never touched, so no reset is needed for M1's guard. |
+| `apps/api/src/worker.ts` | Step 6 (one import of the payments worker module) | Step 8 adds to that module, not to `worker.ts`. A2's cleanup job may add an import next to ours. |
+| `apps/api/src/config/env.ts`, both `.env.example` | Step 1 | Our block at the end, own heading. |
+| `apps/api/test/helpers.ts`, `db-constraints.int-spec.ts`, `seed.int-spec.ts` | Step 1 | A2 should not touch the payment helpers. |
+| `apps/api/test/app-routes.int-spec.ts` | Steps 4, 5, 7 | Allow-list entries only. |
+| `.github/workflows/*.yml` | Step 1 (`PAYSTATION_ENV=fake` for integration tests) | A2 adds the fixture load and the page check to CI: the second to merge resolves it with `git merge origin/main`, keeping both steps. |
+| `infra/docker-compose.dev.yml` | Step 2 (fake PayStation, 127.0.0.1 only); the PgBouncer wildcard for the dev DB names if Rasel approves it (section 15) | Shared stack: changed only after telling Rasel. |
+| `apps/web/**` | Steps 10–11 | Start only after A2's web session (`lib/session.ts`, login, API client) is merged. |
+| `docs/DECISIONS.md` | Step 0 (five entries, in the docs PR), step 14 | Entries go at the top. A2's web-session branch also has a new entry, so whoever merges later runs `git merge origin/main` and keeps both sides' entries, newest first. |
+| `docs/RUNBOOK.md` | Step 14 only, one commit | |
+| `docs/05-DATABASE.md` step 1; `06-API.md` step 4; `03-HOW-IT-WORKS.md`, `10-BUILD-PLAN.md`, `CLAUDE.md` §4 step 14 | | |
+| Local dev database | Step 1 | This work migrates only its own `sirat_pay` and `sirat_pay_test` (section 15). A2's dev database and Rasel's data are never touched, so no reset is needed for M1's guard. |
 
 After both branches merge: one `UsersService.create` for A2's `create-admin` and our settlement (one data-access path, RULEBOOK §18), as a follow-up agreed with the A2 session.
 
 ## 13. Switching to the client's PayStation account (checklist)
 
-Now: Rasel's test account (sandbox), label `rasel-sandbox`, invoice prefix `T`. Later: the client's account, e.g. `client-live`, prefix `S`. The switch changes only `.env`: no code change, no new release. This moves into RUNBOOK on day 14.
+Now: Rasel's test account (sandbox), label `rasel-sandbox`, invoice prefix `T`. Later: the client's account, e.g. `client-live`, prefix `S`. The switch changes only `.env`: no code change, no new release. This moves into RUNBOOK on step 14.
 
 ### 13.1 Keeping test data apart (from day one)
 
@@ -584,10 +624,10 @@ Results go into `SANDBOX-CHECKLIST.md` (a "client account" column) and DECISIONS
 
 ## 14. Risks
 
-1. **15 days is tight.** Days 12–14 are the only buffer. If late, cut in this order: the admin payments page (the API stays; RUNBOOK SQL lookups meanwhile), the fake-server checkout page polish, then k6 scale (never the correctness tests).
-2. **A2's web session is a dependency** for days 10–11. If it is not merged by day 9, the web steps slip.
-3. **S10 with `pay_with_charge=0` is not yet seen in the sandbox.** If PayStation reports an amount other than exactly 400 (for example, the charge added anyway), every payment fails closed (`rejected_amount`, critical alert); none is ever wrongly marked paid. The owner is asked before anything changes. Checked early on day 2 if credentials exist.
-4. **DoD #16 needs the client's live account.** If it is not ready by 15 November, the release is ready but registration stays closed.
+1. **The outside items decide the date, not the code** (10.2). The code dates are estimates at the measured pace. Delays go into the 8-day buffer (10.3). No DoD point, test or security check is cut to win time. If the buffer runs out, the owner decides the date.
+2. **A2's web session is a dependency** for steps 10–11. If it is not merged by Wed 4 Nov, the web steps move into the buffer.
+3. **S10 with `pay_with_charge=0` is not yet seen in the sandbox.** If PayStation reports an amount other than exactly 400 (for example, the charge added anyway), every payment fails closed (`rejected_amount`, critical alert); none is ever wrongly marked paid. The owner is asked before anything changes. Checked early on step 2 if credentials exist.
+4. **DoD #16 needs the client's live account** (by Thu 12 Nov, 10.2). If it is not ready by 15 November, the release is ready but registration stays closed.
 5. **A late payment after our expiry** → duplicate payments and refunds. Expiry ≥ PayStation's link lifetime (S12); late watch.
 6. **The worker is the only path to confirmation.** Health and queue-depth alerts; two worker replicas are safe with BullMQ.
 7. **Unsigned IPNs and callbacks can be spammed.** Per-invoice verify throttle, body limit, nginx limit; unknown invoices never cause a gateway call.
@@ -618,7 +658,7 @@ The A2 session uses the same Postgres, Redis and docker stack on Rasel's PC. Rul
   - BullMQ queues (same names, other Redis DB) do not take each other's jobs;
   - throttle and cache keys stay apart;
   - integration tests use their own `*_test` database and Redis DB 1.
-- `PAYSTATION_MERCHANT_ID` and `PAYSTATION_PASSWORD` are present and empty. **Rasel types the sandbox credentials in himself**; Claude never reads or prints them. The other PayStation keys are added on day 1 with the config code.
+- `PAYSTATION_MERCHANT_ID` and `PAYSTATION_PASSWORD` are present and empty. **Rasel types the sandbox credentials in himself**; Claude never reads or prints them. The other PayStation keys are added on step 1 with the config code.
 
 **Checked on 2026-10-31:**
 
@@ -631,7 +671,7 @@ The A2 session uses the same Postgres, Redis and docker stack on Rasel's PC. Rul
 **PgBouncer fix (proposal, needs Rasel's OK):**
 - What: in `infra/docker-compose.dev.yml`, override PgBouncer's `DB_NAME` with an empty value. The image then writes `* = host=postgres …`, so any local database name passes through; production keeps its single name.
 - Cost: the PgBouncer container must be recreated, which drops A2's pooled connections for a few seconds. So it happens only when Rasel says A2 is not running anything.
-- Until then: the Prisma CLI and the integration tests connect directly (`DIRECT_URL`, `TEST_DATABASE_URL`) and work, so days 1–3 are not blocked. Only running this worktree's API and worker on the host (day 4 onward) needs it.
+- Until then: the Prisma CLI and the integration tests connect directly (`DIRECT_URL`, `TEST_DATABASE_URL`) and work, so steps 1–3 are not blocked. Only running this worktree's API and worker on the host (step 4 onward) needs it.
 
 **Ports:** this worktree's host processes use API `PORT=4100` and `WORKER_HEALTH_PORT=4101` (added to its `.env` when first needed), so they never clash with A2's 4000/4001.
 
