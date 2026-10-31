@@ -8,7 +8,8 @@ One short entry per non-obvious technical or product decision. Newest first. For
 2. **Server level, public servers only** (`infra/nginx/maintenance.conf`, included by sites/tls and sites/plain). The internal listener never includes it, so checks from the server always reach the app.
 3. **What passes:** `/healthz`, the PayStation IPN and the callback.
    - The lead asked for both PayStation paths; §7 named only the IPN. The callback only records the return and redirects to the result page, which then shows the maintenance page, and letting it through queues the status check sooner.
-   - A map on `$uri` (decoded and normalised) decides `pass`, `json` or `page`, with regexes only: `map` compares plain strings without regard to case, so `/API/...` passed to the web (found by the test). The callback takes one path segment.
+   - A map on the raw `$request_uri` decides `pass`, `json` or `page`. A request passes only when the path it sent is exactly an exception: on `$uri`, a path that nginx normalises into one (`/dashboard/../api/payments/paystation/ipn`) passed, and nginx sends the path upstream as sent. The callback takes one plain segment (letters, digits, `_`, `-`).
+   - Regexes only: `map` compares plain strings without regard to case, so `/API/...` passed to the web (found by the test).
 4. **Pages get the page through `error_page`:** it keeps the status and turns any method into GET (a static file answers a POST with 405). That internal redirect runs the server-level check again, so the page's own path is exempt. Other `/api` calls get JSON `code: MAINTENANCE` in the API's error shape.
 5. **The same page replaces nginx's own 502/504** on pages and on the callback, with the status kept so checks see the real code. Other `/api` calls, the IPN included, keep the JSON errors: PayStation retries.
 6. **Both answers** carry `Cache-Control: no-store` (Cloudflare must not keep them), `Retry-After: 120` and each security header once.

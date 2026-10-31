@@ -179,6 +179,10 @@ page() { # page <status> <site> <path> [curl options]: the maintenance page with
   status_is "$@" && grep -qi '^content-type: text/html; charset=utf-8' "$tmp/h" &&
     grep -q 'data-sirat-page="maintenance"' "$tmp/b" && grep -q 'your payment is safe' "$tmp/b" && answer_headers "$2"
 }
+blocked() { # blocked <site> <path> [curl options]: a maintenance answer (page or JSON), never an upstream
+  status_is 503 "$@" && ! grep -Eq 'upstream[^a-z]+(api|web)' "$tmp/b" &&
+    grep -Eq 'data-sirat-page="maintenance"|"code":"MAINTENANCE"' "$tmp/b"
+}
 maintenance_json() { # maintenance_json <site> <path> [curl options]
   status_is 503 "$@" && grep -qi '^content-type: application/json' "$tmp/h" &&
     grep -q '"code":"MAINTENANCE"' "$tmp/b" && answer_headers "$1"
@@ -231,6 +235,27 @@ for site in plain tls; do
   check "$site, on: another case of the IPN path gets the page" page 503 "$site" /API/payments/paystation/ipn -X POST
   check "$site, on: another case of the callback gets it" page 503 "$site" /Api/payments/paystation/callback/T261101ABCDEFGHIJ
   check "$site, on: another case of /healthz gets it" page 503 "$site" /HEALTHZ
+  check "$site, on: another case of a login gets it" page 503 "$site" /API/auth/login -X POST "${json[@]}" -d '{}'
+  # Paths nginx normalises into or out of an exception: only the exact path as sent passes.
+  check "$site, on: /api/../<page> gets it" blocked "$site" /api/../dashboard
+  check "$site, on: an encoded /api/%2e%2e/<page> gets it" blocked "$site" /api/%2e%2e/dashboard
+  check "$site, on: /healthz/../<page> gets it" blocked "$site" /healthz/../dashboard
+  check "$site, on: a page walking into the IPN gets it" \
+    blocked "$site" /dashboard/../api/payments/paystation/ipn -X POST "${json[@]}" -d '{}'
+  check "$site, on: an encoded walk into the IPN gets it" \
+    blocked "$site" /x/%2e%2e/api/payments/paystation/ipn -X POST "${json[@]}" -d '{}'
+  check "$site, on: a dot segment inside the IPN path gets it" \
+    blocked "$site" /api/payments/./paystation/ipn -X POST "${json[@]}" -d '{}'
+  check "$site, on: a double slash before the IPN path gets it" \
+    blocked "$site" //api/payments/paystation/ipn -X POST "${json[@]}" -d '{}'
+  check "$site, on: an encoded letter in the IPN path gets it" \
+    blocked "$site" /api/payments/paystation/%69pn -X POST "${json[@]}" -d '{}'
+  check "$site, on: the IPN walking out of itself gets it" \
+    blocked "$site" /api/payments/paystation/ipn/../../../auth/login -X POST "${json[@]}" -d '{}'
+  check "$site, on: a callback invoice of dots gets it" blocked "$site" /api/payments/paystation/callback/..
+  check "$site, on: an encoded callback invoice gets it" blocked "$site" /api/payments/paystation/callback/%54261101ABC
+  check "$site, on: the IPN with a query still reaches the API" \
+    reaches api "$site" '/api/payments/paystation/ipn?x=1' -X POST "${json[@]}" -d '{}'
 done
 check "on: the internal listener still serves the API" internal_reaches api "$name-tls" /api/ready
 check "on: the internal listener still serves pages" internal_reaches web "$name-tls" /
