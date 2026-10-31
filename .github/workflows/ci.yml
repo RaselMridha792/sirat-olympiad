@@ -300,6 +300,12 @@ jobs:
           echo "$out" | grep -q '^host facts: {' || { echo "::error::no host facts"; exit 1; }
           echo "$out" | grep -q '(dry run)$' || { echo "::error::no summary"; exit 1; }
           if echo "$out" | grep -q 'critical=monitor'; then echo "::error::ops-check did not run"; exit 1; fi
+      - name: Server checks - the compiled ops-alert runs in the api image (its main(), not only its functions)
+        # ops-check's compiled main() ran in the dry run above. No recipient here, so nothing is emailed.
+        run: |
+          out=$($DCD exec -T api node dist/cli/ops-alert.js --kind ops.alert_test --meta ci=1)
+          echo "$out"
+          echo "$out" | grep -q '^ops-alert: ops.alert_test recorded$' || { echo "::error::ops-alert did not run"; exit 1; }
       - name: Logs on failure
         if: failure()
         run: $DCD ps -a; $DCD logs --tail=200
