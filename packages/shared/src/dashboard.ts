@@ -1,4 +1,5 @@
 import type { Category, Paginated, Role } from './index';
+import type { MyRegistration } from './registration';
 import type {
   AdminTaskRecord,
   AmbassadorProfileRecord,
@@ -69,6 +70,8 @@ export interface StudentHome {
   /** Next open or upcoming exam; rules on the home page are rendered from its config. */
   nextExam: (StudentExamCard & Pick<ExamRecord, 'graceSeconds'>) | null;
   latestAnnouncements: AnnouncementItem[];
+  /** Payments' GET /registrations/me (MyRegistration in registration.ts); core C4 renders it on the home page. */
+  registration: MyRegistration;
 }
 
 export type StudentProfile = Pick<

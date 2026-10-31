@@ -85,6 +85,15 @@ export const studentHomeMessages = defineMessages({
       all: 'All announcements',
       empty: 'No announcements yet.',
     },
+    registration: {
+      title: 'Your registration',
+      invoice: 'Invoice',
+      amount: 'Fee',
+      registeredOn: 'Registered on',
+      payment: 'Payment',
+      none: 'No registration is linked to this account yet.',
+      register: 'Register now',
+    },
   },
   bn: {
     metaTitle: 'ড্যাশবোর্ড',
@@ -161,6 +170,15 @@ export const studentHomeMessages = defineMessages({
       title: 'সাম্প্রতিক ঘোষণা',
       all: 'সব ঘোষণা',
       empty: 'এখনো কোনো ঘোষণা নেই।',
+    },
+    registration: {
+      title: 'আপনার রেজিস্ট্রেশন',
+      invoice: 'ইনভয়েস',
+      amount: 'ফি',
+      registeredOn: 'রেজিস্ট্রেশনের তারিখ',
+      payment: 'পেমেন্ট',
+      none: 'এই অ্যাকাউন্টের সাথে এখনো কোনো রেজিস্ট্রেশন যুক্ত নেই।',
+      register: 'এখনই রেজিস্ট্রেশন করুন',
     },
   },
 });

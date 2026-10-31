@@ -59,6 +59,7 @@ Source of truth: `apps/api/prisma/schema.prisma` (validated; see note at bottom)
 | `submissions` append-only (trigger); CHECKs on the answers format, `request_id`, events size | UPDATE and DELETE refused; TRUNCATE refused except in a `*_test` database (test cleanup cascades through users) |
 | `payments CHECK (amount_minor > 0)` | Raw SQL |
 | `jury_scores`: criteria range validated in service; `total` server-computed | |
+| `announcements` CHECKs: title 3–150 and body 1–5,000 characters, `archived_at >= created_at`; partial index `(published_at DESC) WHERE archived_at IS NULL` (`*_core_announcements_checks`) | Raw SQL; the students' list repeats the predicate. Archived, never deleted (core C4) |
 
 ## Seed data (needed at first boot)
 
