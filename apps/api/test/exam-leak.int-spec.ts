@@ -44,12 +44,14 @@ describe('nothing secret reaches a student before results', () => {
     });
     // Another student already scored, with a distinctive time: neither may show up anywhere.
     const rival = await makeUser(prisma, { role: 'student' });
+    // One clock read: two could be 1 ms apart, and ends_at may be at most 30 min after started_at (a CHECK).
+    const now = Date.now();
     const rivalAttempt = await prisma.attempt.create({
       data: {
         userId: rival.id,
         examId: exam.id,
-        startedAt: new Date(Date.now() - 20 * 60_000),
-        endsAt: new Date(Date.now() + 10 * 60_000),
+        startedAt: new Date(now - 20 * 60_000),
+        endsAt: new Date(now + 10 * 60_000),
         layout: { v: 1, q: [], o: [] },
         questionCount: 3,
         contentVersion: exam.contentVersion,
