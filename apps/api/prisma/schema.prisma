@@ -681,6 +681,7 @@ model BookImage {
 
   uploader User @relation("BookImageUploader", fields: [uploadedBy], references: [id], onDelete: Restrict)
 
+  @@index([uploadedBy]) // every foreign key has an index (schema invariant)
   @@map("book_images")
 }
 
@@ -715,5 +716,6 @@ model BookOrder {
   @@index([status, createdAt])
   @@index([district])
   @@index([recipientPhone])
+  @@index([shippedBy]) // every foreign key has an index (schema invariant)
   @@map("book_orders")
 }

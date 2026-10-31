@@ -43,6 +43,9 @@ CREATE TABLE "book_orders" (
 CREATE UNIQUE INDEX "book_images_sha256_key" ON "book_images"("sha256");
 
 -- CreateIndex
+CREATE INDEX "book_images_uploaded_by_idx" ON "book_images"("uploaded_by");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "book_orders_user_id_key" ON "book_orders"("user_id");
 
 -- CreateIndex
@@ -56,6 +59,9 @@ CREATE INDEX "book_orders_district_idx" ON "book_orders"("district");
 
 -- CreateIndex
 CREATE INDEX "book_orders_recipient_phone_idx" ON "book_orders"("recipient_phone");
+
+-- CreateIndex
+CREATE INDEX "book_orders_shipped_by_idx" ON "book_orders"("shipped_by");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "book_orders_registration_id_user_id_key" ON "book_orders"("registration_id", "user_id");
