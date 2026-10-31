@@ -215,6 +215,8 @@ The database refuses out-of-range text and an archive time before creation (`*_c
 
 ## DTO and security rules
 
+- Every API answer carries `Cache-Control: no-store` unless the route sets its own (DECISIONS "TLS behind Cloudflare"). HSTS comes from nginx, never from the API.
+
 * `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })`. Unknown fields are rejected, so `role`, `points`, `rank`, `status` can never be injected.
 * Acting user = `req.user` from the verified cookie. Never `user_id` in body/query. Any `:id` is ownership-checked.
 * Session: the access token travels only in the httpOnly cookie `sirat_access` (an `Authorization` header is ignored). HS256, issuer `sirat-api`, audience `sirat-web`, 15 min, verified locally; claims `sub`, `role`, `sid`.
