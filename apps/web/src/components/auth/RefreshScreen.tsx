@@ -18,6 +18,9 @@ const SLOW_AFTER_MS = 10_000;
  * because the refresh cookie is only sent to /api/auth. Expired: /login. Slow: says so and keeps waiting for the
  * answer. Unavailable (network, rate limit, server): keeps trying (after Retry-After when the server sends one,
  * else with a growing pause), never to /login on its own.
+ * "Try again now" and "Sign in instead" show only while no renewal is in flight: the POST outlives the page
+ * (keepalive), so its late answer would overwrite or clear the cookies of a login made meanwhile, on a shared
+ * computer even another student's.
  */
 /** Where to go back to: `next` when it is a safe dashboard page, else the student home. */
 function target(): string {
@@ -36,7 +39,8 @@ function tabStorage(): Storage | null {
 
 export function RefreshScreen({ locale }: { locale: Locale }) {
   const m = pick(authMessages, locale);
-  const [state, setState] = useState<'working' | 'slow' | 'unavailable'>('working');
+  // working/slow: the first renewal is in flight; waiting: unavailable, between tries; retrying: a later try.
+  const [view, setView] = useState<'working' | 'slow' | 'waiting' | 'retrying'>('working');
   const wake = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -50,7 +54,7 @@ export function RefreshScreen({ locale }: { locale: Locale }) {
     void (async () => {
       for (let attempt = 0; !stopped; attempt += 1) {
         slow = setTimeout(
-          () => setState((now) => (now === 'working' ? 'slow' : now)),
+          () => setView((now) => (now === 'working' ? 'slow' : now)),
           SLOW_AFTER_MS,
         );
         const result = await refreshSession();
@@ -61,7 +65,7 @@ export function RefreshScreen({ locale }: { locale: Locale }) {
           return window.location.replace(back ? next : loginUrl(next));
         }
         if (result.outcome === 'expired') return window.location.replace(loginUrl(next));
-        setState('unavailable');
+        setView('waiting');
         await new Promise<void>((resolve) => {
           const timer = setTimeout(resolve, retryDelayMs(attempt, result.retryAfterMs));
           wake.current = () => {
@@ -69,6 +73,8 @@ export function RefreshScreen({ locale }: { locale: Locale }) {
             resolve();
           };
         });
+        if (stopped) return;
+        setView('retrying');
       }
     })();
     return () => {
@@ -100,7 +106,7 @@ export function RefreshScreen({ locale }: { locale: Locale }) {
         </a>
       </noscript>
       <div role="status" aria-live="polite" className="space-y-4">
-        {state === 'unavailable' ? (
+        {view === 'waiting' ? (
           <>
             <p className="text-sm text-ink-muted">{m.refresh.unavailable}</p>
             <Button type="button" onClick={() => wake.current?.()}>
@@ -108,11 +114,10 @@ export function RefreshScreen({ locale }: { locale: Locale }) {
             </Button>
             {loginInstead}
           </>
-        ) : state === 'slow' ? (
-          <>
-            <p className="text-sm text-ink-muted">{m.refresh.slow}</p>
-            {loginInstead}
-          </>
+        ) : view === 'retrying' ? (
+          <p className="text-sm text-ink-muted">{m.refresh.unavailable}</p>
+        ) : view === 'slow' ? (
+          <p className="text-sm text-ink-muted">{m.refresh.slow}</p>
         ) : null}
       </div>
     </div>

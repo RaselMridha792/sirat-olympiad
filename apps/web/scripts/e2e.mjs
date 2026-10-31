@@ -226,7 +226,11 @@ try {
       );
       off();
       await page.send('Fetch.disable');
-      await page.evaluate(`${buttonWith('Try again now')}.click(), true`);
+      // The button shows only between tries; an automatic try may also get there first.
+      await page.waitFor(
+        `!!${buttonWith('Try again now')} || location.pathname === '/dashboard/leaderboard'`,
+      );
+      await page.evaluate(`(() => { ${buttonWith('Try again now')}?.click(); return true; })()`);
       await page.waitFor(shows('/dashboard/leaderboard'));
       await context.close();
     },
@@ -254,6 +258,10 @@ try {
       const started = Date.now();
       await page.goto(`${BASE}/dashboard/profile`);
       await page.waitFor(hasText('The server is slow to answer'), { timeout: 14_000 });
+      check(
+        !(await page.evaluate(hasText('Sign in instead'))),
+        'offered "Sign in instead" while the renewal was in flight',
+      );
       await page.waitFor(shows('/dashboard/profile'), { timeout: 40_000 });
       check(Date.now() - started >= 15_000, 'the answer was not held');
       check(!visited.includes('/login'), `went to /login (${visited.join(' > ')})`);
