@@ -6,24 +6,31 @@ One short entry per non-obvious technical or product decision. Newest first. For
 
 1. **The gap:** the API's 25 s request timeout answers 503 but cannot cancel the handler, so a rotation could commit after its answer was gone. The browser kept the retired token, and its next try got 409 (inside the grace) or 401 with the family revoked as reuse. A slow API ended the session.
 2. **Rule:**
-   - A rotation commits only within `REFRESH_ROTATION_BUDGET_MS` (15 s) of the handler's start, well before the 25 s request timeout and nginx's 30 s, so its answer (the only copy of the new cookies) always goes out.
-   - Inside the transaction:
-     - every statement, a wait for a row lock included, is bounded by the time left (`set_config('statement_timeout', …, true)`, transaction-local and safe behind PgBouncer);
+   - A rotation commits only within `REFRESH_ROTATION_BUDGET_MS` (default 8 s, at most 10 s) of the handler's start, so its answer (the only copy of the new cookies) always goes out.
+   - **Margins:** even with Prisma's 5 s margin below, the commit stays far before the 25 s request timeout and nginx's 30 s, and the budget is no longer than the 10 s reuse grace.
+   - **Inside the transaction:**
+     - before each statement the time left bounds it, a wait for a row lock included (`set_config('statement_timeout', …, true)`, transaction-local and safe behind PgBouncer). It only ever lowers the database's own 10 s;
      - the budget is checked again just before commit;
-     - Prisma's transaction timeout refuses a later commit.
-   - Past the budget the transaction is rolled back and the API answers 503 with `Retry-After: 1`. Nothing changed, the old cookies still work, and `/refresh` treats the 503 as "unavailable" and tries again.
+     - Prisma's transaction timer runs 5 s past the deadline, so it never cuts a commit the check allowed.
+   - **Past the budget,** or when the database refuses for a passing reason (its 5 s `lock_timeout`, a statement timeout, a serialization failure, a deadlock: `common/db-errors.ts`), the transaction rolls back and the API answers 503.
+     - Nothing changed and the old cookies still work.
+     - The answer has no `Retry-After`, so `/refresh` treats it as "unavailable" and retries with its own growing, jittered pause, which spreads the retries while the database is slow.
+   - **A COMMIT that fails may still have committed.** The successor's row is then looked up: if it exists, the cookies go out (204); if not, 503.
 3. **Reuse detection is unchanged:**
    - Two tabs inside the 10 s grace get 409.
    - A retired token after the grace still revokes the family and is audited.
-   - The retirement time is now taken inside the transaction, so a slow rotation no longer eats into the grace.
-4. **Not chosen:** keeping the successor token (encrypted) in Redis so a retry gets the same cookies. RULEBOOK §5 stores refresh tokens hashed only, and it would change what a replay inside the window gets.
-5. **Tests** (`auth-refresh-timeout.int-spec.ts`, scaled down: budget 500 ms, request timeout 1.5 s; another connection holds the session row locked):
-   - the rotation is rolled back: 503, no cookies, and no new row even after the lock is released; the same token then renews and `/auth/me` answers 200;
-   - a short wait inside the budget still rotates;
-   - real reuse after the grace still ends the family and is audited.
-   - **Without the budget**, the first test fails: the rotation commits after the timeout's 503, and a second session row appears.
+   - The retirement time is stamped again just before commit, not when the UPDATE was sent (it may have waited for a lock), so the grace counts from when the token really stops working.
+4. **Not chosen:** keeping the successor token (encrypted) in Redis so that a retry gets the same cookies. RULEBOOK §5 stores refresh tokens hashed only, and it would change what a replay inside the window gets.
+5. **Tests:**
+   - `auth-refresh-timeout.int-spec.ts`, scaled down (budget 500 ms, request timeout 1.5 s; another connection holds the session row locked):
+     - the rotation is rolled back: 503, no cookies, no `Retry-After`, and no new row even after the lock is released. The same token then renews and `/auth/me` answers 200;
+     - a short wait inside the budget still rotates, and the token counts as retired from after the wait;
+     - real reuse after the grace still ends the family and is audited.
+   - `auth-refresh-lock-timeout.int-spec.ts` uses the real values (8 s budget, 25 s request timeout). The database's 5 s `lock_timeout` cuts the wait first: 503 and nothing changed, then the token renews.
+   - `db-errors.spec.ts` covers which database errors count as passing.
+   - **Mutation checks:** without the budget, a second session row appears after the timeout's 503. Without the stamp before commit, the retirement time lands before the lock wait. Without the error mapping, the lock timeout answers 500.
 6. **Not covered:**
-   - a COMMIT that itself stalls past the 10 s margin;
+   - a COMMIT that stalls for more than the margin before the request timeout (over 10 s);
    - an answer lost in the network after it was sent. That is not the API being slow.
 
 ## 2026-10-31 — Web session: the real session replaces the mock (Lead approved the plan; Claude implementation)

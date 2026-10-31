@@ -86,10 +86,9 @@ export class AuthController {
         : ({ status: 'invalid' } as const);
     if (result.status === 'rotated') return this.cookies.set(res, result.session);
     if (result.status === 'race') throw new ConflictException('Session was just refreshed, retry');
-    if (result.status === 'busy') {
-      res.setHeader('Retry-After', '1');
+    // No Retry-After: the browser's own growing, jittered pause spreads the retries while the database is slow.
+    if (result.status === 'busy')
       throw new ServiceUnavailableException('Session renewal is busy, try again');
-    }
     this.cookies.clear(res);
     throw new UnauthorizedException('Session expired, log in again');
   }

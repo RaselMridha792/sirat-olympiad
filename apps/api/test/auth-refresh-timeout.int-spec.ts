@@ -2,7 +2,7 @@
  * A slow refresh never ends the session (Lead, 2026-10-31). A rotation commits only within its budget
  * (REFRESH_ROTATION_BUDGET_MS from the handler's start), so its answer, the only copy of the new cookies, always
  * goes out; past the budget it is rolled back and the old token keeps working. Scaled down here (budget 500 ms,
- * request timeout 1.5 s) from production's 15 s budget, 25 s request timeout and nginx's 30 s. Another connection
+ * request timeout 1.5 s) from production's 8 s budget, 25 s request timeout and nginx's 30 s. Another connection
  * holds the session row locked, as a busy database would, so the rotation waits.
  */
 import type { PrismaClient } from '@prisma/client';
@@ -96,7 +96,7 @@ describe('POST /api/auth/refresh within the rotation budget', () => {
     const slow = await refresh(issued.refreshToken);
     expect(slow.status).toBe(503); // from the handler, within its budget, before the request timeout
     expect(Date.now() - started).toBeLessThan(REQUEST_TIMEOUT_MS);
-    expect(slow.retryAfter).toBe('1');
+    expect(slow.retryAfter).toBeNull(); // the browser's own growing, jittered pause spreads the retries
     expect(slow.cookies).toEqual({}); // the browser keeps its cookies
 
     await lock.released; // the database is free again: a late commit would land now
@@ -114,14 +114,20 @@ describe('POST /api/auth/refresh within the rotation budget', () => {
     expect(me.status).toBe(200);
   });
 
-  it('a short wait inside the budget still rotates', async () => {
+  it('a short wait inside the budget still rotates, and the token counts as retired from the commit', async () => {
     const { issued } = await newSession();
-    const lock = holdRow(issued.user.sessionId, 100);
+    const lock = holdRow(issued.user.sessionId, 200);
     await lock.locked;
+    const sent = Date.now();
     const res = await refresh(issued.refreshToken);
     await lock.released;
     expect(res.status).toBe(204);
     expect(res.cookies[REFRESH_COOKIE]).toBeTruthy();
+    // Not stamped when the UPDATE was sent: it waited ~200 ms for the lock, and the reuse grace starts after that.
+    const retired = await prisma.session.findUniqueOrThrow({
+      where: { id: issued.user.sessionId },
+    });
+    expect(retired.revokedAt!.getTime() - sent).toBeGreaterThanOrEqual(100);
   });
 
   it('still detects real reuse: a retired token after the grace ends the family and is audited', async () => {

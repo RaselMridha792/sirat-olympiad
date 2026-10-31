@@ -28,10 +28,11 @@ export class EnvVars {
   @IsInt() @Min(1) REFRESH_TTL_DAYS: number = 7;
   /**
    * A refresh rotation must commit within this many ms of reaching the handler, so its answer (the only copy of the
-   * new cookies) always goes out before the 25 s request timeout and nginx's 30 s. A rotation that cannot is rolled
-   * back and answers 503; the old token stays valid and the browser tries again. Only tests lower it.
+   * new cookies) always goes out: with Prisma's 5 s margin it stays far below the 25 s request timeout, and it stays
+   * inside the 10 s reuse grace. A rotation that cannot is rolled back and answers 503; the old token stays valid and
+   * the browser tries again. Only tests lower it.
    */
-  @IsInt() @Min(100) @Max(20_000) REFRESH_ROTATION_BUDGET_MS: number = 15_000;
+  @IsInt() @Min(100) @Max(10_000) REFRESH_ROTATION_BUDGET_MS: number = 8_000;
   /** Session cookies carry `Secure` unless this is 'false' (local plain-http development only; refused in production). */
   @IsIn(['true', 'false']) COOKIE_SECURE: string = 'true';
 
