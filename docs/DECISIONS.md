@@ -39,7 +39,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 10. **Auth pages:**
     - **Login:** a 429 is the account lock only when the API says "Too many attempts" or Retry-After is a minute or more. nginx's flood 429 (Retry-After 1) reads as "busy".
     - **Reset and verify:**
-      - The `#token` is read once, then dropped from the address bar.
+      - The `#token` is read on load, and again when a new emailed link (a hash with `token=`) is opened in the same tab; the form then starts over. Any other hash, such as an in-page anchor, keeps the current token. The token is then dropped from the address bar.
       - A token that is not the 43-character base64url shape gets the bad-link state with no request.
       - The POST goes out only on a button press, one at a time.
       - A bad link is recognised by its exact message.
