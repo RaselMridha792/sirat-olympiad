@@ -17,6 +17,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - **Never proxied through the Next server.**
    - **The profile edit:** its Server Action (mock only today) moves to this pattern with its API (core plan C3), and `updateProfile` then leaves `DataSource`.
 6. **Tests** (`http/http.test.ts`): query encoding; status and shape refusals; 404 → null; the error text carries no path or value; every `DataSource` method present; `listExams` passes on only the card fields (a canary `score` is dropped); an unknown state, category or type is refused. **Mutation checks:** without the explicit pick, the canary reaches the card; without the status check, a refusal passes as data.
+
 ## 2026-10-31 — Registration start and status (Claude; payments PR 2, plan 6.1 and 6.7)
 
 1. **Application error codes:** the global error filter passes on a machine code that a service sets on purpose (`{ code, message }`, `^[A-Z][A-Z0-9_]{2,40}$`, e.g. `EMAIL_REGISTERED`). Every other error keeps its status name. The codes and the owner's bn/en texts live in `@sirat/shared` (`RegistrationErrorCode`, `REGISTRATION_MESSAGES`), so the web maps codes and never raw text.
