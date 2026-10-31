@@ -2,6 +2,22 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — Web data layer over HTTP (Lead's order; core session implementation)
+
+1. **Production reads the API:** `getData()` returns the HTTP source (`apps/web/src/data/http/`). Development keeps the mock unless `DATA_SOURCE=http` (a local web against a local API). The literal `NODE_ENV` check still drops the mock from production builds (`assert-no-mock.mjs`).
+2. **One file per area, one owner each:** `http/exams.ts` (exam session; the example, `student.listExams` → `GET /exams`), and later core's `users.ts`, `announcements.ts`, `ambassador.ts`, payments' own file. `http/index.ts` spreads each area into its group of `DataSource`. A method no area implements stays `unavailable`, so its page keeps the polite error state; the test checks that every method exists.
+3. **Area file pattern:**
+   - `getJson` / `getJsonOrNull` (`http/request.ts`) take the path and a shape check. 404 is null only where the page shows not found. Every other status, or a shape that fails the check, throws `DataRequestError`, so the page shows its error state. The error names a class and a status, never the path, a query value or a body (logs).
+   - The area then picks the fields of the shared type explicitly, so a field the API adds later never reaches a page.
+   - Query strings go through `withQuery`.
+4. **Binding** (`http/server.ts`): only the access cookie, the student's IP and nginx's request id go along (`serverGet`, `lib/server-api.ts`). No cookie or a 401 goes to `/refresh`, as the session lookup does. The access token can expire after the 30 s `/auth/me` cache answered, so a read can see 401. `refreshUrl` is now exported from `lib/session.ts` for this.
+5. **Reads only (Lead):** `data/http` is for server-side reads in Server Components.
+   - **Writes from the browser:** browser-initiated writes, and anything that sets or needs cookies on the student's side (exam start/checkpoint/submit, registration start/retry/cancel, profile save, announcement forms), go through `lib/api.ts`. Same origin, the cookies, and #12's 401 → refresh retry.
+   - **One small file per feature,** such as `components/exam/exam-api.ts`.
+   - **Never proxied through the Next server.**
+   - **The profile edit:** its Server Action (mock only today) moves to this pattern with its API (core plan C3), and `updateProfile` then leaves `DataSource`.
+6. **Tests** (`http/http.test.ts`): query encoding; status and shape refusals; 404 → null; the error text carries no path or value; every `DataSource` method present; `listExams` passes on only the card fields (a canary `score` is dropped); an unknown state, category or type is refused. **Mutation checks:** without the explicit pick, the canary reaches the card; without the status check, a refusal passes as data.
+
 ## 2026-10-31 — DECISIONS.md merges as a union (Lead)
 
 1. Every session adds its entries at the top of this file, which conflicted on every merge that day. `.gitattributes` now gives `docs/DECISIONS.md` git's built-in union merge driver: both sides' added lines are kept, and nobody has to resolve the same conflict again. A union can drop the blank line between two new entries; `pnpm format` restores it, and CI's format check catches it. Only this file: in OPEN-QUESTIONS or other tables, a union could duplicate or garble rows.
