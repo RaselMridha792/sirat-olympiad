@@ -106,7 +106,7 @@ export function studentHome(get: ApiGet): Pick<DataSource['student'], 'getHome'>
 }
 
 /** Next's own control flow (redirect to /refresh after a 401, notFound): never swallowed by a fallback. */
-const isNextControlFlow = (e: unknown) =>
+export const isNextControlFlow = (e: unknown) =>
   typeof e === 'object' &&
   e !== null &&
   'digest' in e &&

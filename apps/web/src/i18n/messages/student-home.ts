@@ -96,6 +96,9 @@ export const studentHomeMessages = defineMessages({
         'Your registration status cannot be shown right now. Reload the page in a moment.',
       register: 'Register now',
     },
+    book: {
+      unavailable: 'Your book order cannot be shown right now. Reload the page in a moment.',
+    },
   },
   bn: {
     metaTitle: 'ড্যাশবোর্ড',
@@ -183,6 +186,9 @@ export const studentHomeMessages = defineMessages({
       unavailable:
         'এই মুহূর্তে রেজিস্ট্রেশনের অবস্থা দেখানো যাচ্ছে না। একটু পরে পাতাটি আবার খুলুন।',
       register: 'এখনই রেজিস্ট্রেশন করুন',
+    },
+    book: {
+      unavailable: 'এই মুহূর্তে বইয়ের অর্ডার দেখানো যাচ্ছে না। একটু পরে পাতাটি আবার খুলুন।',
     },
   },
 });
