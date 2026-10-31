@@ -222,12 +222,19 @@ On completion `payload` becomes NULL at once (the account holds the data now; th
 5. Move it to `paid`: trx `FIXTURETRX000n`, `paid_amount_minor` 40000, `paid_at`.
 6. Create the registration.
 
-Emails, password and idempotency (existing fixture users are skipped) stay as they are. `PaymentConfig` refuses `FX` and `X` (the selfcheck) as account prefixes.
+**What must not change** (A2's web-session CI "Dashboard pages" job and its e2e log in as `student1@fixtures.invalid`):
+- `student1..3@fixtures.invalid` log in exactly as before, with the password from `FIXTURE_PASSWORD`;
+- the guards stay as they are: `NODE_ENV`, `ALLOW_DEV_FIXTURES`, the local-URL check and the server marker (`guard.ts` untouched);
+- idempotency stays: existing fixture users are skipped.
+
+`PaymentConfig` refuses `FX` and `X` (the selfcheck) as account prefixes.
 
 **Test:** the script is split into an exported `loadDevFixtures(prisma)` and the existing CLI wrapper with its guards. `guard.ts` is unchanged. A new `apps/api/test/dev-fixtures.int-spec.ts` runs the loader twice against the test database and checks:
 - three users, each with a `paid` payment, a `completed` attempt and a registration. The rows pass every M3 CHECK and trigger, because the inserts would fail otherwise.
 - the second run creates nothing.
 - a fixture student logs in through `POST /auth/login`. This is the path A2's web-session CI page check depends on (section 12).
+
+**Before PR 1 opens:** `git merge origin/main` (A2's web session included, if merged by then). The CI "Dashboard pages" job must be green on the PR. A local e2e run uses the shared docker stack, so it happens only when Rasel says so (section 15).
 
 ## 5. Payment state machine
 
@@ -441,12 +448,12 @@ Each protection is mutation-checked as in A2: its test fails with the protection
 
 ## 10. Day-by-day order (target 15 November 2026)
 
-Every commit: `tsc --noEmit` in `apps/api` (and `apps/web` for web commits), lint on the changed files, the related tests, reported in one line. Before a PR: the full `pnpm typecheck && pnpm lint && pnpm test && pnpm build`, `pnpm --filter @sirat/api test:int` and the docker smoke test. The smoke test uses the shared docker stack, so Rasel is told first (section 15).
+Every commit: `tsc --noEmit` in `apps/api` (and `apps/web` for web commits), lint on the changed files, the related tests, reported in one line. Before a PR: the full `pnpm typecheck && pnpm lint && pnpm test && pnpm build`, `pnpm --filter @sirat/api test:int` and the docker smoke test. The smoke test and e2e use the shared docker stack, so they run only when Rasel says so, always with `--build` (section 15).
 
 | Day | Date | Work | Commits |
 |---|---|---|---|
 | 0 | Sat 31 Oct | This plan; DECISIONS (first release, fee, account settings); the lead's review; the docs-only PR. Local isolation set up (section 15). | `docs:` |
-| 1 | Sun 1 Nov | After the docs PR merges: new branch `feat/payments-foundation` from `main`. Foundation every later step needs: M1–M3, seed 40000, dev fixtures on the new schema (4.4), `PaymentConfig` (env, host allow-list), helpers and constraint tests, 05-DATABASE | `feat(db): registration attempts, payment columns, payment events` · `feat(db): registration fee 400 BDT in settings` · `feat(db): payment checks and triggers` · `fix(db): dev fixtures on the new payment schema` · `feat(api): PayStation account settings from env` |
+| 1 | Sun 1 Nov | After the docs PR merges: new branch `feat/payments-foundation` from `main`. Foundation every later step needs: M1–M3, seed 40000, dev fixtures on the new schema (4.4: `student1..3@fixtures.invalid` keep logging in with `FIXTURE_PASSWORD`; `ALLOW_DEV_FIXTURES` and the server-marker guard unchanged; after `git merge origin/main` the CI "Dashboard pages" job stays green), `PaymentConfig` (env, host allow-list), helpers and constraint tests, 05-DATABASE | `feat(db): registration attempts, payment columns, payment events` · `feat(db): registration fee 400 BDT in settings` · `feat(db): payment checks and triggers` · `fix(db): dev fixtures on the new payment schema` · `feat(api): PayStation account settings from env` |
 | 2 | Mon 2 Nov | **PayStation client:** interface, real adapter, in-memory fake, stub-server tests, fake PayStation server (+ dev compose service), `paystation:selfcheck`; early sandbox API checks if credentials are there; S18–S30 into the checklist | `feat(api): PaymentGateway and the PayStation adapter` · `chore(tools): fake PayStation server` |
 | 3 | Tue 3 Nov | **Payment state machine and invoice:** transitions, `decide()`, amount parser, invoice generator | `feat(api): payment state machine and decision rules` · `feat(api): invoice numbers` |
 | 4 | Wed 4 Nov | **`registrations/start` and `pending_registrations`:** 06-API first, then DTO (Q2), open check, fee snapshot, idempotency, cookie, Q3, promo, `GET /registrations/info` | `docs: registration and payment API contract` · `feat(api): registration start and info` |
@@ -506,7 +513,7 @@ State on 2026-10-31 (lead): the A2 session is adding a script to `apps/api/packa
 | `apps/api/prisma/schema.prisma` | Day 1 only, one commit | Our edit to `User` is back-relation lines at the end of its relation list. If A2 later changes the schema (e.g. admin 2FA), whoever merges second regenerates (next row). |
 | `apps/api/prisma/migrations/*` | Day 1 only (M1–M3) | Whoever merges second follows these steps:<br>1. `git merge origin/main`.<br>2. Delete its own not-yet-merged generated migration (M1).<br>3. Regenerate it on a fresh local DB (`prisma migrate dev --create-only` against `sirat_pay`, section 15), so its timestamp is the newest.<br>4. Commit that as a new commit.<br>The hand-written M2 and M3, also not yet merged, are renamed to timestamps after M1 in the same commit; their SQL does not change. A migration on `main` is never edited. The CI drift check must be green. |
 | `apps/api/prisma/seed.ts` | Day 1 | Fee placeholder 40000, two new keys. |
-| `apps/api/prisma/fixtures/dev-fixtures.ts`, new `test/dev-fixtures.int-spec.ts` | Day 1 (4.4) | **Conflict point with A2:** A2's web-session CI page check logs in for real as a fixture student, so A2 may change the fixtures or the CI step that loads them. The fixture emails and `FIXTURE_PASSWORD` do not change. Whoever merges second adapts to the other's version after `git merge origin/main`:<br>- If A2 merges first, our PR 1 runs A2's page check against the new fixtures before it opens.<br>- If we merge first, A2's page check runs on the new fixtures as they are. |
+| `apps/api/prisma/fixtures/dev-fixtures.ts`, new `test/dev-fixtures.int-spec.ts` | Day 1 (4.4) | **Conflict point with A2:** on A2's web-session branch, the CI "Dashboard pages" job and the e2e log in for real as `student1@fixtures.invalid`, so A2 may change the fixtures or the CI step that loads them. The fixture emails, `FIXTURE_PASSWORD` and the guards do not change (4.4), and "Dashboard pages" must be green after the merge. Whoever merges second adapts to the other's version after `git merge origin/main`:<br>- If A2 merges first, our PR 1 runs A2's page check against the new fixtures before it opens.<br>- If we merge first, A2's page check runs on the new fixtures as they are. |
 | `apps/api/package.json` | Day 2 (`paystation:selfcheck` script) | A2 adds `admin:create` now: our line goes in after A2 merges (`git merge origin/main` first); a one-line conflict at worst. |
 | `pnpm-lock.yaml` | No change planned (Node `fetch`, BullMQ, argon2, class-validator already present; k6 is a separate binary) | If a dependency becomes necessary: its own commit right after `git merge origin/main`; the lockfile is regenerated by `pnpm install`, never hand-merged. |
 | `apps/api/src/app.module.ts` | No change planned (D10) | — |
@@ -517,7 +524,7 @@ State on 2026-10-31 (lead): the A2 session is adding a script to `apps/api/packa
 | `.github/workflows/*.yml` | Day 1 (`PAYSTATION_ENV=fake` for integration tests) | A2 adds the fixture load and the page check to CI: the second to merge resolves it with `git merge origin/main`, keeping both steps. |
 | `infra/docker-compose.dev.yml` | Day 2 (fake PayStation, 127.0.0.1 only); the PgBouncer wildcard for the dev DB names if Rasel approves it (section 15) | Shared stack: changed only after telling Rasel. |
 | `apps/web/**` | Days 10–11 | Start only after A2's web session (`lib/session.ts`, login, API client) is merged. |
-| `docs/DECISIONS.md` | Day 0 (three entries, in the docs PR), day 14 | Entries go at the top. A2 does the same, so the second to merge resolves it with `git merge origin/main`, keeping both sets, newest first. |
+| `docs/DECISIONS.md` | Day 0 (five entries, in the docs PR), day 14 | Entries go at the top. A2's web-session branch also has a new entry, so whoever merges later runs `git merge origin/main` and keeps both sides' entries, newest first. |
 | `docs/RUNBOOK.md` | Day 14 only, one commit | |
 | `docs/05-DATABASE.md` day 1; `06-API.md` day 4; `03-HOW-IT-WORKS.md`, `10-BUILD-PLAN.md`, `CLAUDE.md` §4 day 14 | | |
 | Local dev database | Day 1 | This work migrates only its own `sirat_pay` and `sirat_pay_test` (section 15). A2's dev database and Rasel's data are never touched, so no reset is needed for M1's guard. |
@@ -630,7 +637,8 @@ The A2 session uses the same Postgres, Redis and docker stack on Rasel's PC. Rul
 
 **The docker stack is shared** (project `sirat`, the same ports):
 - `up -d --build`, the smoke test and e2e from this worktree replace A2's running containers.
-- Before running any of them, Claude tells Rasel, so A2 does not run them at the same time, and tells him again when finished.
+- **Claude runs no `up`, `down`, smoke test or e2e on the stack until Rasel says so** (lead, 2026-10-31), and tells Rasel when finished. Work on the host against this worktree's own databases (`sirat_pay`, `sirat_pay_test`) and Redis DB 1 needs no permission.
+- The `sirat-api` and `sirat-web` images may be built from A2's branch (A2's run on 31 October). So this worktree always starts the stack with `--build`, never a plain `up -d`.
 
 **Cleanup after both branches merge:**
 - drop `sirat_pay` and `sirat_pay_test`, and flush Redis DB 1;
