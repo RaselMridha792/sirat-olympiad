@@ -133,7 +133,7 @@ result "$ok" "the throwaway key decrypts the upload and the restored counts matc
 status=0; KILL_DUMP=1 run_backup || status=$?
 ok=1
 [ "$status" -ne 0 ] && [ "$(copies)" -eq 1 ] && [ -z "$(find "$T/backups" -name '.work.*')" ] &&
-  [ "$(ls "$T/remote" | wc -l)" -eq 2 ] && last_ping | grep -q '/fail$' && ok=0
+  [ "$(find "$T/remote" -type f | wc -l)" -eq 2 ] && last_ping | grep -q '/fail$' && ok=0
 result "$ok" "a dump killed midway leaves no file, exits non-zero and pings /fail"
 
 # 4. A remote that does not exist.
