@@ -2,6 +2,18 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-01 — Encrypted off-server backups (L6; exam session, A2's plan and handover)
+
+1. **Configuration only in `/etc/sirat/backup.env`** (root, 0600; `backup.sh` refuses anything else), never the app's `.env`, which reaches every API replica: the put-only upload key and the heartbeat URL stay with root. The file is read as `KEY=VALUE` lines, never run as shell. Every compose call passes `-p` from `BACKUP_PROJECT`.
+2. **Counts from the dump itself:** the manifest's row counts and migration list come from reading the whole archive back (`pg_restore --data-only`), so they describe the same snapshot as the dump. A second query would not, because writes happen in between. That read also refuses a truncated dump, which `--list` alone would pass.
+3. **Encryption:** `age` to public keys in `infra/backup/recipients.txt`; the private keys stay offline with the key holders (Q1). The manifest's `sha256` is of the encrypted file, so anyone can check a copy without decrypting it. The local copies are encrypted too; no plain dump outlives a run.
+4. **Upload:** with a put-only key, `rclone` cannot list, read back or delete. It uploads the dump first and the manifest last, so a manifest always names a complete file. Retention off the server is the bucket's versioning and lifecycle (Q1); locally the newest 3 are kept.
+5. **Refusals:** a run whose dump is under half the last one's size fails (`BACKUP_MIN_SIZE_PERCENT`, default 50), because a sudden drop means lost data more often than cleanup. A failed run leaves no new file (a `.work.*` directory, removed by the next run), pings `/fail` with the step's name only, and exits non-zero, so `deploy.sh` stops before migrate.
+6. **`BACKUP_REMOTE=none`** is an explicit local-only mode, until the bucket exists: it warns and pings nothing. An empty value is refused.
+7. **The verify timer** (A2 named one; the plan does not describe it): daily at 07:30 Asia/Dhaka, `backup.sh --verify` checks the newest local copy against its manifest, that it is an age file and under 26 h old, and pings `/fail` if not. The upload itself cannot be read back with a put-only key; the drill (L7) reads the bucket with a read-only key.
+8. **Schedule:** the timer is hourly while registration is open; afterwards a drop-in makes it daily (RUNBOOK §5). The units expect the clone at `/srv/sirat` (L12 can change the path).
+9. **Tests:** `scripts/test/backup.test.sh` (17 cases) runs in a throwaway Alpine container with the tools (age, rclone, Docker CLI) against its own compose project `sirat-backup-test`: a Postgres with no port and no bind mount, a throwaway key, an rclone `local` remote, and fake `curl` and `docker` shims. The same runner runs in CI's docker job, whose image scan now also refuses `*.age`.
+
 ## 2026-11-01 — Results on the web (E5a; exam session, lead's rules)
 
 1. **E5 is two pull requests (lead):** E5a results on the web (review, leaderboards, results panel, attempts); E5b admin authoring (create, edit, versions, publish dialogs).
