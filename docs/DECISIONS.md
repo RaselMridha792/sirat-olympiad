@@ -33,6 +33,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 7. **Limits to remember on the VPS:**
    - Through nginx the generator's single address meets the start limit (300/min per IP). Keep `RATE` at 4 or less per generator machine.
    - PayStation's IPNs come from a few addresses, and the IPN limit is 600/min per IP. Above 10 payments/s per PayStation address, IPNs get 429. They are only a hint: the callback and reconciliation still settle the payment. The VPS run checks this with the real nginx.
+
 ## 2026-11-01 — Ambassadors: admin approval, server promo codes and the panel (core C5a; plan `docs/plans/CORE-PLAN.md` section 6, Q2 default)
 
 1. **A promo code is attribution only** (lead, owner decision). It records who brought a registration and changes no fee, amount or payment. Anything that would make it a discount goes to the lead and the owner first.
