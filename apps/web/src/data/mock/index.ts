@@ -1,15 +1,17 @@
-import type {
-  AdminLeaderboardRow,
-  AdminUserDetail,
-  AdminUserRow,
-  AmbassadorOverview,
-  AnnouncementItem,
-  LeaderboardRound,
-  LeaderboardRow,
-  ProfileOptions,
-  StudentExamCard,
-  StudentExamState,
-  StudentProfile,
+import {
+  EXAM_VIOLATION_WARNINGS,
+  type AdminLeaderboardRow,
+  type AdminUserDetail,
+  type AdminUserRow,
+  type AmbassadorOverview,
+  type AnnouncementItem,
+  type LeaderboardRound,
+  type LeaderboardRow,
+  type ProfileOptions,
+  type StudentExamCard,
+  type StudentExamDetail,
+  type StudentExamState,
+  type StudentProfile,
 } from '@sirat/shared';
 import type { MockState } from '../mode';
 import type { DataSource } from '../source';
@@ -244,6 +246,52 @@ export function createMockSource(state: MockState | null): DataSource {
               }),
             ),
           () => [],
+        ),
+
+      getExam: (id) =>
+        run(
+          (): StudentExamDetail | null => {
+            const exam = studentExams(getWorld()).find((e) => e.id === id);
+            if (!exam) return null;
+            const now = Date.now();
+            const attempt: StudentExamDetail['attempt'] =
+              exam.state === 'submitted'
+                ? {
+                    phase: 'submitted',
+                    endsAt: exam.windowEnd,
+                    receipt: {
+                      receiptId: `00000000-0000-4000-8000-${exam.id
+                        .replace(/[^0-9a-f]/g, '0')
+                        .padEnd(12, '0')
+                        .slice(0, 12)}`,
+                      submittedAt: exam.windowStart,
+                      endReason: 'submitted',
+                    },
+                  }
+                : exam.state === 'in_progress'
+                  ? {
+                      phase: 'in_progress',
+                      endsAt: new Date(now + exam.durationMinutes * 60_000).toISOString(),
+                      receipt: null,
+                    }
+                  : null;
+            return {
+              id: exam.id,
+              title: exam.title,
+              category: exam.category,
+              durationMinutes: exam.durationMinutes,
+              questionsPerAttempt: exam.questionsPerAttempt,
+              windowStart: exam.windowStart,
+              windowEnd: exam.windowEnd,
+              state: exam.state,
+              resultsPublished: false,
+              graceSeconds: exam.graceSeconds,
+              violationWarnings: EXAM_VIOLATION_WARNINGS,
+              serverNow: new Date(now).toISOString(),
+              attempt,
+            };
+          },
+          () => null,
         ),
 
       listAnnouncements: (query) =>

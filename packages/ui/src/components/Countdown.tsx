@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { formatCountdown } from '../countdown-format';
 
 /**
  * DISPLAY-ONLY countdown. `remainingSeconds` MUST come from the server (see docs/03-HOW-IT-WORKS.md).
@@ -28,11 +29,9 @@ export function Countdown({
     return () => clearTimeout(t);
   }, [left, onZero]);
 
-  const mm = String(Math.floor(left / 60)).padStart(2, '0');
-  const ss = String(left % 60).padStart(2, '0');
   return (
     <span aria-live="off" className="font-mono text-lg font-bold tabular-nums">
-      {mm}:{ss}
+      {formatCountdown(left)}
     </span>
   );
 }
