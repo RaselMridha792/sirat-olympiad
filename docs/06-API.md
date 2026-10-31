@@ -56,15 +56,21 @@ Pay first, account second: the form waits server-side in a registration attempt;
 
 | Method + path | Guard | Request → response |
 |---|---|---|
-| `GET /registrations/info` | Public | → `{ open, opensAt, closesAt, fee: { amountMinor, currency } \| null, gradeLevels: [{ id, label }], districts, educationTypes }`. Cached 30 s; `open` is false while the fee is invalid or PayStation is not configured |
-| `POST /registrations/start` | Public; 30/min per IP; 10/hour per email and per phone | `{ startRequestId (uuid), name, phone, email, password, district (one of 64), institution, educationType (one of 5), gradeLevelId, promoCode? }` → **201** `{ paymentUrl, invoiceNumber, amountMinor, currency }` and the `sirat_reg` cookie (httpOnly, SameSite=Lax, Path `/api/registrations`, 7 days). Details below |
-| `GET /registrations/current` | Public (cookie) | → `{ state: awaiting_payment \| confirming \| completed \| failed \| expired \| needs_help, invoiceNumber, amountMinor, currency, expiresAt, canResume, canRetry }`; 404 `NO_REGISTRATION` without a cookie. No personal data |
-| `POST /registrations/current/resume` | Public (cookie) | → 200 `{ paymentUrl }` while the checkout is valid; 409 `NOTHING_TO_RESUME` |
+| `GET /registrations/info` | Public; 3,000/min per IP | → `{ open, opensAt, closesAt, fee: { amountMinor, currency } \| null, gradeLevels: [{ id, label }], districts, educationTypes }`. Cached 30 s; `open` is false while the fee is invalid or PayStation is not configured |
+| `POST /registrations/start` | Public; 300/min per IP (shared IPs: schools, mobile CGNAT); 10/hour per email and per phone | `{ startRequestId (uuid), name, phone, email, password, district (one of 64), institution, educationType (one of 5), gradeLevelId, promoCode? }` → **201** `{ paymentUrl, invoiceNumber, amountMinor, currency }` and the `sirat_reg` cookie (httpOnly, SameSite=Lax, Path `/api/registrations`, 7 days). Details below |
+| `GET /registrations/current` | Public (cookie); 3,000/min per IP | → `{ state: awaiting_payment \| confirming \| completed \| failed \| expired \| needs_help, invoiceNumber, amountMinor, currency, expiresAt, canResume, canRetry }`; 404 `NO_REGISTRATION` without a cookie. No personal data |
+| `POST /registrations/current/resume` | Public (cookie) | → 200 `{ paymentUrl }` while the checkout is valid; 409 `NOTHING_TO_RESUME` for a finished attempt or a checkout no longer valid |
 | `POST /registrations/current/retry` | Public (cookie); limits as start | After the last payment failed or expired, while registration is open: a new payment with a new invoice → 201 as start; 409 `RETRY_NOT_ALLOWED` while one is active |
 | `POST /registrations/current/cancel` | Public (cookie) | 204 and the cookie cleared, only while no payment is active (409 `CANNOT_CANCEL`) |
 | `GET /registrations/me` | Auth | `{ registered: false }` or `{ registered: true, registeredAt, category, gradeLevel, payment: { invoiceNumber, amountMinor, currency, status, paidAt } }` |
 | `GET /payments/mine` | Auth | `?page&pageSize` (≤ 50) → `Paginated<{ id, invoiceNumber, amountMinor, currency, status, createdAt, paidAt }>`, only the session user's |
 | `GET /payments/:id/status` | Owner | The same item; another user's payment is 404, never 403 |
+
+**The `sirat_reg` cookie** proves "my attempt" before an account exists:
+- 32 random bytes; only its SHA-256 is stored, on exactly one attempt;
+- httpOnly, SameSite=Lax, `Secure` (`COOKIE_SECURE`; refused as false in production), Path `/api/registrations`, 7 days.
+
+Without it, or with one that matches no attempt (forged, or one the browser expired), every `current/*` route answers **404 `NO_REGISTRATION`**. A cancelled or abandoned attempt answers the same. A completed attempt shows only its state in `current`; `resume` answers 409, and `retry` and `cancel` answer 404. **Tiers:** start and retry 300/min per IP; info, current, resume and cancel 3,000/min per IP. Every non-GET needs `X-Requested-With` (CSRF).
 
 **`POST /registrations/start` in detail:**
 - **403 `REGISTRATION_CLOSED`:** the switch is off, or now is outside `registration_opens_at`/`registration_closes_at`. Nothing is written.

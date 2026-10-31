@@ -19,7 +19,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - created: `pending` with the URL;
    - refused or timed out: `failed` (502), and retry works;
    - `"1001"`: `failed`, a 10-minute pause in the cache Redis with a critical alert, and 503 `PAYMENTS_PAUSED` for every start or retry during the pause.
-6. **Limits:** 30 starts or retries per minute per IP (route tier) and 10 an hour per email and per phone (Redis, failing open like the login limiter). New alert kinds: `payments.fee_invalid`, `payments.credentials_rejected`.
+6. **Limits:** 300 starts or retries per minute per IP (route tier, sized for shared IPs: a school lab or a mobile operator CGNAT on opening day; lead review), 3,000 per minute for info/current/resume/cancel (the result page polls) and 10 an hour per email and per phone (Redis, failing open like the login limiter). New alert kinds: `payments.fee_invalid`, `payments.credentials_rejected`.
 7. **Recheck moves to PR 3:** `POST /registrations/current/recheck` and `POST /payments/:id/recheck` need the verify job.
 8. **Until reconciliation exists (PR 3)**, a payment past its expiry still counts as in progress for the 409 rule. The reconciliation job then expires it, so no second checkout can start while money may still arrive.
 
