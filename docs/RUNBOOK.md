@@ -32,6 +32,11 @@ pnpm --filter @sirat/api test:int                       # DB + Redis integration
 $DCD up -d --build                                      # full stack; http://127.0.0.1:8080 and /api/ready
 ```
 
+**nginx after pulling the TLS change once (L3):**
+- An nginx container created before the folder mount (single-file mounts, the image's default command) keeps running, but it cannot start again. At the next Docker Desktop or PC restart, or after `$DCD restart nginx`, it crash-loops with `open() "/etc/nginx/sirat/cloudflare-realip.conf" failed`.
+- With the lead's or Rasel's go-ahead (the stack is shared), recreate it once from a checkout that has the change: `$DCD up -d --no-deps nginx`. The same applies if a smoke turn recreated nginx from a worktree without the change and that worktree merges main later.
+- The e2e's CSP step needs nginx's site (http://127.0.0.1:8080). Against a bare Next, or an nginx without the change, it fails on purpose.
+
 Signing secret: the API refuses to start (in every `NODE_ENV`) when `JWT_ACCESS_SECRET` is blank, shorter than 32 characters, too repetitive, or contains a placeholder word such as `fake`, `example` or `change me`. The error names the rule, never the value. Use a separate value per environment and never reuse the dev value on the VPS.
 
 Fixtures: 3 verified students with paid registrations, `student1@fixtures.invalid` … `student3@fixtures.invalid`, password = your `FIXTURE_PASSWORD` in `apps/api/.env`. They refuse to run unless `NODE_ENV` is development/test, the confirmation is set for that run, the URL is local with no `host`/`hostaddr` parameter, and the connected Postgres server carries `sirat.environment=development` (only the dev override sets it; after pulling this change once, recreate the dev Postgres with `$DCD up -d postgres`, data is kept). PowerShell: `$env:ALLOW_DEV_FIXTURES='yes-this-is-not-production'; pnpm --filter @sirat/api db:fixtures:dev`. Each student has a distinct phone (`01700000001`…`01700000003`) and a paid 400 BDT payment that went initiated → pending → paid, like a real one.
@@ -291,14 +296,30 @@ Once, on the VPS (the private key never leaves it):
    openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -subj "/CN=<host>" -keyout infra/nginx/certs/origin.key -out origin.csr
    ```
 2. In Cloudflare, open SSL/TLS → Origin Server → Create Certificate → "Use my private key and CSR". Paste the CSR, add the hostnames `<host>` and `*.<host>`, and choose 15 years. Save the certificate as `infra/nginx/certs/origin.pem`.
-3. Set `APP_URL=https://<host>` in `.env`, then run `$DC up -d --no-deps --force-recreate nginx`. Do this outside an exam window: it drops open connections.
+3. Set `APP_URL=https://<host>` in `.env`, best before the first start (the LAUNCH-PLAN §2 order: certificate, then first start).
+   - If the stack already runs, recreate nginx, and also api and worker if they exist. Both read `APP_URL` once at start (email links, the payment return).
+   - Do it outside an exam window: every API replica restarts, about 10–20 s without the API.
+   ```bash
+   $DC up -d --no-deps --force-recreate nginx
+   [ -z "$($DC ps -aq api worker)" ] || $DC up -d --no-deps --force-recreate api worker
+   $DC exec -T api printenv APP_URL   # must print https://<host>
+   ```
 4. Check the origin directly, before Cloudflare is involved. This must print `ok`:
    ```bash
    curl -sk --resolve <host>:443:127.0.0.1 https://<host>/healthz
    ```
    From inside the container, `$DC exec -T nginx wget -qO- http://127.0.0.1:8081/api/ready` uses the internal listener, which has no redirect.
 5. Only now set SSL/TLS to **Full (strict)** in Cloudflare, then turn on Always Use HTTPS.
-   - Full (strict) before the certificate is served gives error 526.
+   - Full (strict) before nginx serves the certificate gives error 521. Without `infra/nginx/certs/origin.pem`, nginx does not start (`$DC logs nginx` shows `cannot load certificate`), so nothing answers on 443, or on 80.
+   - 525 means the TLS handshake failed, for example when the host in `APP_URL` is not the proxied name and the catch-all 443 server refuses it.
+   - 526 means a certificate was served that Cloudflare cannot validate: not the Origin CA one, the host name missing from it, or expired.
    - Flexible together with the origin's redirect loops forever.
 
 HSTS comes from nginx only: 300 s for launch, without `includeSubDomains`. The ramp to 1 day, then 180 days, is a one-line change in `infra/nginx/nginx.conf` (owner question Q3). Apply it with a reload, outside exam windows.
+
+**Fallback: a public certificate, only if Cloudflare's proxy has to be turned off (DNS only).** The Origin CA certificate is trusted only by Cloudflare, so without the proxy, browsers refuse it.
+- **Issue one with DNS-01:** run certbot in a throwaway container (`certbot/dns-cloudflare`) with a Cloudflare API token limited to Zone → DNS → Edit on this one zone. Keep the token in a mode-600 credentials file outside the repo, for that run only. Then delete the file and revoke the token, so no API token stays on the server.
+- **Install it:** copy `fullchain.pem` to `infra/nginx/certs/origin.pem` and `privkey.pem` to `infra/nginx/certs/origin.key`, then `chmod 600` the key.
+- **Load it**, outside an exam window: `$DC exec nginx nginx -c /etc/nginx/sirat/nginx.conf -t && $DC exec nginx nginx -c /etc/nginx/sirat/nginx.conf -s reload`. The certs folder is inside the folder mount, so a reload sees the new files.
+- **Renew it:** it lasts 90 days, so put the renewal date in the calendar. Go back to the Origin CA certificate and Full (strict) once the proxy is on again.
+- **HTTP-01 does not work** with `sites/tls` as written: port 80 redirects the token path, and on 443 `location /` sends it to Next. It would need a code change.

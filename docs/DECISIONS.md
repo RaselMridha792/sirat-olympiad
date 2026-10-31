@@ -4,9 +4,13 @@ One short entry per non-obvious technical or product decision. Newest first. For
 
 ## 2026-11-01 — TLS behind Cloudflare, security headers and nginx logs (Claude; LAUNCH-PLAN L3, lead review)
 
-1. **Certificate:** Cloudflare SSL mode Full (strict) with a free Cloudflare Origin CA certificate. It needs no ACME client and no API token on the server, and Cloudflare trusts it for 15 years. No Cloudflare Tunnel (an untested component in the critical path). Authenticated Origin Pulls come after launch. A Let's Encrypt fallback is only documented (RUNBOOK §15).
+1. **Certificate:** Cloudflare SSL mode Full (strict) with a free Cloudflare Origin CA certificate. It needs no ACME client and no API token on the server, and Cloudflare trusts it for 15 years. No Cloudflare Tunnel (an untested component in the critical path). Authenticated Origin Pulls come after launch. A Let's Encrypt fallback (DNS-01) is only documented (RUNBOOK §15).
 2. **Two sites, one set of locations:**
-   - `infra/nginx/sites/tls` (production) has three servers: port 80 answers `/healthz` and redirects everything else; a default 443 server refuses any other name during the handshake, so the certificate never shows the host to a scanner; the real 443 server runs HTTP/2 and TLS 1.2/1.3.
+   - `infra/nginx/sites/tls` (production):
+     - Port 80 answers `/healthz` for any name and redirects only the site's own name. Any other name has its connection closed.
+     - A default 443 server refuses any other name during the handshake.
+     - So a scanner on the server's IP never sees the host name, on 80 or on 443. A targeted scan that sends the host name can still find the origin, so the Cloudflare-only firewall (L4) and Authenticated Origin Pulls stay the full answer.
+     - The real 443 server runs HTTP/2 and TLS 1.2/1.3.
    - `sites/plain` (dev and CI) is plain http, so e2e and the smoke tests on http://127.0.0.1:8080 do not change.
    - Both include `app-locations.conf`. The site is rendered at start by the image's entrypoint. `PUBLIC_HOST` comes from `APP_URL` (`entrypoint/15-public-host.envsh`), one source of truth, and the container stops with a message if it is not `https://<host>`.
 3. **A folder mount:** compose mounts the whole `infra/nginx` folder at `/etc/nginx/sirat` and starts `nginx -c /etc/nginx/sirat/nginx.conf`. `nginx -s reload` then sees files that git or the refresh script replaced (single-file mounts kept the old inode). A changed site template or entrypoint hook still needs a recreate, because they are read at start.
@@ -20,10 +24,10 @@ One short entry per non-obvious technical or product decision. Newest first. For
 7. **Logs** (lead, 2026-10-31):
    - One explicit access-log format: the path is cut at the first `?` and the Referer is dropped. A browser sends the full page URL as the Referer, so an admin's `/admin/users?q=<name or phone>` would otherwise reach the log through the next request.
    - The format adds the Cloudflare edge address, the request and upstream times, the upstream status and the request id. `/healthz` is not logged.
-   - The error log runs at `crit`: nginx writes the whole request line and the referrer into error lines (upstream failures, rate-limit refusals). The access log already carries status and upstream status.
-   - `infra/nginx/test/check-sites.sh` (in CI) and the CI smoke test assert that random `?q=` values in the URL and in the Referer appear in no log, for a 200 and for an upstream-down 502. Mutation checks: `combined` or the default error level fails them.
+   - Error logs: nginx appends the whole request line and the referrer to every error line written for a request, at any level (an upstream failure is error, a full temp disk crit, running out of connections alert). So request-level errors log only at `emerg` (inside `http`), and the main error log keeps `crit` for process-level problems such as a worker that died. Lost: the request-level crit and alert diagnostics. The access log (status, upstream status, times) and the host monitor (disk, connections) cover them.
+   - `infra/nginx/test/check-sites.sh` (in CI) and the CI smoke test assert that random `?q=` values in the URL and in the Referer appear in no log: for a 200, for an upstream-down 502 (error level), and for a full temp disk, a 500 at crit level (a 64 KB tmpfs). Mutation checks: the `combined` format, the default error level, or no `emerg` inside `http` fails them.
 8. **`APP_URL` must be https in production,** except for localhost, 127.0.0.1 and [::1]. The local stack runs in production mode on http://localhost:8080.
-9. **CSP in the browser tests:** the CDP driver (`scripts/lib/cdp.mjs`) records every `securitypolicyviolation` through a binding added before any page script. `e2e.mjs` and `e2e-exam.mjs` fail on any violation, and payments' wizard e2e will use the same list (LAUNCH-PLAN §13).
+9. **CSP in the browser tests:** the CDP driver (`scripts/lib/cdp.mjs`) records every `securitypolicyviolation` through a binding added before any page script. `e2e.mjs` and `e2e-exam.mjs` pass the CSP step (`cspReport`) only if every document carried nginx's page policy, at least one did, and no violation was seen. A run against a bare Next therefore fails instead of passing without testing anything. Payments' wizard e2e will use the same check (LAUNCH-PLAN §13).
 10. **Not used:** a per-IP `limit_conn` (it would refuse a school behind one address; `limit_req` already covers RULEBOOK §11) and Cloudflare Turnstile.
 
 ## 2026-11-01 — Results on the web (E5a; exam session, lead's rules)
