@@ -50,6 +50,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - Payments already started keep their fee snapshot.
 10. **Admin only, not manager,** for payments (payers' contact data) and settings; admin writes 20/min per IP, besides the per-user limit.
 11. **Not in this PR:** an alert for 2001 repeating across payments, and queue depth (LAUNCH-PLAN monitoring); abandoning stale open attempts and clearing their stored form (the cleanup job, plan 4.3).
+
 ## 2026-10-31 — Public entry page and legal pages (core C2; plan `docs/plans/CORE-PLAN.md` section 3)
 
 1. **Why now, before Phase D:** PayStation's merchant review asks for a live site with an about page, terms, a privacy policy, contact details (one email and at least one phone number) and the registered business name; a refund policy depends on the business. So only these five pages are built (entry, about, privacy, terms, refund policy): no design work, no other marketing sections.
