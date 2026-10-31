@@ -26,6 +26,13 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - `users-me.int-spec.ts` (12): own profile, options, roles, blocked, allowed fields and the audit, the phone in all forms, the three phone conflicts, refused fields, the grade correction and its refusals.
    - `profile.dto.spec.ts` (the same rules as registration); web: `profile.test.ts`, `http/profile.test.ts`, `save-problem.test.ts`, `grade-problem.test.ts`.
    - **Mutation checks:** without the open-attempt check, without the unique-violation mapping, and without the attempt check, each makes a test fail.
+## 2026-11-01 — Payments queue name per test run (Claude; A2's finding, lead's order)
+
+**What:** `PAYMENTS_QUEUE_NAME` (optional, validated `^[A-Za-z0-9_-]{1,64}$`; blank means `payments`) names the BullMQ queue that both `PaymentQueue` (API) and `PaymentsWorker` read from one provider, so the two can never disagree. Production leaves it blank. The payments test harness gives each run its own name (`payments-test-<random>`).
+
+**Why:** A2 found that with the test queue on Redis DB 0, the shared dev stack's worker (now running the payments code) took the tests' `payments` jobs, and payments-settle and payments-hooks failed.
+
+**Also:** the verification-email test now catches the email at `EmailQueue.enqueue` (a spy) instead of reading the shared `email` queue back, for the same reason.
 
 ## 2026-10-31 — Settle, callback, IPN, reconciliation and admin payments (Claude; payments PR 3, plan 6.2–6.7; reconcile rule: lead)
 
