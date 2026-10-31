@@ -115,6 +115,15 @@ export class RegistrationController {
     return this.registrations.retry(readResumeToken(req));
   }
 
+  /** "Check my payment status": 202; the page keeps polling `current`. Once per 10 s per payment. */
+  @Public()
+  @Throttle(STATUS_TIER)
+  @Post('current/recheck')
+  @HttpCode(202)
+  recheck(@Req() req: Request) {
+    return this.registrations.recheck(readResumeToken(req));
+  }
+
   /** Gives up this attempt (only while no payment is active) and forgets the cookie. */
   @Public()
   @Throttle(STATUS_TIER)
@@ -146,5 +155,13 @@ export class MyPaymentsController {
   @Get(':id/status')
   status(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
     return this.registrations.paymentStatus(user.id, id);
+  }
+
+  /** 202: the worker asks PayStation; the dashboard reads the result with `status`. */
+  @Throttle(STATUS_TIER)
+  @Post(':id/recheck')
+  @HttpCode(202)
+  recheck(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.registrations.recheckMine(user.id, id);
   }
 }

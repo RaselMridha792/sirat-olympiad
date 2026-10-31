@@ -17,7 +17,7 @@ const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : value;
 
 /** 01XXXXXXXXX, or the raw input when it is not a Bangladeshi mobile number (the pattern then refuses it). */
-const toBdMobile = ({ value }: { value: unknown }): unknown =>
+export const toBdMobile = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? (normalizeBdMobile(value) ?? value) : value;
 
 /**
