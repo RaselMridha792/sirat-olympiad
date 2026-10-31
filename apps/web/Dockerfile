@@ -14,6 +14,10 @@ COPY --from=build /repo/apps/web/.next/standalone ./
 COPY --from=build /repo/apps/web/.next/static ./apps/web/.next/static
 # Standalone output leaves public/ out; without this, favicon/robots/logos 404 in production only.
 COPY --from=build /repo/apps/web/public ./apps/web/public
+# Next writes at runtime: regenerated ISR pages (.next/server/route-cache; the public pages revalidate every 60 s) and
+# fetch results (.next/cache). Only those two folders belong to the runtime user; the rest of .next stays root-owned.
+RUN mkdir -p apps/web/.next/cache apps/web/.next/server/route-cache \
+ && chown node:node apps/web/.next/cache apps/web/.next/server/route-cache
 USER node
 EXPOSE 3000
 CMD ["node", "apps/web/server.js"]
