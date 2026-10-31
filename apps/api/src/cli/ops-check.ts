@@ -19,7 +19,6 @@
 import { PrismaClient } from '@prisma/client';
 import Redis from 'ioredis';
 import { BackgroundTasks } from '../common/background/background-tasks';
-import { validateEnv, type EnvVars } from '../config/env';
 import { EXAM_QUEUE } from '../modules/attempts/exam-queue';
 import { AlertEmailLimiter } from '../modules/audit/alert-email-limiter';
 import { AuditService } from '../modules/audit/audit.service';
@@ -43,6 +42,7 @@ import { PAYMENT_JOBS, PAYMENT_QUEUE } from '../modules/payments/verify/payment-
 import { PAYMENT_TIMING } from '../modules/payments/verify/payment-timing';
 import type { PrismaService } from '../prisma/prisma.service';
 import { CACHE_REDIS_OPTIONS, QUEUE_REDIS_OPTIONS } from '../redis/redis.module';
+import { OpsEnvError, opsEnv, type OpsEnv } from './ops-env';
 
 export class OpsCheckInputError extends Error {}
 
@@ -94,7 +94,13 @@ export function parseOpsCheckInput(raw: string): OpsCheckInput {
     isRecord(json.state) && isRecord(json.state.streaks) && isRecord(json.state.alerts)
       ? (json.state as unknown as OpsState)
       : EMPTY_STATE;
-  const lastRunAt = typeof json.lastRunAt === 'number' ? json.lastRunAt : null;
+  const fromState = isRecord(json.state) ? json.state.lastRunAt : undefined;
+  const lastRunAt =
+    typeof json.lastRunAt === 'number'
+      ? json.lastRunAt
+      : typeof fromState === 'number'
+        ? fromState
+        : null;
   return { host: host as unknown as HostFacts, state, lastRunAt };
 }
 
@@ -136,7 +142,7 @@ export async function raiseCheckAlerts(
   return alerts.length;
 }
 
-export function queueSpecs(env: EnvVars): QueueSpec[] {
+export function queueSpecs(env: OpsEnv): QueueSpec[] {
   return [
     { name: 'email', queueName: EMAIL_QUEUE },
     {
@@ -170,19 +176,29 @@ async function main(): Promise<number> {
     console.error(`ops-check: ${e.message}`);
     return 2;
   }
-  const env = validateEnv(process.env);
+  let env: OpsEnv;
+  try {
+    env = opsEnv();
+  } catch (e) {
+    if (!(e instanceof OpsEnvError)) throw e;
+    console.error(`ops-check: ${e.message}`);
+    return 2;
+  }
   const prisma = new PrismaClient();
   const cache = new Redis(env.REDIS_CACHE_URL, { ...CACHE_REDIS_OPTIONS, lazyConnect: true });
   const queueRedis = new Redis(env.REDIS_QUEUE_URL, { ...QUEUE_REDIS_OPTIONS, lazyConnect: true });
-  const emails = new EmailQueue(queueRedis);
+  let emails: EmailQueue | undefined;
   try {
     await prisma.$queryRaw`SELECT 1`;
     await Promise.all([cache.connect(), queueRedis.connect()]);
+    // Only now: BullMQ would otherwise connect the client itself, and connect() above would then fail.
+    const queue = new EmailQueue(queueRedis);
+    emails = queue;
     const now = new Date();
     if (digest) {
       const outcome = await sendDailyDigest({
         prisma,
-        enqueue: (kind, key, message) => emails.enqueue(kind, key, message),
+        enqueue: (kind, key, message) => queue.enqueue(kind, key, message),
         to: env.SECURITY_ALERT_EMAIL,
         host: {
           diskUsedPercent: input.host.diskUsedPercent,
@@ -209,7 +225,7 @@ async function main(): Promise<number> {
       const background = new BackgroundTasks();
       const alerts = new SecurityAlerts(
         new AuditService(prisma as unknown as PrismaService),
-        emails,
+        queue,
         background,
         new AlertEmailLimiter(cache, env.SECURITY_ALERT_EMAILS_PER_HOUR),
         env.SECURITY_ALERT_EMAIL,
@@ -223,7 +239,7 @@ async function main(): Promise<number> {
     console.error(`ops-check: could not run (${e instanceof Error ? e.name : 'error'})`);
     return 1;
   } finally {
-    await emails.onApplicationShutdown().catch(() => undefined);
+    await emails?.onApplicationShutdown().catch(() => undefined);
     cache.disconnect();
     queueRedis.disconnect();
     await prisma.$disconnect();
