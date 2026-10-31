@@ -99,6 +99,8 @@ export class EnvVars {
   @IsOptional() @Matches(/^https?:\/\/\S+$/) PAYSTATION_IPN_URL?: string;
   @IsOptional() @IsString() PAYSTATION_PAY_WITH_CHARGE?: string;
   @IsInt() @Min(1_000) @Max(30_000) PAYSTATION_TIMEOUT_MS: number = 10_000;
+  /** Tests only: a run's own payments queue, so a worker running elsewhere never takes its jobs. Blank: "payments". */
+  @IsOptional() @Matches(/^[A-Za-z0-9_-]{1,64}$/) PAYMENTS_QUEUE_NAME?: string;
 }
 
 const MIN_SECRET_LENGTH = 32;

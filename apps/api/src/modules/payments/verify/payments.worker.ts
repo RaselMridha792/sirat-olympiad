@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { type Job, Queue, Worker } from 'bullmq';
 import Redis from 'ioredis';
@@ -9,7 +9,7 @@ import { PaymentReconciler } from './payment-reconciler';
 import {
   PAYMENT_JOBS,
   PAYMENT_JOB_OPTIONS,
-  PAYMENT_QUEUE,
+  PAYMENT_QUEUE_NAME,
   type PaymentJobData,
 } from './payment-queue';
 import { PAYMENT_TIMING } from './payment-timing';
@@ -35,6 +35,7 @@ export class PaymentsWorker implements OnModuleInit, OnApplicationShutdown {
     private readonly verifier: PaymentVerifier,
     private readonly reconciler: PaymentReconciler,
     private readonly config: ConfigService<EnvVars, true>,
+    @Inject(PAYMENT_QUEUE_NAME) private readonly queueName: string,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -42,13 +43,13 @@ export class PaymentsWorker implements OnModuleInit, OnApplicationShutdown {
       ...QUEUE_REDIS_OPTIONS,
     });
     this.connection.on('error', () => undefined); // BullMQ reconnects; job failures are logged below
-    this.queue = new Queue<PaymentJobData>(PAYMENT_QUEUE, { connection: this.connection });
+    this.queue = new Queue<PaymentJobData>(this.queueName, { connection: this.connection });
     await this.queue.upsertJobScheduler(
       RECONCILE_SCHEDULER_ID,
       { every: PAYMENT_TIMING.reconcileEveryMs },
       { name: PAYMENT_JOBS.reconcile, opts: { ...PAYMENT_JOB_OPTIONS, attempts: 1 } },
     );
-    this.worker = new Worker<PaymentJobData>(PAYMENT_QUEUE, (job) => this.process(job), {
+    this.worker = new Worker<PaymentJobData>(this.queueName, (job) => this.process(job), {
       connection: this.connection,
       concurrency: PAYMENT_CONCURRENCY,
     });

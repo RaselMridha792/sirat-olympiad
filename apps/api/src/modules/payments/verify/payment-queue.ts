@@ -7,6 +7,8 @@ import { REDIS_QUEUE } from '../../../redis/redis.module';
 
 /** The payments queue on the queue Redis (plan 6, 6.3, 6.5). Jobs run only in the worker. */
 export const PAYMENT_QUEUE = 'payments';
+/** The queue's name: PAYMENT_QUEUE, or PAYMENTS_QUEUE_NAME (tests give each run its own queue). */
+export const PAYMENT_QUEUE_NAME = Symbol('PAYMENT_QUEUE_NAME');
 export const PAYMENT_JOBS = { verify: 'verify', reconcile: 'reconcile' } as const;
 export type PaymentJobName = (typeof PAYMENT_JOBS)[keyof typeof PAYMENT_JOBS];
 
@@ -50,8 +52,11 @@ export class PaymentQueue implements OnApplicationShutdown {
   private readonly logger = new Logger(PaymentQueue.name);
   private readonly queue: Queue<PaymentJobData>;
 
-  constructor(@Inject(REDIS_QUEUE) private readonly redis: Redis) {
-    this.queue = new Queue<PaymentJobData>(PAYMENT_QUEUE, { connection: redis });
+  constructor(
+    @Inject(REDIS_QUEUE) private readonly redis: Redis,
+    @Inject(PAYMENT_QUEUE_NAME) name: string,
+  ) {
+    this.queue = new Queue<PaymentJobData>(name, { connection: redis });
   }
 
   verify(paymentId: string, reason: VerifyReason): Promise<boolean> {
