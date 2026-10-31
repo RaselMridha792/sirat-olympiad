@@ -18,6 +18,7 @@ import { formatNumber } from '@/i18n/format';
 import { pick } from '@/i18n/messages';
 import { registrationMessages } from '@/i18n/messages/registration';
 import { ApiRequestError } from '@/lib/api';
+import { BOOK_LOGIN_HREF } from './links';
 import { isMoving, nextPollDelay } from './poll';
 import { goToCheckout, registrationApi } from './registration-api';
 import { problemText, registrationProblem } from './registration-problem';
@@ -206,8 +207,9 @@ export function PaymentResult({ locale }: { locale: Locale }) {
       ) : null}
 
       {state === 'completed' ? (
-        <Link href="/login" className={buttonClasses({ size: 'sm' })}>
-          {r.login}
+        // No session after paying (D2): the student logs in and lands on the free book (plan §16.4).
+        <Link href={BOOK_LOGIN_HREF} className={buttonClasses({ size: 'sm' })}>
+          {r.loginForBook}
         </Link>
       ) : null}
 

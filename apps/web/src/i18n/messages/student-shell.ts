@@ -13,6 +13,7 @@ export const studentShellMessages = defineMessages({
       leaderboard: 'Leaderboard',
       announcements: 'Announcements',
       ambassador: 'Ambassador Panel',
+      book: 'Free Book',
     },
     /** Accessible name of the top-bar chip; starts with the visible text (the name). */
     userChip: (name: string) => `${name} — my profile`,
@@ -27,6 +28,7 @@ export const studentShellMessages = defineMessages({
       leaderboard: 'লিডারবোর্ড',
       announcements: 'ঘোষণা',
       ambassador: 'অ্যাম্বাসেডর প্যানেল',
+      book: 'ফ্রি বই',
     },
     userChip: (name: string) => `${name} — আমার প্রোফাইল`,
   },
