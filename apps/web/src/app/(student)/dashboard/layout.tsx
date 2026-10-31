@@ -1,5 +1,6 @@
 import { BookOpen, Home, Megaphone, Trophy, User, Users } from 'lucide-react';
 import { initialOf, type NavItem } from '@sirat/ui';
+import { LogoutButton } from '@/components/auth/LogoutButton';
 import { I18nProvider } from '@/components/I18nProvider';
 import { LanguageSwitch } from '@/components/LanguageSwitch';
 import { NavShell } from '@/components/NavShell';
@@ -58,6 +59,7 @@ export default async function StudentLayout({ children }: { children: React.Reac
               <LanguageSwitch tone="shell" />
               <span aria-hidden="true" className="mx-1 hidden h-8 w-px bg-white/15 sm:block" />
               <UserChip name={user.name} label={m.userChip(user.name)} />
+              <LogoutButton locale={locale} tone="shell" />
             </>
           }
           labels={{ nav: c.nav.main, openMenu: c.nav.openMenu, closeMenu: c.nav.closeMenu }}

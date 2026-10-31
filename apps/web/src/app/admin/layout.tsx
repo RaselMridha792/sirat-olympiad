@@ -8,6 +8,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { Avatar, initialOf, type NavItem } from '@sirat/ui';
+import { LogoutButton } from '@/components/auth/LogoutButton';
 import { I18nProvider } from '@/components/I18nProvider';
 import { LanguageSwitch } from '@/components/LanguageSwitch';
 import { NavShell } from '@/components/NavShell';
@@ -70,6 +71,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                   <p className="text-xs text-ink-muted">{roleLabel}</p>
                 </div>
               </div>
+              <LogoutButton locale={locale} tone="surface" />
             </>
           }
           labels={{ nav: c.nav.main, openMenu: c.nav.openMenu, closeMenu: c.nav.closeMenu }}
