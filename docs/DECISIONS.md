@@ -21,6 +21,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - **The form** keeps `method="post"` and its submit disabled until hydrated (web session #10), so an early submit never puts the fields in a URL.
    - **The fields:** the grade is shown read only with the reason; the district is a list.
    - **The admin side:** the detail dialog gets "Correct grade level". `GET /content/profile-options` admits admins for its grade table (no personal data); managers and jury stay out.
+   - **Client props are picked, never whole objects:** the props of a client component are serialized into the page. CI's `check:leak` found the canaries on `/dashboard/profile/edit` because the whole option-list object reached `ProfileForm`. `toProfileFormProps()` (`data/profile.ts`) now picks every field, and a unit test with canary-filled inputs fails if it spreads instead. The admin grade dialog gets `{ id, label }` only. The whole "Dashboard pages" job then ran clean on this worktree's own services: a throwaway Postgres with the test marker, the API on 4300, `next dev` on 3300 and `next start` on 3301.
 6. **Tests:**
    - `users-me.int-spec.ts` (12): own profile, options, roles, blocked, allowed fields and the audit, the phone in all forms, the three phone conflicts, refused fields, the grade correction and its refusals.
    - `profile.dto.spec.ts` (the same rules as registration); web: `profile.test.ts`, `http/profile.test.ts`, `save-problem.test.ts`, `grade-problem.test.ts`.
