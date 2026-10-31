@@ -10,7 +10,8 @@ import { AuditService } from './audit.service';
 /** Security events that need a human (owner, 2026-10-31). */
 export type SecurityAlertKind =
   | 'login.account_limit' // an account reached its hourly failure limit
-  | 'login.distributed'; // more distinct IPs than the threshold failed on one account within the hour
+  | 'login.distributed' // more distinct IPs than the threshold failed on one account within the hour
+  | 'payments.disabled_in_production'; // PAYSTATION_ENV is blank on a production server (lead, 2026-10-31)
 
 export interface SecurityAlertEvent {
   actorId: string | null;
@@ -24,6 +25,7 @@ export const SECURITY_ALERT_RECIPIENT = Symbol('SECURITY_ALERT_RECIPIENT');
 const TITLES: Record<SecurityAlertKind, string> = {
   'login.account_limit': 'An account reached its hourly limit of failed logins',
   'login.distributed': 'Failed logins on one account from many IP addresses',
+  'payments.disabled_in_production': 'Payments are disabled: PAYSTATION_ENV is blank in production',
 };
 
 /** The operator email: kind, time, account id and counts. No email address and no IP (those stay in the audit log). */

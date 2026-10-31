@@ -28,6 +28,16 @@ enum Category {
   achiever
 }
 
+/// One registration attempt (docs/plans/PAYMENTS-PLAN.md section 5). completed, abandoned and conflict are final.
+enum RegistrationAttemptStatus {
+  open
+  completed
+  abandoned
+  conflict
+}
+
+/// `refunded` is kept but never entered: there is no refund handling (DECISIONS 2026-10-31, owner); the
+/// status-transition trigger refuses it.
 enum PaymentStatus {
   initiated
   pending
@@ -83,7 +93,7 @@ model User {
   email           String    @unique @db.Citext // case-insensitive: A@x.com and a@x.com are the same account
   passwordHash    String    @map("password_hash")
   name            String
-  phone           String?
+  phone           String?   @unique // one number, one student; stored as 01XXXXXXXXX (CHECK in raw SQL); NULL for admins
   district        String?
   institution     String?
   educationType   String?   @map("education_type")
@@ -97,26 +107,28 @@ model User {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  gradeLevel          GradeLevel?        @relation(fields: [gradeLevelId], references: [id], onDelete: Restrict)
-  referredBy          User?              @relation("Referrals", fields: [referredById], references: [id], onDelete: Restrict)
-  referrals           User[]             @relation("Referrals")
+  gradeLevel          GradeLevel?           @relation(fields: [gradeLevelId], references: [id], onDelete: Restrict)
+  referredBy          User?                 @relation("Referrals", fields: [referredById], references: [id], onDelete: Restrict)
+  referrals           User[]                @relation("Referrals")
   sessions            Session[]
   authTokens          AuthToken[]
   payments            Payment[]
   registration        Registration?
   attempts            Attempt[]
   ambassador          AmbassadorProfile?
-  pointEntries        PointLedger[]      @relation("PointOwner")
-  pointEntriesCreated PointLedger[]      @relation("PointCreatedBy")
+  pointEntries        PointLedger[]         @relation("PointOwner")
+  pointEntriesCreated PointLedger[]         @relation("PointCreatedBy")
   teamsOwned          Team[]
   teamMember          TeamMember[]
-  taskAssigns         TaskAssignment[]   @relation("TaskAssignee")
-  taskApprovals       TaskAssignment[]   @relation("TaskApprover")
+  taskAssigns         TaskAssignment[]      @relation("TaskAssignee")
+  taskApprovals       TaskAssignment[]      @relation("TaskApprover")
   tasksCreated        AdminTask[]
   roundEntries        RoundEntry[]
   juryScores          JuryScore[]
   certificates        Certificate[]
   announcements       Announcement[]
+  registrationAttempt PendingRegistration?  @relation("AttemptUser")
+  referredAttempts    PendingRegistration[] @relation("AttemptReferrer")
 
   @@index([referredById])
   @@index([gradeLevelId])
@@ -204,44 +216,75 @@ model Setting {
 
 // ───────────── Payments & registration ─────────────
 
+/// One PayStation checkout. N payments : 1 registration attempt ("try again" needs no new form). Raw SQL adds:
+/// whole-taka and BDT-only CHECKs, paid => paid_amount_minor = amount_minor, the invoice format, one active payment
+/// per attempt (partial unique index) and the status-transition trigger (a new row is always `initiated`).
 model Payment {
-  id             String        @id @default(uuid(7)) @db.Uuid
-  userId         String?       @map("user_id") @db.Uuid // null until the account exists (pay-then-register)
-  invoiceNumber  String        @unique @map("invoice_number")
-  amountMinor    Int           @map("amount_minor") // integer minor units only; CHECK (> 0) in raw SQL
-  currency       String        @default("BDT")
-  status         PaymentStatus @default(initiated)
-  trxId          String?       @unique @map("trx_id")
-  payWithCharge  Boolean       @default(true) @map("pay_with_charge")
-  gatewayPayload Json?         @map("gateway_payload") // raw gateway responses for audit (no card data)
-  expiresAt      DateTime      @map("expires_at") @db.Timestamptz
-  paidAt         DateTime?     @map("paid_at") @db.Timestamptz
-  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt      DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  id                    String        @id @default(uuid(7)) @db.Uuid
+  userId                String?       @map("user_id") @db.Uuid // null until the account exists (pay-then-register)
+  pendingRegistrationId String        @map("pending_registration_id") @db.Uuid
+  invoiceNumber         String        @unique @map("invoice_number")
+  amountMinor           Int           @map("amount_minor") // fee snapshot in paisa; CHECKs in raw SQL
+  currency              String // snapshot of settings.currency; always 'BDT' (CHECK)
+  status                PaymentStatus @default(initiated)
+  trxId                 String?       @unique @map("trx_id")
+  payWithCharge         Boolean       @map("pay_with_charge") // snapshot; always false (merchant pays the charge)
+  gatewayAccount        String        @map("gateway_account") // PAYSTATION_ACCOUNT_LABEL at start
+  paidAmountMinor       Int?          @map("paid_amount_minor") // what PayStation reported, as a record
+  paymentUrl            String?       @map("payment_url")
+  gatewayStatus         String?       @map("gateway_status") // last raw trx_status, lowercased
+  lastCheckedAt         DateTime?     @map("last_checked_at") @db.Timestamptz
+  checkCount            Int           @default(0) @map("check_count")
+  reviewReason          String?       @map("review_reason") // e.g. duplicate_payment, refund_reported
+  expiresAt             DateTime      @map("expires_at") @db.Timestamptz
+  paidAt                DateTime?     @map("paid_at") @db.Timestamptz
+  createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  user         User?                @relation(fields: [userId], references: [id], onDelete: Restrict)
-  registration Registration?
-  pending      PendingRegistration?
+  user                User?               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  pendingRegistration PendingRegistration @relation(fields: [pendingRegistrationId], references: [id], onDelete: Restrict)
+  registration        Registration?
 
   @@index([status, createdAt]) // reconciliation job scans pending by age
   @@index([userId])
+  @@index([pendingRegistrationId])
+  @@index([gatewayAccount, status])
   @@map("payments")
 }
 
-/// Registration form data stored SERVER-SIDE against the pending payment, so it survives the PayStation round trip.
+/// One registration attempt: the form stored SERVER-SIDE so it survives the PayStation round trip, another device
+/// and a cleared browser. The account is created from it in the transaction that marks a payment paid.
+/// Raw SQL adds: one open attempt per email and per phone (partial unique indexes), the phone format, and
+/// completed <=> user_id and completed_at set.
 model PendingRegistration {
-  id         String    @id @default(uuid(7)) @db.Uuid
-  paymentId  String    @unique @map("payment_id") @db.Uuid
-  payload    Json // validated form data (never contains role or a plain password)
-  consumedAt DateTime? @map("consumed_at") @db.Timestamptz
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-  payment    Payment   @relation(fields: [paymentId], references: [id])
+  id              String                    @id @default(uuid(7)) @db.Uuid
+  status          RegistrationAttemptStatus @default(open)
+  email           String                    @db.Citext
+  phone           String // normalised 01XXXXXXXXX
+  name            String
+  payload         Json? // rest of the form incl. the argon2id password hash; NULL once completed (retention)
+  payloadVersion  Int                       @default(1) @map("payload_version")
+  startRequestId  String                    @unique @map("start_request_id") @db.Uuid // double-click idempotency
+  resumeTokenHash String                    @unique @map("resume_token_hash") // SHA-256 of the sirat_reg cookie
+  referredById    String?                   @map("referred_by_id") @db.Uuid
+  userId          String?                   @unique @map("user_id") @db.Uuid
+  completedAt     DateTime?                 @map("completed_at") @db.Timestamptz
+  createdAt       DateTime                  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
+  referredBy User?     @relation("AttemptReferrer", fields: [referredById], references: [id], onDelete: Restrict)
+  user       User?     @relation("AttemptUser", fields: [userId], references: [id], onDelete: Restrict)
+  payments   Payment[]
+
+  @@index([email])
+  @@index([phone])
+  @@index([referredById])
+  @@index([status, updatedAt])
   @@map("pending_registrations")
 }
 
 /// One paid payment <-> one registration. Replaying a callback can never create a second one.
+/// Raw SQL adds a trigger: the payment must be `paid` and belong to the same user.
 model Registration {
   id        String   @id @default(uuid(7)) @db.Uuid
   userId    String   @unique @map("user_id") @db.Uuid
@@ -252,6 +295,28 @@ model Registration {
   payment   Payment  @relation(fields: [paymentId], references: [id])
 
   @@map("registrations")
+}
+
+/// Append-only log of everything PayStation told us and what we did with it (raw SQL: UPDATE, DELETE and TRUNCATE
+/// refused). payment_id is intentionally NOT a foreign key, like audit_logs.actor_id: the log keeps unknown
+/// invoices (payment_id NULL) and must never block or be blocked by payment rows.
+model PaymentEvent {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  paymentId     String?  @map("payment_id") @db.Uuid
+  source        String // initiate | callback | ipn | status_v1 | admin (CHECK)
+  invoiceNumber String?  @map("invoice_number")
+  trxId         String?  @map("trx_id") // as received
+  outcome       String // applied_paid, no_change, rejected_amount, refund_reported, ... (CHECK: snake_case)
+  statusCode    String?  @map("status_code")
+  trxStatus     String?  @map("trx_status")
+  payload       Json? // redacted: no merchant credentials, payer phone masked; at most 16 KB (CHECK)
+  actorId       String?  @map("actor_id") @db.Uuid // admin actions only; not a foreign key (as audit_logs)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([paymentId, createdAt])
+  @@index([trxId])
+  @@index([invoiceNumber])
+  @@map("payment_events")
 }
 
 // ───────────── Exams ─────────────
