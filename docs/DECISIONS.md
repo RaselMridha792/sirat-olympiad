@@ -25,6 +25,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 8. **`APP_URL` must be https in production,** except for localhost, 127.0.0.1 and [::1]. The local stack runs in production mode on http://localhost:8080.
 9. **CSP in the browser tests:** the CDP driver (`scripts/lib/cdp.mjs`) records every `securitypolicyviolation` through a binding added before any page script. `e2e.mjs` and `e2e-exam.mjs` fail on any violation, and payments' wizard e2e will use the same list (LAUNCH-PLAN §13).
 10. **Not used:** a per-IP `limit_conn` (it would refuse a school behind one address; `limit_req` already covers RULEBOOK §11) and Cloudflare Turnstile.
+
 ## 2026-11-01 — Results on the web (E5a; exam session, lead's rules)
 
 1. **E5 is two pull requests (lead):** E5a results on the web (review, leaderboards, results panel, attempts); E5b admin authoring (create, edit, versions, publish dialogs).
