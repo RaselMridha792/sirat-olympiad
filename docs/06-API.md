@@ -32,8 +32,10 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `GET /attempts/me?exam=:id` | Owner | Resume. Built (E2) |
 | | `PUT /attempts/:id/checkpoint` | Owner | Redis only. Built (E2) |
 | | `POST /attempts/:id/submit` | Owner | Idempotent by attempt and `requestId`. Built (E2) |
-| | `GET /attempts/:id/review` | Owner | 403 until window closed for everyone |
-| leaderboard | `GET /leaderboard?round=&page=&q=` | Auth | Snapshot; 404/403 until published |
+| | `GET /attempts/:id/review` | Owner, Role(student, ambassador) | 403 `results_not_published` until the exam's results are published (never before the window closed for everyone). Results (below). Built (E3) |
+| leaderboard | `GET /leaderboard?exam=&page=&pageSize=&q=` | Auth | Published snapshot only; rank, name, institution. Results (below). Built (E3) |
+| | `GET /admin/leaderboard?exam=&page=&pageSize=&q=` | Role(admin, manager) | The snapshot with email, score and time, also before publishing. Built (E3) |
+| | `GET /admin/exams/:id/results`, `POST /admin/exams/:id/results/{build,publish,unpublish}`, `GET /admin/exams/:id/attempts[/:attemptId]` | admin | Results (below). Built (E3) |
 | rounds | `GET /rounds/me` | Auth | |
 | | `POST /rounds/:id/video` | Owner | Inside round window |
 | certificates | `GET /certificates/mine`, `GET /certificates/:id/pdf` | Owner | |
@@ -63,6 +65,21 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | `GET /attempts/me?exam=:id` | — | The same `AttemptView` (resume after a reload or on another device); 404 when none |
 | `PUT /attempts/:id/checkpoint` | `seq`, `answers` (one option position or null per question), `violationCount`, `events` (≤ 300 `{type, at}`) | Redis only, no database write. 200 `{savedSeq, violationCount, remainingSeconds, serverNow}`; an older `seq` changes nothing. 429 `too_soon` + `Retry-After` within 20 s of the last stored checkpoint (the violation count is kept even then; it never goes down). 409 `time_over` (after `ends_at` + grace), `already_submitted`; 400 `answers_invalid`; 503 `checkpoint_unavailable` (the client keeps its local copy and retries) |
 | `POST /attempts/:id/submit` | `requestId` (uuid), `answers`, `endReason` (`submitted`, `time_up`, `violations`), `violationCount`, `events` | One transaction. 200 `{receiptId, submittedAt, endReason, alreadySubmitted}`; a repeat answers the first receipt. 409 `time_over` (after `ends_at` + grace), `request_id_conflict`; 400 `answers_invalid`, `violations_not_reached` (`violations` needs more than 5). `time_taken` is computed by the server and never passes `ends_at` |
+
+## Results (E3; plan: `docs/plans/EXAM-PLAN.md` §3.9–3.12, owner Q4, Q5)
+
+Scoring and the snapshot run in the worker (queue `exam`): each submit queues `score-attempt`; a sweep every minute submits attempts that are still running past `ends_at + grace + 30 s` from their last checkpoint (`server_checkpoint`) or empty (`server_empty`), scores anything left unscored, and builds the snapshot of a closed exam once nothing is unfinished. Students see no score, time or email of anyone, and nothing of their own before the results are published (the database refuses publishing before `window_end + grace`). Refusal codes in `details`.
+
+| Method + path | Who | Answers |
+|---|---|---|
+| `GET /leaderboard?exam=` | any signed-in user | `ExamLeaderboard`: `unpublished` (empty) or `published` with rank, name, institution; equal score and time share a rank (1, 2, 2, 4); search by name or institution; pages cached per snapshot. Without `exam`: the latest exam with published results. 404 unknown or draft exam |
+| `GET /attempts/:id/review` | the attempt's student | `ReviewView`: own score, rank, server time taken, end reason, and per question the options as shown, the student's choice, the correct option and the explanation. 403 `results_not_published`; 404 another student's attempt |
+| `GET /admin/leaderboard?exam=` | admin, manager | `AdminExamLeaderboard`: the snapshot with email, category, score and time, and whether it is public |
+| `GET /admin/exams/:id/results` | admin | `ExamResultsStatus`: attempts by status, window closed, snapshot generation and time, published or not, `canBuild`, `canPublish` |
+| `POST /admin/exams/:id/results/build` | admin | 202 `{queued}`: a rebuild in the worker. 409 `window_open`, `attempts_unfinished` |
+| `POST /admin/exams/:id/results/publish`, `/unpublish` | admin | Body `expectedUpdatedAt`. 409 `stale`, `no_snapshot`, `window_open`, `results_published`. Audited (`results.published`, `results.unpublished`) |
+| `GET /admin/exams/:id/attempts?status=&endReason=&minViolations=&q=` | admin | `Paginated<AdminAttemptRow>`: each student's status, end reason, violation count, times, score (owner Q4) |
+| `GET /admin/exams/:id/attempts/:attemptId` | admin | `AdminAttemptDetail`: the row and its violation and connection events with times (from the submission, or the live checkpoint while running) |
 
 ## Exam admin (E1; plan: `docs/plans/EXAM-PLAN.md` §1.2, §4)
 

@@ -78,6 +78,16 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - Run against Rasel's sandbox account: created.
 6. **S10 is half done:** a 400 BDT `pay_with_charge=0` checkout shows "Pay BDT 400.00". Paying with the test card needs Rasel at a browser; the lead is arranging it.
 
+## 2026-10-31 — E3: scoring, the server-side finalize and results (Claude; plan `docs/plans/EXAM-PLAN.md` 3.9–3.12)
+
+1. **One queue, `exam`, in the worker** (`ExamWorkerModule`, one import line in `worker.ts`): `score-attempt` after each submit (job id `score.<attemptId>`), a sweep every minute (one BullMQ job scheduler, so one sweep per minute across workers) and admin-requested `build-results`. The API only enqueues and never throws for it: a submit succeeds with the queue down.
+2. **The sweep does the safety work itself:** it submits attempts still running past `ends_at + grace + 30 s` from the last checkpoint (`server_checkpoint`, with its violation count and events) or with an empty sheet (`server_empty`, owner Q3), scores finalized attempts left unscored for 5 minutes (a lost job), and builds the snapshot of a closed exam once nothing is unfinished. The finalize locks the attempt with `FOR UPDATE SKIP LOCKED` and re-checks status and the existing submission, so two sweeps or a late client submit never make two submissions (mutation-checked). The margins are a provider (tests use 0), not env variables.
+3. **Scoring reads correct keys from Postgres**, maps each answer through the attempt's layout and compares it with the version the student saw (one mark each, no negative marking, owner Q1). Idempotent: only `submitted`/`expired` → `scored`.
+4. **The snapshot** is one `INSERT … SELECT` with `rank()` over `score DESC, time_taken_seconds ASC` (the DECISIONS leaderboard query form), blocked accounts left out, in one transaction that bumps `results_generation`. A rebuild adds a new generation; readers use the current one.
+5. **Publishing is an admin action** with `expectedUpdatedAt`, needs a snapshot and a closed window (the database CHECK refuses an early `results_published_at` too), and is audited; unpublishing hides the board and the reviews again. `settings.leaderboard_public` is not used by the exam board (EXAM-PLAN D7).
+6. **Students:** `GET /leaderboard` returns rank, name and institution only (no score, time or email; owner Q5), pages cached in Redis per generation; `GET /attempts/:id/review` returns the own score, rank and the correct options with explanations, only after publishing.
+7. **Not built:** the delayed warm-up before a window opens (the publish warms the pool, and a cold pool is loaded once under a lock); answer-key corrections with re-scoring (E7).
+
 ## 2026-10-31 — E2: the exam engine for students (Claude; plan `docs/plans/EXAM-PLAN.md` section 3)
 
 1. **Start is one statement on the database's clock:** `INSERT … SELECT … ON CONFLICT (user_id, exam_id) DO NOTHING`, only while the exam is published, the window open and the content version the one the layout was drawn from; `ends_at = LEAST(now() + duration, window_end)`. No lock on the exam row, so a window-open surge never queues on it. A double click or a second tab gets the same attempt.

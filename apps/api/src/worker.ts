@@ -5,17 +5,19 @@ import { NestFactory } from '@nestjs/core';
 import { Logger, LoggerModule } from 'nestjs-pino';
 import { pinoHttpOptions } from './common/logging/pino-http.options';
 import { validateWorkerEnv } from './config/env';
+import { ExamWorkerModule } from './modules/attempts/attempts.module';
 import { NotificationsWorkerModule } from './modules/notifications/notifications.module';
 
 /**
  * Queue workers (02-SYSTEM-DESIGN): same image as the API, separate `worker` service, so job load never slows the
- * HTTP path. No HTTP server apart from the container health endpoint. Today: email.
+ * HTTP path. No HTTP server apart from the container health endpoint. Today: email and the exam engine.
  */
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate: validateWorkerEnv }),
     LoggerModule.forRoot({ pinoHttp: pinoHttpOptions() }),
     NotificationsWorkerModule,
+    ExamWorkerModule,
   ],
 })
 export class WorkerModule {}
