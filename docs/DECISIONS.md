@@ -12,6 +12,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 6. **Owner Q2 in code:** publish needs exactly `questions_per_attempt` active questions, or at least that many with `random_draw`; a published fixed pool takes no new question and retires none (versions only).
 7. **Refusal codes** travel in `ApiError.details` (a list), so the exception filter stays unchanged.
 8. **`leaderboard_entries` ships now** (empty until E3), so the exam schema lands in one migration pair (`*_exam_engine`, generated, with a guard that stops on existing exam rows; `*_exam_checks`, hand-written).
+9. **Old test databases** (lead review): main's earlier constraint tests left attempts and submissions (`answers: {}`) in every `*_test` database. `prepare-test-db.mjs` now runs payments' cleanup as a list of guarded migrations (payments, then exam): while `*_exam_engine` is not applied, it empties `submissions`, `attempts` and `questions` of a `*_test` database. Payments' log line and counts are unchanged (their migration test still passes). Test: `prepare-test-db.int-spec.ts` builds a scratch `*_prep_test` database at the state before the exam migration with such rows and runs the real script. Development databases need nothing (main's fixtures create no exam rows).
 
 ## 2026-10-31 — PayStation settings at boot, and the sandbox host check S11 (Claude; plan section 3.5)
 
