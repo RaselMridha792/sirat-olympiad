@@ -1,9 +1,11 @@
 import type { Metadata } from 'next';
 import { PageHeader, StatCard, EmptyState } from '@sirat/ui';
+import { requireAccess } from '@/lib/session';
 
 export const metadata: Metadata = { title: 'Ambassador Panel' };
 
-export default function AmbassadorPage() {
+export default async function AmbassadorPage() {
+  await requireAccess('/dashboard/ambassador');
   return (
     <>
       <PageHeader title="Ambassador Panel" subtitle="Points, rank, team and assigned tasks." />

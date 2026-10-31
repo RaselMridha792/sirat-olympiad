@@ -8,6 +8,7 @@ import { common } from '@/i18n/common';
 import { formatDate, formatNumber } from '@/i18n/format';
 import { announcementsMessages } from '@/i18n/messages/announcements';
 import { getMessages } from '@/i18n/server';
+import { requireAccess } from '@/lib/session';
 
 /*
  * Announcements (old dashboard/announcement/page.jsx): newest first, one card per announcement,
@@ -28,6 +29,7 @@ export default async function AnnouncementsPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  await requireAccess('/dashboard/announcements');
   const params = await searchParams;
   const [{ locale, m }, { m: c }, data] = await Promise.all([
     getMessages(announcementsMessages),
