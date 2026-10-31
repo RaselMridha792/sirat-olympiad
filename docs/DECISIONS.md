@@ -2,6 +2,18 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — PayStation settings at boot, and the sandbox host check S11 (Claude; plan section 3.5)
+
+1. **S11 (Rasel's sandbox account, 10 BDT `XS11…` invoices, never paid):**
+   - sandbox credentials work only on `sandbox.paystation.com.bd`; on `api.paystation.com.bd` they get `"1001"` "Invalid Credential.";
+   - the merchant id works only exactly as issued, with its "-".
+
+   So the host allow-list in `payment.config.ts` stays as it is. The docs' curl example (no "-") and the Postman URL text (`api.…`) are wrong for the sandbox (`SANDBOX-CHECKLIST.md`).
+2. **`PAYSTATION_ENV` blank = payments disabled.** Other environments and sessions without these variables (A2's and the exam session's `.env` files, CI) still boot. Once it is set, every rule applies at boot: `PaymentsModule` builds the settings and a wrong value stops the app.
+3. **Boot log without any part of a credential.** It shows env, host, account label, invoice prefix, callback and IPN. The account label identifies the account, so the plan's "last 4 characters of the merchant id" is dropped.
+4. **Callback:** `http://localhost` is allowed outside production (a browser redirect on the same machine); https otherwise. **IPN URL:** required only in production; blank locally until a tunnel exists.
+5. **`.env.example`:** the PayStation host leaves both files; the values are blank, and `PAYSTATION_PAY_WITH_CHARGE=0`.
+
 ## 2026-10-31 — Free book after payment (owner, via the lead)
 
 1. Every student who pays gets one free book. After a successful payment the student confirms a delivery address. The admin can change the book's title and cover later.

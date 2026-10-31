@@ -123,7 +123,7 @@ PayStation's host is the same for every merchant, so it does not depend on the a
 
 ```ts
 const PAYSTATION_HOSTS = {
-  sandbox: 'https://sandbox.paystation.com.bd', // S11 confirms or changes this one line
+  sandbox: 'https://sandbox.paystation.com.bd', // S11 (2026-10-31): sandbox credentials work only here
   live: 'https://api.paystation.com.bd',
 } as const;
 ```
@@ -132,13 +132,13 @@ Why it is not free in `.env` (lead review): with a free URL, a dev machine with 
 
 | Variable | Example | Rule |
 |---|---|---|
-| `PAYSTATION_ENV` | `sandbox` | `sandbox`, `live` or `fake`. Picks the host from the allow-list. `live` is refused unless `NODE_ENV=production`; `fake` is refused in production. |
+| `PAYSTATION_ENV` | `sandbox` | `sandbox`, `live` or `fake`. Picks the host from the allow-list. `live` is refused unless `NODE_ENV=production`; `fake` is refused in production. **Blank = payments disabled** (no payment can start; the boot log says so), so environments and sessions without these variables still boot. Once set, every rule in this table is enforced at boot. |
 | `PAYSTATION_BASE_URL` | blank | Optional for `sandbox` and `live`: when set, it must equal that label's allow-listed host, or the API does not boot. Required for `fake`, where any `http(s)://` URL is accepted (the fake server, e.g. `http://127.0.0.1:18090`). The host in use is logged at boot. |
-| `PAYSTATION_MERCHANT_ID`, `PAYSTATION_PASSWORD` | blank | Required unless `fake`. Placeholder words refused (same check as secrets). Never logged; the boot log shows only the last 4 characters of the merchant id. The example files carry blanks (today they say `fake`). |
+| `PAYSTATION_MERCHANT_ID`, `PAYSTATION_PASSWORD` | blank | Required unless `fake`. Placeholder words refused (same check as secrets). The merchant id is used **exactly as issued, including its "-"** (S11). **Never logged, not even in part.** The account label identifies the account in the boot log. The example files carry blanks. |
 | `PAYSTATION_ACCOUNT_LABEL` | `rasel-sandbox` | Required, `^[a-z0-9-]{3,32}$`. Copied into every payment (`payments.gateway_account`), so a payment is never verified with another account's credentials. |
 | `PAYSTATION_INVOICE_PREFIX` | `T` | Required, 1–3 uppercase letters or digits. Starts every invoice number, so test invoices stand out in our database and in PayStation's panel (`T` test, `S` client live). |
-| `PAYSTATION_CALLBACK_URL` | `http://localhost:8080/api/payments/paystation/callback` | Required (the name already exists). The code appends `/<invoice>`. Boot fails if the longest possible URL is over 200 characters, if it is not `https://` (except `fake`), or if its path is not our callback route. It may differ from `APP_URL` (a tunnel). |
-| `PAYSTATION_IPN_URL` | `https://<public-host>/api/payments/paystation/ipn` | Required unless `fake`. Not sent to PayStation: the IPN URL is registered by hand in PayStation's merchant panel. Checked at boot (https, our route), logged at boot, used by the fake server and by the switch checklist. |
+| `PAYSTATION_CALLBACK_URL` | `http://localhost:8080/api/payments/paystation/callback` | Required (the name already exists). The code appends `/<invoice>`. Boot fails if the longest possible URL is over 200 characters, if its path is not exactly our callback route, or if it is not `https://`. Exceptions: `http://localhost` outside production (a browser redirect on this machine), and anything with `fake`. It may differ from `APP_URL` (a tunnel). |
+| `PAYSTATION_IPN_URL` | `https://<public-host>/api/payments/paystation/ipn` | **Required in production**; blank locally until a tunnel exists (8.1). Not sent to PayStation: the IPN URL is registered by hand in PayStation's merchant panel. When set, it is checked at boot (https, our route) and logged at boot. Also used by the fake server and the switch checklist. |
 | `PAYSTATION_PAY_WITH_CHARGE` | `0` | Required, and only `0` is accepted (Q1); any other value stops the API at boot (fail closed). It stays a variable so that a client contract with another value fails loudly instead of being ignored. Sent to PayStation and copied into each payment (`pay_with_charge` false). |
 | `PAYSTATION_TIMEOUT_MS` | `10000` | Per gateway call. |
 | `PAYMENT_RECONCILE_EVERY_SECONDS` | `120` | Repeatable job interval (RULEBOOK: 2–5 min). |
@@ -148,7 +148,8 @@ Why it is not free in `.env` (lead review): with a free URL, a dev machine with 
 
 - **One accessor:** `PaymentConfig` (`apps/api/src/modules/payments/payment.config.ts`), built from `EnvVars`. A source scan (a unit test over `apps/` and `packages/`, also covering both `.env.example` files) fails if `paystation.com.bd` appears in any file other than `payment.config.ts`. The docs are not scanned.
 - **Where:** both `.env.example` files get a "Registration and payments" block appended at the end, with `PAYSTATION_BASE_URL` blank. The root file's `PAYSTATION_BASE_URL=https://sandbox.paystation.com.bd` line is removed. The CI integration job gets `PAYSTATION_ENV=fake`. Compose needs nothing (`api` and `worker` load `../.env`).
-- **If S11 shows that the sandbox uses the live host:** the allow-list then cannot tell sandbox from live. The guard falls back to credential discipline (13.1 #6) and the boot log, and the owner is asked before step 12.
+- **S11 done (2026-10-31, `SANDBOX-CHECKLIST.md`):** the sandbox has its own host. Sandbox credentials get `"1001"` "Invalid Credential." on the live host, so the allow-list tells the two apart and stays unchanged. The merchant id works only with its "-"; the docs' curl example, which drops it, is wrong.
+- **Built in step 1** (`payment.config.ts`, `payments.module.ts`): `PaymentsModule` builds the settings at boot and logs one line (env, host, account label, invoice prefix, callback, IPN). A wrong value stops the app. The error names the variable and the rule, never the value. The tests remove each guard in turn to check that a test then fails.
 - **Local sandbox tests:** the callback is a browser redirect, so `localhost` works; the IPN is server-to-server and needs a public `https://` URL (D8, section 8.1).
 
 ## 4. Migrations, from the existing schema
@@ -386,7 +387,7 @@ S1–S17 exist in `SANDBOX-CHECKLIST.md`; S18–S30 are added there on step 2. I
 | S12 | Checkout link lifetime | Q5: `payment_expiry_minutes` is never below it (D3) |
 | S15 | Exact `trx_status` strings on v1 | accepted list |
 | S17 | 2001: unknown invoice vs wrong `merchantId` | alerting |
-| S11 | Sandbox host | one line of the allow-list in `payment.config.ts` (3.5) |
+| S11 | Sandbox host | **Done 2026-10-31:** `sandbox.paystation.com.bd`; sandbox credentials fail on the live host; the merchant id keeps its "-" (3.5) |
 | S1, S2 | Invoice length and characters | invoice format |
 | S9 | IPN sent in the sandbox at all? | IPN tests |
 | S18 | After a failed try, can the student retry on the same invoice (failed, then success)? | `failed` not final |
@@ -631,7 +632,7 @@ Now: Rasel's test account (sandbox), label `rasel-sandbox`, invoice prefix `T`. 
 
 ### 13.3 The switch: `.env`, then a restart
 
-Change `PAYSTATION_ENV` (`live`: the host comes from the allow-list; `PAYSTATION_BASE_URL` stays blank or equals the live host), `PAYSTATION_MERCHANT_ID`, `PAYSTATION_PASSWORD`, `PAYSTATION_ACCOUNT_LABEL`, `PAYSTATION_INVOICE_PREFIX`, `PAYSTATION_CALLBACK_URL` and `PAYSTATION_IPN_URL` (production domain), `PAYSTATION_PAY_WITH_CHARGE`; and `payment_expiry_minutes` (admin setting) if S12 differs. Restart `api` and `worker`; read the boot log (host, label, last 4 characters of the merchant id, callback and IPN URLs).
+Change `PAYSTATION_ENV` (`live`: the host comes from the allow-list; `PAYSTATION_BASE_URL` stays blank or equals the live host), `PAYSTATION_MERCHANT_ID`, `PAYSTATION_PASSWORD`, `PAYSTATION_ACCOUNT_LABEL`, `PAYSTATION_INVOICE_PREFIX`, `PAYSTATION_CALLBACK_URL` and `PAYSTATION_IPN_URL` (production domain), `PAYSTATION_PAY_WITH_CHARGE`; and `payment_expiry_minutes` (admin setting) if S12 differs. Restart `api` and `worker`; read the boot log (env, host, account label, invoice prefix, callback and IPN URLs; never any part of a credential).
 
 ### 13.4 Re-verify on the client's account (its settings can differ from Rasel's)
 
