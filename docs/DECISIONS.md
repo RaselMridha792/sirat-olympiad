@@ -29,6 +29,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 8. **`APP_URL` must be https in production,** except for localhost, 127.0.0.1 and [::1]. The local stack runs in production mode on http://localhost:8080.
 9. **CSP in the browser tests:** the CDP driver (`scripts/lib/cdp.mjs`) records every `securitypolicyviolation` through a binding added before any page script. `e2e.mjs` and `e2e-exam.mjs` pass the CSP step (`cspReport`) only if every document carried nginx's page policy, at least one did, and no violation was seen. A run against a bare Next therefore fails instead of passing without testing anything. Payments' wizard e2e will use the same check (LAUNCH-PLAN §13).
 10. **Not used:** a per-IP `limit_conn` (it would refuse a school behind one address; `limit_req` already covers RULEBOOK §11) and Cloudflare Turnstile.
+
 ## 2026-11-01 — Encrypted off-server backups (L6; exam session, A2's plan and handover)
 
 1. **Configuration only in `/etc/sirat/backup.env`** (root, 0600; `backup.sh` refuses anything else), never the app's `.env`, which reaches every API replica: the put-only upload key and the heartbeat URL stay with root. The file is read as `KEY=VALUE` lines, never run as shell. Every compose call passes `-p` from `BACKUP_PROJECT`.
