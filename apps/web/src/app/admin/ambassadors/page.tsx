@@ -18,6 +18,7 @@ import { common } from '@/i18n/common';
 import { formatDate, formatNumber } from '@/i18n/format';
 import { adminAmbassadorsMessages } from '@/i18n/messages/admin-ambassadors';
 import { getMessages } from '@/i18n/server';
+import { requireAccess } from '@/lib/session';
 
 const PATH = '/admin/ambassadors';
 const PAGE_SIZE = 20;
@@ -38,6 +39,7 @@ export default async function AdminAmbassadorsPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  await requireAccess('/admin/ambassadors');
   const params = await searchParams;
   const [{ locale, m }, { m: c }, data] = await Promise.all([
     getMessages(adminAmbassadorsMessages),

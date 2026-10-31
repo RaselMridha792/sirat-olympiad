@@ -14,7 +14,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { AdminStats } from '@sirat/shared';
-import { Card, StatCard } from '@sirat/ui';
+import { Card, EmptyState, PageHeader, StatCard } from '@sirat/ui';
 import { BarList, LineChart, type BarListItem, type LineChartPoint } from '@sirat/ui/charts';
 import { getData } from '@/data';
 import type { SearchParams } from '@/data/query';
@@ -23,6 +23,7 @@ import { common } from '@/i18n/common';
 import { formatDate, formatDateTime, formatNumber } from '@/i18n/format';
 import { adminHomeMessages } from '@/i18n/messages/admin-home';
 import { getMessages } from '@/i18n/server';
+import { requireAccess } from '@/lib/session';
 
 export async function generateMetadata(): Promise<Metadata> {
   const { m } = await getMessages(adminHomeMessages);
@@ -73,6 +74,17 @@ export default async function AdminHomePage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  const user = await requireAccess('/admin');
+  if (user.role === 'jury') {
+    // No statistics call: /admin/stats is for admins and managers.
+    const { m } = await getMessages(adminHomeMessages);
+    return (
+      <>
+        <PageHeader title={m.jury.title} />
+        <EmptyState title={m.jury.body} />
+      </>
+    );
+  }
   const params = await searchParams;
   const [{ locale, m }, { m: c }, data] = await Promise.all([
     getMessages(adminHomeMessages),

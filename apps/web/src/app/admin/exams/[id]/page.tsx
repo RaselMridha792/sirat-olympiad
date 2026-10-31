@@ -22,6 +22,7 @@ import { common } from '@/i18n/common';
 import { formatDateTime, formatNumber } from '@/i18n/format';
 import { adminExamsMessages } from '@/i18n/messages/admin-exams';
 import { getMessages } from '@/i18n/server';
+import { requireAccess } from '@/lib/session';
 
 export async function generateMetadata(): Promise<Metadata> {
   const { m } = await getMessages(adminExamsMessages);
@@ -39,6 +40,7 @@ export default async function AdminExamDetailPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<SearchParams>;
 }) {
+  await requireAccess('/admin/exams/[id]');
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const examId = parseId(id);
   if (!examId) notFound();

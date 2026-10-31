@@ -9,6 +9,7 @@ import { common } from '@/i18n/common';
 import { formatDate } from '@/i18n/format';
 import { profileMessages } from '@/i18n/messages/profile';
 import { getMessages } from '@/i18n/server';
+import { requireAccess } from '@/lib/session';
 
 export async function generateMetadata(): Promise<Metadata> {
   const { m } = await getMessages(profileMessages);
@@ -45,6 +46,7 @@ export default async function ProfilePage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  await requireAccess('/dashboard/profile');
   const params = await searchParams;
   const [{ locale, m }, { m: c }, data] = await Promise.all([
     getMessages(profileMessages),

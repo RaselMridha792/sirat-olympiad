@@ -21,6 +21,7 @@ import { formatDate, formatDateTime, formatNumber } from '@/i18n/format';
 import type { Messages } from '@/i18n/messages';
 import { adminExamsMessages } from '@/i18n/messages/admin-exams';
 import { getMessages } from '@/i18n/server';
+import { requireAccess } from '@/lib/session';
 
 const PATH = '/admin/exams';
 const PAGE_SIZE = 12;
@@ -41,6 +42,7 @@ export default async function AdminExamsPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  await requireAccess('/admin/exams');
   const params = await searchParams;
   const [{ locale, m }, { m: c }, data] = await Promise.all([
     getMessages(adminExamsMessages),

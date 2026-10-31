@@ -30,6 +30,7 @@ import { formatDateTime, formatDuration, formatNumber } from '@/i18n/format';
 import type { Messages } from '@/i18n/messages';
 import { adminLeaderboardMessages } from '@/i18n/messages/admin-leaderboard';
 import { getMessages } from '@/i18n/server';
+import { requireAccess } from '@/lib/session';
 
 const PATH = '/admin/leaderboard';
 const PAGE_SIZE = 20;
@@ -52,6 +53,7 @@ export default async function AdminLeaderboardPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  await requireAccess('/admin/leaderboard');
   const params = await searchParams;
   const [{ locale, m }, { m: c }, data] = await Promise.all([
     getMessages(adminLeaderboardMessages),

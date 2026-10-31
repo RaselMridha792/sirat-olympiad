@@ -1,5 +1,6 @@
 import { BookOpen, Home, Megaphone, Trophy, User, Users } from 'lucide-react';
 import { initialOf, type NavItem } from '@sirat/ui';
+import { LogoutButton } from '@/components/auth/LogoutButton';
 import { I18nProvider } from '@/components/I18nProvider';
 import { LanguageSwitch } from '@/components/LanguageSwitch';
 import { NavShell } from '@/components/NavShell';
@@ -7,16 +8,18 @@ import { UserChip } from '@/components/student/UserChip';
 import { common } from '@/i18n/common';
 import { studentShellMessages } from '@/i18n/messages/student-shell';
 import { getMessages } from '@/i18n/server';
-import { getSession } from '@/lib/session';
+import { canOpen } from '@/lib/access';
+import { requireArea } from '@/lib/session';
 
 /**
  * Student dashboard frame (old dashboard/layout.js + Sidebar.jsx + Dashboard.jsx): navy sidebar and
- * navy top bar with the language switch and the user chip. Links are filtered by role here only to
- * hide them; the API guards each route. Certificates and payments are not built yet, so hidden.
+ * navy top bar with the language switch and the user chip. Links are filtered by role (lib/access.ts)
+ * only to hide them; each page checks access itself and the API guards each route. Certificates and
+ * payments are not built yet, so hidden.
  */
 export default async function StudentLayout({ children }: { children: React.ReactNode }) {
   const [user, { locale, m }, { m: c }] = await Promise.all([
-    getSession('student'),
+    requireArea('student'),
     getMessages(studentShellMessages),
     getMessages(common),
   ]);
@@ -34,7 +37,7 @@ export default async function StudentLayout({ children }: { children: React.Reac
       label: m.nav.announcements,
       icon: <Megaphone size={20} aria-hidden />,
     },
-    ...(user.role === 'ambassador'
+    ...(canOpen('/dashboard/ambassador', user.role)
       ? [
           {
             href: '/dashboard/ambassador',
@@ -56,6 +59,7 @@ export default async function StudentLayout({ children }: { children: React.Reac
               <LanguageSwitch tone="shell" />
               <span aria-hidden="true" className="mx-1 hidden h-8 w-px bg-white/15 sm:block" />
               <UserChip name={user.name} label={m.userChip(user.name)} />
+              <LogoutButton locale={locale} tone="shell" />
             </>
           }
           labels={{ nav: c.nav.main, openMenu: c.nav.openMenu, closeMenu: c.nav.closeMenu }}

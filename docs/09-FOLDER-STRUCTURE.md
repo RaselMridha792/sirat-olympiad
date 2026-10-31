@@ -12,11 +12,13 @@ sirat-olympiad/
 │  │     ├─ app/
 │  │     │  ├─ layout.tsx  globals.css  error.tsx  loading.tsx  not-found.tsx
 │  │     │  ├─ (marketing)/            public pages (server-rendered/static)
-│  │     │  ├─ (auth)/                 login, register, forgot-password (AuthSplitLayout)
+│  │     │  ├─ (auth)/                 login, register, forgot/reset-password, verify-email, refresh (AuthSplitLayout)
 │  │     │  ├─ (student)/dashboard/…   student shell + pages (exam, leaderboard, profile, ambassador)
 │  │     │  └─ admin/…                 admin shell + pages
-│  │     ├─ components/               app-specific (NavShell, LoginForm, RegisterForm)
-│  │     ├─ lib/                      api.ts (same-origin client), session.ts (MOCK), mock.ts (delete later)
+│  │     ├─ components/               app-specific (NavShell, LoginForm, RegisterForm, auth/ forms + LogoutButton)
+│  │     ├─ lib/                      api.ts (browser client, refresh + retry), session.ts + server-api.ts (server-side
+│  │     │                            /auth/me), access.ts (who opens which page), auth/ (refresh, next=, pure helpers)
+│  │     ├─ proxy.ts                  dashboards only: no access cookie -> /refresh
 │  │     └─ i18n/                     en.json, bn.json, t()
 │  └─ api/                    NestJS
 │     ├─ Dockerfile  nest-cli.json  eslint.config.mjs

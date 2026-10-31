@@ -33,6 +33,7 @@ import { common, type CommonMessages } from '@/i18n/common';
 import { formatDate, formatDateTime, formatNumber } from '@/i18n/format';
 import { adminUsersMessages, type AdminUsersMessages } from '@/i18n/messages/admin-users';
 import { getMessages } from '@/i18n/server';
+import { requireAccess } from '@/lib/session';
 
 const PATH = '/admin/users';
 const PAGE_SIZE = 20;
@@ -61,6 +62,7 @@ export default async function AdminUsersPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  await requireAccess('/admin/users');
   const params = await searchParams;
   const [{ locale, m }, { m: c }, data] = await Promise.all([
     getMessages(adminUsersMessages),
