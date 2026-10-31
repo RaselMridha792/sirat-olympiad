@@ -53,6 +53,27 @@ One short entry per non-obvious technical or product decision. Newest first. For
      - every anonymous auth route answers with its own tier in `X-RateLimit-Limit` (refresh 3,000, forgot 120, resend/reset/verify 300, `/auth/me` 600 per IP or the user's own limit).
    - **Mutation checks:** a tracker that decodes instead of verifies lets the forgeries spread (401 instead of 429); the plain ThrottlerGuard shares one budget (200 instead of 429).
 
+## 2026-10-31 — PayStation client, fake server, selfcheck and decision rules (Claude; payments PR 1b)
+
+1. **The client speaks only v1** (initiate, transaction-status by invoice). v2 is not used, because the merchant bears the charge.
+   - **Initiate `"1001"` is `credentials_rejected`:** a configuration error, logged as an error. The pause and alert follow in the start flow (plan 6.1).
+   - **Transport failures are only "unavailable":** timeouts (read from the signal itself, not the error's name), network errors, HTTP errors and non-JSON answers. They never lead to a decision.
+   - **Logs** carry the operation, the failure kind and an HTTP status, never a body, credential or customer field.
+   - **Stored answers** (for `payment_events`) drop credential and token fields, mask phones to the last 3 digits and stay within 16 KB.
+2. **`decide()` is pure and matrix-tested**, with mutation checks: removing the amount, refund or reused-`trx_id` rule each makes a test fail. The non-obvious choices:
+   - expiry applies only when PayStation shows no success: past `expires_at`, `pending` becomes `expired` and `initiated` becomes `failed` (`initiated → expired` is not a transition);
+   - an unavailable gateway never expires a payment;
+   - a success on an `initiated` payment is `mark_paid`, and the settle step moves it through `pending`;
+   - a stale "failed" on a paid payment only warns.
+3. **The TS state table and the DB trigger are compared pair by pair** in `payment-state.int-spec.ts`.
+4. **The fake PayStation lives in `apps/api/test/fake-paystation/`**, not `tools/`, because `.dockerignore` already keeps that folder out of every image.
+   - Its compose service is not added until the web e2e needs it: `infra/docker-compose.dev.yml` is shared.
+   - The contract test runs the real adapter against it.
+5. **`paystation:selfcheck`** (one line in `apps/api/package.json`): one 10 BDT `X…` initiate, exit codes 0/1/2, never any part of a credential.
+   - It reads env without `validateEnv`, because `tsx` emits no decorator metadata.
+   - Run against Rasel's sandbox account: created.
+6. **S10 is half done:** a 400 BDT `pay_with_charge=0` checkout shows "Pay BDT 400.00". Paying with the test card needs Rasel at a browser; the lead is arranging it.
+
 ## 2026-10-31 — E2: the exam engine for students (Claude; plan `docs/plans/EXAM-PLAN.md` section 3)
 
 1. **Start is one statement on the database's clock:** `INSERT … SELECT … ON CONFLICT (user_id, exam_id) DO NOTHING`, only while the exam is published, the window open and the content version the one the layout was drawn from; `ends_at = LEAST(now() + duration, window_end)`. No lock on the exam row, so a window-open surge never queues on it. A double click or a second tab gets the same attempt.

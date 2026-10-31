@@ -51,7 +51,7 @@ Status (lead, 2026-10-31):
 | D2 | No automatic login after payment: the student logs in with the password they chose. |
 | D3 | **Changed by the owner (Q4):** a second or late paid payment (`duplicate_payment`) is still detected, raises a critical alert and shows in the admin review list. Whether the money is returned is outside our system (client, PayStation panel). So the paths to a double charge stay closed: at most one attempt in progress per email and per phone, and the checkout expiry is never shorter than PayStation's link lifetime (S12). |
 | D4 | An invalid or unapproved promo code is a field error; the student can remove it. |
-| D5 | A fake PayStation server lives in `tools/fake-paystation` for dev and CI, never in a production image. |
+| D5 | A fake PayStation server for dev and CI, never in a production image. Built in PR 1b under `apps/api/test/fake-paystation/` (not `tools/`). `.dockerignore` already keeps `apps/api/test` out of every image, CI checks it, and the integration tests import it directly. |
 | D6 | Retention: a completed attempt's form data is cleared at once; an abandoned attempt's after 30 days; stored gateway payloads keep only the last 3 digits of the payer's phone. |
 | D7 | No retry after registration closes; an admin can move `registration_closes_at`. |
 | D8 | Sandbox tests that need the IPN run on a separate staging stack on the VPS (own compose project, database and volumes), never on the production database. Until the VPS exists: this worktree's own API and worker, reached through a temporary tunnel, sandbox only (section 8.1). |
@@ -380,9 +380,22 @@ type StatusResult =
 Adapters only translate HTTP. The decision (6.3) is a pure function `decide(payment, status)` outside them, unit-tested exhaustively.
 
 - **`PayStationGateway` (real):** `fetch` with an AbortSignal timeout; initiate form-encoded with `merchantId` and `password`; status calls send only the `merchantId` header. Everything from `PaymentConfig`; the adapter itself holds no host name (only the allow-list in `payment.config.ts` does). Logs carry the error class and status code only.
-- **`FakeGateway` (in-memory, unit tests):** scripted answers per invoice.
-- **Fake PayStation server** (`tools/fake-paystation`, D5): plain Node HTTP with the official response shapes for initiate and v1; a checkout page with Pay / Fail / Cancel / Close (redirects to the callback with plugin-style `status`, `invoice_number`, `trx_id`, and can POST the IPN); a control endpoint for test scenarios (delay, timeout, 2001, `Successful`/`Success`, `"400.00"`, an amount above or below the fee, a late success, a duplicate IPN). The real adapter runs against it in integration tests and in local dev. Never in a production image; `PAYSTATION_ENV=fake` is refused in production.
-- **`paystation:selfcheck` CLI:** one initiate with an `X…` invoice that is never stored or paid; expects `"200"`. Proves credentials and host (a status query cannot: 2001 means "not found" or "wrong credentials").
+- **Unit-test doubles:** a stub HTTP server inside `paystation.gateway.spec.ts`, plus plain `PaymentGateway` objects in the CLI tests. A separate in-memory `FakeGateway` class was not needed.
+- **Fake PayStation server** (`apps/api/test/fake-paystation/`, D5), built in PR 1b:
+  - plain Node HTTP with the shapes the sandbox showed: initiate (`"200"`, `"1001"` for wrong credentials, `"1008"` for a reused invoice) and v1 (`"200"`, `"2001"`);
+  - a checkout page with Pay / Fail / Cancel. These redirect to the callback with plugin-style `status`, `invoice_number`, `trx_id`, and Pay POSTs the IPN with the official fields;
+  - scenarios in-process or via `POST /__fake/scenario`: delay or timeout, an HTML answer, success casing, amount format, a charge on top, no echoed reference;
+  - `pnpm --filter @sirat/api exec tsx test/fake-paystation/run.ts` runs it on port 18090 for local development.
+  - **The dev compose service is not added yet:** no step needs it until the web e2e (steps 10–13), and `infra/docker-compose.dev.yml` is a shared file.
+- **`paystation:selfcheck` CLI** (built in PR 1b; `src/cli/paystation-selfcheck.ts`; one line in `apps/api/package.json`):
+  - one initiate of 10 BDT with an `X…` invoice that is never stored or paid; expects a payment link;
+  - exit 0 when created, 1 for any gateway answer, 2 when payments are disabled or the settings are wrong;
+  - prints the settings line and the result kind, never any part of a credential. It proves credentials and host, which a status query cannot ("2001" means "not found" or "wrong credentials").
+  - Run against Rasel's sandbox account on 2026-10-31: created.
+- **Decision rules built in PR 1b** (`payment-decision.ts`, pure, matrix-tested):
+  - expiry applies only when PayStation shows no success. An active payment past `expires_at` becomes `expired`; an `initiated` one becomes `failed`, because `initiated → expired` is not a transition;
+  - an unavailable gateway never expires a payment;
+  - a success on an `initiated` payment is `mark_paid`, and the settle step (6) moves it through `pending` in the same transaction.
 - **Contract tests:** the same suite runs against the fake server and, by hand, against the sandbox; results go into `SANDBOX-CHECKLIST.md`.
 
 ## 8. VERIFY: needs the sandbox
@@ -608,7 +621,7 @@ State on 2026-10-31 (lead): the first-admin CLI (PR #10, `admin:create`) is merg
 | `packages/shared/src/index.ts` | Step 1 (`export * from './phone'`) | One line at the end. |
 | `apps/api/test/app-routes.int-spec.ts` | Steps 4, 5, 7 | Allow-list entries only. |
 | `.github/workflows/*.yml` | Step 1 (`PAYSTATION_ENV=fake` for integration tests) | A2 adds the fixture load and the page check to CI: the second to merge resolves it with `git merge origin/main`, keeping both steps. |
-| `infra/docker-compose.dev.yml` | Step 2 (fake PayStation, 127.0.0.1 only); the PgBouncer wildcard for the dev DB names if Rasel approves it (section 15) | Shared stack: changed only after telling Rasel. |
+| `infra/docker-compose.dev.yml` | Not in PR 1b: the fake PayStation service waits for the web e2e (steps 10–13); the PgBouncer wildcard for the dev DB names only if Rasel approves it (section 15) | Shared stack: changed only after telling the lead. |
 | `apps/web/**` | Steps 10–11 | Start only after A2's web session (`lib/session.ts`, login, API client) is merged. |
 | `docs/DECISIONS.md` | Step 0 (five entries, in the docs PR), step 14 | Entries go at the top. A2's web-session branch also has a new entry, so whoever merges later runs `git merge origin/main` and keeps both sides' entries, newest first. |
 | `docs/RUNBOOK.md` | Step 1 (section 0: the payments migration on an old dev database), step 14 | Our text sits right after the fixtures paragraph of section 0. |
