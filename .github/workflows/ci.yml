@@ -80,13 +80,16 @@ jobs:
             value=$(openssl rand -hex 24)
             echo "::add-mask::$value"
             echo "$name=$value" >> "$GITHUB_ENV"
-            [ "$name" = FIXTURE_PASSWORD ] && echo "CHECK_STUDENT_PASSWORD=$value" >> "$GITHUB_ENV"
+            # An if, not `[ ... ] && ...`: that list ends the loop, and so the step, with status 1.
+            if [ "$name" = FIXTURE_PASSWORD ]; then echo "CHECK_STUDENT_PASSWORD=$value" >> "$GITHUB_ENV"; fi
           done
       - name: Postgres with the dev/test marker (fixtures refuse a server without it; services cannot pass -c)
         run: |
           docker run -d --name pg -p 5432:5432 -e POSTGRES_USER=sirat -e POSTGRES_PASSWORD=ci-only-password \
             -e POSTGRES_DB=sirat_pages postgres:17-alpine -c sirat.environment=test
-          for _ in $(seq 1 30); do docker exec pg pg_isready -U sirat -d sirat_pages && break; sleep 2; done
+          # Over TCP: on first start the image runs a socket-only temporary server, then restarts the real one.
+          for _ in $(seq 1 30); do docker exec pg pg_isready -h 127.0.0.1 -U sirat -d sirat_pages && break; sleep 2; done
+          docker exec pg pg_isready -h 127.0.0.1 -U sirat -d sirat_pages || { docker logs pg; exit 1; }
       - name: Migrations, config seed, fixture students and an admin from the create-admin CLI
         run: |
           pnpm --filter @sirat/api exec prisma migrate deploy
