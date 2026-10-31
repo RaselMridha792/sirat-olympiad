@@ -1,5 +1,5 @@
 import type { Category } from './index';
-import type { AdminUserQuery, AnnouncementItem } from './dashboard';
+import type { AdminUserQuery, AnnouncementItem, PageQuery } from './dashboard';
 import type { AnnouncementRecord } from './records';
 
 /*
@@ -58,6 +58,11 @@ export type AdminAnnouncement = AnnouncementItem &
     status: AnnouncementStatus;
     authorName: string | null;
   };
+
+/** GET /admin/announcements */
+export interface AdminAnnouncementQuery extends PageQuery {
+  status?: AnnouncementStatus;
+}
 
 /** POST /admin/announcements; `publishAt` (ISO) defaults to now, at most 1 minute in the past. */
 export interface AnnouncementInput {
