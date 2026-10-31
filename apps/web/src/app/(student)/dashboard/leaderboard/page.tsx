@@ -29,9 +29,10 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 /**
- * Student leaderboard: one page of the precomputed snapshot, searched (name or institution) and
- * paged on the server. The old page fetched 4,000 rows into the browser and polled every 15 s.
- * Rows carry rank, name, institution and status only: never score, time or email.
+ * Student leaderboard: one page of an exam's precomputed snapshot, searched (name or institution)
+ * and paged on the server. The old page fetched 4,000 rows into the browser and polled every 15 s.
+ * Rows carry rank, name, institution and status only: never score, time or email (owner Q5).
+ * The tabs are the student's own exams with published results; the newest is the default.
  */
 export default async function LeaderboardPage({
   searchParams,
@@ -46,25 +47,29 @@ export default async function LeaderboardPage({
     getData(params),
   ]);
   const query = parsePageQuery(params, PAGE_SIZE);
-  const view = await data.leaderboard.get({ ...query, roundId: parseId(params.round) });
+  const exams = (await data.student.listExams())
+    .filter((exam) => exam.resultsPublished)
+    .sort((a, b) => b.windowEnd.localeCompare(a.windowEnd));
+  const examId = parseId(params.exam) ?? exams[0]?.id;
+  // No published exam of their own yet: nothing to ask the API for.
+  const view = examId ? await data.leaderboard.get({ ...query, exam: examId }) : null;
 
-  const rounds = [...view.rounds].sort((a, b) => a.sortOrder - b.sortOrder);
-  // A round tab keeps the search but not the page: another round starts at its first page.
+  // An exam tab keeps the search but not the page: another exam starts at its first page.
   const tabs =
-    rounds.length > 0 ? (
+    exams.length > 0 ? (
       <Tabs
-        items={rounds.map((r) => ({
-          key: r.id,
-          label: r.name,
-          href: hrefWith(PATH, { round: r.id, q: query.q }),
+        items={exams.map((exam) => ({
+          key: exam.id,
+          label: exam.title,
+          href: hrefWith(PATH, { exam: exam.id, q: query.q }),
         }))}
-        activeKey={view.round?.id ?? ''}
-        label={m.roundsLabel}
+        activeKey={view?.exam?.id ?? ''}
+        label={m.examsLabel}
         linkAs={Link}
       />
     ) : null;
 
-  if (view.status === 'unpublished') {
+  if (!view || view.status === 'unpublished' || !view.exam) {
     return (
       <>
         <PageHeader title={m.title} subtitle={m.subtitleUnpublished} />
@@ -83,14 +88,14 @@ export default async function LeaderboardPage({
             {m.soon.title}
           </h2>
           <p className="mx-auto mt-3 max-w-md text-ink-muted">
-            {view.round ? m.soon.text(view.round.name) : m.soon.textNoRound}
+            {view?.exam ? m.soon.text(view.exam.title) : m.soon.textNoExam}
           </p>
         </section>
       </>
     );
   }
 
-  const round = view.round;
+  const exam = view.exam;
   const pages = totalPages(view.total, view.pageSize);
   // Rows have no id (by design); the position on the page is unique, ranks and names may repeat.
   const rows = view.items.map((row, index) => ({
@@ -102,7 +107,11 @@ export default async function LeaderboardPage({
     <>
       <PageHeader
         title={m.title}
-        subtitle={m.subtitlePublished(round.name, formatDateTime(locale, view.snapshotAt))}
+        subtitle={
+          view.snapshotAt
+            ? m.subtitlePublished(exam.title, formatDateTime(locale, view.snapshotAt))
+            : undefined
+        }
       />
       <div className={FILTER_CARD}>
         {tabs}
@@ -113,7 +122,7 @@ export default async function LeaderboardPage({
           submitLabel={c.search.submit}
           defaultValue={query.q}
           action={PATH}
-          preserve={{ round: round.id }}
+          preserve={{ exam: exam.id }}
           icon={<Search size={16} />}
         />
       </div>
@@ -126,7 +135,7 @@ export default async function LeaderboardPage({
           action={
             query.q ? (
               <Link
-                href={hrefWith(PATH, { round: round.id })}
+                href={hrefWith(PATH, { exam: exam.id })}
                 className={buttonClasses({ variant: 'outline', size: 'sm' })}
               >
                 {m.empty.clear}
@@ -137,7 +146,7 @@ export default async function LeaderboardPage({
       ) : (
         <>
           <DataTable
-            caption={m.caption(round.name)}
+            caption={m.caption(exam.title)}
             rows={rows}
             rowKey={(r) => String(r.position)}
             columns={[
@@ -179,7 +188,7 @@ export default async function LeaderboardPage({
             page={view.page}
             totalPages={pages}
             linkAs={Link}
-            hrefFor={(page) => hrefWith(PATH, { round: round.id, q: query.q, page })}
+            hrefFor={(page) => hrefWith(PATH, { exam: exam.id, q: query.q, page })}
             label={c.pagination.label}
             prevLabel={c.pagination.prev}
             nextLabel={c.pagination.next}

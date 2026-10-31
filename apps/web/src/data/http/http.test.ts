@@ -85,10 +85,7 @@ test('the HTTP source implements every DataSource method, unconnected ones fall 
     );
   }
   await assert.rejects(source.admin.getStats(), DataSourceUnavailableError);
-  await assert.rejects(
-    source.leaderboard.get({ page: 1, pageSize: 20 }),
-    DataSourceUnavailableError,
-  );
+  await assert.rejects(source.student.getHome(), DataSourceUnavailableError);
 });
 
 test('student.listExams reads GET /exams and passes on only the card fields', async () => {
@@ -98,14 +95,16 @@ test('student.listExams reads GET /exams and passes on only the card fields', as
   });
   const cards = await createHttpSource(get).student.listExams();
   assert.deepEqual(get.calls, ['/exams']);
-  assert.deepEqual(cards, [exam]);
+  assert.deepEqual(cards, [{ ...exam, resultsPublished: false }]);
 });
 
 test('student.listExams refuses an exam with an unknown state or category', async () => {
   for (const bad of [
-    { ...exam, state: 'started' },
-    { ...exam, category: 'sdg' },
-    { ...exam, durationMinutes: '30' },
+    { ...exam, resultsPublished: false, state: 'started' },
+    { ...exam, resultsPublished: false, category: 'sdg' },
+    { ...exam, resultsPublished: false, durationMinutes: '30' },
+    { ...exam, resultsPublished: 'no' },
+    exam, // resultsPublished missing
   ]) {
     const get = fakeApi({ '/exams': { status: 200, body: [bad] } });
     await assert.rejects(createHttpSource(get).student.listExams(), DataRequestError);

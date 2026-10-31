@@ -1,25 +1,28 @@
 import type {
   AdminAmbassadorRow,
   AdminExamCard,
-  AdminExamDetail,
+  AdminAttemptDetail,
+  AdminAttemptQuery,
+  AdminAttemptRow,
+  AdminExamView,
   AdminExamQuery,
-  AdminLeaderboardQuery,
-  AdminLeaderboardView,
+  AdminExamLeaderboard,
   AdminStats,
   AdminUserDetail,
   AdminUserQuery,
   AdminUserRow,
   AmbassadorOverview,
   AnnouncementItem,
+  ExamLeaderboard,
+  ExamResultsStatus,
   LeaderboardQuery,
-  LeaderboardRow,
-  LeaderboardView,
   PageQuery,
   Paginated,
   ProfileOptions,
   ProfileUpdate,
   ProfileUpdateResult,
-  StudentExamCard,
+  ReviewView,
+  StudentExamListItem,
   StudentExamDetail,
   StudentHome,
   StudentProfile,
@@ -43,18 +46,23 @@ export interface DataSource {
     getProfileOptions(): Promise<ProfileOptions>;
     /** PATCH /users/me (allow-list DTO) */
     updateProfile(input: ProfileUpdate): Promise<ProfileUpdateResult>;
-    /** GET /exams (state decided by the server clock) */
-    listExams(): Promise<StudentExamCard[]>;
+    /** GET /exams (state decided by the server clock; resultsPublished opens the review) */
+    listExams(): Promise<StudentExamListItem[]>;
     /** GET /exams/:id: the waiting room (never questions); null = not found or not visible to this student */
     getExam(id: string): Promise<StudentExamDetail | null>;
+    /**
+     * GET /attempts/:id/review: the student's own attempt with the correct options, explanations, score and rank,
+     * only after the exam's results are published; null = not found, not theirs, or not published yet
+     */
+    getReview(attemptId: string): Promise<ReviewView | null>;
     /** GET /announcements */
     listAnnouncements(query: PageQuery): Promise<Paginated<AnnouncementItem>>;
     /** GET /ambassador/me (role ambassador) */
     getAmbassador(): Promise<AmbassadorOverview>;
   };
   leaderboard: {
-    /** GET /leaderboard?round=&page=&q= (precomputed snapshot; search by name/institution only) */
-    get(query: LeaderboardQuery): Promise<LeaderboardView<LeaderboardRow>>;
+    /** GET /leaderboard?exam=&page=&q= (one exam's snapshot; rank, name, institution; search by name/institution) */
+    get(query: LeaderboardQuery): Promise<ExamLeaderboard>;
   };
   admin: {
     /** GET /admin/stats (cached aggregate) */
@@ -63,12 +71,18 @@ export interface DataSource {
     listUsers(query: AdminUserQuery): Promise<Paginated<AdminUserRow>>;
     /** GET /admin/users/:id (null = not found) */
     getUser(id: string): Promise<AdminUserDetail | null>;
-    /** GET /admin/leaderboard?round=&page=&q=&category= */
-    getLeaderboard(query: AdminLeaderboardQuery): Promise<AdminLeaderboardView>;
+    /** GET /admin/leaderboard?exam=&page=&q= (with emails, scores and times, also before publishing) */
+    getLeaderboard(query: LeaderboardQuery): Promise<AdminExamLeaderboard>;
     /** GET /admin/exams?page=&q=&status= */
     listExams(query: AdminExamQuery): Promise<Paginated<AdminExamCard>>;
-    /** GET /admin/exams/:id (with questions and correct keys; null = not found) */
-    getExam(id: string): Promise<AdminExamDetail | null>;
+    /** GET /admin/exams/:id (with questions, correct keys and the `updatedAt` write token; null = not found) */
+    getExam(id: string): Promise<AdminExamView | null>;
+    /** GET /admin/exams/:id/results (counts, snapshot, what can be built or published; null = not found) */
+    getExamResults(id: string): Promise<ExamResultsStatus | null>;
+    /** GET /admin/exams/:id/attempts?status=&endReason=&minViolations=&q=&page= (owner Q4: violations) */
+    listAttempts(examId: string, query: AdminAttemptQuery): Promise<Paginated<AdminAttemptRow>>;
+    /** GET /admin/exams/:id/attempts/:attemptId (with the events and their times; null = not found) */
+    getAttempt(examId: string, attemptId: string): Promise<AdminAttemptDetail | null>;
     /** GET /admin/ambassadors?page=&q= */
     listAmbassadors(query: PageQuery): Promise<Paginated<AdminAmbassadorRow>>;
     /** GET /admin/announcements?page= */

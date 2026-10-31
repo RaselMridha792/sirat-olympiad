@@ -12,7 +12,7 @@ import { SessionService } from '../src/modules/auth/session.service';
 import { PAYMENT_GATEWAY } from '../src/modules/payments/gateway/payment-gateway';
 import { PAYMENT_CONFIG } from '../src/modules/payments/payments-boot-check';
 import { PaymentReconciler } from '../src/modules/payments/verify/payment-reconciler';
-import { PAYMENT_QUEUE, PaymentQueue } from '../src/modules/payments/verify/payment-queue';
+import { PaymentQueue } from '../src/modules/payments/verify/payment-queue';
 import { PaymentSettlement } from '../src/modules/payments/verify/payment-settlement';
 import { PaymentVerifier } from '../src/modules/payments/verify/payment-verifier';
 import { PrismaService } from '../src/prisma/prisma.service';
@@ -38,6 +38,8 @@ export interface PaymentsApp {
   /** Set `ipnUrl` to make the fake post its IPN to the app. */
   fakeOptions: { ipnUrl?: string };
   cache: Redis;
+  /** This run's own payments queue (PAYMENTS_QUEUE_NAME), so no worker running elsewhere takes its jobs. */
+  queueName: string;
   queue: Queue;
   queueRedis: Redis;
   verifier: PaymentVerifier;
@@ -59,6 +61,7 @@ export async function bootPaymentsApp(): Promise<PaymentsApp> {
   };
   try {
     const fakeOptions: { ipnUrl?: string } = {};
+    const queueName = `payments-test-${randomUUID().slice(0, 8)}`;
     const fake = await startFakePaystation(fakeOptions);
     opened.push(() => fake.close());
     Object.assign(process.env, {
@@ -73,6 +76,7 @@ export async function bootPaymentsApp(): Promise<PaymentsApp> {
       PAYSTATION_CALLBACK_URL: 'http://localhost:4100/api/payments/paystation/callback',
       PAYSTATION_IPN_URL: '',
       PAYSTATION_PAY_WITH_CHARGE: '0',
+      PAYMENTS_QUEUE_NAME: queueName,
     });
     const prisma = testPrisma();
     opened.push(() => prisma.$disconnect());
@@ -85,7 +89,7 @@ export async function bootPaymentsApp(): Promise<PaymentsApp> {
       ...QUEUE_REDIS_OPTIONS,
     });
     opened.push(() => queueRedis.disconnect());
-    const queue = new Queue(PAYMENT_QUEUE, { connection: queueRedis });
+    const queue = new Queue(queueName, { connection: queueRedis });
     opened.push(() => queue.close());
     opened.push(() => queue.obliterate({ force: true }));
     await queue.obliterate({ force: true });
@@ -116,6 +120,7 @@ export async function bootPaymentsApp(): Promise<PaymentsApp> {
       fake,
       fakeOptions,
       cache,
+      queueName,
       queue,
       queueRedis,
       verifier,

@@ -26,6 +26,7 @@ export const studentExamsMessages = defineMessages({
       open: 'Start',
       inProgress: 'Continue',
       submitted: 'Receipt',
+      results: 'Results',
     },
     empty: {
       title: 'No exams yet',
@@ -51,6 +52,7 @@ export const studentExamsMessages = defineMessages({
       open: 'শুরু করুন',
       inProgress: 'চালিয়ে যান',
       submitted: 'রসিদ',
+      results: 'ফলাফল',
     },
     empty: {
       title: 'এখনো কোনো পরীক্ষা নেই',
