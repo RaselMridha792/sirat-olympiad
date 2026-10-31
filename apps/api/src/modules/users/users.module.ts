@@ -1,9 +1,13 @@
 import { Module } from '@nestjs/common';
+import { AdminUsersController } from './admin-users.controller';
+import { AdminUsersService } from './admin-users.service';
 
 /**
- * users module — SCAFFOLD STUB.
- * Spec: docs/04-FEATURES.md and docs/06-API.md. Rules: docs/RULEBOOK.md (sections 4-9, 18, 19).
- * Add: controller (explicit guard on every route), service, DTOs (class-validator), tests.
+ * Users: the admin students list and export (core C1). The student's own profile (GET/PATCH /users/me) follows
+ * in core C3. Plan: docs/plans/CORE-PLAN.md; contract: docs/06-API.md.
  */
-@Module({})
+@Module({
+  controllers: [AdminUsersController],
+  providers: [AdminUsersService],
+})
 export class UsersModule {}
