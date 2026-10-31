@@ -1,9 +1,14 @@
 import { Module } from '@nestjs/common';
+import { AdminAmbassadorsController, AmbassadorController } from './ambassadors.controller';
+import { AmbassadorsService } from './ambassadors.service';
 
 /**
- * ambassadors module — SCAFFOLD STUB.
- * Spec: docs/04-FEATURES.md and docs/06-API.md. Rules: docs/RULEBOOK.md (sections 4-9, 18, 19).
- * Add: controller (explicit guard on every route), service, DTOs (class-validator), tests.
+ * Ambassadors (core C5a): admins approve and revoke, the server assigns the promo code, the ambassador sees their
+ * panel. Attribution only: no fee or payment changes. Points, tasks and teams follow in core C5b.
+ * Plan: docs/plans/CORE-PLAN.md section 6; contract: docs/06-API.md "Ambassadors".
  */
-@Module({})
+@Module({
+  controllers: [AmbassadorController, AdminAmbassadorsController],
+  providers: [AmbassadorsService],
+})
 export class AmbassadorsModule {}

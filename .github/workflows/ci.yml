@@ -64,6 +64,7 @@ jobs:
       CHECK_API_URL: http://localhost:4000
       CHECK_STUDENT_EMAIL: student1@fixtures.invalid
       CHECK_ADMIN_EMAIL: pages-admin@ci.invalid
+      CHECK_AMBASSADOR_EMAIL: student2@fixtures.invalid # approved by the admin through the API (step below)
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
@@ -81,7 +82,10 @@ jobs:
             echo "::add-mask::$value"
             echo "$name=$value" >> "$GITHUB_ENV"
             # An if, not `[ ... ] && ...`: that list ends the loop, and so the step, with status 1.
-            if [ "$name" = FIXTURE_PASSWORD ]; then echo "CHECK_STUDENT_PASSWORD=$value" >> "$GITHUB_ENV"; fi
+            if [ "$name" = FIXTURE_PASSWORD ]; then
+              echo "CHECK_STUDENT_PASSWORD=$value" >> "$GITHUB_ENV"
+              echo "CHECK_AMBASSADOR_PASSWORD=$value" >> "$GITHUB_ENV"
+            fi
           done
       - name: Postgres with the dev/test marker (fixtures refuse a server without it; services cannot pass -c)
         run: |
@@ -103,6 +107,23 @@ jobs:
           (cd apps/api && setsid node dist/main.js > /tmp/api.log 2>&1 &)
           for _ in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:4000/api/ready && break; sleep 1; done
           curl -fsS http://localhost:4000/api/ready
+      - name: The admin approves a fixture student as an ambassador (the real endpoint, this throwaway DB only)
+        run: |
+          api=http://localhost:4000/api
+          jq -n --arg email "$CHECK_ADMIN_EMAIL" --arg password "$CHECK_ADMIN_PASSWORD" '{email: $email, password: $password}' |
+            curl -fsS -o /dev/null -c /tmp/admin.jar -H 'content-type: application/json' -H 'x-requested-with: sirat-web' \
+              --data-binary @- "$api/auth/login" || { echo "::error::admin login for the ambassador approval failed"; exit 1; }
+          id=$(curl -fsS -b /tmp/admin.jar "$api/admin/users?q=$CHECK_AMBASSADOR_EMAIL" |
+            jq -r --arg email "$CHECK_AMBASSADOR_EMAIL" '.items[] | select(.email == $email) | .id') ||
+            { echo "::error::the admin students list did not answer"; exit 1; }
+          if [ -z "$id" ]; then echo "::error::fixture student $CHECK_AMBASSADOR_EMAIL not found in the admin list"; exit 1; fi
+          status=$(curl -sS -o /tmp/approve.json -w '%{http_code}' -b /tmp/admin.jar -H 'content-type: application/json' \
+            -H 'x-requested-with: sirat-web' --data '{"reason":"CI page check"}' "$api/admin/ambassadors/$id/approve")
+          rm -f /tmp/admin.jar
+          if [ "$status" != 200 ]; then
+            echo "::error::approving $CHECK_AMBASSADOR_EMAIL as an ambassador answered HTTP $status: $(jq -c '{code, details}' /tmp/approve.json)"
+            exit 1
+          fi
       - name: Student pages show no scores, times, emails or answer keys (dev server, ?mock=leak, a student session)
         run: |
           setsid pnpm --filter @sirat/web exec next dev -p 3100 > /tmp/next-dev.log 2>&1 &

@@ -22,10 +22,14 @@ import { Badge, buttonClasses, Card, cn, DetailList } from '@sirat/ui';
 import { BookOrderCard } from '@/components/book/BookOrderCard';
 import { entryStatusTone, examStateTone, paymentStatusTone } from '@/components/status';
 import { getData } from '@/data';
+import { isNextControlFlow } from '@/data/http/home';
+import type { DataSource } from '@/data/source';
 import type { SearchParams } from '@/data/query';
 import type { Locale } from '@/i18n';
 import { common, type CommonMessages } from '@/i18n/common';
 import { formatDate, formatDateTime, formatNumber } from '@/i18n/format';
+import { pick } from '@/i18n/messages';
+import { bookMessages } from '@/i18n/messages/book';
 import { studentHomeMessages } from '@/i18n/messages/student-home';
 import { getMessages } from '@/i18n/server';
 import { requireAccess } from '@/lib/session';
@@ -79,12 +83,40 @@ export default async function StudentHomePage({
     <>
       <Hero name={home.user.name} round={home.currentRound} copy={copy} />
       <RegistrationCard registration={home.registration} copy={copy} />
-      <BookOrderCard data={data} locale={locale} />
+      <BookSection data={data} copy={copy} />
       <NextExamCard exam={home.nextExam} copy={copy} />
       <ExamRules exam={home.nextExam} copy={copy} />
       <LatestAnnouncements items={home.latestAnnouncements} copy={copy} />
     </>
   );
+}
+
+/**
+ * Payments' book card (#42) reads GET /book-order/me itself. Like every other section of the home it falls back on its
+ * own when that read fails, so an outage there never takes the whole home down; Next's redirect and not-found pass.
+ */
+async function BookSection({ data, copy: { locale, m } }: { data: DataSource; copy: Copy }) {
+  try {
+    return await BookOrderCard({ data, locale });
+  } catch (error) {
+    if (isNextControlFlow(error)) throw error;
+    return (
+      <Card className="mb-8 flex items-start gap-4">
+        <span
+          aria-hidden="true"
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-control bg-page text-ink-faint"
+        >
+          <BookOpen className="h-6 w-6" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="font-bold text-ink">{pick(bookMessages, locale).card.title}</h2>
+          <p role="status" className="mt-1 text-sm text-ink-muted">
+            {m.book.unavailable}
+          </p>
+        </div>
+      </Card>
+    );
+  }
 }
 
 /**
@@ -100,6 +132,16 @@ function RegistrationCard({
   copy: Copy;
 }) {
   const r = m.registration;
+  if (!registration) {
+    return (
+      <Card className="mb-6">
+        <h2 className="text-lg font-bold text-ink">{r.title}</h2>
+        <p role="status" className="mt-1 text-sm text-ink-muted">
+          {r.unavailable}
+        </p>
+      </Card>
+    );
+  }
   if (!registration.registered) {
     return (
       <Card className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
