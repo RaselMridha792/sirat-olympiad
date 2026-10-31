@@ -145,9 +145,18 @@ export async function launchBrowser() {
         /* already gone */
       }
       conn.close();
-      child.kill();
-      await sleep(200);
-      rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      // Chrome keeps writing its profile until it has exited: wait for that (at most 5 s) before removing it.
+      if (child.exitCode === null && child.signalCode === null) {
+        const exited = new Promise((resolve) => child.once('exit', resolve));
+        child.kill();
+        await Promise.race([exited, sleep(5_000)]);
+      }
+      try {
+        rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      } catch (error) {
+        // Best effort: a temporary profile left behind fails no check.
+        console.warn(`cdp: could not remove the browser profile (${error.code ?? error.message})`);
+      }
     },
   };
 }
