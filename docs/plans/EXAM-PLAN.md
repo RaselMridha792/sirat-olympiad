@@ -23,7 +23,7 @@ The owner answered all five questions on 2026-10-31 (section 9; DECISIONS "Exam 
 
 **Dependencies:**
 - **Payments PR 1** (target 1 November) changes `schema.prisma` and adds migrations first. This work's migrations always come after theirs (section 7). The access check (paid registration) is written only after PR 1 merges, and it only reads `registrations` and `payments`.
-- **A2's web session (PR #12)**: the player uses its browser API client (`lib/api.ts`, refresh after a 401) and the server helper (`lib/server-api.ts`). The UI pull requests (E4, E5) start after #12 merges.
+- **A2's web session (PR #12)**: the player uses its browser API client (`lib/api.ts`, refresh after a 401) and the server helper (`lib/server-api.ts`). #12 merged on 2026-10-31, so the UI pull requests (E4, E5) are no longer blocked by it.
 - **A2's per-user limit PR**: the exam routes use its per-user keys. If it is not merged by E2, the checkpoint keeps its own per-attempt minimum interval (section 3.4), which needs no shared file.
 - **Owner answers** Q1–Q5: answered on 2026-10-31 (section 9, DECISIONS). Q4 changed the plan: rule-violation warnings and an automatic submit (3.15).
 - **VPS** (OPEN-QUESTIONS #22): the real k6 numbers. The client's exam content, dates and the expected peak (OPEN-QUESTIONS #24).
@@ -436,7 +436,7 @@ Rules from `07-UI-MIGRATION.md`: `@sirat/ui` components and tokens only, `-stron
 
 - **Player logic is in plain modules** (`components/exam/state.ts` reducer, `storage.ts`, `sync.ts`, `time.ts`), so `node --test` covers them without a browser.
 - **The player is the one screen that calls `/api` from the browser** (through A2's `lib/api.ts`, refresh after a 401): RULEBOOK 7.1 requires the answers to live in the browser. This is a recorded exception to "no client-side fetching" (DECISIONS, E4).
-- **Local copy:** `sirat.exam.*` keys are removed on receipt and on logout. The logout change is one line in A2's `LogoutButton.tsx`, after #12 merges, told to Rasel first.
+- **Local copy:** `sirat.exam.*` keys are removed on receipt and on logout. The logout change is one line in A2's `LogoutButton.tsx` (merged with #12), told to Rasel first.
 - **Rules text (bn + en), only what the system really does** (the old text claimed "AI detection and screenshot monitoring", which did not exist):
   - "Do not leave the exam. Switching to another tab or app, or opening developer tools, shows a warning."
   - "After 5 warnings, the 6th time ends your exam and submits your current answers."
@@ -591,7 +591,7 @@ Git rule: no rebase and no force-push on a pushed branch. Conflicts are resolved
 | `apps/api/test/prepare-test-db.mjs` | E1, after payments PR 1 merges | Extends payments' mechanism for old test rows to the exam tables (2.3); no second path |
 | `packages/shared/src/index.ts`, `records.ts`, `dashboard.ts` | E1 (records), E2/E3 (`exam.ts` + one export line; the type changes in 1.3) | The UI and payments sessions may change them too: `git merge origin/main`, keep both |
 | `apps/web/src/data/source.ts`, `data/mock/*`, `data/http/*` | E4, E5 | Coordinated with payments' web days (5.3) |
-| `apps/web/src/components/auth/LogoutButton.tsx` (A2) | E4, one line | After #12 merges, told to Rasel first |
+| `apps/web/src/components/auth/LogoutButton.tsx` (A2) | E4, one line | Told to Rasel first |
 | `.github/workflows/ci.yml` | No change planned (the integration job runs every `*.int-spec.ts`) | — |
 | `infra/*` | No change | — |
 | `docs/06-API.md` | E1 (admin), E2 (student), E3 (results, leaderboard) | Payments edits it too (its day 4): merge, keep both |
@@ -615,7 +615,7 @@ Each starts from `main` after the previous one merges. If one must wait, the nex
 | E1 | `feat/exam-schema` | EX1 + EX2, the exam/question admin API (create, edit, version, publish, unpublish, archive), audit, `06-API`/`05-DATABASE`, DECISIONS | E0 merged; opens after payments PR 1 merged (migration order) |
 | E2 | `feat/exam-engine` | `GET /exams`, start/resume, checkpoint (with the violation count), submit (with the end reason), Redis caches and warm-up, access check, dev exam fixture, the leak test | E1; payments PR 1 (access check) |
 | E3 | `feat/exam-results` | Worker: scoring, finalize sweep, leaderboard build; results publish, review, student and admin leaderboard API; the admin attempts list with violations (owner) | E2 |
-| E4 | `feat/exam-player` | Exam list on the API, waiting room, rules, player, violation warnings and the automatic submit, time-up, receipt | E2; A2 PR #12 merged |
+| E4 | `feat/exam-player` | Exam list on the API, waiting room, rules, player, violation warnings and the automatic submit, time-up, receipt | E2 (A2 PR #12 is merged) |
 | E5 | `feat/exam-admin-ui` | Admin create/edit/publish, results panel, attempts with violations, review page, leaderboards on the API | E1, E3, E4 |
 | E6 | `feat/exam-loadtest` | k6 exam simulation (local), load fixtures, RUNBOOK exam day, 03-HOW-IT-WORKS, CLAUDE.md state | E3 |
 | E7 (P1) | later | CSV import, answer-key correction with re-scoring | after the launch |
@@ -645,7 +645,7 @@ Each starts from `main` after the previous one merges. If one must wait, the nex
 | Sun 1 – Mon 2 Nov | E1 (code after E0 merges; the PR opens after payments PR 1 merges) |
 | Mon 2 – Tue 3 Nov | E2 |
 | Wed 4 Nov | E3 |
-| Thu 5 – Fri 6 Nov | E4 (if #12 has merged) |
+| Thu 5 – Fri 6 Nov | E4 |
 | Sat 7 Nov | E5 |
 | Sun 8 Nov | E6: k6 locally, docs |
 | 9–14 Nov | Review fixes and buffer. The launch has priority: no shared-stack runs, no deploy |
@@ -653,7 +653,6 @@ Each starts from `main` after the previous one merges. If one must wait, the nex
 
 **What does not compress** (waits, not coding):
 - Payments PR 1's merge (E1 opens, E2's access check).
-- A2 #12's merge (E4, E5).
 - The lead's reviews and Rasel's merges, which come after the launch work.
 - Shared-stack slots for smoke and e2e ("stack তোমার").
 - The VPS for the real k6 numbers.
@@ -693,7 +692,7 @@ All five are answered (owner, through the lead, 2026-10-31 18:13). Recorded in D
 
 1. **Priority below the launch.** Reviews and merges may come after 15 November. If payments PR 1 slips, E1 and E2 slip with it.
 2. **Schema conflicts with payments.** Migration order, `User` back-relations, `env.ts` and `worker.ts` endings: handled by `git merge origin/main` and regeneration (sections 2.3, 7).
-3. **A2 #12 is needed for the UI.** If it is not merged by 5 November, E4 and E5 slip; the API PRs do not.
+3. **The UI builds on A2's web session** (#12, merged 2026-10-31): changes there (refresh, session helper) reach the player; `git merge origin/main` before every push.
 4. **No exam date, no VPS.** The real capacity is unknown until k6 runs on the VPS. No real exam before that and the rest of RULEBOOK §13.
 5. **Question sharing** inside a two-day window (Q2): with the same questions for everyone, a student who sat early can pass questions on; shuffled order and options make that slower, not impossible. A bigger pool (`random_draw`) reduces it but makes students' question sets differ, so the admin chooses it per exam.
 6. **Weak networks at time-up.** A 30 s grace with a 0–20 s spread leaves about 10 s for the network. The checkpoint just before time-up and the server-side finalize limit the loss to the last minute or so.
