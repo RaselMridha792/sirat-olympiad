@@ -27,11 +27,13 @@ import { type ClientInfo, SessionService } from './session.service';
 
 /**
  * Per client IP and route, for the email-link endpoints people use without a session (DECISIONS "Per-user API
- * limits"). Thousands of students can share one IP (a school, a mobile operator's carrier-grade NAT), so this is
- * sized for an exam-start crowd. Abuse is bounded elsewhere: the per-address email caps, 256-bit single-use
- * tokens refused before argon2, and nginx's per-IP auth zone.
+ * limits"). Thousands of students can share one IP (a school, a mobile operator's carrier-grade NAT), so these are
+ * sized for an exam-start crowd: resend, reset and verify 300/min (unverified students may all ask for a new link
+ * at once; reset and verify take 256-bit single-use tokens refused before argon2). forgot-password gets 120/min:
+ * it sends email too, and the per-address caps limit each inbox, not the total.
  */
 const EMAIL_LINK_TIER = { default: { limit: 300, ttl: 60_000 } };
+const FORGOT_TIER = { default: { limit: 120, ttl: 60_000 } };
 /**
  * Renewal is anonymous too (the access cookie has expired), so it counts per client IP. Set above nginx's per-IP
  * api zone (30 r/s): behind nginx the API never refuses a renewal first.
@@ -175,7 +177,7 @@ export class AuthController {
    * existing, unblocked account, and nothing in the answer or its timing tells which.
    */
   @Public()
-  @Throttle(EMAIL_LINK_TIER)
+  @Throttle(FORGOT_TIER)
   @Post('forgot-password')
   @HttpCode(204)
   forgotPassword(@Body() body: EmailOnlyDto): void {

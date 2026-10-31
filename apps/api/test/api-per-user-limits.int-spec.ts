@@ -125,7 +125,7 @@ describe('per-user API limits', () => {
       data: emails.map((email) => ({ email, passwordHash, name: 'Crowd Student' })),
     });
     const started = Date.now();
-    const statuses = await many(
+    const answers = await many(
       emails.length,
       (i) =>
         fetch(`${base}/api/auth/login`, {
@@ -136,10 +136,39 @@ describe('per-user API limits', () => {
             'x-forwarded-for': ip,
           },
           body: JSON.stringify({ email: emails[i], password: PASSWORD }),
-        }).then((r) => r.status),
+        }).then((r) => ({ status: r.status, limit: r.headers.get('x-ratelimit-limit') })),
       25,
     );
     expect(Date.now() - started).toBeLessThan(60_000);
-    expect(statuses.filter((s) => s !== 204)).toEqual([]);
+    expect(answers.filter((a) => a.status !== 204)).toEqual([]);
+    // Not counted at all (no limiter header), so not even a bigger crowd would meet the per-IP 600.
+    expect(answers.filter((a) => a.limit !== null)).toEqual([]);
   }, 120_000);
+
+  it("answers every anonymous auth route with its own per-IP tier, and /auth/me with the asker's", async () => {
+    const ip = freshIp();
+    const limitOf = async (path: string, body?: object, token?: string) => {
+      const res = await fetch(`${base}/api/auth/${path}`, {
+        method: body ? 'POST' : 'GET',
+        headers: {
+          'content-type': 'application/json',
+          'x-requested-with': 'XMLHttpRequest',
+          'x-forwarded-for': ip,
+          ...(token ? { cookie: `${ACCESS_COOKIE}=${token}` } : {}),
+        },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      return res.headers.get('x-ratelimit-limit');
+    };
+    const token = 'A'.repeat(43); // the right shape, not a real link
+    expect(await limitOf('refresh', {})).toBe('3000');
+    expect(await limitOf('forgot-password', { email: 'nobody@test.invalid' })).toBe('120');
+    expect(await limitOf('resend-verification', { email: 'nobody@test.invalid' })).toBe('300');
+    expect(await limitOf('reset-password', { token, password: 'a-long-new-password-1' })).toBe(
+      '300',
+    );
+    expect(await limitOf('verify-email', { token })).toBe('300');
+    expect(await limitOf('me')).toBe(String(PER_IP));
+    expect(await limitOf('me', undefined, (await signedIn()).token)).toBe(String(PER_USER));
+  });
 });
