@@ -36,6 +36,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - `ambassadors.int-spec.ts` (9): only admins; each refusal; one transaction (role, profile and audit together); an idempotent approve; revoke and re-approve; the list and the panel from rows; a revoked ambassador's old token; the CHECK and the ledger triggers.
    - **The promo rule** runs through payments' real `RegistrationService.referrer()`, the same check `POST /registrations/start` makes, in any letter case. It does not run the whole start route: that needs a full form and the gateway, and payments' own tests cover it.
    - **web:** `http/ambassador.test.ts` (canaries, shape refusals, the admin pick), `ambassador-problem.test.ts`, and `http/home.test.ts` (each section falls back on its own; a redirect is not swallowed).
+
 ## 2026-11-01 — Server checks: ops-check, monitor.sh and the daily digest (L11; exam session, A2's plan and handover)
 
 1. **Thresholds in TypeScript** (`apps/api/src/modules/ops/ops-rules.ts`, the launch defaults of LAUNCH-PLAN §6): pure functions with table tests for every threshold, the two-run rules (CPU, memory, containers, workers) and the alert transitions. L14 retunes the numbers after k6.
