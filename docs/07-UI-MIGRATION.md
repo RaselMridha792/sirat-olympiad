@@ -6,7 +6,7 @@ Old source lives in `reference/zero-olympiad-ui/app/…` (committed). A fuller l
 
 ## Mapping
 
-Status as of 2026-10-31 (UI port on the dev-only mock data layer; see "Data layer" below). Branches: student screens `feat/ui-student` (PR to `main`), admin screens `feat/ui-admin` (PR to `feat/ui-student`), student ambassador panel `feat/ui-ambassador` (local, held until the ambassador backend exists).
+Status as of 2026-10-31 (UI port on the dev-only mock data layer; see "Data layer" below). Branches: student screens `feat/ui-student` (PR to `main`), admin screens `feat/ui-admin` (PR to `feat/ui-student`), student ambassador panel `feat/ui-ambassador` (merged into core C5a on 2026-11-01).
 
 | Screen | Old file(s) | New file(s) | Status | What to keep | What to change |
 |---|---|---|---|---|---|
@@ -31,7 +31,7 @@ Status as of 2026-10-31 (UI port on the dev-only mock data layer; see "Data laye
 | Exam player | `quiz/page.jsx`, `Components/QuizePageComponents/QuizForm.jsx`, `QuizQuestion.jsx`, `StartModal.jsx`, `FinalSubmitModal.jsx`, `TimeUpModal.jsx` | `(student)/dashboard/exam/[id]/page.tsx`, `components/exam/ExamRoom.tsx`, `Countdown` | **Ported (real API, E4)** | Rules dialog + agree, one question at a time with a progress bar, option cards with letter boxes, sticky timer bar, blurred grey exam behind a warning | Server attempt + remaining seconds; local copy at once; checkpoints every 60–120 s; time-up and the 6th violation submit the **current** answers; connection badge; honest rules text (no "AI detection"); question palette added; time-up is an inline "submitting" card, then the receipt |
 | Video evaluation | `admin/video-evaluation/page.jsx` | `admin/jury/*` (TODO) | — | Pending/Evaluated tabs, 10 criteria 0–10 | Judge recorded; history; server totals |
 | Mark controller (promotion) | `admin/mark-controller/page.jsx` | `admin/rounds/*` (TODO) | — | Top-N preview | Idempotent, audited, no overwrite |
-| Ambassadors | `dashboard/ambassador/page.jsx`, `admin/ambassadors-list` | `(student)/dashboard/ambassador/page.tsx` (branch `feat/ui-ambassador`), `admin/ambassadors/page.tsx` | **Ported (mock)**; student panel held | Code box, referral stats, referral list; admin list | Points/rank/team/tasks (RULEBOOK §19); code assigned by the server (the old "set your own code" input is gone); rank names as badges |
+| Ambassadors | `dashboard/ambassador/page.jsx`, `admin/ambassadors-list` | `(student)/dashboard/ambassador/page.tsx`, `admin/ambassadors/page.tsx`, `components/admin/AmbassadorButton.tsx` | **Built, real API** (core C5a) | Code box, referral stats, referral list; admin list | Code assigned by the server (the old "set your own code" input is gone); an admin makes a paid student an ambassador, or revokes, with a reason (audited); referrals without contact details; points and rank from the ledger, rank names as badges; team and tasks empty until C5b (RULEBOOK §19) |
 | Certificates | `dashboard/certificates/page.jsx`, `Components/CertificateCard.jsx` | TODO | — | Card list | Server-issued with verification URL; Bangla font handled server-side |
 | Invoice | `dashboard/history/page.jsx`, `InvoiceDocument.jsx` | TODO | — | Invoice layout | Real status; server-generated PDF |
 | Announcements | `dashboard/announcement`, `admin/announcement` | `(student)/dashboard/announcements/page.tsx`, `admin/announcements/page.tsx`, `components/admin/AnnouncementEditor.tsx`, `AnnouncementStateButton.tsx`, `TextAreaField` | **Built, real API** (core C4) | Card list (student), table (admin) | Admins write, edit, schedule, archive and restore (never delete) from the browser through `lib/api.ts`, with the version they saw; status tabs; for everyone or one category; plain text with line breaks |
@@ -71,7 +71,7 @@ Pages never fetch on their own. Server Components call `getData()` from `apps/we
 
 - `pnpm -F web test` (`node --test`, no extra dependencies): schema mirror, mock gate, students-get-no-scores, leak harness, WCAG AA contrast of every tone and every bg+text pair in the code, rank states, profile validation, URL parsing, i18n formatting.
 - Sessions are real (RUNBOOK §0): `check:prod` logs in through the API as a fixture student and an admin, `check:leak` as the student; both check that a page without a cookie goes to `/refresh`. `check:api-down` uses a dummy cookie with the API stopped.
-- `pnpm -F web check:leak` against a dev server on port 3100: every student page is rendered with canary data (scores, times, other people's emails, answer keys) and the HTML, including the inline RSC payload, must contain none of it.
+- `pnpm -F web check:leak` against a dev server on port 3100: every student page is rendered with canary data (scores, times, other people's emails, answer keys) and the HTML, including the inline RSC payload, must contain none of it. Pages only an ambassador may open are checked with an ambassador's session (`CHECK_AMBASSADOR_*`; CI approves a fixture student through the API).
 - `pnpm -F web check:prod` against a production server (`next build && API_INTERNAL_URL=http://localhost:4000 next start -p 3100`, with the API on :4000): every dashboard page, opened in headless Chrome/Edge, shows the shell and a heading (a page whose method has no area file in `data/http/` yet shows its polite error state), never a blank page or raw error text. Each page is opened with the role that may open it (`src/lib/access.ts`) and must end on the URL asked for; the other area must redirect home and a restricted page must show not found.
 - `pnpm -F web check:api-down` against the production server with the API stopped: pages show the error page and stay put, never `/login`.
 - `pnpm -F web e2e` against the whole local stack: the session flows in a real browser (refresh, logout, two tabs, reset email); the same CDP driver (`scripts/lib/cdp.mjs`) as the checks.
@@ -88,7 +88,7 @@ Pages never fetch on their own. Server Components call `getData()` from `apps/we
 | Unknown exam id | `/admin/exams/:id` calls `notFound()` and shows the translated not-found card with `noindex`, but answers HTTP 200: the `loading.tsx` boundaries above it start the stream first (Next 16 `loading.md`, "Status codes"). The skeletons stay; a real 404 needs a Proxy check once the exams API exists. |
 | HTTP data source | **Skeleton built** (`data/http/`, DECISIONS "Web data layer over HTTP"): `student.listExams` reads `GET /exams`; every other method is connected by the team that builds its API. The route guards are in place (`requireAccess`, `lib/access.ts`). |
 | API contract | Add `GET /dashboard/home`, `GET /content/profile-options` and `GET /admin/leaderboard` to `06-API.md`; decide the leaderboard tie rule (the mock shares a rank: 1, 2, 2, 4). |
-| Later screens | Certificates, payment history, video submission, jury evaluation, promotion, admin create/edit flows, the ambassador panel (branch `feat/ui-ambassador`). |
+| Later screens | Certificates, payment history, video submission, jury evaluation, promotion, admin create/edit flows, ambassador tasks and teams (core C5b). |
 
 ## Old components → shared components
 

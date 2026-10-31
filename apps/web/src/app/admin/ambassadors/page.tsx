@@ -11,6 +11,7 @@ import {
   PageHeader,
   SearchBox,
 } from '@sirat/ui';
+import { AmbassadorButton } from '@/components/admin/AmbassadorButton';
 import { rankTone } from '@/components/status';
 import { getData } from '@/data';
 import { hrefWith, parsePageQuery, totalPages, type SearchParams } from '@/data/query';
@@ -147,7 +148,7 @@ export default async function AdminAmbassadorsPage({
                 a.approvedAt ? (
                   formatDate(locale, a.approvedAt)
                 ) : (
-                  <Badge tone="warning">{m.pendingApproval}</Badge>
+                  <Badge tone="neutral">{m.revoked}</Badge>
                 ),
             },
             {
@@ -155,6 +156,19 @@ export default async function AdminAmbassadorsPage({
               header: m.table.joined,
               className: 'whitespace-nowrap px-5 py-4 text-sm text-ink-muted',
               render: (a) => formatDate(locale, a.createdAt),
+            },
+            {
+              key: 'actions',
+              header: m.table.actions,
+              headerClassName: 'text-right',
+              className: 'px-5 py-3 text-right',
+              render: (a) => (
+                <AmbassadorButton
+                  locale={locale}
+                  userId={a.userId}
+                  action={a.approvedAt ? 'revoke' : 'approve'}
+                />
+              ),
             },
           ]}
         />

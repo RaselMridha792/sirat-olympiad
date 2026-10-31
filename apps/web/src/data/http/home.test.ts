@@ -126,7 +126,7 @@ test('getHome composes the profile, the next exam with its grace, 3 announcement
   assert.equal(JSON.stringify(home).includes('canary'), false);
 });
 
-test('without an exam or a registration the home still renders, and a refused part is an error', async () => {
+test('without an exam or a registration the home still renders', async () => {
   const quiet = fakeApi({
     '/users/me': { status: 200, body: profile },
     '/exams': { status: 200, body: [] },
@@ -140,14 +140,6 @@ test('without an exam or a registration the home still renders, and a refused pa
   assert.equal(home.nextExam, null);
   assert.deepEqual(home.registration, { registered: false });
   assert.equal(quiet.calls.includes('/exams/undefined'), false);
-
-  const refused = fakeApi({
-    '/users/me': { status: 200, body: profile },
-    '/exams': { status: 200, body: [] },
-    '/announcements?page=1&pageSize=3': { status: 403, body: null },
-    '/registrations/me': { status: 200, body: { registered: false } },
-  });
-  await assert.rejects(createHttpSource(refused).student.getHome(), DataRequestError);
 });
 
 test('the admin announcement list keeps only its fields and refuses an unknown status', async () => {
@@ -182,4 +174,45 @@ test('the admin announcement list keeps only its fields and refuses an unknown s
     createHttpSource(bad).admin.listAnnouncements({ page: 1, pageSize: 10 }),
     DataRequestError,
   );
+});
+
+test('each section falls back on its own; only the profile is required', async () => {
+  const next = exam('0190f000-0000-7000-8000-0000000000e2', 'open', '2026-11-01T00:00:00.000Z');
+  const answers: Record<string, ApiResult> = {
+    '/users/me': { status: 200, body: profile },
+    '/exams': { status: 200, body: [next] },
+    [`/exams/${next.id}`]: { status: 503, body: null },
+    '/announcements?page=1&pageSize=3': { status: 500, body: null },
+    '/registrations/me': { status: 503, body: null },
+  };
+  const home = await createHttpSource(fakeApi(answers)).student.getHome();
+  assert.equal(home.user.name, 'Rahim Uddin');
+  assert.equal(home.nextExam, null); // its detail (the grace) failed
+  assert.deepEqual(home.latestAnnouncements, []);
+  assert.equal(home.registration, null); // the card says "cannot be shown right now"
+
+  const noExams = await createHttpSource(
+    fakeApi({ ...answers, '/exams': { status: 500, body: null } }),
+  ).student.getHome();
+  assert.equal(noExams.nextExam, null);
+
+  await assert.rejects(
+    createHttpSource(
+      fakeApi({ ...answers, '/users/me': { status: 500, body: null } }),
+    ).student.getHome(),
+    DataRequestError,
+  );
+});
+
+test('a redirect from a section (the session expired: to /refresh) is never swallowed by a fallback', async () => {
+  const redirect = Object.assign(new Error('NEXT_REDIRECT'), {
+    digest: 'NEXT_REDIRECT;replace;/refresh;307;',
+  });
+  const get = (async (path: string) => {
+    if (path === '/registrations/me') throw redirect;
+    if (path === '/users/me') return { status: 200, body: profile };
+    if (path === '/exams') return { status: 200, body: [] };
+    return { status: 200, body: { items: [], page: 1, pageSize: 3, total: 0 } };
+  }) as ApiGet;
+  await assert.rejects(createHttpSource(get).student.getHome(), (e) => e === redirect);
 });
