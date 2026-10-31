@@ -3,19 +3,27 @@
  * - Gate (A2.0): request bodies the parser rejects are client errors: 4xx with the standard JSON shape and a fixed
  *   message, never 500.
  * - A handler that runs too long answers 503 before nginx gives up (A2.1).
+ * - Headers on every answer (DECISIONS "TLS behind Cloudflare"): Cache-Control no-store unless a route sets its
+ *   own, and no HSTS from the API (nginx is the only source).
  */
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Header } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import { Public } from '../src/modules/auth/auth.decorators';
 
-/** Test-only route: takes 1 s, five times the request timeout used below. */
+/** Test-only routes: `slow` takes 1 s, five times the request timeout used below; `cached` sets its own Cache-Control. */
 @Public()
 @Controller('__probe')
 class SlowProbeController {
   @Get('slow')
   async slow(): Promise<{ ok: true }> {
     await new Promise((r) => setTimeout(r, 1_000));
+    return { ok: true };
+  }
+
+  @Get('cached')
+  @Header('Cache-Control', 'private, max-age=60')
+  cached(): { ok: true } {
     return { ok: true };
   }
 }
@@ -82,5 +90,22 @@ describe('request timeout (below nginx proxy_read_timeout)', () => {
       message: 'Request timed out',
     });
     expect(Date.now() - started).toBeLessThan(900);
+  });
+});
+
+describe('headers on every answer', () => {
+  it('sends Cache-Control: no-store and no HSTS, on success and on errors', async () => {
+    for (const path of ['/api/health', '/api/no-such-route']) {
+      const res = await fetch(`${base}${path}`);
+      expect(res.headers.get('cache-control')).toBe('no-store');
+      expect(res.headers.get('strict-transport-security')).toBeNull();
+      expect(res.headers.get('x-content-type-options')).toBe('nosniff'); // helmet still runs
+    }
+  });
+
+  it('keeps a Cache-Control that a route sets itself', async () => {
+    const res = await fetch(`${base}/api/__probe/cached`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('private, max-age=60');
   });
 });
