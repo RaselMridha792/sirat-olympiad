@@ -13,6 +13,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 7. **The verify timer** (A2 named one; the plan does not describe it): daily at 07:30 Asia/Dhaka, `backup.sh --verify` checks the newest local copy against its manifest, that it is an age file and under 26 h old, and pings `/fail` if not. The upload itself cannot be read back with a put-only key; the drill (L7) reads the bucket with a read-only key.
 8. **Schedule:** the timer is hourly while registration is open; afterwards a drop-in makes it daily (RUNBOOK §5). The units expect the clone at `/srv/sirat` (L12 can change the path).
 9. **Tests:** `scripts/test/backup.test.sh` (17 cases) runs in a throwaway Alpine container with the tools (age, rclone, Docker CLI) against its own compose project `sirat-backup-test`: a Postgres with no port and no bind mount, a throwaway key, an rclone `local` remote, and fake `curl` and `docker` shims. The same runner runs in CI's docker job, whose image scan now also refuses `*.age`.
+
 ## 2026-11-01 — Registration and payment pages, admin payments and settings (Claude; payments PR 4, plan 6.7, lead's rules)
 
 1. **The wizard** (`/register`): three steps on one form, then PayStation.
