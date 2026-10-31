@@ -1,7 +1,13 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Eye, Search, ShieldCheck, Users } from 'lucide-react';
-import { CATEGORIES, ROLES, type AdminUserDetail, type Role } from '@sirat/shared';
+import {
+  CATEGORIES,
+  ROLES,
+  type AdminUserDetail,
+  type ProfileOptions,
+  type Role,
+} from '@sirat/shared';
 import {
   Avatar,
   Badge,
@@ -16,6 +22,7 @@ import {
   Tabs,
   type DetailItem,
 } from '@sirat/ui';
+import { CorrectGradeButton } from '@/components/admin/CorrectGradeButton';
 import { ExportUsersButton } from '@/components/admin/ExportUsersButton';
 import { LinkPendingIcon } from '@/components/LinkPendingIcon';
 import { RouteDialog } from '@/components/RouteDialog';
@@ -94,9 +101,11 @@ export default async function AdminUsersPage({
     verified,
   };
   const userId = parseId(params.user);
-  const [list, detail] = await Promise.all([
+  // The grade table for the correction dialog comes with the detail only (the option lists admit admins).
+  const [list, detail, options] = await Promise.all([
     data.admin.listUsers(query),
     userId ? data.admin.getUser(userId) : null,
+    userId ? data.student.getProfileOptions() : null,
   ]);
   const pages = totalPages(list.total, list.pageSize);
   // The current filters as URL params (`blocked` travels as "1"); page links and the dialog keep them.
@@ -337,7 +346,13 @@ export default async function AdminUsersPage({
           closeHref={hrefWith(PATH, { ...filters, page: list.page })}
         >
           {detail ? (
-            <UserDetails user={detail} locale={locale} m={m} c={c} />
+            <UserDetails
+              user={detail}
+              locale={locale}
+              m={m}
+              c={c}
+              gradeLevels={options?.gradeLevels ?? []}
+            />
           ) : (
             <p className="text-sm text-ink-muted">{m.notFoundText}</p>
           )}
@@ -361,11 +376,13 @@ function UserDetails({
   locale,
   m,
   c,
+  gradeLevels,
 }: {
   user: AdminUserDetail;
   locale: Locale;
   m: AdminUsersMessages;
   c: CommonMessages;
+  gradeLevels: ProfileOptions['gradeLevels'];
 }) {
   const d = m.detail;
   const missing = <span className="text-ink-muted">{c.notProvided}</span>;
@@ -445,6 +462,16 @@ function UserDetails({
         </p>
       ) : null}
       <DetailList items={items} />
+      {(user.role === 'student' || user.role === 'ambassador') && gradeLevels.length > 0 ? (
+        <div>
+          <CorrectGradeButton
+            locale={locale}
+            userId={user.id}
+            currentGradeId={user.gradeLevel?.id ?? null}
+            gradeLevels={gradeLevels}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
