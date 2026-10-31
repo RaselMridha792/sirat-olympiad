@@ -23,3 +23,18 @@ export const ADMIN_USER_EXPORT = {
   reasonMin: 3,
   reasonMax: 200,
 } as const;
+
+/** POST /admin/users/:id/grade-level: an admin corrects a student's class, and with it the category. */
+export interface GradeCorrectionRequest {
+  gradeLevelId: string;
+  reason: string;
+}
+
+/** Refusal codes in ApiError.details for the profile and the grade correction (06-API "Student profile"). */
+export const PROFILE_REFUSALS = [
+  'nothing_to_update',
+  'has_attempt',
+  'grade_level_unknown',
+  'not_a_student',
+] as const;
+export type ProfileRefusal = (typeof PROFILE_REFUSALS)[number];

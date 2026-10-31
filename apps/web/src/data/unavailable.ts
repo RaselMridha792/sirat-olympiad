@@ -22,7 +22,6 @@ export const unavailableSource: DataSource = {
     getHome: fail,
     getProfile: fail,
     getProfileOptions: fail,
-    updateProfile: fail,
     listExams: fail,
     getExam: fail,
     getReview: fail,

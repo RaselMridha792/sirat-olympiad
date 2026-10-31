@@ -3,6 +3,7 @@ import { unavailableSource } from '../unavailable.ts';
 import { adminExams } from './admin-exams.ts';
 import { studentExams } from './exams.ts';
 import { adminLeaderboard, leaderboard } from './leaderboard.ts';
+import { studentProfile } from './profile.ts';
 import type { ApiGet } from './request.ts';
 import { adminUsers } from './users.ts';
 
@@ -18,6 +19,7 @@ export function createHttpSource(get: ApiGet): DataSource {
     student: {
       ...unavailableSource.student,
       ...studentExams(get),
+      ...studentProfile(get),
     },
     leaderboard: {
       ...unavailableSource.leaderboard,

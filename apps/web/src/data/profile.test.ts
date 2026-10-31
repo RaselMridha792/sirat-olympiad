@@ -1,19 +1,33 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { ProfileOptions } from '@sirat/shared';
-import { parseProfileForm, profileSelectOptions } from './profile.ts';
+import { REGISTRATION_MESSAGES, type ProfileOptions } from '@sirat/shared';
+import { profileMessages } from '../i18n/messages/profile.ts';
+import { LEAK_CANARY, withLeakCanaries } from './mock/leak.ts';
+import { parseProfileForm, profileSelectOptions, toProfileFormProps } from './profile.ts';
 
 const options: ProfileOptions = {
   gradeLevels: [{ id: 'gl-06', label: 'Class 10 / MYP 5', category: 'ambassador' }],
   educationTypes: ['Bangla Medium (Bangla & English Version)'],
+  districts: ['Dhaka', "Cox's Bazar"],
 };
 
-test('only allow-listed fields survive; role, email and category are dropped', () => {
+/** A complete, valid form; each test changes one field. */
+const valid = {
+  name: 'Nafis Ahmed',
+  phone: '01712345678',
+  district: 'Dhaka',
+  institution: 'Dhaka College',
+  educationType: 'Bangla Medium (Bangla & English Version)',
+};
+
+test('only allow-listed fields survive; role, email, grade and category are dropped', () => {
   const { value, result } = parseProfileForm(
     {
+      ...valid,
       name: ' Nafis  Ahmed ',
       role: 'admin',
       email: 'x@example.com',
+      gradeLevelId: 'gl-06',
       category: 'achiever',
       points: 9999,
     },
@@ -23,7 +37,6 @@ test('only allow-listed fields survive; role, email and category are dropped', (
   assert.deepEqual(Object.keys(value).sort(), [
     'district',
     'educationType',
-    'gradeLevelId',
     'institution',
     'name',
     'phone',
@@ -31,96 +44,127 @@ test('only allow-listed fields survive; role, email and category are dropped', (
   assert.equal(value.name, 'Nafis Ahmed');
 });
 
-test('name is required and length-capped', () => {
-  assert.deepEqual(parseProfileForm({ name: '   ' }, options).result, {
-    ok: false,
-    fieldErrors: { name: 'required' },
-  });
-  assert.deepEqual(parseProfileForm({ name: 'x'.repeat(81) }, options).result, {
+test('name and institution follow the registration limits (2–100, 2–150)', () => {
+  const errors = (field: string, v: string) =>
+    parseProfileForm({ ...valid, [field]: v }, options).result;
+  assert.deepEqual(errors('name', '   '), { ok: false, fieldErrors: { name: 'required' } });
+  assert.deepEqual(errors('name', 'A'), { ok: false, fieldErrors: { name: 'tooShort' } });
+  assert.deepEqual(errors('name', 'x'.repeat(101)), {
     ok: false,
     fieldErrors: { name: 'tooLong' },
   });
-});
-
-test('Bangla digits in the phone number are accepted and stored as Latin digits', () => {
-  const { value, result } = parseProfileForm({ name: 'A', phone: '০১৭১২-৩৪৫৬৭৮' }, options);
-  assert.deepEqual(result, { ok: true });
-  assert.equal(value.phone, '01712345678');
-});
-
-test('phone must be a Bangladeshi mobile number', () => {
-  assert.equal(
-    parseProfileForm({ name: 'A', phone: '01712-345678' }, options).value.phone,
-    '01712345678',
-  );
-  assert.deepEqual(parseProfileForm({ name: 'A', phone: '12345' }, options).result, {
+  assert.deepEqual(errors('name', 'x'.repeat(100)), { ok: true });
+  assert.deepEqual(errors('institution', 'A'), {
     ok: false,
-    fieldErrors: { phone: 'invalid' },
+    fieldErrors: { institution: 'tooShort' },
+  });
+  assert.deepEqual(errors('institution', 'x'.repeat(151)), {
+    ok: false,
+    fieldErrors: { institution: 'tooLong' },
   });
 });
 
-test('a phone number with the country code is stored as 01XXXXXXXXX', () => {
-  for (const phone of ['+8801712345678', '8801712345678', '+88 01712-345678', '+৮৮০১৭১২৩৪৫৬৭৮']) {
-    const { value, result } = parseProfileForm({ name: 'A', phone }, options);
+test('a phone in any form, Bangla digits too, becomes 01XXXXXXXXX', () => {
+  for (const phone of [
+    '01712-345678',
+    '০১৭১২-৩৪৫৬৭৮',
+    '+8801712345678',
+    '8801712345678',
+    '+88 01712-345678',
+    '+৮৮০১৭১২৩৪৫৬৭৮',
+  ]) {
+    const { value, result } = parseProfileForm({ ...valid, phone }, options);
     assert.deepEqual(result, { ok: true }, phone);
     assert.equal(value.phone, '01712345678', phone);
   }
-  assert.equal(parseProfileForm({ name: 'A', phone: '' }, options).value.phone, null);
 });
 
-test('grade and education type must come from the server option lists', () => {
+test('the phone must be a Bangladeshi mobile number and cannot be cleared', () => {
+  for (const phone of ['12345', '01212345678', '0171234567']) {
+    assert.deepEqual(parseProfileForm({ ...valid, phone }, options).result, {
+      ok: false,
+      fieldErrors: { phone: 'invalid' },
+    });
+  }
+  assert.deepEqual(parseProfileForm({ ...valid, phone: '' }, options).result, {
+    ok: false,
+    fieldErrors: { phone: 'required' },
+  });
+});
+
+test('district and education type must come from the server lists', () => {
   const { result } = parseProfileForm(
-    { name: 'A', gradeLevelId: 'gl-99', educationType: 'Other' },
+    { ...valid, district: 'Calcutta', educationType: 'Other' },
     options,
   );
   assert.deepEqual(result, {
     ok: false,
-    fieldErrors: { gradeLevelId: 'invalid', educationType: 'invalid' },
+    fieldErrors: { district: 'invalid', educationType: 'invalid' },
   });
-  assert.deepEqual(parseProfileForm({ name: 'A', gradeLevelId: 'gl-06' }, options).result, {
+  assert.deepEqual(parseProfileForm({ ...valid, district: "Cox's Bazar" }, options).result, {
     ok: true,
   });
 });
 
-test('select options are the server lists when the stored values are in them', () => {
-  const expected = {
-    educationTypes: [
-      {
-        value: 'Bangla Medium (Bangla & English Version)',
-        label: 'Bangla Medium (Bangla & English Version)',
-      },
-    ],
-    gradeLevels: [{ value: 'gl-06', label: 'Class 10 / MYP 5' }],
-  };
-  const stored = {
-    educationType: 'Bangla Medium (Bangla & English Version)',
-    gradeLevel: { id: 'gl-06', label: 'Class 10 / MYP 5' },
-  };
-  assert.deepEqual(profileSelectOptions(stored, options), expected);
+test('select options are the server lists, and a stored value missing from them stays visible', () => {
+  const lists = profileSelectOptions({ educationType: null, district: 'Dhaka' }, options);
   assert.deepEqual(
-    profileSelectOptions({ educationType: null, gradeLevel: null }, options),
-    expected,
+    lists.districts.map((d) => d.value),
+    ['Dhaka', "Cox's Bazar"],
+  );
+  assert.equal(lists.educationTypes.length, 1);
+  const kept = profileSelectOptions({ educationType: 'Retired', district: 'Old Town' }, options);
+  assert.deepEqual(kept.educationTypes.at(-1), { value: 'Retired', label: 'Retired' });
+  assert.deepEqual(kept.districts.at(-1), { value: 'Old Town', label: 'Old Town' });
+  // Saving the kept value unchanged is refused, never silently cleared.
+  assert.deepEqual(
+    parseProfileForm({ ...valid, educationType: 'Retired', district: 'Old Town' }, options).result,
+    { ok: false, fieldErrors: { district: 'invalid', educationType: 'invalid' } },
   );
 });
 
-test('a stored value missing from the server lists stays selectable, and saving it is refused', () => {
-  const stored = {
-    educationType: 'Retired Medium',
-    gradeLevel: { id: 'gl-old', label: 'Old Class 9' },
-  };
-  const { educationTypes, gradeLevels } = profileSelectOptions(stored, options);
-  assert.deepEqual(educationTypes.at(-1), { value: 'Retired Medium', label: 'Retired Medium' });
-  assert.deepEqual(gradeLevels.at(-1), { value: 'gl-old', label: 'Old Class 9' });
-  assert.equal(educationTypes.length, options.educationTypes.length + 1);
-  assert.equal(gradeLevels.length, options.gradeLevels.length + 1);
-
-  // Posting the kept value unchanged is an error, never a silent null.
-  const { result } = parseProfileForm(
-    { name: 'A', educationType: 'Retired Medium', gradeLevelId: 'gl-old' },
-    options,
+test("the taken-phone message is the owner's text in both languages", () => {
+  assert.equal(
+    profileMessages.en.form.fieldErrors.phone.taken,
+    REGISTRATION_MESSAGES.PHONE_REGISTERED!.en,
   );
-  assert.deepEqual(result, {
-    ok: false,
-    fieldErrors: { educationType: 'invalid', gradeLevelId: 'invalid' },
+  assert.equal(
+    profileMessages.bn.form.fieldErrors.phone.taken,
+    REGISTRATION_MESSAGES.PHONE_REGISTERED!.bn,
+  );
+});
+
+test('the form props carry only what the form shows, never another field of the profile or the options', () => {
+  // Every object gets the canary fields (score, time, email, phone, correct key, hash) the leak check looks for.
+  const profile = withLeakCanaries({
+    name: 'Nafis Ahmed',
+    email: 'nafis@test.invalid',
+    phone: null,
+    district: 'Dhaka',
+    institution: 'Dhaka College',
+    educationType: 'Bangla Medium (Bangla & English Version)',
+    category: 'ambassador' as const,
+    role: 'student' as const,
+    emailVerifiedAt: null,
+    createdAt: '2026-11-01T04:00:00.000Z',
+    gradeLevel: { id: 'gl-06', label: 'Class 10 / MYP 5' },
+    currentRound: null,
   });
+  const props = toProfileFormProps(profile, withLeakCanaries(options));
+  const sent = JSON.stringify(props);
+  for (const canary of [
+    LEAK_CANARY.text,
+    LEAK_CANARY.email,
+    String(LEAK_CANARY.score),
+    String(LEAK_CANARY.seconds),
+  ])
+    assert.equal(sent.includes(canary), false, canary);
+  assert.deepEqual(props.initial, {
+    name: 'Nafis Ahmed',
+    phone: '',
+    district: 'Dhaka',
+    institution: 'Dhaka College',
+    educationType: 'Bangla Medium (Bangla & English Version)',
+  });
+  assert.equal(props.gradeLabel, 'Class 10 / MYP 5');
 });

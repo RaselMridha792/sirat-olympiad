@@ -217,3 +217,12 @@ describe('validateWorkerEnv: Amazon SES (owner, 2026-10-31)', () => {
     expect(() => validateEnv({ ...valid(), SES_REGION: 'mumbai' })).toThrow(/SES_REGION/);
   });
 });
+
+describe('EXAM_QUEUE_NAME (tests only: each run has its own exam queue)', () => {
+  it('accepts a test queue name and blank, refuses anything that is not a plain name', () => {
+    expect(() => validateEnv({ ...valid(), EXAM_QUEUE_NAME: 'exam-test-1f2e3d4c' })).not.toThrow();
+    expect(() => validateEnv(valid())).not.toThrow();
+    for (const bad of ['exam queue', 'exam:1', 'x'.repeat(65)])
+      expect(() => validateEnv({ ...valid(), EXAM_QUEUE_NAME: bad })).toThrow(/EXAM_QUEUE_NAME/);
+  });
+});

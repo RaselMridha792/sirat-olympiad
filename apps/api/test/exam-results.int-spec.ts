@@ -5,6 +5,8 @@
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { PrismaClient } from '@prisma/client';
+import { Queue } from 'bullmq';
+import type Redis from 'ioredis';
 import type {
   AdminAttemptDetail,
   AdminAttemptRow,
@@ -18,10 +20,13 @@ import type {
 } from '@sirat/shared';
 import { AttemptStore } from '../src/modules/attempts/attempt-store';
 import { ExamJobs } from '../src/modules/attempts/exam-jobs';
+import { EXAM_QUEUE } from '../src/modules/attempts/exam-queue';
+import { REDIS_QUEUE } from '../src/redis/redis.module';
 import { makeAttempt, makePublishedExam } from './exam-helpers';
 import { makeUser, testPrisma } from './helpers';
 import {
   bootEngineApp,
+  closeEngineApp,
   call,
   type EngineApp,
   HOUR_MS,
@@ -50,7 +55,7 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
-  await env?.app.close();
+  await closeEngineApp(env);
   await prisma?.$disconnect();
 });
 
@@ -90,14 +95,24 @@ describe('who reaches the results routes', () => {
   });
 });
 
+/** Long enough for the starts, the submits and the checks while it is open, even on a loaded machine. */
+const WINDOW_MS = 15_000;
+
 describe('one exam from start to published results', () => {
   it('scores, finalizes, builds, publishes, and shows only what students may see', async () => {
+    // Everyone logs in before the exam exists: creating accounts (argon2) is slow under load and must not eat the
+    // window, which then only has to outlast the starts, the submits and the "still open" checks below.
+    const accounts: Array<Awaited<ReturnType<typeof loginAs>>> = [];
+    for (const name of ['Ana', 'Bo', 'Cy', 'Di', 'Ed'])
+      accounts.push(await loginAs(env, prisma, { name, institution: `${name} School` }));
+    const windowEnd = new Date(Date.now() + WINDOW_MS);
     const { exam, questions } = await seedExam(env, prisma, {
       count: 3,
-      data: { windowEnd: new Date(Date.now() + 5_000), graceSeconds: 0 },
+      data: { windowEnd, graceSeconds: 0 },
     });
-    const student = async (name: string) => {
-      const s = await loginAs(env, prisma, { name, institution: `${name} School` });
+    let next = 0;
+    const student = async () => {
+      const s = accounts[next++]!;
       const view = (await call<AttemptView>(env, 'POST', `/exams/${exam.id}/attempts`, s.cookie))
         .json;
       return { ...s, view, right: correctPositions(view, questions) };
@@ -114,14 +129,21 @@ describe('one exam from start to published results', () => {
         events: [],
       });
 
-    const ana = await student('Ana'); // all right, submits at once
-    const bo = await student('Bo'); // one right
-    const cy = await student('Cy'); // two right in a checkpoint, never submits
-    const di = await student('Di'); // nothing at all
-    const ed = await student('Ed'); // all right, then blocked
+    const ana = await student(); // all right, submits at once
+    const bo = await student(); // one right
+    const cy = await student(); // two right in a checkpoint, never submits
+    const di = await student(); // nothing at all
+    const ed = await student(); // all right, then blocked
     expect((await submitAnswers(ana, ana.right)).status).toBe(200);
     expect((await submitAnswers(bo, [bo.right[0]!, wrong(bo.right[1]!), null])).status).toBe(200);
     expect((await submitAnswers(ed, ed.right)).status).toBe(200);
+    // Scoring was queued on this run's own queue, never on `exam`, where a dev stack's worker could take it.
+    const queueRedis = env.app.get<Redis>(REDIS_QUEUE);
+    const ownQueue = new Queue(env.examQueueName, { connection: queueRedis });
+    const stackQueue = new Queue(EXAM_QUEUE, { connection: queueRedis });
+    expect(await ownQueue.getJob(`score.${ana.view.attemptId}`)).toBeTruthy();
+    expect(await stackQueue.getJob(`score.${ana.view.attemptId}`)).toBeUndefined();
+    await Promise.all([ownQueue.close(), stackQueue.close()]);
     await call(env, 'PUT', `/attempts/${cy.view.attemptId}/checkpoint`, cy.cookie, {
       seq: 1,
       answers: [cy.right[0]!, cy.right[1]!, wrong(cy.right[2]!)],
@@ -170,7 +192,7 @@ describe('one exam from start to published results', () => {
       }),
     ).toMatchObject({ status: 409, json: { details: ['no_snapshot'] } });
 
-    await sleep(5_500);
+    await sleep(Math.max(0, windowEnd.getTime() - Date.now()) + 500); // the window has closed
     // Two finalizes at once for the same attempt: exactly one submission.
     const both = await Promise.all([
       jobs.finalize(cy.view.attemptId),
@@ -342,7 +364,7 @@ describe('one exam from start to published results', () => {
     expect(
       (await call(env, 'GET', `/attempts/${bo.view.attemptId}/review`, bo.cookie)).status,
     ).toBe(403);
-  });
+  }, 90_000);
 });
 
 describe('ranking (owner Q5)', () => {

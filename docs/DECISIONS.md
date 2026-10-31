@@ -13,6 +13,30 @@ One short entry per non-obvious technical or product decision. Newest first. For
 7. **The verify timer** (A2 named one; the plan does not describe it): daily at 07:30 Asia/Dhaka, `backup.sh --verify` checks the newest local copy against its manifest, that it is an age file and under 26 h old, and pings `/fail` if not. The upload itself cannot be read back with a put-only key; the drill (L7) reads the bucket with a read-only key.
 8. **Schedule:** the timer is hourly while registration is open; afterwards a drop-in makes it daily (RUNBOOK §5). The units expect the clone at `/srv/sirat` (L12 can change the path).
 9. **Tests:** `scripts/test/backup.test.sh` (17 cases) runs in a throwaway Alpine container with the tools (age, rclone, Docker CLI) against its own compose project `sirat-backup-test`: a Postgres with no port and no bind mount, a throwaway key, an rclone `local` remote, and fake `curl` and `docker` shims. The same runner runs in CI's docker job, whose image scan now also refuses `*.age`.
+## 2026-11-01 — Student profile and the admin's grade correction (core C3; plan `docs/plans/CORE-PLAN.md` section 4, Q1 default)
+
+1. **What a student may change (Q1 default, until the owner answers):** name, phone, district, institution, education type. Not email (a verified change with A2's tokens, later), not the grade (it sets the category and so the exam), not role, category, promo code or payment fields.
+   - The limits are the registration form's (`PROFILE_LIMITS`, the 64 districts, the 5 education types). A unit test feeds payments' `StartRegistrationDto` and `UpdateProfileDto` the same samples and expects the same verdict and the same normalised value.
+   - **Every field is optional, but none can be cleared:** a sent field is validated with `@ValidateIf(v !== undefined)`, not `@IsOptional()`, because `@IsOptional()` also skips `null`. A `{ "phone": null }` reached the phone checks and found a staff account with no phone (409). The test caught it.
+2. **The owner's phone rule** (one number, one student), in one transaction:
+   - another account has the number → 409;
+   - an `open` registration attempt holds it (payments' table, read only) → 409;
+   - the UNIQUE index decides when two claims meet; the loser gets the same 409.
+   All three answer `PHONE_REGISTERED` with the owner's text (`REGISTRATION_MESSAGES`), never a 500. The race is tested deterministically: another transaction takes the number and holds its commit for a second, so the PATCH passes its check, waits on the index and gets the violation. That test failed with the mapping removed; the earlier two-PATCH race did not.
+3. **Audit:** `user.profile_updated` with the changed field names only, never the values (core plan D8). Sending the same values changes nothing and writes no row.
+4. **Grade correction** (`POST /admin/users/:id/grade-level`, admin only, reason 3–200):
+   - **One transaction:** re-read the admin, lock the student's row, refuse staff (`not_a_student`) and a student with any exam attempt (`has_attempt`; exam's table, read only), set the grade and the category from `grade_levels`, and write `user.grade_corrected` (both labels, the category, the reason).
+   - **Residual race:** an exam started between the check and the commit would keep the old category. The student's row lock does not block exam's start (it does not lock users), so this is a window of milliseconds, noted and not closed.
+5. **Web:**
+   - **The save** goes from the browser through `lib/api.ts` (DECISIONS "Web data layer over HTTP" rule 5). The Server Action `profile/edit/actions.ts` and `DataSource.updateProfile` are gone.
+   - **The form** keeps `method="post"` and its submit disabled until hydrated (web session #10), so an early submit never puts the fields in a URL.
+   - **The fields:** the grade is shown read only with the reason; the district is a list.
+   - **The admin side:** the detail dialog gets "Correct grade level". `GET /content/profile-options` admits admins for its grade table (no personal data); managers and jury stay out.
+   - **Client props are picked, never whole objects:** the props of a client component are serialized into the page. CI's `check:leak` found the canaries on `/dashboard/profile/edit` because the whole option-list object reached `ProfileForm`. `toProfileFormProps()` (`data/profile.ts`) now picks every field, and a unit test with canary-filled inputs fails if it spreads instead. The admin grade dialog gets `{ id, label }` only. The whole "Dashboard pages" job then ran clean on this worktree's own services: a throwaway Postgres with the test marker, the API on 4300, `next dev` on 3300 and `next start` on 3301.
+6. **Tests:**
+   - `users-me.int-spec.ts` (12): own profile, options, roles, blocked, allowed fields and the audit, the phone in all forms, the three phone conflicts, refused fields, the grade correction and its refusals.
+   - `profile.dto.spec.ts` (the same rules as registration); web: `profile.test.ts`, `http/profile.test.ts`, `save-problem.test.ts`, `grade-problem.test.ts`.
+   - **Mutation checks:** without the open-attempt check, without the unique-violation mapping, and without the attempt check, each makes a test fail.
 
 ## 2026-11-01 — Results on the web (E5a; exam session, lead's rules)
 
