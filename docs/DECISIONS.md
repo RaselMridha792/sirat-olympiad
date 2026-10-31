@@ -40,6 +40,60 @@ One short entry per non-obvious technical or product decision. Newest first. For
 6. **No address in logs:** the request logger keeps only the method, the path and the status; the book module has no logger (`book-no-logs.spec.ts`); audit rows carry ids, counts and filters only.
 7. **Seed:** `book_title` ("Sirat Leadership Olympiad book" until an admin sets the real one) and `book_cover_image_id` (null). RUNBOOK §9 asks for both before registration opens.
 
+## 2026-11-01 — Next's runtime caches are writable by the web's runtime user (Claude; lead's bug report)
+
+1. **The bug:**
+   - Since #25 the public pages revalidate every 60 s, so Next regenerates them at runtime. It writes the pages to `.next/server/route-cache` and fetch results to `.next/cache`.
+   - The image copied `.next` as root and runs as `node`.
+   - So every regeneration logged `Failed to update prerender cache … EACCES` and stored nothing. The pages still answered 200, but every request after the 60 s tried to regenerate again.
+2. **The fix:** the image creates only those two folders and gives them to `node`. The rest of `.next` stays root-owned, so a compromised server process cannot rewrite the built app.
+3. **Proof:**
+   - CI's docker job requests a public page, waits past the 60 s revalidation, requests it again, and fails on any EACCES in the web log.
+   - A/B with the same image: with the two folders handed back to root (main's state), 6 EACCES lines; with this change none, and the regenerated pages appear under `route-cache/APP_PAGE`.
+   - No write was attempted anywhere else in `.next`.
+
+## 2026-11-01 — Alert categories, their own caps, and the ops-alert command (L10; exam session, A2's plan and handover)
+
+1. **Categories:** `security`, `payments`, `ops`. `ALERT_CATEGORY` is a `Record<SecurityAlertKind, AlertCategory>`, so a new kind without a category fails typecheck (payments' kinds included). The email subject names the category. The "Account:" line names the account when there is one. Without one, a login alert keeps "no account with that email" (owner-approved, #7: someone is trying an email that has no account). Payments and ops alerts then have no Account line: they carry their own details, and the login wording would mislead there (a payment set aside for `email_taken`, for example).
+2. **Caps per category (owner Q2, launch-plan default 6 each):** the limiter's hourly key is per category, so a flood of failed logins can never use up the cap and silence a payment or backup alert. `SECURITY_ALERT_EMAILS_PER_HOUR` keeps its name and now means "per category". The 10-minute pause per kind is unchanged.
+3. **Audit actions keep `security.<kind>`** (for example `security.ops.backup_failed`), so payments' and A2's existing queries and tests stay valid.
+4. **Boot warning:** a production server (`NODE_ENV=production`) with a blank `SECURITY_ALERT_EMAIL` logs one warning at boot from `SecurityAlerts.onModuleInit`; `main.ts` is unchanged. It never logs an address.
+5. **`ops-alert` CLI** (`apps/api/src/cli/ops-alert.ts`, `pnpm --filter @sirat/api ops:alert`):
+   - **Allowed kinds:** only those of the `ops` category, so a script can't forge a security or payments alert. Today that is `ops.backup_failed`, `ops.monitor_failed` and `ops.alert_test`.
+   - **Details:** numeric `key=value` only (at most 10), so no text, and so no personal data, reaches an email.
+   - **Before raising:** it checks the database and both Redis, because the audit write never throws, and the limiter and the email queue skip a Redis that is not ready yet. Then it waits until the email is queued.
+6. **`backup.sh` uses it** on any failure, after the heartbeat's `/fail`: `ops-alert --kind ops.backup_failed --meta step=<n>`, with a number per step and a 60 s timeout.
+   - **Best effort (lead):** when the API cannot raise it (the api container down is a likely moment for a failed backup), the run still exits non-zero, and the heartbeat, which does not depend on the app, is the alert.
+   - **Tests:** the call and its step number; an ops-alert that fails; no api service at all; successful runs raise nothing.
+
+## 2026-11-01 — TLS behind Cloudflare, security headers and nginx logs (Claude; LAUNCH-PLAN L3, lead review)
+
+1. **Certificate:** Cloudflare SSL mode Full (strict) with a free Cloudflare Origin CA certificate. It needs no ACME client and no API token on the server, and Cloudflare trusts it for 15 years. No Cloudflare Tunnel (an untested component in the critical path). Authenticated Origin Pulls come after launch. A Let's Encrypt fallback (DNS-01) is only documented (RUNBOOK §15).
+2. **Two sites, one set of locations:**
+   - `infra/nginx/sites/tls` (production):
+     - Port 80 answers `/healthz` for any name and redirects only the site's own name. Any other name has its connection closed.
+     - A default 443 server refuses any other name during the handshake.
+     - So a scanner on the server's IP never sees the host name, on 80 or on 443. A targeted scan that sends the host name can still find the origin, so the Cloudflare-only firewall (L4) and Authenticated Origin Pulls stay the full answer.
+     - The real 443 server runs HTTP/2 and TLS 1.2/1.3.
+   - `sites/plain` (dev and CI) is plain http, so e2e and the smoke tests on http://127.0.0.1:8080 do not change.
+   - Both include `app-locations.conf`. The site is rendered at start by the image's entrypoint. `PUBLIC_HOST` comes from `APP_URL` (`entrypoint/15-public-host.envsh`), one source of truth, and the container stops with a message if it is not `https://<host>`.
+3. **A folder mount:** compose mounts the whole `infra/nginx` folder at `/etc/nginx/sirat` and starts `nginx -c /etc/nginx/sirat/nginx.conf`. `nginx -s reload` then sees files that git or the refresh script replaced (single-file mounts kept the old inode). A changed site template or entrypoint hook still needs a recreate, because they are read at start.
+4. **IPv4-only published ports** (`0.0.0.0:80`, `0.0.0.0:443`). An IPv6 listener would make Docker's proxy replace the client address.
+5. **An internal listener, `127.0.0.1:8081`:** in the container, never published, with no redirect. Checks from the server use it: the deploy smoke, maintenance and restores (LAUNCH-PLAN L5, L7, L9). A client-address exception on the public servers would be unreachable on the VPS, because host requests never arrive from the container's loopback.
+6. **Headers:** one include (`security-headers.conf`), at server level and in every location with its own `add_header`, nginx's JSON errors included. API answers are the exception: helmet already sends nosniff, a Referrer-Policy and its own CSP there, so the `/api` locations add only HSTS (`api-headers.conf`, whose `add_header` also stops the server-level set). Each header then appears once (payments' smoke checks this on `/api/book/cover`; the CI smoke checks it on `/api/health`).
+   - nosniff and Referrer-Policy.
+   - HSTS only on https (a map on `$https`), 300 s at launch, without `includeSubDomains` (owner question Q3 sets the ramp). Helmet's HSTS is off (`strictTransportSecurity: false`): its default of 1 year with `includeSubDomains` would bind every subdomain of the client's domain with the first https answer, and browsers keep it.
+   - A fixed page CSP, `Content-Security-Policy-Report-Only` until payments' wizard e2e has passed with it, then enforced. Inline scripts need `'unsafe-inline'`, because nonces would make every Next page dynamic; a nonce or hash policy comes after launch.
+   - The API sends `Cache-Control: no-store` on every answer unless a route sets its own, so neither a browser nor a Cloudflare "cache everything" rule can store one student's answer for the next.
+7. **Logs** (lead, 2026-10-31):
+   - One explicit access-log format: the path is cut at the first `?` and the Referer is dropped. A browser sends the full page URL as the Referer, so an admin's `/admin/users?q=<name or phone>` would otherwise reach the log through the next request.
+   - The format adds the Cloudflare edge address, the request and upstream times, the upstream status and the request id. `/healthz` is not logged.
+   - Error logs: nginx appends the whole request line and the referrer to every error line written for a request, at any level (an upstream failure is error, a full temp disk crit, running out of connections alert). So request-level errors log only at `emerg` (inside `http`), and the main error log keeps `crit` for process-level problems such as a worker that died. Lost: the request-level crit and alert diagnostics. The access log (status, upstream status, times) and the host monitor (disk, connections) cover them.
+   - `infra/nginx/test/check-sites.sh` (in CI) and the CI smoke test assert that random `?q=` values in the URL and in the Referer appear in no log: for a 200, for an upstream-down 502 (error level), and for a full temp disk, a 500 at crit level (a 64 KB tmpfs). Mutation checks: the `combined` format, the default error level, or no `emerg` inside `http` fails them.
+8. **`APP_URL` must be https in production,** except for localhost, 127.0.0.1 and [::1]. The local stack runs in production mode on http://localhost:8080.
+9. **CSP in the browser tests:** the CDP driver (`scripts/lib/cdp.mjs`) records every `securitypolicyviolation` through a binding added before any page script. `e2e.mjs` and `e2e-exam.mjs` pass the CSP step (`cspReport`) only if every document carried nginx's page policy, at least one did, and no violation was seen. A run against a bare Next therefore fails instead of passing without testing anything. Payments' wizard e2e will use the same check (LAUNCH-PLAN §13).
+10. **Not used:** a per-IP `limit_conn` (it would refuse a school behind one address; `limit_req` already covers RULEBOOK §11) and Cloudflare Turnstile.
+
 ## 2026-11-01 — Announcements and the student home on the API (core C4; plan `docs/plans/CORE-PLAN.md` section 5, D5, D6)
 
 1. **Announcements are data, not a message system** (D5):

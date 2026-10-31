@@ -112,6 +112,20 @@ describe('validateEnv: email links', () => {
     expect(() => validateEnv(withoutUrl({ NODE_ENV: 'development' }))).not.toThrow();
   });
 
+  it('requires https in production, except for an origin on this machine', () => {
+    expect(() => validateEnv({ ...valid(), APP_URL: 'http://sirat.test' })).toThrow(
+      /APP_URL must start with https:\/\/ in production/,
+    );
+    expect(() => validateEnv({ ...valid(), APP_URL: 'http://10.0.0.5:8080' })).toThrow(/https/);
+    for (const local of ['http://localhost:8080', 'http://127.0.0.1:8080', 'http://[::1]:8080']) {
+      expect(() => validateEnv({ ...valid(), APP_URL: local })).not.toThrow();
+    }
+    expect(() => validateEnv({ ...valid(), APP_URL: 'https://sirat.test' })).not.toThrow();
+    expect(() =>
+      validateEnv({ ...valid(), NODE_ENV: 'development', APP_URL: 'http://sirat.test' }),
+    ).not.toThrow();
+  });
+
   it('defaults the link lifetimes to 24 h (verify) and 30 min (reset)', () => {
     expect(validateEnv(valid())).toMatchObject({
       EMAIL_VERIFY_TOKEN_HOURS: 24,

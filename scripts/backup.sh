@@ -16,7 +16,8 @@
 # public keys in the recipients file -> manifest -> store locally -> upload with rclone into tier prefixes (hourly/
 # always; daily/ for the first run of the Asia/Dhaka day at or after 03:00; weekly/ for that run on a Sunday; dump first,
 # manifest last) -> keep the newest local copies -> heartbeat.
-# A failure: the heartbeat gets /fail and the exit status is non-zero. Before the store step no new copy appears; a
+# A failure: the heartbeat gets /fail, an ops alert is raised through the API (ops-alert, best effort: the heartbeat
+# does not depend on the app), and the exit status is non-zero. Before the store step no new copy appears; a
 # failed upload keeps the local encrypted copy (stored first). A run killed mid-dump leaves its partial plain dump in an
 # owner-only .work.* directory, which the next run removes.
 # The manifest's fields (created_at, sha256, tables, migrations) are read by restore-drill.sh and ops-check: keep them.
@@ -103,6 +104,18 @@ ping_heartbeat() { # $1 = '' or 'fail', $2 = a word for the heartbeat log
   curl -fsS -m 10 --retry 3 -o /dev/null --data-raw "${2:-ok}" "$url" || echo "backup: heartbeat ping failed" >&2
 }
 
+# ---- ops alert (L10): the operator email through the API, best effort ----
+# Details are numbers only (ops-alert refuses text), so the step goes as its number. If the API cannot raise it (the
+# api container down is a likely moment for a failed backup), the run still fails loudly: the heartbeat's /fail does
+# not depend on the app, and the exit status stays non-zero.
+declare -A STEP_NUMBER=([start]=0 [lock]=1 [prepare]=2 [dump]=3 [check]=4 [size]=5 [encrypt]=6 [manifest]=7
+  [store]=8 [upload]=9 [prune]=10 [finish]=11 [verify]=12)
+raise_ops_alert() {
+  timeout 60 "${DC[@]}" exec -T api node dist/cli/ops-alert.js \
+    --kind ops.backup_failed --meta "step=${STEP_NUMBER[$STEP]:-99}" > /dev/null 2>&1 ||
+    echo "backup: the ops alert could not be raised through the API (the heartbeat's /fail went out)" >&2
+}
+
 STEP=start
 WORK=
 on_exit() {
@@ -111,6 +124,7 @@ on_exit() {
   if [ "$status" -ne 0 ]; then
     echo "backup: FAILED at step '$STEP'" >&2
     ping_heartbeat fail "$STEP"
+    raise_ops_alert
   fi
   exit "$status"
 }
@@ -148,7 +162,7 @@ exec 9<"$LOCK"
 flock -w "$LOCK_WAIT" 9 || fail "another backup is still running after ${LOCK_WAIT} s"
 
 STEP=prepare
-for tool in docker age sha256sum flock; do command -v "$tool" >/dev/null || fail "missing tool: $tool"; done
+for tool in docker age sha256sum flock timeout; do command -v "$tool" >/dev/null || fail "missing tool: $tool"; done
 [ -n "$REMOTE" ] || fail "BACKUP_REMOTE is empty (an rclone destination, or 'none' for a local-only run)"
 [ "$REMOTE" = none ] || command -v rclone >/dev/null || fail "missing tool: rclone"
 [ -f "$RECIPIENTS" ] || fail "no recipients file at $RECIPIENTS"

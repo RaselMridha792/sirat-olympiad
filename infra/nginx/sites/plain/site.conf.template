@@ -1,0 +1,9 @@
+# Dev and CI site: plain http on port 80 (the dev override publishes it on 127.0.0.1:8080), the same locations as
+# production. infra/docker-compose.dev.yml mounts this folder as the templates folder; it has no variables.
+server {
+  listen 80 default_server;
+  server_name _;
+  include /etc/nginx/sirat/security-headers.conf;
+  location = /healthz { return 200 "ok"; }
+  include /etc/nginx/sirat/app-locations.conf;
+}
