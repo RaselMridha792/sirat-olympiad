@@ -33,6 +33,12 @@ export class EnvVars {
    * the browser tries again. Only tests lower it.
    */
   @IsInt() @Min(100) @Max(10_000) REFRESH_ROTATION_BUDGET_MS: number = 8_000;
+  /**
+   * Requests per minute and route for one signed-in user (a verified access cookie), whatever IP they share with
+   * others. Leaves room for the exam checkpoint (every 60-120 s) and a payment status poll (every 2-10 s). Requests
+   * without a verified session keep the per-IP limit (600). Only tests lower it.
+   */
+  @IsInt() @Min(10) @Max(10_000) API_LIMIT_PER_USER_PER_MINUTE: number = 120;
   /** Session cookies carry `Secure` unless this is 'false' (local plain-http development only; refused in production). */
   @IsIn(['true', 'false']) COOKIE_SECURE: string = 'true';
 

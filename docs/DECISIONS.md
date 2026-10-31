@@ -2,6 +2,61 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — DECISIONS.md merges as a union (Lead)
+
+1. Every session adds its entries at the top of this file, which conflicted on every merge that day. `.gitattributes` now gives `docs/DECISIONS.md` git's built-in union merge driver: both sides' added lines are kept, and nobody has to resolve the same conflict again. A union can drop the blank line between two new entries; `pnpm format` restores it, and CI's format check catches it. Only this file: in OPEN-QUESTIONS or other tables, a union could duplicate or garble rows.
+
+## 2026-10-31 — Who merges pull requests (owner)
+
+1. **Only the lead session merges,** with the owner's GitHub account: `gh pr merge <n> --merge --match-head-commit <reviewed sha>`, a merge commit (no squash, rebase or admin bypass). No other session ever merges.
+2. **Conditions:**
+   - CI 4/4 green on the head commit;
+   - the lead's own review;
+   - the PR description lists every local check and ends with one line `Ready to merge: <sha>`.
+   A push after that means a new review.
+3. **Never during a live exam window.** The owner is told after each merge.
+4. **The owner can hold any PR, or merge one themselves.**
+
+## 2026-10-31 — Per-user API limits (Lead's order; Claude implementation)
+
+1. **Key:** `UserOrIpThrottlerGuard` replaces the global `ThrottlerGuard`.
+   - A request whose access cookie **verifies** (signature and expiry, the same check as AuthGuard) counts against its user.
+   - Anything else counts against the client IP: no cookie, or a forged, expired or malformed token. The IP is the one nginx recorded, grouped by /64 for IPv6 as the library does. So nobody can spread one IP's requests over invented user keys.
+   - It only counts requests: authorization stays with AuthGuard.
+   - The Redis storage and the key shape (route, throttler, tracker) are unchanged.
+2. **Signed-in users:** 120 requests per minute per route each (`API_LIMIT_PER_USER_PER_MINUTE`), whatever IP they share. That leaves room for:
+   - the exam checkpoint (every 60–120 s);
+   - a signed-in payment status poll (every 2–10 s);
+   - the web's `/auth/me` (cached 30 s).
+   A route's own `@Throttle()` tier still wins.
+3. **Per client IP, for routes used without a session.** Thousands of students can share one IP: a school, or a Bangladeshi mobile operator's carrier-grade NAT.
+   - **login:** no request limit at the API (unchanged). The login limiter counts only failures (10 per account+IP pair, 50 per account per hour, 100 per IP per minute), and nginx's auth zone caps the rate. Tested: 500 different accounts log in from one IP within a minute, none refused.
+   - **refresh:** 3,000 per minute, above nginx's api zone (30 r/s), so behind nginx the API never refuses a renewal first. The refresh token is 256-bit, and reuse is detected.
+   - **resend-verification, reset-password, verify-email:** 300 per minute each (were 60 and 30). Unverified students may all ask for a new link at once; reset and verify take 256-bit single-use tokens, refused before argon2.
+   - **forgot-password:** 120 per minute (was 60). It sends email too, and it needs far less headroom than resend.
+   - **Email volume:** the per-address caps (1 a minute, 5 an hour) limit each inbox, not the total, and nginx's auth zone allows about 1,400 a minute per IP. So one IP can trigger at most 420 link emails a minute (forgot 120 + resend 300), up from 120.
+   - **Follow-up:** a global cap on link emails sent, set below the SES daily quota and raising an alert when reached. It needs the quota figure from the owner.
+   - **every other anonymous route:** 600 per minute (the module default, unchanged).
+4. **Registration routes (payments, later)** need their own tiers sized for shared IPs. The public payment status poll `GET /registrations/current` (every 2–10 s for up to 2 min) would share 600 per minute per IP, which is about 20 people paying at once behind one IP.
+   - Proposal for the payments PR: an explicit tier keyed on the registration cookie, with a high per-IP cap behind it.
+5. **Risks, not changed in this PR:**
+   - nginx's per-IP zones under carrier-grade NAT:
+     - `auth` (20 r/s, burst 200: login and the email-link routes) refuses an operator IP beyond 200 at once and 20 per second after. Students see "busy" and retry.
+     - `api` (30 r/s, burst 60) covers every signed-in browser call, including the coming exam checkpoint and submit, and is shared by every student behind the IP.
+     - Proposal: measure in the load test, then raise both per-IP zones (for example api 200 r/s burst 2,000; auth 100 r/s burst 1,000) and leave the precise per-user limits to the API, or give known operator ranges a higher limit through a `geo` map.
+   - The login limiter's 100 failures per IP per minute (owner rule) can also refuse a large operator IP for up to a minute if many students mistype at exam start. Changing it is an owner decision.
+   - When nginx's per-IP zones are raised, the API's per-IP tiers (600 default, refresh 3,000, email links 300 and 120) must be raised with them, or the API refuses first.
+   - A browser call to a protected route without a valid access cookie counts against the IP. While that bucket is full, the call gets 429 instead of 401, and the web renews only on a 401. The exam player should renew before the access token expires.
+6. **Tests:**
+   - unit: `user-or-ip-throttler.guard.spec.ts`;
+   - integration (`api-per-user-limits.int-spec.ts`, each case on its own client IP through X-Forwarded-For):
+     - two users behind one IP each get their own budget;
+     - 600 anonymous requests then 429, while a session from that IP still passes;
+     - 600 forged tokens naming 600 different users, plus an expired real-key token, all share the IP bucket, and the named real user's budget is untouched;
+     - 500 logins from one IP within a minute, none counted by the limiter (no `X-RateLimit-Limit` header);
+     - every anonymous auth route answers with its own tier in `X-RateLimit-Limit` (refresh 3,000, forgot 120, resend/reset/verify 300, `/auth/me` 600 per IP or the user's own limit).
+   - **Mutation checks:** a tracker that decodes instead of verifies lets the forgeries spread (401 instead of 429); the plain ThrottlerGuard shares one budget (200 instead of 429).
+
 ## 2026-10-31 — PayStation client, fake server, selfcheck and decision rules (Claude; payments PR 1b)
 
 1. **The client speaks only v1** (initiate, transaction-status by invoice). v2 is not used, because the merchant bears the charge.
@@ -273,7 +328,7 @@ Each protection has a test that fails without it (mutation-checked); forgot/rese
 2. **reset-password:** a bad link is refused before argon2 runs. One transaction uses the token, sets the hash, marks the email verified (the link proved the inbox), retires the other reset links and ends every session; only after the commit is the account unlocked everywhere (owner). No automatic login. A password refused by the policy leaves the link usable.
 3. **verify-email:** sets `email_verified_at` in the same transaction that uses the token; never creates a session or sets a cookie (tested). A valid link for an already verified address answers 204 and changes nothing.
 4. **Bad links:** unknown, malformed, used, expired, other-type and blocked-account links all get one 400 ("This link is invalid or has expired"). Exactly one of two simultaneous uses of a link succeeds.
-5. **Throttle tiers** (per route and client IP, on top of the per-address caps): 60/min for the two link requests (sized for a school behind one IP), 30/min for reset and verify.
+5. **Throttle tiers** (superseded by "Per-user API limits": 300/min each now) (per route and client IP, on top of the per-address caps): 60/min for the two link requests (sized for a school behind one IP), 30/min for reset and verify.
 6. **Operator alert emails** (owner): the `security.<kind>` audit row and a warn log line marked `alert` come first and are the source of truth. The email to `SECURITY_ALERT_EMAIL` (unset: no email) goes out from the background, so it never slows or blocks a login: at most one per alert kind per 10 minutes and `SECURITY_ALERT_EMAILS_PER_HOUR` (6) in all, through the cache Redis. If that limit cannot be checked, the email is held back. It names the kind, the time, the account id and counts; never an email address or an IP.
 7. **BackgroundTasks:** work after the response logs failures by class only and may finish on SIGTERM (up to 10 s); a crash in between loses that email, and the user asks again.
 
@@ -415,7 +470,7 @@ Each gate has its own tests, and each test was checked to fail with its gate rem
 1. **A1 approved**, with conditions. **A1.1** stays small and deploy-only: a failed migration must not leave the API down; SIGTERM must drain; the Cloudflare real-IP refresh must never install an empty list; reference data moves into a migration. Each only where the second review's skeptics confirmed it. No further review rounds after A1.1: CI and tests are enough.
 2. **Order:** docs → A1.1 → A2 (auth) → payments, then the rest of the Phase A order in `10-BUILD-PLAN.md`. This supersedes "Owner answers before Phase A" #1: payments come right after auth, because creating users needs auth's password hashing.
 3. **A2 starts with four gates, before any auth code:** the exception filter never logs Prisma error messages; request logs carry no query strings or headers; placeholder or low-entropy JWT secrets are rejected; body-parser errors are answered as 4xx.
-4. **No direct pushes to `main`** until OPEN-QUESTIONS #25 is decided: branches and pull requests only; the owner merges.
+4. **No direct pushes to `main`** until OPEN-QUESTIONS #25 is decided: branches and pull requests only; the owner merges (superseded by "Who merges pull requests (owner)", 2026-10-31).
 5. **OPEN-QUESTIONS #27** (non-superuser runtime DB role) is on the pre-launch checklist (RUNBOOK §9).
 6. **PayStation, from the official docs** (summary: `docs/paystation/PAYSTATION-NOTES.md`). The docs confirm RULEBOOK §8's endpoints; a grant-token flow does not exist. Rules for the code:
    - **paid** only when `status_code` is `"200"`, `lowercase(data.trx_status)` is `success` or `successful`, the amount and invoice match, and `trx_id` is non-empty and unused. `failed` → failed. **Any other value is neither paid nor failed**: it stays pending, the reconciliation job looks again, and an alert is raised. The accepted list is updated after the sandbox shows the real values.
