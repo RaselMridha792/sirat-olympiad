@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { forwardedFor } from './forwarded.ts';
+import { apiRequestHeaders, forwardedFor } from './forwarded.ts';
 import { MeCache } from './me-cache.ts';
 
 /** What the API (Express, trust proxy 1) takes as the client: the last X-Forwarded-For entry. */
@@ -26,6 +26,34 @@ test('a forged or missing X-Real-IP forwards nothing (the API then counts the we
 
 test('without nginx (dev), X-Real-IP is client input and is not forwarded', () => {
   assert.equal(forwardedFor('203.0.113.7', false), null);
+});
+
+test('a forged X-Forwarded-For never reaches the API: it sees the address nginx saw', () => {
+  // What nginx hands the web for a client that sent "X-Forwarded-For: 6.6.6.6".
+  const incoming = new Headers({
+    'x-real-ip': '203.0.113.7',
+    'x-forwarded-for': '6.6.6.6, 203.0.113.7',
+    'x-request-id': 'f00dfeed1234abcd',
+    cookie: 'sirat_access=abc; sirat_refresh=never-sent; other=1',
+    authorization: 'Bearer something',
+  });
+  const out = apiRequestHeaders(incoming, 'sirat_access=abc', true);
+  assert.deepEqual(out, {
+    accept: 'application/json',
+    cookie: 'sirat_access=abc',
+    'x-forwarded-for': '203.0.113.7',
+    'x-request-id': 'f00dfeed1234abcd',
+  });
+  assert.equal(apiSees(out['x-forwarded-for'] ?? null, '172.18.0.4'), '203.0.113.7');
+  // A client that also forges X-Real-IP cannot get past nginx (it overwrites it); in dev nothing is forwarded.
+  assert.equal(
+    apiRequestHeaders(incoming, 'sirat_access=abc', false)['x-forwarded-for'],
+    undefined,
+  );
+  assert.equal(
+    apiRequestHeaders(new Headers({ 'x-request-id': 'x'.repeat(65) }), 'c=1', true)['x-request-id'],
+    undefined,
+  );
 });
 
 test('MeCache keeps answers for the TTL, by token, and never stores the token itself', () => {

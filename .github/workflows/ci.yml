@@ -41,10 +41,29 @@ jobs:
         run: pnpm audit --audit-level high
 
   web-pages:
-    # Render-level checks of every dashboard page (apps/web/scripts/check-pages.mjs, docs/07-UI-MIGRATION.md).
-    name: Dashboard pages (no student data leaks, polite states without the API)
+    # Render-level checks of every dashboard page with REAL sessions (apps/web/scripts/check-pages.mjs,
+    # docs/07-UI-MIGRATION.md): the API runs here on :4000 with its own Postgres and Redis; a fixture student and an
+    # admin made with the create-admin CLI log in through it. No session stub.
+    name: Dashboard pages (real sessions, no student data leaks, polite states, API down)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://sirat:ci-only-password@localhost:5432/sirat_pages
+      DIRECT_URL: postgresql://sirat:ci-only-password@localhost:5432/sirat_pages
+      REDIS_CACHE_URL: redis://localhost:6379/0
+      REDIS_QUEUE_URL: redis://localhost:6379/1
+      COOKIE_SECURE: 'false' # plain http on localhost
+      CHECK_API_URL: http://localhost:4000
+      CHECK_STUDENT_EMAIL: student1@fixtures.invalid
+      CHECK_ADMIN_EMAIL: pages-admin@ci.invalid
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
@@ -54,24 +73,60 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @sirat/shared build
-      - name: Student pages show no scores, times, emails or answer keys (dev server, ?mock=leak)
+      - run: pnpm db:generate
+      - name: Throwaway secrets for this run (masked)
+        run: |
+          for name in JWT_ACCESS_SECRET FIXTURE_PASSWORD CHECK_ADMIN_PASSWORD; do
+            value=$(openssl rand -hex 24)
+            echo "::add-mask::$value"
+            echo "$name=$value" >> "$GITHUB_ENV"
+            [ "$name" = FIXTURE_PASSWORD ] && echo "CHECK_STUDENT_PASSWORD=$value" >> "$GITHUB_ENV"
+          done
+      - name: Postgres with the dev/test marker (fixtures refuse a server without it; services cannot pass -c)
+        run: |
+          docker run -d --name pg -p 5432:5432 -e POSTGRES_USER=sirat -e POSTGRES_PASSWORD=ci-only-password \
+            -e POSTGRES_DB=sirat_pages postgres:17-alpine -c sirat.environment=test
+          for _ in $(seq 1 30); do docker exec pg pg_isready -U sirat -d sirat_pages && break; sleep 2; done
+      - name: Migrations, config seed, fixture students and an admin from the create-admin CLI
+        run: |
+          pnpm --filter @sirat/api exec prisma migrate deploy
+          pnpm --filter @sirat/api db:seed
+          ALLOW_DEV_FIXTURES=yes-this-is-not-production pnpm --filter @sirat/api db:fixtures:dev
+          pnpm --filter @sirat/api build
+          printf '%s\n' "$CHECK_ADMIN_PASSWORD" |
+            node apps/api/dist/cli/create-admin.js --password-stdin --email "$CHECK_ADMIN_EMAIL" --name "Pages Admin"
+      - name: Start the API on :4000
+        run: |
+          (cd apps/api && setsid node dist/main.js > /tmp/api.log 2>&1 &)
+          for _ in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:4000/api/ready && break; sleep 1; done
+          curl -fsS http://localhost:4000/api/ready
+      - name: Student pages show no scores, times, emails or answer keys (dev server, ?mock=leak, a student session)
         run: |
           setsid pnpm --filter @sirat/web exec next dev -p 3100 > /tmp/next-dev.log 2>&1 &
           DEV=$!
-          for i in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:3100/ && break; sleep 2; done
+          for _ in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:3100/ && break; sleep 2; done
           pnpm --filter @sirat/web check:leak http://localhost:3100
           kill -- -"$DEV"
       - name: Production build has no mock code; every page shows the shell and a polite state (headless Chrome)
         run: |
           pnpm --filter @sirat/web build
-          setsid pnpm --filter @sirat/web exec next start -p 3101 > /tmp/next-start.log 2>&1 &
-          PROD=$!
-          for i in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:3101/ && break; sleep 1; done
+          API_INTERNAL_URL=http://localhost:4000 setsid pnpm --filter @sirat/web exec next start -p 3101 > /tmp/next-start.log 2>&1 &
+          echo "PROD_PID=$!" >> "$GITHUB_ENV"
+          for _ in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:3101/ && break; sleep 1; done
           pnpm --filter @sirat/web check:prod http://localhost:3101
-          kill -- -"$PROD"
+      - name: With the API stopped, pages show the error page and send nobody to /login
+        run: |
+          pkill -f 'node dist/main.js'
+          pnpm --filter @sirat/web check:api-down http://localhost:3101
+          kill -- -"$PROD_PID"
+      - name: The web server log carries no cookie, token, email or next value
+        run: |
+          if grep -nE 'sirat_access|sirat_refresh|eyJ[A-Za-z0-9_-]{10,}|next=|@fixtures\.invalid|@ci\.invalid' /tmp/next-start.log; then
+            echo "::error::sensitive value in the web server log"; exit 1
+          fi
       - name: Server logs on failure
         if: failure()
-        run: tail -n 80 /tmp/next-dev.log /tmp/next-start.log || true
+        run: tail -n 80 /tmp/api.log /tmp/next-dev.log /tmp/next-start.log || true
 
   database:
     name: Migrations, drift check, DB + Redis integration tests
