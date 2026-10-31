@@ -3,17 +3,15 @@ import type {
   AdminExamCard,
   AdminExamDetail,
   AdminExamQuery,
-  AdminLeaderboardQuery,
-  AdminLeaderboardView,
+  AdminExamLeaderboard,
   AdminStats,
   AdminUserDetail,
   AdminUserQuery,
   AdminUserRow,
   AmbassadorOverview,
   AnnouncementItem,
+  ExamLeaderboard,
   LeaderboardQuery,
-  LeaderboardRow,
-  LeaderboardView,
   PageQuery,
   Paginated,
   ProfileOptions,
@@ -53,8 +51,8 @@ export interface DataSource {
     getAmbassador(): Promise<AmbassadorOverview>;
   };
   leaderboard: {
-    /** GET /leaderboard?round=&page=&q= (precomputed snapshot; search by name/institution only) */
-    get(query: LeaderboardQuery): Promise<LeaderboardView<LeaderboardRow>>;
+    /** GET /leaderboard?exam=&page=&q= (one exam's snapshot; rank, name, institution; search by name/institution) */
+    get(query: LeaderboardQuery): Promise<ExamLeaderboard>;
   };
   admin: {
     /** GET /admin/stats (cached aggregate) */
@@ -63,8 +61,8 @@ export interface DataSource {
     listUsers(query: AdminUserQuery): Promise<Paginated<AdminUserRow>>;
     /** GET /admin/users/:id (null = not found) */
     getUser(id: string): Promise<AdminUserDetail | null>;
-    /** GET /admin/leaderboard?round=&page=&q=&category= */
-    getLeaderboard(query: AdminLeaderboardQuery): Promise<AdminLeaderboardView>;
+    /** GET /admin/leaderboard?exam=&page=&q= (with emails, scores and times, also before publishing) */
+    getLeaderboard(query: LeaderboardQuery): Promise<AdminExamLeaderboard>;
     /** GET /admin/exams?page=&q=&status= */
     listExams(query: AdminExamQuery): Promise<Paginated<AdminExamCard>>;
     /** GET /admin/exams/:id (with questions and correct keys; null = not found) */

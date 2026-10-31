@@ -5,7 +5,9 @@ import {
   type AdminUserRow,
   type AmbassadorOverview,
   type AnnouncementItem,
-  type LeaderboardRound,
+  type AdminExamLeaderboard,
+  type ExamLeaderboard,
+  type ExamLeaderboardExam,
   type LeaderboardRow,
   type ProfileOptions,
   type StudentExamListItem,
@@ -21,6 +23,7 @@ import {
   GRADE_LEVELS,
   RANKS,
   type MockExam,
+  type MockStanding,
   type MockUser,
   type MockWorld,
 } from './fixtures.ts';
@@ -36,12 +39,6 @@ export const MOCK_SOURCE_MARKER = 'SIRAT_MOCK_DATA_SOURCE';
 const SLOW_MS = 2000;
 
 const gradeOf = (id: string | null) => GRADE_LEVELS.find((g) => g.id === id) ?? null;
-const pickRound = ({ id, name, type, sortOrder }: LeaderboardRound): LeaderboardRound => ({
-  id,
-  name,
-  type,
-  sortOrder,
-});
 
 function examState(exam: MockExam, now: number): StudentExamState {
   if (exam.myAttempt === 'submitted' || exam.myAttempt === 'scored') return 'submitted';
@@ -87,14 +84,47 @@ const announcementItems = (w: MockWorld): AnnouncementItem[] =>
     .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
     .map(({ id, title, body, publishedAt }) => ({ id, title, body, publishedAt }));
 
-/** Latest round with a published snapshot, else the first round. */
-function resolveRound(w: MockWorld, roundId: string | undefined): LeaderboardRound | null {
-  const rounds = w.rounds.map(pickRound);
-  const requested = rounds.find((r) => r.id === roundId);
-  if (requested) return requested;
-  const published = rounds.filter((r) => w.standings.has(r.id));
-  return published.at(-1) ?? rounds[0] ?? null;
+/** The exam a leaderboard shows, as the API picks it: the requested one, else the latest that qualifies. */
+function leaderboardExam(
+  w: MockWorld,
+  examId: string | undefined,
+  qualifies: (exam: MockExam) => boolean,
+): MockExam | null {
+  if (examId) return w.exams.find((e) => e.id === examId && e.status !== 'draft') ?? null;
+  return (
+    w.exams.filter(qualifies).sort((a, b) => b.windowEnd.localeCompare(a.windowEnd))[0] ?? null
+  );
 }
+
+const examInfo = ({ id, title, category }: MockExam): ExamLeaderboardExam => ({
+  id,
+  title,
+  category,
+});
+
+/**
+ * An exam's snapshot here: its round's standings, its category's participants only, ranked again within the exam
+ * (score down, time up; equal score and time share a rank: 1, 2, 2, 4), as the real snapshot ranks each exam.
+ */
+function examStandings(w: MockWorld, exam: MockExam): MockStanding[] {
+  const inExam = (exam.roundId ? (w.standings.get(exam.roundId) ?? []) : []).filter(
+    (s) => exam.category === null || s.user.category === exam.category,
+  );
+  return inExam.map((s, i) => {
+    let first = i;
+    while (
+      first > 0 &&
+      inExam[first - 1]!.score === s.score &&
+      inExam[first - 1]!.timeTakenSeconds === s.timeTakenSeconds
+    )
+      first -= 1;
+    return { ...s, rank: first + 1 };
+  });
+}
+
+/** A snapshot exists once the window has closed and someone has a result. */
+const hasSnapshot = (w: MockWorld, exam: MockExam) =>
+  Date.parse(exam.windowEnd) < Date.now() && examStandings(w, exam).length > 0;
 
 const userRow = ({
   id,
@@ -350,16 +380,19 @@ export function createMockSource(state: MockState | null): DataSource {
     leaderboard: {
       get: (query) =>
         run(
-          () => {
+          (): ExamLeaderboard => {
             const w = getWorld();
-            const rounds = w.rounds.map(pickRound);
-            const round = resolveRound(w, query.roundId);
-            const standings = round ? w.standings.get(round.id) : undefined;
-            if (!round || !standings || !w.leaderboardPublic) {
-              return { status: 'unpublished' as const, rounds, round };
+            const exam = leaderboardExam(w, query.exam, (e) => e.resultsPublishedAt !== null);
+            if (!exam || !exam.resultsPublishedAt) {
+              return {
+                ...emptyPage<LeaderboardRow>(query),
+                exam: exam && examInfo(exam),
+                status: 'unpublished',
+                snapshotAt: null,
+              };
             }
             // Students search by name or institution only (never email: no account probing).
-            const rows: LeaderboardRow[] = standings
+            const rows: LeaderboardRow[] = examStandings(w, exam)
               .filter((s) => matches(s.user.name, query.q) || matches(s.user.institution, query.q))
               .map((s) => ({
                 rank: s.rank,
@@ -368,21 +401,18 @@ export function createMockSource(state: MockState | null): DataSource {
                 entryStatus: s.entryStatus,
               }));
             return {
-              status: 'published' as const,
-              rounds,
-              round,
-              snapshotAt: w.snapshotAt,
               ...paginate(rows, query),
+              exam: examInfo(exam),
+              status: 'published',
+              snapshotAt: exam.resultsPublishedAt,
             };
           },
-          () => {
-            const w = getWorld();
-            return {
-              status: 'unpublished' as const,
-              rounds: w.rounds.map(pickRound),
-              round: resolveRound(w, query.roundId),
-            };
-          },
+          (): ExamLeaderboard => ({
+            ...emptyPage<LeaderboardRow>(query),
+            exam: null,
+            status: 'unpublished',
+            snapshotAt: null,
+          }),
         ),
     },
 
@@ -470,18 +500,17 @@ export function createMockSource(state: MockState | null): DataSource {
 
       getLeaderboard: (query) =>
         run(
-          () => {
+          (): AdminExamLeaderboard => {
             const w = getWorld();
-            const round = resolveRound(w, query.roundId);
-            const standings = (round && w.standings.get(round.id)) || [];
-            const rows: AdminLeaderboardRow[] = standings
+            const exam = leaderboardExam(w, query.exam, (e) => hasSnapshot(w, e));
+            const snapshot = exam !== null && hasSnapshot(w, exam);
+            const rows: AdminLeaderboardRow[] = (snapshot ? examStandings(w, exam) : [])
               .filter(
                 (s) =>
                   matches(s.user.name, query.q) ||
                   matches(s.user.email, query.q) ||
                   matches(s.user.institution, query.q),
               )
-              .filter((s) => !query.category || s.user.category === query.category)
               .map((s) => ({
                 rank: s.rank,
                 name: s.user.name,
@@ -494,23 +523,20 @@ export function createMockSource(state: MockState | null): DataSource {
                 timeTakenSeconds: s.timeTakenSeconds,
               }));
             return {
-              isPublic: w.leaderboardPublic,
-              rounds: w.rounds.map(pickRound),
-              round,
-              snapshotAt: standings.length ? w.snapshotAt : null,
               ...paginate(rows, query),
+              exam: exam && examInfo(exam),
+              isPublic: exam?.resultsPublishedAt != null,
+              snapshotAt: snapshot ? (exam.resultsPublishedAt ?? exam.windowEnd) : null,
+              generation: snapshot ? 1 : 0,
             };
           },
-          () => {
-            const w = getWorld();
-            return {
-              isPublic: false,
-              rounds: w.rounds.map(pickRound),
-              round: resolveRound(w, query.roundId),
-              snapshotAt: null,
-              ...emptyPage<AdminLeaderboardRow>(query),
-            };
-          },
+          (): AdminExamLeaderboard => ({
+            ...emptyPage<AdminLeaderboardRow>(query),
+            exam: null,
+            isPublic: false,
+            snapshotAt: null,
+            generation: 0,
+          }),
         ),
 
       listExams: (query) =>

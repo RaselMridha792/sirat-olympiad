@@ -133,12 +133,12 @@ export interface AmbassadorOverview {
   recentReferrals: Array<Pick<UserRecord, 'name' | 'institution' | 'createdAt'>>;
 }
 
-// ───────────── Leaderboard (precomputed snapshot) ─────────────
+// ───────────── Leaderboard (precomputed snapshot, one per exam) ─────────────
 
-export type LeaderboardRound = Pick<RoundRecord, 'id' | 'name' | 'type' | 'sortOrder'>;
-
+/** GET /leaderboard and GET /admin/leaderboard (views: ExamLeaderboard, AdminExamLeaderboard in exam.ts). */
 export interface LeaderboardQuery extends PageQuery {
-  roundId?: string;
+  /** The exam; without it, the latest exam with results. */
+  exam?: string;
 }
 
 /** Student view: rank, name, institution, status. No score, time or email (OPEN-QUESTIONS #10). */
@@ -147,34 +147,12 @@ export type LeaderboardRow = Pick<UserRecord, 'name' | 'institution'> & {
   entryStatus: RoundEntryRecord['status'] | null;
 };
 
-export type LeaderboardView<Row> =
-  | { status: 'unpublished'; rounds: LeaderboardRound[]; round: LeaderboardRound | null }
-  | ({
-      status: 'published';
-      rounds: LeaderboardRound[];
-      round: LeaderboardRound;
-      /** When the snapshot was computed (after the window closed). */
-      snapshotAt: string;
-    } & Paginated<Row>);
-
 export type AdminLeaderboardRow = LeaderboardRow &
   Pick<UserRecord, 'email' | 'category'> & {
     userId: UserRecord['id'];
     score: AttemptRecord['score'];
     timeTakenSeconds: AttemptRecord['timeTakenSeconds'];
   };
-
-export interface AdminLeaderboardQuery extends LeaderboardQuery {
-  category?: Category;
-}
-
-/** Admins see the snapshot before it is public (settings.leaderboard_public). */
-export type AdminLeaderboardView = Paginated<AdminLeaderboardRow> & {
-  isPublic: boolean;
-  rounds: LeaderboardRound[];
-  round: LeaderboardRound | null;
-  snapshotAt: string | null;
-};
 
 // ───────────── Admin ─────────────
 
