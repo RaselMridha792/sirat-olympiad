@@ -34,6 +34,20 @@ The plan's default is approved (plan Q2): name, phone (BD mobile), district, ins
 2. **The host is not free in `.env`** (lead review, 2026-10-31). PayStation's host is the same for every merchant, so `payment.config.ts` holds a two-entry allow-list (sandbox, live) and `PAYSTATION_ENV` picks the entry, as decided on 2026-10-30. `live` is refused unless `NODE_ENV=production`. If `PAYSTATION_BASE_URL` is set for `sandbox` or `live`, it must equal that label's host or the API does not boot. Only `fake` (the dev/CI fake server, never in production) accepts any URL. Why: with a free base URL, a dev machine with `PAYSTATION_ENV=sandbox`, the live host and live credentials would take real money, and no guard would notice. No other source file contains a PayStation host (a source scan checks this). If the sandbox shows a different host (S11), one line of the allow-list changes. This replaces the same day's first idea of a free base URL from `.env`, which was never built.
 3. Each payment records the account it belongs to, and invoice numbers carry an account prefix, so test data never mixes with live data. The switch checklist (what to re-verify, how test data stays apart): `docs/plans/PAYMENTS-PLAN.md` section 13.
 
+## 2026-10-31 — Launch target and how the next work is split (Lead, through the owner)
+
+1. **Launch on 2026-11-15 with registration and payment only.** Students log in after paying, so the first-admin CLI and the web session are on the critical path.
+2. The first-admin CLI is its own small PR. The web session (the mock replaced) follows on its own branch from `main` after a short plan to the owner, so it does not collide with the UI work.
+3. `apps/api/package.json` is shared by several sessions: keep changes to single lines. A new dependency or a `pnpm-lock.yaml` change is announced to the owner first.
+
+## 2026-10-31 — First-admin CLI (Claude; owner's A2 order)
+
+1. **Admins are created only from the command line** (`apps/api/src/cli/create-admin.ts`, RUNBOOK §13): there is no admin sign-up and the web never accepts a role (RULEBOOK §18). The same CLI creates later admins.
+2. **The password is never an argument or an environment variable** (shell history, process list): a hidden prompt asked twice, so the command needs a terminal; without one it stops at once (exit code 2) instead of waiting for input with no prompt on screen. Any `--password…` argument is refused and never repeated back, and neither is a stray value. `--password-stdin` reads piped stdin for the automated tests only (Lead, 2026-10-31: the prompt is the main path, a piped password stays in shell history). Same policy as every password (length, common-passwords list), hashed with argon2id.
+3. **Created verified**, with no verification email: an operator typed the address. One transaction writes the user and an `admin.created` audit row (`meta.via = cli`; no actor, there is no session).
+4. **An existing email is refused, never changed:** the CLI cannot promote a student or reset someone's password. Role changes stay a later, audited admin feature.
+5. It prints only the new user id; errors are fixed messages (never the password or a raw database error).
+
 ## 2026-10-31 — A2.1e email-link endpoints and operator alert emails (Claude; owner rules of 2026-10-31)
 
 Each protection has a test that fails without it (mutation-checked); forgot/resend are tested end to end through a worker and Mailpit.
@@ -89,7 +103,7 @@ Built against a requirements checklist (seven read-only agents over the docs, DE
 7. **Email tokens:** 32 random bytes as base64url (43 characters), SHA-256 stored, lifetimes from env (24 h verify, 30 min reset); a conditional update makes each token single-use, and a new token retires the older ones of its type.
 8. **Emails:** one bilingual message (Bangla first). Links are `APP_URL/<page>#token=…`: the token never reaches a server, a log or a Referer header, and mail scanners that open links cannot use it up. Names are HTML-escaped. `APP_URL` is required in production.
 9. **Known risks (told to the owner):** students behind one school IP share the account+IP pair, so a classmate can lock a student out *at school*; a completed reset unlocks at once. A script on a school network can trip that IP's failure limit every minute. After a reset, a password change or a block, other devices keep a valid access token for up to 15 min (local JWT verification).
-10. **Not yet:** the web pages (reset, verify) and the web refresh flow, the first-admin CLI, and the cleanup job for old sessions and tokens. *(forgot/reset/verify/resend and the per-address caps: done, A2.1e.)*
+10. **Not yet:** the web pages (reset, verify) and the web refresh flow, the first-admin CLI, and the cleanup job for old sessions and tokens. *(forgot/reset/verify/resend and the per-address caps: done, A2.1e; the first-admin CLI: done, see "First-admin CLI".)*
 
 ## 2026-10-31 — Login limits and locks (owner)
 
