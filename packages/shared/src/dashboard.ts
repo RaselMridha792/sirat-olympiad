@@ -74,7 +74,6 @@ export interface StudentHome {
   registration: MyRegistration;
 }
 
-
 export type StudentProfile = Pick<
   UserRecord,
   | 'name'
