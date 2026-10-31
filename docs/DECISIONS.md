@@ -2,6 +2,16 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-10-31 — E2: the exam engine for students (Claude; plan `docs/plans/EXAM-PLAN.md` section 3)
+
+1. **Start is one statement on the database's clock:** `INSERT … SELECT … ON CONFLICT (user_id, exam_id) DO NOTHING`, only while the exam is published, the window open and the content version the one the layout was drawn from; `ends_at = LEAST(now() + duration, window_end)`. No lock on the exam row, so a window-open surge never queues on it. A double click or a second tab gets the same attempt.
+2. **POST on an existing attempt answers 200 with its view in any phase** (a submitted one: its receipt, no questions). The plan said 409 `already_submitted`; the view is idempotent and tells the client everything it needs.
+3. **The client never sees a question id, an option key or a correct key:** questions are texts in the attempt's order, options are texts in their shuffled order (`crypto.randomInt`), answers are positions. A chi-square test over 200 starts checks that the correct option's position is spread evenly.
+4. **The exam cache never holds a correct key or an explanation** (only text, options and the keep-order flag), so a cache leak cannot reveal an answer. Pools are keyed by content version, loaded once under a 3 s lock (a cold cache cannot stampede Postgres); Redis trouble falls back to Postgres. A publish warms the pool in the API; the delayed warm-up before the window comes with the worker (E3).
+5. **Checkpoints are one Lua step in the cache Redis, with no database read or write** (tested with a query counter on the app's Prisma client). Answers are stored only for a newer `seq` and at most every 20 s (429 `too_soon`); the violation count only rises and is kept even on a 429. The interval is a Nest provider (tests shorten it), not an env variable, so `env.ts` stays untouched.
+6. **Submit locks one attempt row,** answers the first receipt to any repeat, refuses a request id another attempt used (409), and stores `end_reason`, the highest violation count (body, events, server) and the events. `violations` needs more than `EXAM_VIOLATION_WARNINGS` (5). `time_taken` is the server's and never passes `ends_at`.
+7. **Not yet:** the paid-registration check (with payments PR 1, before E2's PR opens), scoring and the server-side finalize (worker, E3).
+
 ## 2026-10-31 — E1: exam schema and exam admin (Claude; plan `docs/plans/EXAM-PLAN.md`, owner's exam rules)
 
 1. **One row per question version.** A question's versions share a `lineage_id` (a random UUID); a partial unique index allows one active version per lineage. Once the exam has left draft, a trigger refuses any change to a question except its deactivation, and refuses DELETE: an edit inserts version + 1 and deactivates the old row, so an attempt that was given the old version keeps it. In a draft, questions are edited and deleted in place (no attempt can exist: `attempts_guard` only accepts attempts for a published exam).
