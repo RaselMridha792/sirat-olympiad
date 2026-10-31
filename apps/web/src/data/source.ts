@@ -23,8 +23,6 @@ import type {
   PageQuery,
   Paginated,
   ProfileOptions,
-  ProfileUpdate,
-  ProfileUpdateResult,
   ReviewView,
   StudentExamListItem,
   StudentExamDetail,
@@ -46,10 +44,9 @@ export interface DataSource {
     getHome(): Promise<StudentHome>;
     /** GET /users/me */
     getProfile(): Promise<StudentProfile>;
-    /** GET /content/profile-options (grade table + configured education types) */
+    /** GET /content/profile-options (grade table, education types, districts). The save is a browser write
+     *  (PATCH /users/me through lib/api.ts, components/profile/ProfileForm.tsx), so it is not in this interface. */
     getProfileOptions(): Promise<ProfileOptions>;
-    /** PATCH /users/me (allow-list DTO) */
-    updateProfile(input: ProfileUpdate): Promise<ProfileUpdateResult>;
     /** GET /exams (state decided by the server clock; resultsPublished opens the review) */
     listExams(): Promise<StudentExamListItem[]>;
     /** GET /exams/:id: the waiting room (never questions); null = not found or not visible to this student */

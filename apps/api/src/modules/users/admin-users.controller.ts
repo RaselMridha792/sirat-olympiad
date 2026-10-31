@@ -18,6 +18,7 @@ import {
   type AdminUserDetail,
   type AdminUserRow,
   type Paginated,
+  type StudentProfile,
 } from '@sirat/shared';
 import type { Request } from 'express';
 import { Readable } from 'node:stream';
@@ -26,6 +27,8 @@ import type { AuthUser } from '../auth/access-token.service';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { type Actor, AdminUsersService } from './admin-users.service';
 import { AdminUserListQueryDto, ExportUsersDto } from './dto/admin-users.dto';
+import { CorrectGradeDto } from './dto/profile.dto';
+import { ProfileService } from './profile.service';
 
 const actorOf = (user: AuthUser, req: Request): Actor => ({ id: user.id, ip: req.ip ?? null });
 
@@ -38,7 +41,10 @@ const EXPORT_TIER = { default: { limit: ADMIN_USER_EXPORT.perHour, ttl: 60 * 60 
 export class AdminUsersController {
   private readonly logger = new Logger(AdminUsersController.name);
 
-  constructor(private readonly users: AdminUsersService) {}
+  constructor(
+    private readonly users: AdminUsersService,
+    private readonly profiles: ProfileService,
+  ) {}
 
   @Get()
   list(
@@ -56,6 +62,18 @@ export class AdminUsersController {
     @Req() req: Request,
   ): Promise<AdminUserDetail> {
     return this.users.get(id, actorOf(user, req));
+  }
+
+  /** Corrects the class (and so the category) before the student's first exam attempt; audited. */
+  @Post(':id/grade-level')
+  @HttpCode(200)
+  correctGrade(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: CorrectGradeDto,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ): Promise<StudentProfile> {
+    return this.profiles.correctGrade(id, body, actorOf(user, req));
   }
 
   @Throttle(EXPORT_TIER)

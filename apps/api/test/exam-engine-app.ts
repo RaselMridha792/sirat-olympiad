@@ -2,12 +2,13 @@ import { randomUUID } from 'node:crypto';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import type { Category, Prisma, PrismaClient } from '@prisma/client';
+import { Queue } from 'bullmq';
 import type Redis from 'ioredis';
 import { CHECKPOINT_MIN_INTERVAL_MS } from '../src/modules/attempts/attempt-store';
 import { ACCESS_COOKIE } from '../src/modules/auth/access-token.service';
 import { SessionService } from '../src/modules/auth/session.service';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { REDIS_CACHE } from '../src/redis/redis.module';
+import { REDIS_CACHE, REDIS_QUEUE } from '../src/redis/redis.module';
 import { examData, makePaidPayment, makeUser } from './helpers';
 
 /*
@@ -35,10 +36,15 @@ export interface EngineApp {
   sessions: SessionService;
   redis: Redis;
   appPrisma: QueryCountingPrisma;
+  /** This run's own exam queue: a dev stack worker on the same Redis database never takes these jobs. */
+  examQueueName: string;
 }
 
 export async function bootEngineApp(checkpointIntervalMs: number): Promise<EngineApp> {
   process.env.LOG_LEVEL = 'silent';
+  // Before AppModule is imported: its ConfigModule validates and reads the environment then.
+  const examQueueName = `exam-test-${randomUUID()}`;
+  process.env.EXAM_QUEUE_NAME = examQueueName; // read by ExamQueue through the config (env.ts)
   const { AppModule } = await import('../src/app.module');
   const { configureApp } = await import('../src/configure-app');
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
@@ -56,7 +62,17 @@ export async function bootEngineApp(checkpointIntervalMs: number): Promise<Engin
     sessions: app.get(SessionService),
     redis: app.get<Redis>(REDIS_CACHE),
     appPrisma: app.get(PrismaService) as QueryCountingPrisma,
+    examQueueName,
   };
+}
+
+/** Removes this run's exam queue from Redis, then closes the app. */
+export async function closeEngineApp(env: EngineApp | undefined): Promise<void> {
+  if (!env) return;
+  const queue = new Queue(env.examQueueName, { connection: env.app.get<Redis>(REDIS_QUEUE) });
+  await queue.obliterate({ force: true });
+  await queue.close();
+  await env.app.close();
 }
 
 /** A verified student with a paid registration (unless `registered: false`), logged in. */
