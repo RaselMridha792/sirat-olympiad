@@ -305,8 +305,15 @@ try {
     await Promise.all(
       paused.map(({ page, requestId }) => page.send('Fetch.continueRequest', { requestId })),
     );
-    await first.waitFor(shows('/dashboard/profile'));
-    await second.waitFor(shows('/dashboard/exam'));
+    // Headless Chrome does not reveal streamed content in a hidden tab (no animation frames), so each tab is
+    // checked in front, as its user would see it.
+    for (const [page, path] of [
+      [first, '/dashboard/profile'],
+      [second, '/dashboard/exam'],
+    ]) {
+      await page.send('Page.bringToFront');
+      await page.waitFor(shows(path));
+    }
     const seen = statuses.flat().sort();
     check(
       seen.includes(204) && seen.includes(409),
