@@ -21,6 +21,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - **The CSV:** core's `common/csv.ts` (BOM, CRLF, formula-injection prefix); streamed in batches of 500, never stored; audited with the filter and the count, never the rows.
 6. **No address in logs:** the request logger keeps only the method, the path and the status; the book module has no logger (`book-no-logs.spec.ts`); audit rows carry ids, counts and filters only.
 7. **Seed:** `book_title` ("Sirat Leadership Olympiad book" until an admin sets the real one) and `book_cover_image_id` (null). RUNBOOK §9 asks for both before registration opens.
+
 ## 2026-11-01 — TLS behind Cloudflare, security headers and nginx logs (Claude; LAUNCH-PLAN L3, lead review)
 
 1. **Certificate:** Cloudflare SSL mode Full (strict) with a free Cloudflare Origin CA certificate. It needs no ACME client and no API token on the server, and Cloudflare trusts it for 15 years. No Cloudflare Tunnel (an untested component in the critical path). Authenticated Origin Pulls come after launch. A Let's Encrypt fallback (DNS-01) is only documented (RUNBOOK §15).
