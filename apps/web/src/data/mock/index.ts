@@ -2,9 +2,15 @@ import {
   BD_DISTRICTS,
   EXAM_VIOLATION_WARNINGS,
   type AdminLeaderboardRow,
+  BOOK_COVER_LIMITS,
+  type AdminBookInfo,
+  type AdminBookOrderRow,
   type AdminPaymentDetail,
   type AdminPaymentRow,
   type AdminSetting,
+  type BookInfo,
+  type MyBookOrder,
+  type MyBookOrderView,
   type AdminUserDetail,
   type AdminUserRow,
   type AmbassadorOverview,
@@ -239,6 +245,23 @@ const paymentRows = (w: MockWorld): AdminPaymentRow[] =>
       },
     ];
   });
+
+const MOCK_BOOK_TITLE = 'Leadership for Tomorrow (mock)';
+
+/** A confirmed (or shipped) order for a mock user: their name and phone, a district from their profile. */
+const mockBookOrder = (u: MockUser, shipped = false): MyBookOrderView => ({
+  status: shipped ? 'shipped' : 'confirmed',
+  recipientName: u.name,
+  recipientPhone: u.phone ?? '01700000000',
+  district: u.district ?? 'Dhaka',
+  upazila: 'Mirpur',
+  addressLine: 'House 12, Road 3, Block C',
+  note: null,
+  bookTitle: MOCK_BOOK_TITLE,
+  version: 1,
+  confirmedAt: u.createdAt,
+  shippedAt: shipped ? u.createdAt : null,
+});
 
 const MOCK_SETTINGS: AdminSetting[] = [
   { key: 'payment_expiry_minutes', value: 60, updatedAt: '2026-10-31T00:00:00.000Z' },
@@ -504,6 +527,19 @@ export function createMockSource(state: MockState | null): DataSource {
             tasks: [],
             recentReferrals: [],
           }),
+        ),
+
+      getBook: () =>
+        run(
+          (): BookInfo => ({ title: MOCK_BOOK_TITLE, coverUrl: null }),
+          (): BookInfo => ({ title: MOCK_BOOK_TITLE, coverUrl: null }),
+        ),
+
+      // The demo student has paid and confirmed an address; `?mock=empty` shows the form (no order yet).
+      getBookOrder: () =>
+        run(
+          (): MyBookOrder => ({ eligible: true, order: mockBookOrder(getWorld().me) }),
+          (): MyBookOrder => ({ eligible: true, order: null }),
         ),
     },
 
@@ -900,6 +936,41 @@ export function createMockSource(state: MockState | null): DataSource {
         run(
           () => MOCK_SETTINGS.map((s) => ({ ...s })),
           () => MOCK_SETTINGS.map((s) => ({ ...s })),
+        ),
+
+      getBook: () =>
+        run(
+          (): AdminBookInfo => ({ title: MOCK_BOOK_TITLE, cover: null, limits: BOOK_COVER_LIMITS }),
+          (): AdminBookInfo => ({ title: MOCK_BOOK_TITLE, cover: null, limits: BOOK_COVER_LIMITS }),
+        ),
+
+      listBookOrders: (query) =>
+        run(
+          () =>
+            paginate(
+              getWorld()
+                .users.filter((u) => u.payment?.status === 'paid')
+                .map((u, i): AdminBookOrderRow => ({
+                  ...mockBookOrder(u, i % 4 === 0),
+                  id: `bko-${u.id}`,
+                  code: `B${String(1_000_000_000 + i).slice(-10)}`,
+                  student: { name: u.name, email: u.email, phone: u.phone },
+                }))
+                .filter((o) => !query.status || o.status === query.status)
+                .filter((o) => !query.district || o.district === query.district)
+                .filter(
+                  (o) =>
+                    !query.phone ||
+                    o.recipientPhone === query.phone ||
+                    o.student.phone === query.phone,
+                )
+                .filter(
+                  (o) =>
+                    !query.email || o.student.email.toLowerCase() === query.email.toLowerCase(),
+                ),
+              query,
+            ),
+          () => emptyPage<AdminBookOrderRow>(query),
         ),
     },
   };

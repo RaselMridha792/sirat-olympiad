@@ -162,36 +162,72 @@ try {
     await context.close();
   });
 
-  await step('pays through the wizard and the checkout, is registered, and logs in', async () => {
-    const context = await browser.newContext();
-    const page = await context.newPage();
-    const student = newStudent();
-    await fillAndPay(page, student, info.fee.amountMinor);
-    await click(page, buttonWith('Pay'));
-    await page.waitFor(
-      `location.pathname === '/register/result' && ${hasText('Registration complete')}`,
-      { timeout: 60_000 },
-    );
-    const reg = (await context.cookies()).find((c) => c.name === 'sirat_reg');
-    check(
-      reg && reg.httpOnly && reg.path === '/api/registrations',
-      'sirat_reg is not httpOnly on its path',
-    );
-    const stored = await page.evaluate(
-      'JSON.stringify(localStorage) + JSON.stringify(sessionStorage)',
-    );
-    check(
-      !stored.includes(student.password) && !stored.includes(student.email),
-      'form data in storage',
-    );
-    const login = await fetch(`${BASE}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-requested-with': 'sirat-web' },
-      body: JSON.stringify({ email: student.email, password: student.password }),
-    });
-    check(login.status === 204, `the new student's login answered ${login.status}`);
-    await context.close();
-  });
+  await step(
+    'pays, is registered, logs in from the result page and confirms the free book address',
+    async () => {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      const student = newStudent();
+      await fillAndPay(page, student, info.fee.amountMinor);
+      await click(page, buttonWith('Pay'));
+      await page.waitFor(
+        `location.pathname === '/register/result' && ${hasText('Registration complete')}`,
+        { timeout: 60_000 },
+      );
+      const reg = (await context.cookies()).find((c) => c.name === 'sirat_reg');
+      check(
+        reg && reg.httpOnly && reg.path === '/api/registrations',
+        'sirat_reg is not httpOnly on its path',
+      );
+      const stored = await page.evaluate(
+        'JSON.stringify(localStorage) + JSON.stringify(sessionStorage)',
+      );
+      check(
+        !stored.includes(student.password) && !stored.includes(student.email),
+        'form data in storage',
+      );
+      // No session after paying (D2): the result page sends the student to log in, then to the free book (plan §16.4).
+      check(
+        await click(
+          page,
+          `[...document.querySelectorAll('a')].find((a) => a.textContent.includes('free book'))`,
+        ),
+        'no "Log in to get your free book" link',
+      );
+      await page.waitFor(
+        `location.pathname === '/login' && !!document.querySelector('button[type=submit]:not([disabled])')`,
+      );
+      await typeInto(page, 'email', student.email);
+      await typeInto(page, 'password', student.password);
+      await click(
+        page,
+        `document.querySelector('input[name=password]').form.querySelector('button[type=submit]')`,
+      );
+      await page.waitFor(
+        // Hydrated: the form's button is enabled only once React runs (typing earlier would be lost).
+        `location.pathname === '/dashboard/book' && !!document.querySelector('#book-order-form button[type=submit]:not([disabled])')`,
+        { timeout: 30_000 },
+      );
+      // Pre-filled from the student's own name and phone; the student adds the rest.
+      check(
+        (await page.evaluate(`document.querySelector('input[name=recipientName]').value`)) ===
+          student.name,
+        'the recipient is not pre-filled',
+      );
+      await typeInto(page, 'upazila', 'Mirpur');
+      await typeInto(page, 'addressLine', 'House 12, Road 3, Block C');
+      await click(page, `document.querySelector('#book-order-form button[type=submit]')`);
+      await page.waitFor(hasText('Order confirmed'), { timeout: 20_000 });
+      check(await click(page, buttonWith('Change the address')), 'no "Change the address"');
+      await page.waitFor(`!!document.querySelector('#book-order-form input[name=upazila]')`);
+      await typeInto(page, 'upazila', 'Pallabi');
+      await click(page, `document.querySelector('#book-order-form button[type=submit]')`);
+      await page.waitFor(hasText('Pallabi') + ` && !document.querySelector('#book-order-form')`, {
+        timeout: 20_000,
+      });
+      await context.close();
+    },
+  );
 
   await step(
     'a failed checkout: the result page says so, and "Try again" opens a new checkout',

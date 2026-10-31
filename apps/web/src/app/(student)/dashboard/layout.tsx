@@ -1,4 +1,4 @@
-import { BookOpen, Home, Megaphone, Trophy, User, Users } from 'lucide-react';
+import { BookOpen, Gift, Home, Megaphone, Trophy, User, Users } from 'lucide-react';
 import { initialOf, type NavItem } from '@sirat/ui';
 import { LogoutButton } from '@/components/auth/LogoutButton';
 import { I18nProvider } from '@/components/I18nProvider';
@@ -27,6 +27,7 @@ export default async function StudentLayout({ children }: { children: React.Reac
     { href: '/dashboard', label: m.nav.home, icon: <Home size={20} aria-hidden /> },
     { href: '/dashboard/profile', label: m.nav.profile, icon: <User size={20} aria-hidden /> },
     { href: '/dashboard/exam', label: m.nav.exams, icon: <BookOpen size={20} aria-hidden /> },
+    { href: '/dashboard/book', label: m.nav.book, icon: <Gift size={20} aria-hidden /> },
     {
       href: '/dashboard/leaderboard',
       label: m.nav.leaderboard,
