@@ -91,3 +91,23 @@ try {
 }
 
 execFileSync('prisma', ['migrate', 'deploy'], { ...prismaOpts, stdio: 'inherit' });
+
+// The runtime role (LAUNCH-PLAN L2). Its password is never set here: one Postgres cluster serves every session, and the
+// first stack turn after L2 (prisma/runtime-role.ts in the migrate job) sets it; CI creates the role with its own
+// throwaway password. Here we only check that the app's connection will work, and say what to do if not.
+const appUrl = process.env.TEST_APP_DATABASE_URL;
+if (appUrl) {
+  const app = new PrismaClient({ datasourceUrl: appUrl });
+  try {
+    await app.$queryRaw`SELECT 1`;
+  } catch {
+    console.error(
+      'TEST_APP_DATABASE_URL: sirat_app cannot log in. Its password is set once per cluster by prisma/runtime-role.ts ' +
+        '(the migrate job of the first stack turn after L2, from POSTGRES_APP_PASSWORD in the root .env); the value ' +
+        'in apps/api/.env must be the same. Without TEST_APP_DATABASE_URL the tests run the app as the owner.',
+    );
+    process.exit(1);
+  } finally {
+    await app.$disconnect();
+  }
+}

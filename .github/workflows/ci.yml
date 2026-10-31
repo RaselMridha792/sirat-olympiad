@@ -164,6 +164,8 @@ jobs:
       DATABASE_URL: postgresql://sirat:ci-only-password@localhost:5432/sirat_test
       DIRECT_URL: postgresql://sirat:ci-only-password@localhost:5432/sirat_test
       TEST_DATABASE_URL: postgresql://sirat:ci-only-password@localhost:5432/sirat_test
+      # The app under test connects as the runtime role, as production will after L8 (test/load-env.ts).
+      TEST_APP_DATABASE_URL: postgresql://sirat_app:ci-only-app-password@localhost:5432/sirat_test
       SHADOW_DATABASE_URL: postgresql://sirat:ci-only-password@localhost:5432/sirat_shadow
       REDIS_CACHE_URL: redis://localhost:6379
       # The AppModule wiring tests boot the real app, which validates these at startup.
@@ -184,6 +186,8 @@ jobs:
       - run: pnpm db:generate
       - name: Create shadow database for the drift check
         run: PGPASSWORD=ci-only-password psql -h localhost -U sirat -d sirat_test -c "CREATE DATABASE sirat_shadow"
+      - name: The runtime role sirat_app with a throwaway CI password (its rights come from the migration)
+        run: PGPASSWORD=ci-only-password psql -h localhost -U sirat -d sirat_test -c "CREATE ROLE sirat_app LOGIN PASSWORD 'ci-only-app-password'"
       - name: Migrations match schema.prisma (fails on drift)
         working-directory: apps/api
         run: >-
@@ -207,6 +211,7 @@ jobs:
         run: |
           cp .env.example .env
           sed -i "s|^JWT_ACCESS_SECRET=.*|JWT_ACCESS_SECRET=$(openssl rand -hex 32)|" .env
+          sed -i "s|^POSTGRES_APP_PASSWORD=.*|POSTGRES_APP_PASSWORD=$(openssl rand -hex 32)|" .env
           $DCD config --quiet
       - name: Nginx on the pinned image - both sites pass nginx -t; the TLS site, its headers and its logs
         run: infra/nginx/test/check-sites.sh
@@ -224,6 +229,8 @@ jobs:
           code=$(docker inspect -f '{{.State.ExitCode}}' "$($DCD ps -a -q migrate)")
           [ "$code" = 0 ] || { echo "::error::migrate exited $code"; exit 1; }
           $DCD logs migrate | grep -q 'config seed done' || { echo "::error::config seed did not run"; exit 1; }
+          $DCD logs migrate | grep -q 'runtime role ready: sirat_app (login and password set)' ||
+            { echo "::error::the migrate job did not set up the runtime role"; exit 1; }
       - name: Through nginx - readiness (DB + both Redis), liveness and the web app
         run: |
           curl -fsS http://127.0.0.1:8080/api/ready
