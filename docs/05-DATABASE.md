@@ -16,7 +16,7 @@ Source of truth: `apps/api/prisma/schema.prisma` (validated; see note at bottom)
 |---|---|---|
 | Identity | `users`, `sessions`, `auth_tokens`, `audit_logs` | `sessions` = refresh families (rotation + reuse detection). Tokens stored as hashes |
 | Config | `grade_levels`, `settings`, `rank_thresholds` | Grade→category mapping and runtime settings are DATA |
-| Payments | `payments`, `pending_registrations`, `registrations` | One paid payment ↔ one registration |
+| Payments | `pending_registrations` (one registration attempt), `payments` (N per attempt), `registrations`, `payment_events` | One paid payment ↔ one registration; the form lives server-side in the attempt; `payment_events` is append-only (plan: `docs/plans/PAYMENTS-PLAN.md` section 4) |
 | Exams | `exams`, `questions`, `attempts`, `submissions` | `attempts` UNIQUE(user, exam); `submissions` idempotent |
 | Rounds | `rounds`, `round_entries`, `jury_scores`, `certificates` | Data-driven rounds; append-only jury history |
 | Ambassadors | `ambassador_profiles`, `point_ledger`, `teams`, `team_members`, `admin_tasks`, `task_assignments` | Ledger append-only |
@@ -30,7 +30,15 @@ Source of truth: `apps/api/prisma/schema.prisma` (validated; see note at bottom)
 | `submissions UNIQUE(attempt_id)`, `UNIQUE(request_id)` | Idempotent final submit |
 | `payments UNIQUE(invoice_number)`, `UNIQUE(trx_id)` | No reused invoice; no double-applied transaction |
 | `registrations UNIQUE(user_id)`, `UNIQUE(payment_id)` | One payment ↔ one registration |
-| `pending_registrations UNIQUE(payment_id)` | Form data tied to one payment |
+| `payments` one active (`initiated`/`pending`) payment per attempt (partial unique index) | "Try again" never runs two checkouts at once |
+| `pending_registrations` one `open` attempt per email and per phone (partial unique indexes) | No double charge from two browsers (owner, DECISIONS "No refund handling") |
+| `users UNIQUE(phone)` (NULL allowed) and `phone ~ '^01[3-9][0-9]{8}$'` on `users` and `pending_registrations` | One phone number, one student, in one stored form (owner) |
+| `payments` status transitions follow the state machine; a new row is `initiated`; `refunded` is never entered (trigger) | A stale answer never downgrades `paid`; no refund handling (owner) |
+| `payments` CHECKs: whole taka, `currency = 'BDT'`, paid ⇒ `paid_amount_minor = amount_minor`, invoice `^[A-Z0-9]{10,20}$`, `trx_id <> ''`, account label format | Raw SQL (`*_payments_checks`) |
+| `pending_registrations` CHECK: `completed` ⇔ `user_id` and `completed_at` set | Raw SQL |
+| `payment_events` append-only (UPDATE, DELETE, TRUNCATE refused); `payment_id` deliberately not a FK, like `audit_logs.actor_id` | The gateway log keeps unknown invoices and is never blocked by payment rows |
+| `settings` CHECK: `registration_fee_minor` is a positive whole-taka number | Raw SQL; the fee is 40000 (owner) |
+| Partial-index predicates compare enum literals (Postgres needs IMMUTABLE there; `::text` is only STABLE) | A migration that recreates `PaymentStatus` or `RegistrationAttemptStatus` must drop and recreate those three indexes |
 | `point_ledger UNIQUE(event_key)` | Points never awarded twice |
 | `round_entries UNIQUE(user_id, round_id)` | Promotion never duplicates/overwrites |
 | `task_assignments UNIQUE(task_id, user_id)` | |
@@ -40,7 +48,7 @@ Source of truth: `apps/api/prisma/schema.prisma` (validated; see note at bottom)
 | Every FK has a covering index | Catalog test |
 | `audit_logs` append-only: UPDATE, DELETE and TRUNCATE refused (triggers) | The security trail cannot be rewritten by an app bug or an injected statement |
 | Session defaults: `statement_timeout 10s`, `lock_timeout 5s`, `idle_in_transaction_session_timeout 60s` (database level, migration `*_db_session_timeouts`) | No statement outlives the 25 s request timeout; lock waits fail fast; a stuck transaction cannot hold locks or a PgBouncer connection |
-| `registrations.payment_id` must reference a `paid` payment (trigger) | **Phase C**; a CHECK cannot look at another table |
+| `registrations.payment_id` must reference a `paid` payment of the same user (trigger `registrations_payment_paid`) | A CHECK cannot look at another table |
 | `exams CHECK (duration_minutes BETWEEN 1 AND 30)` | **Raw SQL migration** (Prisma cannot express it) |
 | `exams CHECK (window_end > window_start)` | Raw SQL |
 | `payments CHECK (amount_minor > 0)` | Raw SQL |
@@ -49,7 +57,7 @@ Source of truth: `apps/api/prisma/schema.prisma` (validated; see note at bottom)
 ## Seed data (needed at first boot)
 
 * `grade_levels`: the 17 labels from the old wizard (see `reference/zero-olympiad-ui/app/registration-full/Step2_Auth.jsx`) mapped to categories **Activist / Ambassador / Achiever** (grade bands to confirm with the client; SDG numbers are dropped).
-* `settings`: `registration_open=false`, `registration_fee_minor` (placeholder 0), `currency=BDT`, `leaderboard_public=false`, `payment_expiry_minutes=60`. Inserted per missing key; values are never overwritten. The submit grace lives only in `exams.grace_seconds`.
+* `settings`: `registration_open=false`, `registration_fee_minor=40000` (400 BDT; also set by the data migration `*_registration_fee_400`, which runs first), `registration_opens_at` and `registration_closes_at` (`null`), `currency=BDT`, `leaderboard_public=false`, `payment_expiry_minutes=60`. Inserted per missing key; values are never overwritten. The submit grace lives only in `exams.grace_seconds`.
 * `grade_levels`, `rank_thresholds`, `rounds` are NOT in the seed: they ship as the data migration `*_reference_data_baseline` (each INSERT only while its table is empty), so they run in a fixed order with later data migrations on every database. Later data migrations match rows by natural key (label, sort_order, name), never by id.
 * `rank_thresholds`: Bronze 0 / Silver 100 / Gold 250 (placeholders; owner confirms with the client).
 * Seed code: `apps/api/prisma/seed.ts` (insert-only, never overwrites admin edits; runs in the compose `migrate` job). Dev-only test users: `apps/api/prisma/fixtures` (see RUNBOOK section 0).
