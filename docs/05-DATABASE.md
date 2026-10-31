@@ -17,7 +17,7 @@ Source of truth: `apps/api/prisma/schema.prisma` (validated; see note at bottom)
 | Identity | `users`, `sessions`, `auth_tokens`, `audit_logs` | `sessions` = refresh families (rotation + reuse detection). Tokens stored as hashes |
 | Config | `grade_levels`, `settings`, `rank_thresholds` | Grade→category mapping and runtime settings are DATA |
 | Payments | `payments`, `pending_registrations`, `registrations` | One paid payment ↔ one registration |
-| Exams | `exams`, `questions`, `attempts`, `submissions` | `attempts` UNIQUE(user, exam); `submissions` idempotent |
+| Exams | `exams`, `questions`, `attempts`, `submissions`, `leaderboard_entries` | `attempts` UNIQUE(user, exam); `submissions` idempotent and append-only; `questions` = one row per version; `leaderboard_entries` = the results snapshot (EXAM-PLAN D8) |
 | Rounds | `rounds`, `round_entries`, `jury_scores`, `certificates` | Data-driven rounds; append-only jury history |
 | Ambassadors | `ambassador_profiles`, `point_ledger`, `teams`, `team_members`, `admin_tasks`, `task_assignments` | Ledger append-only |
 | Content | `announcements` | |
@@ -43,6 +43,12 @@ Source of truth: `apps/api/prisma/schema.prisma` (validated; see note at bottom)
 | `registrations.payment_id` must reference a `paid` payment (trigger) | **Phase C**; a CHECK cannot look at another table |
 | `exams CHECK (duration_minutes BETWEEN 1 AND 30)` | **Raw SQL migration** (Prisma cannot express it) |
 | `exams CHECK (window_end > window_start)` | Raw SQL |
+| `exams CHECK (results_published_at >= window_end + grace)`, grace ≤ 300 s, `published` needs `published_at` | Results can never be published before the window closed for everyone (`*_exam_checks`) |
+| Trigger `exams_frozen_after_publish` | A published exam keeps its start, duration, count, grace, category, round and pool rule; the window only grows while open; back to draft only without attempts; an archived exam never changes |
+| `questions UNIQUE(lineage_id, version)`, partial UNIQUE `(lineage_id) WHERE is_active`, options 2–6, correct key among the option keys | One row per version, one active version per question |
+| Triggers `questions_frozen_after_publish`, `questions_bump_exam_content_version` | Once the exam left draft a question is never rewritten or deleted (only deactivated, replaced by a new version); every question write raises `exams.content_version` |
+| Trigger `attempts_guard`, CHECKs on `ends_at` (≤ 30 min after start), score ≤ question count, status ↔ `submitted_at`/`score` | An attempt starts only for a published exam; its timer, layout and count never change; status only moves forward; never deleted |
+| `submissions` append-only (trigger); CHECKs on the answers format, `request_id`, events size | UPDATE and DELETE refused; TRUNCATE refused except in a `*_test` database (test cleanup cascades through users) |
 | `payments CHECK (amount_minor > 0)` | Raw SQL |
 | `jury_scores`: criteria range validated in service; `total` server-computed | |
 
@@ -57,7 +63,7 @@ Source of truth: `apps/api/prisma/schema.prisma` (validated; see note at bottom)
 
 ## Indexes to review with EXPLAIN ANALYZE
 
-Leaderboard query form (index verified): `WHERE exam_id = $1 AND score IS NOT NULL ORDER BY score DESC, time_taken_seconds ASC` (never omit the NULL filter, never add NULLS LAST). `payments(status, created_at)` (reconciliation) · `attempts(exam_id, status)` · `exams(status, window_start)` · `round_entries(round_id, status)` · `point_ledger(user_id, created_at)` · `users(referred_by_id)` · add for leaderboard snapshot build: `(exam_id, score DESC, time_taken_seconds ASC)` on `attempts`.
+Leaderboard query form (index verified): `WHERE exam_id = $1 AND score IS NOT NULL ORDER BY score DESC, time_taken_seconds ASC` (never omit the NULL filter, never add NULLS LAST). `payments(status, created_at)` (reconciliation) · `attempts(exam_id, status)` · `exams(status, window_start)` · `round_entries(round_id, status)` · `point_ledger(user_id, created_at)` · `users(referred_by_id)` · add for leaderboard snapshot build: `(exam_id, score DESC, time_taken_seconds ASC)` on `attempts` · `attempts (ends_at) WHERE status = 'in_progress'` (finalize sweep; queries must repeat that predicate; an enum literal, because index predicates need IMMUTABLE expressions: recreating `AttemptStatus` must drop and recreate it) · `leaderboard_entries (exam_id, generation, rank)`.
 
 ## PgBouncer + Prisma
 
@@ -67,7 +73,7 @@ Timeouts are database defaults (see the constraints table), so they reach every 
 
 ## Data that does NOT live in Postgres
 
-Exam checkpoints (Redis, TTL = exam end + grace), cached questions (Redis), leaderboard snapshot (Redis/CDN), rate-limit counters (Redis), BullMQ jobs (Redis queue instance).
+Exam checkpoints (Redis, TTL = exam end + grace), cached questions (Redis), leaderboard pages (Redis; the snapshot rows themselves are in `leaderboard_entries`, so the server can search them and a Redis flush loses nothing: EXAM-PLAN D8), rate-limit counters (Redis), BullMQ jobs (Redis queue instance).
 
 ## Importing old Zero Olympiad users (only if the owner decides)
 

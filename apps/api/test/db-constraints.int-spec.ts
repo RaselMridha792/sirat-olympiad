@@ -8,7 +8,6 @@ import { seedConfig } from '../prisma/seed';
 import {
   applyReferenceData,
   examData,
-  makeAttempt,
   makeUser,
   paymentData,
   testPrisma,
@@ -130,31 +129,8 @@ describe('one payment <-> one registration', () => {
   });
 });
 
-describe('exam attempts and submissions', () => {
-  it('allows one attempt per student per exam (timer can never be reset)', async () => {
-    const user = await makeUser(prisma);
-    const exam = await prisma.exam.create({ data: examData() });
-    await makeAttempt(prisma, user.id, exam.id);
-    await expect(makeAttempt(prisma, user.id, exam.id)).rejects.toMatchObject(UNIQUE);
-  });
-
-  it('makes the final submit idempotent by attempt_id and request_id', async () => {
-    const exam = await prisma.exam.create({ data: examData() });
-    const a1 = await makeAttempt(prisma, (await makeUser(prisma)).id, exam.id);
-    const a2 = await makeAttempt(prisma, (await makeUser(prisma)).id, exam.id);
-    const requestId = randomUUID();
-    await prisma.submission.create({ data: { attemptId: a1.id, requestId, answers: {} } });
-
-    await expect(
-      prisma.submission.create({
-        data: { attemptId: a1.id, requestId: randomUUID(), answers: {} },
-      }),
-    ).rejects.toMatchObject(UNIQUE);
-    await expect(
-      prisma.submission.create({ data: { attemptId: a2.id, requestId, answers: {} } }),
-    ).rejects.toMatchObject(UNIQUE);
-  });
-});
+// Exam attempts and submissions (one attempt per student, idempotent submit, the exam engine's CHECKs and
+// triggers): test/exam-constraints.int-spec.ts.
 
 describe('ambassador program and rounds', () => {
   it('never awards the same point event twice', async () => {

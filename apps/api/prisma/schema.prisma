@@ -76,6 +76,15 @@ enum TaskStatus {
   rejected
 }
 
+/// Why an exam ended (docs/plans/EXAM-PLAN.md 3.8, 3.9, 3.15).
+enum EndReason {
+  submitted // the student pressed Submit
+  time_up // the player submitted at time-up
+  violations // the player submitted after the 6th rule violation
+  server_checkpoint // no submit by the end of the grace: the server used the last checkpoint
+  server_empty // no submit and no checkpoint
+}
+
 // ───────────── Identity & sessions ─────────────
 
 model User {
@@ -117,6 +126,7 @@ model User {
   juryScores          JuryScore[]
   certificates        Certificate[]
   announcements       Announcement[]
+  leaderboardEntries  LeaderboardEntry[]
 
   @@index([referredById])
   @@index([gradeLevelId])
@@ -265,35 +275,52 @@ model Exam {
   windowEnd           DateTime   @map("window_end") @db.Timestamptz // CHECK (> window_start) in raw SQL
   durationMinutes     Int        @map("duration_minutes") // CHECK (1..30) in raw SQL
   questionsPerAttempt Int        @map("questions_per_attempt") // CHECK (> 0) in raw SQL
-  graceSeconds        Int        @default(30) @map("grace_seconds") // CHECK (>= 0) in raw SQL
+  graceSeconds        Int        @default(30) @map("grace_seconds") // CHECK (0..300) in raw SQL
   status              ExamStatus @default(draft)
+  /// false (owner, Q2): everyone gets the same questions (active pool = questions_per_attempt); true: the admin
+  /// chose a random draw from a larger pool.
+  randomDraw          Boolean    @default(false) @map("random_draw")
+  /// Raised by a trigger on every question write, so caches and attempts know which pool they used.
+  contentVersion      Int        @default(1) @map("content_version")
+  publishedAt         DateTime?  @map("published_at") @db.Timestamptz
+  /// CHECK: never before window_end + grace (results stay hidden until the window closed for everyone).
   resultsPublishedAt  DateTime?  @map("results_published_at") @db.Timestamptz
+  resultsSnapshotAt   DateTime?  @map("results_snapshot_at") @db.Timestamptz
+  resultsGeneration   Int        @default(0) @map("results_generation")
   createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz
   updatedAt           DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  round     Round?     @relation(fields: [roundId], references: [id], onDelete: Restrict)
-  questions Question[]
-  attempts  Attempt[]
+  round              Round?             @relation(fields: [roundId], references: [id], onDelete: Restrict)
+  questions          Question[]
+  attempts           Attempt[]
+  leaderboardEntries LeaderboardEntry[]
 
   @@index([status, windowStart])
   @@index([roundId])
   @@map("exams")
 }
 
-/// Questions are NEVER deleted/re-created after publish (breaks stored answers). Edit => new version row.
+/// One row = one version of a question. Once its exam has left `draft`, the content never changes (trigger): an edit
+/// inserts version + 1 in the same lineage and deactivates the old row; nothing is deleted. Attempts keep the exact
+/// version ids they were given. One active version per lineage (partial unique index in raw SQL).
 model Question {
-  id          String   @id @default(uuid(7)) @db.Uuid
-  examId      String   @map("exam_id") @db.Uuid
-  text        String
-  options     Json // [{ "key": "A", "text": "..." }, ...]
-  correctKey  String   @map("correct_key") // server-only, never serialized to clients before results open
-  explanation String?
-  version     Int      @default(1)
-  isActive    Boolean  @default(true) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-  exam        Exam     @relation(fields: [examId], references: [id])
+  id              String    @id @default(uuid(7)) @db.Uuid
+  examId          String    @map("exam_id") @db.Uuid
+  lineageId       String    @map("lineage_id") @db.Uuid // groups the versions of one question
+  text            String
+  options         Json // [{ "key": "A", "text": "..." }, ...] (2-6, CHECK in raw SQL)
+  correctKey      String    @map("correct_key") // server-only, never serialized to clients before results open
+  explanation     String?
+  version         Int       @default(1)
+  position        Int // admin order; versions keep it
+  keepOptionOrder Boolean   @default(false) @map("keep_option_order") // e.g. "all of the above"
+  isActive        Boolean   @default(true) @map("is_active")
+  deactivatedAt   DateTime? @map("deactivated_at") @db.Timestamptz
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  exam            Exam      @relation(fields: [examId], references: [id])
 
+  @@unique([lineageId, version])
   @@index([examId, isActive])
   @@map("questions")
 }
@@ -306,16 +333,21 @@ model Attempt {
   endsAt           DateTime      @map("ends_at") @db.Timestamptz // = min(startedAt + duration, window_end)
   status           AttemptStatus @default(in_progress)
   /// Per-attempt drawn questions + shuffled order + shuffled options, decided on the server.
+  /// v1: { "v": 1, "q": [questionId...], "o": [[2,0,3,1], ...] } (display order as indexes into each question's options)
   layout           Json
+  questionCount    Int           @map("question_count") // N, fixed at start
+  contentVersion   Int           @map("content_version") // the exam's content version the layout was drawn from
   submittedAt      DateTime?     @map("submitted_at") @db.Timestamptz
   timeTakenSeconds Int?          @map("time_taken_seconds") // computed by server, never client-reported
   score            Int?
+  scoredAt         DateTime?     @map("scored_at") @db.Timestamptz
   createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz
   updatedAt        DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  user       User        @relation(fields: [userId], references: [id])
-  exam       Exam        @relation(fields: [examId], references: [id])
-  submission Submission?
+  user               User               @relation(fields: [userId], references: [id])
+  exam               Exam               @relation(fields: [examId], references: [id])
+  submission         Submission?
+  leaderboardEntries LeaderboardEntry[]
 
   @@unique([userId, examId]) // one attempt per student per exam; timer can never be reset
   @@index([examId, status])
@@ -324,17 +356,45 @@ model Attempt {
 }
 
 /// The single final submit. `requestId` makes the request idempotent. Checkpoints live in Redis only.
-/// Append-only (created_at = when the server received it).
+/// Append-only (created_at = when the server received it; trigger in raw SQL).
 model Submission {
-  id        String   @id @default(uuid(7)) @db.Uuid
-  attemptId String   @unique @map("attempt_id") @db.Uuid
-  requestId String   @unique @map("request_id")
-  answers   Json // { questionId: optionKey }
-  events    Json? // optional focus-loss / tab-switch events
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
-  attempt   Attempt  @relation(fields: [attemptId], references: [id])
+  id             String    @id @default(uuid(7)) @db.Uuid
+  attemptId      String    @unique @map("attempt_id") @db.Uuid
+  requestId      String    @unique @map("request_id") // client uuid, or auto.<attemptId> from the server finalize
+  answers        Json // v1: { "v": 1, "a": [2, null, 0, ...] } option positions in the attempt's display order
+  endReason      EndReason @map("end_reason")
+  violationCount Int       @map("violation_count") // rule violations (EXAM-PLAN 3.15)
+  events         Json? // violation and connection events with their times, for the admin
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  attempt        Attempt   @relation(fields: [attemptId], references: [id])
 
   @@map("submissions")
+}
+
+/// Results snapshot (EXAM-PLAN 3.12, D8): one row per scored attempt per build generation. Derived data, written once
+/// by the build job; students read it only after the results are published.
+model LeaderboardEntry {
+  examId           String    @map("exam_id") @db.Uuid
+  generation       Int
+  position         Int // 1..n, a unique order
+  rank             Int // shared on ties (1, 2, 2, 4)
+  userId           String    @map("user_id") @db.Uuid
+  attemptId        String    @map("attempt_id") @db.Uuid
+  name             String
+  institution      String?
+  category         Category?
+  score            Int
+  timeTakenSeconds Int       @map("time_taken_seconds")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  exam             Exam      @relation(fields: [examId], references: [id], onDelete: Restrict)
+  user             User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  attempt          Attempt   @relation(fields: [attemptId], references: [id], onDelete: Restrict)
+
+  @@id([examId, generation, position])
+  @@index([examId, generation, rank])
+  @@index([userId])
+  @@index([attemptId])
+  @@map("leaderboard_entries")
 }
 
 // ───────────── Rounds, jury, certificates ─────────────
