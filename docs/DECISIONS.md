@@ -25,6 +25,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - This also fixes L10's `ops-alert`, whose `main()` failed on every numeric setting; its integration test called `raiseOpsAlert` directly and never ran `main()`. Both commands now ran end to end against the test database and Redis.
    - Their email queue is created after the Redis clients connect: BullMQ connected the client itself first, so `connect()` threw.
 9. **`healthcheck.sh`'s exact 200** came with L3 (#37), so L11 leaves it alone.
+
 ## 2026-11-01 — Next's runtime caches are writable by the web's runtime user (Claude; lead's bug report)
 
 1. **The bug:**
