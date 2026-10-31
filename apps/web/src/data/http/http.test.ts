@@ -85,7 +85,7 @@ test('the HTTP source implements every DataSource method, unconnected ones fall 
     );
   }
   await assert.rejects(source.admin.getStats(), DataSourceUnavailableError);
-  await assert.rejects(source.student.getHome(), DataSourceUnavailableError);
+  await assert.rejects(source.student.getAmbassador(), DataSourceUnavailableError);
 });
 
 test('student.listExams reads GET /exams and passes on only the card fields', async () => {

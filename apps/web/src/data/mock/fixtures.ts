@@ -618,8 +618,11 @@ function buildWorld(now: number): MockWorld {
     id,
     title,
     body,
+    category: null,
     publishedAt: iso(now - daysAgo * DAY),
+    archivedAt: null,
     createdAt: iso(now - daysAgo * DAY - HOUR),
+    updatedAt: iso(now - daysAgo * DAY - HOUR),
   });
   const announcements: AnnouncementRecord[] = [
     announcement(

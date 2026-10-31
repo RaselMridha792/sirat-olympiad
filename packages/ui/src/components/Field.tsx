@@ -1,4 +1,9 @@
-import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
+import type {
+  InputHTMLAttributes,
+  ReactNode,
+  SelectHTMLAttributes,
+  TextareaHTMLAttributes,
+} from 'react';
 import { cn } from '../cn';
 
 function describedBy(
@@ -128,6 +133,45 @@ export function SelectField({
           </option>
         ))}
       </select>
+      <FieldMessages fieldId={fieldId} error={error} hint={hint} />
+    </div>
+  );
+}
+
+export interface TextAreaFieldProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
+  label: string;
+  error?: string;
+  hint?: string;
+}
+
+/** Multi-line text (an announcement body). Same label, hint and error wiring as Field. */
+export function TextAreaField({
+  label,
+  error,
+  hint,
+  id,
+  className,
+  rows = 6,
+  ...rest
+}: TextAreaFieldProps) {
+  const fieldId = id ?? rest.name;
+  return (
+    <div className="space-y-1.5">
+      <label htmlFor={fieldId} className="block text-sm font-semibold text-ink">
+        {label}
+      </label>
+      <textarea
+        id={fieldId}
+        rows={rows}
+        {...rest}
+        aria-invalid={Boolean(error)}
+        aria-describedby={describedBy(fieldId, error, hint)}
+        className={cn(
+          'w-full rounded-control border bg-page px-4 py-3 text-ink outline-none placeholder:text-ink-faint focus:border-primary disabled:cursor-not-allowed disabled:text-ink-muted',
+          error ? 'border-danger' : 'border-line',
+          className,
+        )}
+      />
       <FieldMessages fieldId={fieldId} error={error} hint={hint} />
     </div>
   );
