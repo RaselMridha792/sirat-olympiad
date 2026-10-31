@@ -25,6 +25,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - This also fixes L10's `ops-alert`, whose `main()` failed on every numeric setting; its integration test called `raiseOpsAlert` directly and never ran `main()`. Both commands now ran end to end against the test database and Redis.
    - Their email queue is created after the Redis clients connect: BullMQ connected the client itself first, so `connect()` threw.
 9. **`healthcheck.sh`'s exact 200** came with L3 (#37), so L11 leaves it alone.
+
 ## 2026-11-01 — Free book: API, schema and the cover upload (Claude; payments PR 6a, plan §16, owner B1–B5)
 
 1. **Schema:** `book_orders` (one per student) and `book_images` (covers in Postgres, bytea), migrations `*_book_orders` (generated) and `*_book_checks` (hand-written).
