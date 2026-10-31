@@ -1,0 +1,43 @@
+# Production site behind Cloudflare, SSL mode Full (strict) with a Cloudflare Origin CA certificate (DECISIONS
+# "TLS behind Cloudflare"). Rendered at container start by the nginx image: only ${PUBLIC_HOST} is substituted
+# (NGINX_ENVSUBST_FILTER), taken from APP_URL by entrypoint/15-public-host.envsh. nginx's own variables stay as written.
+
+# Port 80: /healthz for any name (the Docker healthcheck sends Host 127.0.0.1). Only the site's own name is redirected;
+# any other name (a scanner on the server's IP) has the connection closed, so port 80 never shows the host name either.
+server {
+  listen 80 default_server;
+  server_name _;
+  location = /healthz { return 200 "ok"; }
+  location / { return 444; }
+}
+server {
+  listen 80;
+  server_name ${PUBLIC_HOST};
+  location = /healthz { return 200 "ok"; }
+  location / { return 301 https://${PUBLIC_HOST}$request_uri; }
+}
+
+# Any other name on 443 (a scanner hitting the server's IP): refused during the handshake, so the certificate, and
+# with it the host name, is never shown.
+server {
+  listen 443 ssl default_server;
+  ssl_reject_handshake on;
+}
+
+server {
+  listen 443 ssl;
+  http2 on;
+  server_name ${PUBLIC_HOST};
+
+  # Installed on the server only (RUNBOOK "Origin certificate"); git ignores this folder.
+  ssl_certificate /etc/nginx/sirat/certs/origin.pem;
+  ssl_certificate_key /etc/nginx/sirat/certs/origin.key;
+  ssl_protocols TLSv1.2 TLSv1.3;
+  ssl_session_cache shared:SSL:10m;
+  ssl_session_timeout 1d;
+  ssl_session_tickets off;
+
+  include /etc/nginx/sirat/security-headers.conf;
+  location = /healthz { return 200 "ok"; }
+  include /etc/nginx/sirat/app-locations.conf;
+}

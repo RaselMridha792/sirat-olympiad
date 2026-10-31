@@ -6,6 +6,9 @@
 services:
   nginx:
     ports: !override ['127.0.0.1:8080:80']
+    volumes:
+      # Plain http, same locations; replaces the production TLS site (same container path).
+      - ./nginx/sites/plain:/etc/nginx/templates:ro
 
   api:
     deploy:
