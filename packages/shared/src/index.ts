@@ -57,3 +57,4 @@ export interface SessionUser {
 export * from './records';
 export * from './dashboard';
 export * from './phone';
+export * from './exam';
