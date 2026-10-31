@@ -88,8 +88,13 @@ describe('GET /users/me and the options', () => {
 
   it('is for students and ambassadors only, and a blocked student gets 403 with a valid token', async () => {
     const admin = await sessionFor(env, prisma, { role: 'admin' });
-    for (const path of ['/users/me', '/content/profile-options'])
-      expect((await call(env, 'GET', path, admin.cookie)).status).toBe(403);
+    expect((await call(env, 'GET', '/users/me', admin.cookie)).status).toBe(403);
+    // The option lists are no personal data: admins read them for the grade correction, other staff do not.
+    expect((await call(env, 'GET', '/content/profile-options', admin.cookie)).status).toBe(200);
+    for (const role of ['manager', 'jury'] as const) {
+      const staff = await sessionFor(env, prisma, { role });
+      expect((await call(env, 'GET', '/content/profile-options', staff.cookie)).status).toBe(403);
+    }
     expect((await patch(admin.cookie, { name: 'Admin' })).status).toBe(403);
     const s = await student();
     await prisma.user.update({ where: { id: s.user.id }, data: { isBlocked: true } });

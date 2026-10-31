@@ -20,7 +20,8 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `POST /auth/reset-password` | Public, 300/min per IP | `{token, password}`. 204; ends every session, verifies the email, unlocks the account; no login. 400 "This link is invalid or has expired" for every bad link; 400 "Validation failed" for a refused password (the link stays usable). Built (A2.1e) |
 | | `POST /auth/verify-email` | Public, 300/min per IP | `{token}`. 204; never logs in (no session, no cookie). One 400 for every bad link. Built (A2.1e) |
 | | `POST /auth/change-password` | Auth, login limits | `{currentPassword, newPassword}`. 204 + fresh cookies for this device; one transaction writes the hash, ends every session and retires reset links. 400 for a wrong current password or a refused new one; 429 + `Retry-After` while locked. Built (A2.1d) |
-| users | `GET /users/me`, `PATCH /users/me`, `GET /content/profile-options` | Role(student, ambassador) | Student profile (below). Built (core C3) |
+| users | `GET /users/me`, `PATCH /users/me` | Role(student, ambassador) | Student profile (below). Built (core C3) |
+| | `GET /content/profile-options` | Role(student, ambassador, admin) | The form's option lists; admins use them for the grade correction. Built (core C3) |
 | registrations | `GET /registrations/info`, `POST /registrations/start`, `GET /registrations/current`, `POST /registrations/current/{resume,retry,cancel}`, `GET /registrations/me` | Public (cookie) / Auth | Registration and payment section below. Built (payments PR 2) |
 | payments | `GET /payments/mine`, `GET /payments/:id/status` | Auth / Owner | Built (payments PR 2) |
 | | `POST /payments/:id/recheck` | Owner, throttled | Calls PayStation status (payments PR 3) |
@@ -154,7 +155,7 @@ POST for the export keeps the reason and the search out of URLs (nginx logs quer
 
 ## Student profile (core C3; plan: `docs/plans/CORE-PLAN.md` §4, owner Q1 default)
 
-`@Roles('student', 'ambassador')` on the student routes; no route takes an id (the user is the session's), and each call re-reads the user (403 `account_blocked` with a valid token). Shapes `StudentProfile`, `ProfileOptions`, `ProfileUpdate` (`dashboard.ts`), `GradeCorrectionRequest` and `PROFILE_REFUSALS` (`core.ts`).
+`@Roles('student', 'ambassador')` on the student routes (the option lists also admit `admin`); no route takes an id (the user is the session's), and each call re-reads the user (403 `account_blocked` with a valid token). Shapes `StudentProfile`, `ProfileOptions`, `ProfileUpdate` (`dashboard.ts`), `GradeCorrectionRequest` and `PROFILE_REFUSALS` (`core.ts`).
 
 | Method + path | Request | Answers |
 |---|---|---|

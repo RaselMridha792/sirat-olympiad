@@ -27,9 +27,12 @@ export class UsersController {
   }
 }
 
-/** Option lists of the profile form: the grade table, the 64 districts, the education types. */
+/**
+ * Option lists of the profile form: the grade table, the 64 districts, the education types. Admins read it too, for
+ * the grade correction dialog; none of it is personal data.
+ */
 @Controller('content')
-@Roles('student', 'ambassador')
+@Roles('student', 'ambassador', 'admin')
 export class ProfileOptionsController {
   constructor(private readonly profiles: ProfileService) {}
 
