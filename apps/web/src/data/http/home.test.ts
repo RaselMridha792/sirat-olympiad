@@ -48,6 +48,8 @@ const profile = {
 const registration = {
   registered: true,
   registeredAt: '2026-11-01T04:00:00.000Z',
+  category: 'activist',
+  gradeLevel: 'Class 8',
   payment: {
     invoiceNumber: 'T261101ABCDEFGHJK2',
     amountMinor: 40000,

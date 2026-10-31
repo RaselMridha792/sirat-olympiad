@@ -3,6 +3,9 @@ import {
   type AdminAnnouncement,
   EXAM_VIOLATION_WARNINGS,
   type AdminLeaderboardRow,
+  type AdminPaymentDetail,
+  type AdminPaymentRow,
+  type AdminSetting,
   type AdminUserDetail,
   type AdminUserRow,
   type AmbassadorOverview,
@@ -195,6 +198,57 @@ const userRow = (u: MockUser): AdminUserRow => ({
   needsPaymentReview: false,
 });
 
+/** Payments as the admin list shows them: one per mock user who reached a checkout (amounts are mock values). */
+const MOCK_ACCOUNT = 'mock-sandbox';
+const paymentRows = (w: MockWorld): AdminPaymentRow[] =>
+  w.users.flatMap((u, i): AdminPaymentRow[] => {
+    const p = u.payment;
+    if (!p) return [];
+    const paid = p.status === 'paid';
+    const started = Date.parse(u.createdAt);
+    // A few rows carry review reasons, so the review filter and its badges have something to show.
+    const reviewReason =
+      paid && i % 97 === 5
+        ? 'late_success'
+        : !paid && i % 89 === 7
+          ? 'success_without_trx_id'
+          : null;
+    return [
+      {
+        id: `pay-${u.id}`,
+        invoiceNumber: p.invoiceNumber,
+        amountMinor: p.amountMinor,
+        currency: p.currency,
+        status: p.status,
+        trxId: paid ? `TRX-${p.invoiceNumber}` : null,
+        paidAmountMinor: paid ? p.amountMinor : null,
+        gatewayStatus: paid ? 'success' : p.status === 'failed' ? 'failed' : 'processing',
+        gatewayAccount: MOCK_ACCOUNT,
+        reviewReason,
+        checkCount: paid ? 1 : 3,
+        lastCheckedAt: new Date(started + 5 * 60_000).toISOString(),
+        expiresAt: new Date(started + 60 * 60_000).toISOString(),
+        paidAt: p.paidAt,
+        createdAt: u.createdAt,
+        userId: paid ? u.id : null,
+        attempt: {
+          status: paid ? 'completed' : 'open',
+          email: u.email,
+          phone: u.phone ?? '01700000000',
+          name: u.name,
+        },
+      },
+    ];
+  });
+
+const MOCK_SETTINGS: AdminSetting[] = [
+  { key: 'payment_expiry_minutes', value: 60, updatedAt: '2026-10-31T00:00:00.000Z' },
+  { key: 'registration_closes_at', value: null, updatedAt: '2026-10-31T00:00:00.000Z' },
+  { key: 'registration_fee_minor', value: 40000, updatedAt: '2026-10-31T00:00:00.000Z' },
+  { key: 'registration_open', value: true, updatedAt: '2026-10-31T00:00:00.000Z' },
+  { key: 'registration_opens_at', value: null, updatedAt: '2026-10-31T00:00:00.000Z' },
+];
+
 export function createMockSource(state: MockState | null): DataSource {
   const run = async <T>(full: () => T, empty: () => T): Promise<T> => {
     if (state === 'slow') await new Promise((resolve) => setTimeout(resolve, SLOW_MS));
@@ -238,6 +292,8 @@ export function createMockSource(state: MockState | null): DataSource {
                 ? {
                     registered: true as const,
                     registeredAt: w.me.payment.paidAt ?? w.me.createdAt,
+                    category: w.me.category,
+                    gradeLevel: gradeOf(w.me.gradeLevelId)?.label ?? null,
                     payment: { ...w.me.payment },
                   }
                 : { registered: false as const },
@@ -804,6 +860,75 @@ export function createMockSource(state: MockState | null): DataSource {
               query,
             ),
           () => emptyPage<AdminAnnouncement>(query),
+        ),
+
+      listPayments: (query) =>
+        run(
+          () =>
+            paginate(
+              paymentRows(getWorld())
+                .filter((p) => !query.invoice || p.invoiceNumber === query.invoice)
+                .filter((p) => !query.trx || p.trxId === query.trx)
+                .filter((p) => !query.phone || p.attempt.phone === query.phone)
+                .filter(
+                  (p) =>
+                    !query.email || p.attempt.email.toLowerCase() === query.email.toLowerCase(),
+                )
+                .filter((p) => !query.status || p.status === query.status)
+                .filter((p) => !query.review || p.reviewReason !== null)
+                .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+              query,
+            ),
+          () => emptyPage<AdminPaymentRow>(query),
+        ),
+
+      getPayment: (id) =>
+        run(
+          (): AdminPaymentDetail | null => {
+            const payment = paymentRows(getWorld()).find((p) => p.id === id);
+            if (!payment) return null;
+            const at = (minutes: number) =>
+              new Date(Date.parse(payment.createdAt) + minutes * 60_000).toISOString();
+            const event = (
+              n: number,
+              source: string,
+              outcome: string,
+              trxStatus: string | null,
+            ) => ({
+              id: `${payment.id}-ev${n}`,
+              source,
+              outcome,
+              statusCode: source === 'initiate' || source === 'status_v1' ? '200' : null,
+              trxStatus,
+              trxId: trxStatus === 'success' ? payment.trxId : null,
+              byAdmin: false,
+              createdAt: at(n),
+            });
+            const events =
+              payment.status === 'paid'
+                ? [
+                    event(3, 'status_v1', 'applied_paid', 'success'),
+                    event(2, 'callback', 'verify_requested', 'successful'),
+                    event(0, 'initiate', 'checkout_created', null),
+                  ]
+                : [
+                    event(
+                      2,
+                      'status_v1',
+                      payment.status === 'failed' ? 'applied_failed' : 'no_change',
+                      payment.gatewayStatus,
+                    ),
+                    event(0, 'initiate', 'checkout_created', null),
+                  ];
+            return { payment, events };
+          },
+          () => null,
+        ),
+
+      listSettings: () =>
+        run(
+          () => MOCK_SETTINGS.map((s) => ({ ...s })),
+          () => MOCK_SETTINGS.map((s) => ({ ...s })),
         ),
     },
   };

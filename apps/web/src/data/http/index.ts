@@ -5,6 +5,7 @@ import { adminAnnouncements, studentAnnouncements } from './announcements.ts';
 import { studentExams } from './exams.ts';
 import { studentHome } from './home.ts';
 import { adminLeaderboard, leaderboard } from './leaderboard.ts';
+import { adminPayments } from './payments.ts';
 import { studentProfile } from './profile.ts';
 import type { ApiGet } from './request.ts';
 import { adminUsers } from './users.ts';
@@ -35,6 +36,7 @@ export function createHttpSource(get: ApiGet): DataSource {
       ...adminExams(get),
       ...adminUsers(get),
       ...adminAnnouncements(get),
+      ...adminPayments(get),
     },
   };
 }

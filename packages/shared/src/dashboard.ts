@@ -1,4 +1,5 @@
 import type { Category, Paginated, Role } from './index';
+import type { MyRegistration } from './registration';
 import type {
   AdminTaskRecord,
   AmbassadorProfileRecord,
@@ -69,21 +70,10 @@ export interface StudentHome {
   /** Next open or upcoming exam; rules on the home page are rendered from its config. */
   nextExam: (StudentExamCard & Pick<ExamRecord, 'graceSeconds'>) | null;
   latestAnnouncements: AnnouncementItem[];
-  /** From payments' GET /registrations/me (core C4 renders it on the home page). */
+  /** Payments' GET /registrations/me (MyRegistration in registration.ts); core C4 renders it on the home page. */
   registration: MyRegistration;
 }
 
-/** GET /registrations/me (payments PR 2): the session user's registration and the payment behind it. */
-export type MyRegistration =
-  | { registered: false }
-  | {
-      registered: true;
-      registeredAt: string;
-      payment: Pick<
-        PaymentRecord,
-        'invoiceNumber' | 'amountMinor' | 'currency' | 'status' | 'paidAt'
-      >;
-    };
 
 export type StudentProfile = Pick<
   UserRecord,

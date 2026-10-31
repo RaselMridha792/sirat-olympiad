@@ -12,7 +12,12 @@ import {
   TriangleAlert,
   Trophy,
 } from 'lucide-react';
-import { EXAM_MAX_DURATION_MINUTES, type AnnouncementItem, type StudentHome } from '@sirat/shared';
+import {
+  EXAM_MAX_DURATION_MINUTES,
+  REGISTRATION_STATE_LABELS,
+  type AnnouncementItem,
+  type StudentHome,
+} from '@sirat/shared';
 import { Badge, buttonClasses, Card, cn, DetailList } from '@sirat/ui';
 import { entryStatusTone, examStateTone, paymentStatusTone } from '@/components/status';
 import { getData } from '@/data';
@@ -112,7 +117,10 @@ function RegistrationCard({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-bold text-ink">{r.title}</h2>
         <Badge tone={paymentStatusTone[payment.status]}>
-          {payment.status === 'paid' ? r.registered : c.paymentStatus[payment.status]}
+          {/* payments' own wording, as on their result page */}
+          {payment.status === 'paid'
+            ? REGISTRATION_STATE_LABELS.completed[locale]
+            : c.paymentStatus[payment.status]}
         </Badge>
       </div>
       <DetailList

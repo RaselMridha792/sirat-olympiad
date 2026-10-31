@@ -1,4 +1,5 @@
 import {
+  CATEGORIES,
   PAYMENT_STATUSES,
   type MyRegistration,
   type StudentExamListItem,
@@ -25,6 +26,8 @@ function isMyRegistration(v: unknown): v is MyRegistration {
   return (
     v.registered === true &&
     text(v.registeredAt) &&
+    (v.category === null || (CATEGORIES as readonly unknown[]).includes(v.category)) &&
+    (v.gradeLevel === null || text(v.gradeLevel)) &&
     isRecord(p) &&
     text(p.invoiceNumber) &&
     Number.isInteger(p.amountMinor) &&
@@ -39,6 +42,8 @@ const pickRegistration = (r: MyRegistration): MyRegistration =>
     ? {
         registered: true,
         registeredAt: r.registeredAt,
+        category: r.category,
+        gradeLevel: r.gradeLevel,
         payment: {
           invoiceNumber: r.payment.invoiceNumber,
           amountMinor: r.payment.amountMinor,

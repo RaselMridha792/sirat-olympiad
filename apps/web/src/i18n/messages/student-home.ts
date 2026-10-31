@@ -87,7 +87,6 @@ export const studentHomeMessages = defineMessages({
     },
     registration: {
       title: 'Your registration',
-      registered: 'Registered',
       invoice: 'Invoice',
       amount: 'Fee',
       registeredOn: 'Registered on',
@@ -174,7 +173,6 @@ export const studentHomeMessages = defineMessages({
     },
     registration: {
       title: 'আপনার রেজিস্ট্রেশন',
-      registered: 'রেজিস্ট্রেশন হয়েছে',
       invoice: 'ইনভয়েস',
       amount: 'ফি',
       registeredOn: 'রেজিস্ট্রেশনের তারিখ',
