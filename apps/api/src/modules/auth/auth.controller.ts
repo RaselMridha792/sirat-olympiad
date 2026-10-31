@@ -7,6 +7,7 @@ import {
   Post,
   Req,
   Res,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
@@ -71,18 +72,23 @@ export class AuthController {
   /**
    * Rotation. Public, because the access token may already have expired: the refresh cookie is the credential.
    * 409 means another tab refreshed a moment ago; the browser already has the new cookies, so just retry.
+   * 503 means the rotation could not finish within its budget and was rolled back: the old cookies still work.
    */
   @Public()
   @Post('refresh')
   @HttpCode(204)
   async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<void> {
+    const startedAt = Date.now();
     const token: unknown = req.cookies?.[REFRESH_COOKIE];
     const result =
       typeof token === 'string' && token !== ''
-        ? await this.sessions.rotate(token, clientInfo(req))
+        ? await this.sessions.rotate(token, clientInfo(req), startedAt)
         : ({ status: 'invalid' } as const);
     if (result.status === 'rotated') return this.cookies.set(res, result.session);
     if (result.status === 'race') throw new ConflictException('Session was just refreshed, retry');
+    // No Retry-After: the browser's own growing, jittered pause spreads the retries while the database is slow.
+    if (result.status === 'busy')
+      throw new ServiceUnavailableException('Session renewal is busy, try again');
     this.cookies.clear(res);
     throw new UnauthorizedException('Session expired, log in again');
   }
