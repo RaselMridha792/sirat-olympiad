@@ -303,6 +303,32 @@ jobs:
       - name: Backups are encrypted, checked and uploaded; a killed dump, a bad remote or a shrunken dump fails (L6)
         # Its own compose project (sirat-backup-test), a throwaway age key and an rclone local remote; see the script.
         run: bash scripts/test/run-backup-test.sh
+      - name: Server checks - monitor.sh on faked commands (L11)
+        run: bash scripts/test/run-monitor-test.sh
+      - name: Server checks - a monitor.sh dry run against this stack (ops-check runs in the api container, L11)
+        # No backup exists here, so backup_age is critical; the step only proves that the facts are collected and that
+        # ops-check runs (a failure to run would show as critical=monitor). Nothing is raised or pinged.
+        run: |
+          cfg=$(mktemp)
+          {
+            echo 'MONITOR_PROJECT=sirat'
+            echo 'MONITOR_COMPOSE_FILES=infra/docker-compose.yml infra/docker-compose.dev.yml'
+            echo 'MONITOR_COMPOSE_ENV_FILES=.env'
+            echo "MONITOR_STATE_FILE=$cfg.state"
+            echo "MONITOR_DEPLOY_LOCK=$cfg.lock"
+          } > "$cfg"
+          chmod 600 "$cfg"
+          out=$(SIRAT_MONITOR_ENV="$cfg" bash scripts/monitor.sh --dry-run)
+          echo "$out"
+          echo "$out" | grep -q '^host facts: {' || { echo "::error::no host facts"; exit 1; }
+          echo "$out" | grep -q '(dry run)$' || { echo "::error::no summary"; exit 1; }
+          if echo "$out" | grep -q 'critical=monitor'; then echo "::error::ops-check did not run"; exit 1; fi
+      - name: Server checks - the compiled ops-alert runs in the api image (its main(), not only its functions)
+        # ops-check's compiled main() ran in the dry run above. No recipient here, so nothing is emailed.
+        run: |
+          out=$($DCD exec -T api node dist/cli/ops-alert.js --kind ops.alert_test --meta ci=1)
+          echo "$out"
+          echo "$out" | grep -q '^ops-alert: ops.alert_test recorded$' || { echo "::error::ops-alert did not run"; exit 1; }
       - name: Logs on failure
         if: failure()
         run: $DCD ps -a; $DCD logs --tail=200
