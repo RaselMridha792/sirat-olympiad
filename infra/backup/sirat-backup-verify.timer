@@ -1,0 +1,10 @@
+# /etc/systemd/system/sirat-backup-verify.timer: once a day, before the 08:00 digest (L11).
+[Unit]
+Description=Sirat daily backup check
+
+[Timer]
+OnCalendar=*-*-* 07:30 Asia/Dhaka
+Persistent=true
+
+[Install]
+WantedBy=timers.target

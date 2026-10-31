@@ -120,14 +120,63 @@ TODO: Nginx `maintenance.html` toggle (return 503 with a friendly page for `/` a
 
 ## 5. Backup and restore
 
+**Backups (L6):** encrypted with age, copied off the server with rclone, checked, with a heartbeat. `scripts/backup.sh` runs as root from `sirat-backup.service`, which its timer starts hourly while registration is open, and which `deploy.sh` starts before migrate.
+
 ```bash
-scripts/backup.sh                       # VERIFIED (Windows Git Bash; re-check on the VPS): owner-only dump, verified by a full read
-# Restore: stop traffic first, restore (refuses a truncated dump; one transaction), then migrate and start again
+sudo systemctl start sirat-backup.service          # a backup now; a failure exits non-zero (and stops a deploy)
+sudo /srv/sirat/scripts/backup.sh --accept-smaller # once, by hand, after a deliberate big delete (see below)
+sudo journalctl -u sirat-backup.service -n 30      # what the last runs did
+sudo systemctl start sirat-backup-verify.service   # newest local copy: sha256 vs manifest, an age file, < 26 h old
+sudo ls -l /var/backups/sirat                      # the newest 3 encrypted copies (.dump.age) and their manifests
+systemctl list-timers 'sirat-backup*'              # next runs
+bash scripts/test/run-backup-test.sh               # the tests (own compose project sirat-backup-test; dev machine or CI)
+```
+
+- **A run:**
+  1. takes a lock (`/var/lib/sirat/backup.lock`; `deploy.sh` waits on it);
+  2. runs `pg_dump -Fc` inside the postgres container (credentials stay there);
+  3. reads the whole archive back, counting every table's rows and the applied migrations;
+  4. refuses a dump under half the size of the last one;
+  5. encrypts it to the public keys in `infra/backup/recipients.txt`, and writes a manifest (`created_at`, `sha256` of the encrypted file, `tables`, `migrations`);
+  6. stores the copy locally, then uploads the dump and then the manifest into tier prefixes:
+     - every run → `hourly/`;
+     - the first run of the Asia/Dhaka day at or after 03:00 → also `daily/` (a failed 03:00 run is made up by the next one);
+     - that run on a Sunday → also `weekly/`;
+  7. keeps the newest 3 locally;
+  8. pings the heartbeat.
+
+  A failure pings the heartbeat's `/fail` with the failed step's name and exits non-zero:
+  - before the store step it leaves no new copy;
+  - a failed upload keeps the local encrypted copy, which was stored first;
+  - a run killed mid-dump leaves its partial plain dump in an owner-only `.work.*` directory under `/var/backups/sirat` until the next run removes it.
+- **Setup on the VPS (root, once):**
+  1. `apt install age rclone`.
+  2. `/etc/sirat/backup.env` from `infra/backup/backup.env.example`, `chmod 600` (refused otherwise); `BACKUP_PROJECT=sirat`.
+  3. `/etc/sirat/rclone.conf` (`chmod 600`) with the bucket's **put-only** key (owner Q1), named by `RCLONE_CONFIG`; the remote in `BACKUP_REMOTE`.
+  4. The heartbeat URL (outside service, LAUNCH-PLAN §6) in `BACKUP_HEARTBEAT_URL`.
+  5. The key holders' public keys in `infra/backup/recipients.txt`, by pull request.
+  6. Copy the four units from `infra/backup/` to `/etc/systemd/system/` (they expect the clone at `/srv/sirat`), then `systemctl daemon-reload && systemctl enable --now sirat-backup.timer sirat-backup-verify.timer`.
+  7. Start one run and see the copy in the bucket.
+- **Until the bucket exists:** `BACKUP_REMOTE=none` keeps local copies only, warns "NOT off the server" and pings nothing. Launch needs the off-server copy (LAUNCH-PLAN §7).
+- **After registration closes, go daily:** `systemctl edit sirat-backup.timer` with `[Timer]`, `OnCalendar=`, `OnCalendar=*-*-* 03:30 Asia/Dhaka`. Then set the heartbeat's expected period to about 26 h.
+- **Decrypt** (a key holder, never on the server): `age -d -i <key file> sirat-<stamp>.dump.age > sirat.dump`. Compare `sha256sum` of the `.age` file with the manifest first.
+- **Retention off the server (Q1):** the bucket's versioning and lifecycle rules, not the script (the put-only key cannot delete). Three lifecycle rules:
+  - prefix `hourly/`: expire objects 2 days after creation;
+  - prefix `daily/`: expire after 8 days;
+  - prefix `weekly/`: expire after 35 days;
+  - on all three, delete noncurrent versions after 1 day.
+
+  That keeps 7 daily and 4 weekly copies (RULEBOOK §6) plus 2 days of hourly ones.
+- **"The dump is much smaller than the last one":** the run stops when a dump is under half the size of the last one, because a sudden drop usually means lost data. After a deliberate big delete (the first run of the session and token cleanup job, a test-data wipe), check that the drop is expected, then run `sudo /srv/sirat/scripts/backup.sh --accept-smaller` once by hand. It logs that it was used; the timer never passes it, and the next timed runs compare with that copy.
+
+**Restore** (until L7): stop traffic first, restore a decrypted dump (refuses a truncated dump; one transaction), then migrate and start again.
+
+```bash
 $DC stop nginx web api
-scripts/restore.sh backups/<file>.dump  # DESTRUCTIVE, asks for YES (truncated-dump refusal VERIFIED; full restore not yet rehearsed)
+scripts/restore.sh <decrypted>.dump  # DESTRUCTIVE, asks for YES (truncated-dump refusal VERIFIED; full restore not yet rehearsed)
 $DC run --rm migrate && $DC exec redis-cache redis-cli FLUSHALL && $DC up -d && scripts/healthcheck.sh https://<domain>
 ```
-Credentials are read inside the postgres container; nothing secret is typed on the host. One-time on hosts with older backups: `chmod 700 backups && chmod 600 backups/*.dump`. Hardening phase: restore into a fresh database instead of `--clean` over the live schema. Before every exam: fresh backup + **restore drill on another machine**. Keep ≥ 7 daily + 4 weekly. Alert on failure.
+Credentials are read inside the postgres container; nothing secret is typed on the host. Hardening (L7): restore into a fresh database instead of `--clean` over the live schema, and a scripted drill. Before every exam: a fresh backup and a **restore drill on another machine**.
 
 ## 6. Rebuild on a fresh VPS (< 1 hour)
 

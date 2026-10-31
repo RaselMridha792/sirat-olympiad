@@ -40,6 +40,7 @@ apps/api/test
 **/*.p12
 **/*.pfx
 **/*.dump
+**/*.age
 **/id_rsa*
 **/id_ed25519*
 **/certs
