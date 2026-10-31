@@ -1,7 +1,10 @@
 import type {
   AdminAmbassadorRow,
   AdminExamCard,
-  AdminExamDetail,
+  AdminAttemptDetail,
+  AdminAttemptQuery,
+  AdminAttemptRow,
+  AdminExamView,
   AdminExamQuery,
   AdminExamLeaderboard,
   AdminStats,
@@ -11,6 +14,7 @@ import type {
   AmbassadorOverview,
   AnnouncementItem,
   ExamLeaderboard,
+  ExamResultsStatus,
   LeaderboardQuery,
   PageQuery,
   Paginated,
@@ -71,8 +75,14 @@ export interface DataSource {
     getLeaderboard(query: LeaderboardQuery): Promise<AdminExamLeaderboard>;
     /** GET /admin/exams?page=&q=&status= */
     listExams(query: AdminExamQuery): Promise<Paginated<AdminExamCard>>;
-    /** GET /admin/exams/:id (with questions and correct keys; null = not found) */
-    getExam(id: string): Promise<AdminExamDetail | null>;
+    /** GET /admin/exams/:id (with questions, correct keys and the `updatedAt` write token; null = not found) */
+    getExam(id: string): Promise<AdminExamView | null>;
+    /** GET /admin/exams/:id/results (counts, snapshot, what can be built or published; null = not found) */
+    getExamResults(id: string): Promise<ExamResultsStatus | null>;
+    /** GET /admin/exams/:id/attempts?status=&endReason=&minViolations=&q=&page= (owner Q4: violations) */
+    listAttempts(examId: string, query: AdminAttemptQuery): Promise<Paginated<AdminAttemptRow>>;
+    /** GET /admin/exams/:id/attempts/:attemptId (with the events and their times; null = not found) */
+    getAttempt(examId: string, attemptId: string): Promise<AdminAttemptDetail | null>;
     /** GET /admin/ambassadors?page=&q= */
     listAmbassadors(query: PageQuery): Promise<Paginated<AdminAmbassadorRow>>;
     /** GET /admin/announcements?page= */

@@ -5,7 +5,12 @@ import {
   type AdminUserRow,
   type AmbassadorOverview,
   type AnnouncementItem,
+  type AdminAttemptDetail,
+  type AdminAttemptRow,
   type AdminExamLeaderboard,
+  type AdminExamView,
+  type ExamEvent,
+  type ExamResultsStatus,
   type ExamLeaderboard,
   type ExamLeaderboardExam,
   type LeaderboardRow,
@@ -126,6 +131,42 @@ function examStandings(w: MockWorld, exam: MockExam): MockStanding[] {
 /** A snapshot exists once the window has closed and someone has a result. */
 const hasSnapshot = (w: MockWorld, exam: MockExam) =>
   Date.parse(exam.windowEnd) < Date.now() && examStandings(w, exam).length > 0;
+
+/**
+ * The attempts of an exam here: one per participant of its snapshot. A fixed pattern ends some by time and some by
+ * violations (owner Q4: the 6th violation submits), so every filter and the events dialog have something to show.
+ */
+function examAttempts(w: MockWorld, exam: MockExam): AdminAttemptDetail[] {
+  const opens = Date.parse(exam.windowStart);
+  return examStandings(w, exam).map((s, i) => {
+    const byViolations = i % 13 === 4;
+    const byTime = !byViolations && i % 9 === 2;
+    const violationCount = byViolations ? EXAM_VIOLATION_WARNINGS + 1 : i % 4;
+    const startedAt = opens + (i % 50) * 60_000;
+    const taken = s.timeTakenSeconds ?? exam.durationMinutes * 60;
+    const events: ExamEvent[] = [];
+    for (let k = 0; k < violationCount; k++) {
+      const at = 60 + k * 90;
+      if (k % 3 === 2) events.push({ type: 'devtools', at });
+      else events.push({ type: 'leave', at }, { type: 'return', at: at + 15 });
+    }
+    return {
+      attemptId: `att-${exam.id}-${s.user.id}`,
+      userId: s.user.id,
+      name: s.user.name,
+      email: s.user.email,
+      status: 'scored',
+      endReason: byViolations ? 'violations' : byTime ? 'time_up' : 'submitted',
+      violationCount,
+      startedAt: new Date(startedAt).toISOString(),
+      endsAt: new Date(startedAt + exam.durationMinutes * 60_000).toISOString(),
+      submittedAt: new Date(startedAt + taken * 1000).toISOString(),
+      timeTakenSeconds: taken,
+      score: s.score,
+      events,
+    };
+  });
+}
 
 const userRow = ({
   id,
@@ -602,7 +643,7 @@ export function createMockSource(state: MockState | null): DataSource {
 
       getExam: (id) =>
         run(
-          () => {
+          (): AdminExamView | null => {
             const w = getWorld();
             const e = w.exams.find((x) => x.id === id);
             if (!e) return null;
@@ -619,19 +660,83 @@ export function createMockSource(state: MockState | null): DataSource {
               graceSeconds: e.graceSeconds,
               resultsPublishedAt: e.resultsPublishedAt,
               questionCount: e.questions.length,
-              locked: e.status !== 'draft' && Date.parse(e.windowStart) < Date.now(),
+              locked: e.status !== 'draft',
               round: round ? { id: round.id, name: round.name } : null,
-              questions: e.questions.map(
-                ({ id: qid, text, options, correctKey, explanation, version }) => ({
-                  id: qid,
-                  text,
-                  options,
-                  correctKey,
-                  explanation,
-                  version,
-                }),
-              ),
+              roundId: e.roundId,
+              randomDraw: false,
+              contentVersion: 1,
+              publishedAt: e.status === 'draft' ? null : e.createdAt,
+              updatedAt: e.createdAt,
+              questions: e.questions.map((q, position) => ({
+                id: q.id,
+                lineageId: q.id,
+                version: q.version,
+                position,
+                text: q.text,
+                options: q.options,
+                correctKey: q.correctKey,
+                explanation: q.explanation,
+                keepOptionOrder: false,
+                isActive: q.isActive,
+                deactivatedAt: null,
+                createdAt: e.createdAt,
+                updatedAt: e.createdAt,
+              })),
             };
+          },
+          () => null,
+        ),
+
+      getExamResults: (id) =>
+        run(
+          (): ExamResultsStatus | null => {
+            const w = getWorld();
+            const e = w.exams.find((x) => x.id === id);
+            if (!e) return null;
+            const closed = Date.parse(e.windowEnd) + e.graceSeconds * 1000 < Date.now();
+            const snapshot = hasSnapshot(w, e);
+            const open = e.status === 'published' && closed && e.resultsPublishedAt === null;
+            return {
+              examId: e.id,
+              windowClosed: closed,
+              counts: {
+                in_progress: 0,
+                submitted: 0,
+                expired: 0,
+                scored: examAttempts(w, e).length,
+              },
+              snapshotAt: snapshot ? (e.resultsPublishedAt ?? e.windowEnd) : null,
+              generation: snapshot ? 1 : 0,
+              publishedAt: e.resultsPublishedAt,
+              canBuild: open,
+              canPublish: open && snapshot,
+            };
+          },
+          () => null,
+        ),
+
+      listAttempts: (examId, query) =>
+        run(
+          () => {
+            const w = getWorld();
+            const e = w.exams.find((x) => x.id === examId);
+            const rows: AdminAttemptRow[] = (e ? examAttempts(w, e) : [])
+              .filter((a) => !query.status || a.status === query.status)
+              .filter((a) => !query.endReason || a.endReason === query.endReason)
+              .filter((a) => !query.minViolations || (a.violationCount ?? 0) >= query.minViolations)
+              .filter((a) => matches(a.name, query.q) || matches(a.email, query.q))
+              .map(({ events: _events, ...row }) => row);
+            return paginate(rows, query);
+          },
+          () => emptyPage<AdminAttemptRow>(query),
+        ),
+
+      getAttempt: (examId, attemptId) =>
+        run(
+          () => {
+            const w = getWorld();
+            const e = w.exams.find((x) => x.id === examId);
+            return (e && examAttempts(w, e).find((a) => a.attemptId === attemptId)) ?? null;
           },
           () => null,
         ),

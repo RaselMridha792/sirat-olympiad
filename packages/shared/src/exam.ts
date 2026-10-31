@@ -2,6 +2,7 @@ import type {
   AdminExamDetail,
   AdminLeaderboardRow,
   LeaderboardRow,
+  PageQuery,
   StudentExamCard,
 } from './dashboard';
 import type { QuestionOption, QuestionRecord } from './records';
@@ -205,6 +206,14 @@ export interface AdminAttemptRow {
   score: number | null;
 }
 export type AdminAttemptDetail = AdminAttemptRow & { events: ExamEvent[] };
+
+/** GET /admin/exams/:id/attempts filters (q: name or email). */
+export interface AdminAttemptQuery extends PageQuery {
+  status?: AttemptStatus;
+  endReason?: EndReason;
+  /** At least this many violations (owner Q4). */
+  minViolations?: number;
+}
 
 export const EXAM_RESULTS_REFUSALS = [
   'window_open',
