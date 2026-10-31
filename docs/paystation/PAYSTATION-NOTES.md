@@ -9,8 +9,9 @@
 | `sandbox` | `https://sandbox.paystation.com.bd` |
 | `live` | `https://api.paystation.com.bd` |
 
-- The docs' code samples call `api.paystation.com.bd` even with sandbox credentials. Confirm which host the sandbox credentials work on (SANDBOX-CHECKLIST S11).
-- Live credentials are refused unless `NODE_ENV=production` (owner decision).
+- **Confirmed in the sandbox (S11, 2026-10-31):** sandbox credentials work only on `sandbox.paystation.com.bd`; on `api.paystation.com.bd` they get `"1001"` "Invalid Credential.". The docs' code samples and the Postman URL text show `api.…`; they are wrong for the sandbox. The two hosts sit in an allow-list in `payment.config.ts`, picked by `PAYSTATION_ENV` (DECISIONS 2026-10-31).
+- **The merchant id is used exactly as issued, including any "-".** The Postman form and header values carry it; the docs' curl example drops it, and that form is refused (`"1001"`).
+- `live` is refused unless `NODE_ENV=production` (owner decision).
 
 ## Authentication
 
@@ -37,7 +38,7 @@
 | `checkout_items`, `opt_a`, `opt_b`, `opt_c` | optional | not sent |
 | `emi` | optional | not sent |
 
-Response: `status_code` is a **string**. `"200"` carries `payment_url`; `"1008"` = duplicate invoice; any other code = failure.
+Response: `status_code` is a **string**. `"200"` carries `payment_url`; `"1008"` = duplicate invoice; any other code = failure. Seen in the sandbox but not in the docs: `"1001"` "Invalid Credential." (wrong merchant id or password, or the wrong host).
 
 ## 2. Browser callback (a hint only)
 
@@ -57,7 +58,7 @@ Response: `status_code` (string), `status` (`success`/`failed` = whether the **l
 
 **Decision rules (owner, 2026-10-30):**
 - **paid** only if `status_code` is `"200"` AND `lowercase(data.trx_status)` is `success` or `successful` AND the amount matches exactly (decimal parse into paisa) AND `invoice_number` matches AND `trx_id` is non-empty and not used by another payment.
-- **failed** only if `lowercase(trx_status)` is `failed`. **refund** moves `paid` → `refunded`.
+- **failed** only if `lowercase(trx_status)` is `failed`. **refund** never changes a paid payment: there is no refund handling (owner, 2026-10-31, DECISIONS "No refund handling"). It is recorded as `refund_reported` with a critical alert.
 - `processing` stays pending. **Any other or unknown value is neither paid nor failed**: it stays pending, the reconciliation job looks again, and an alert is raised. The list is updated after the sandbox shows the real values.
 - **`2001` is never failed** (not found or wrong credentials): stay pending until our expiry; alert when it repeats across payments.
 - An empty `trx_id` is stored as **NULL** (so `UNIQUE(trx_id)` does not collide).

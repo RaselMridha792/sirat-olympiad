@@ -56,3 +56,4 @@ export interface SessionUser {
 // Schema mirrors and the dashboard response contract (web data layer + API).
 export * from './records';
 export * from './dashboard';
+export * from './phone';

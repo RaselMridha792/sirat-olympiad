@@ -8,14 +8,19 @@
  * - Reference data (grade levels, rank thresholds, rounds) is NOT seeded here: it ships as SQL data migrations
  *   (baseline: prisma/migrations/*_reference_data_baseline), so it runs in a fixed order with later data
  *   migrations on every database, fresh or old (A1.1).
- * Values marked PLACEHOLDER await client confirmation (docs/OPEN-QUESTIONS.md #2).
+ * The fee itself is set by the data migration *_registration_fee_400 (it runs before this seed); the default below
+ * only matters for a key that is still missing, and it matches the migration, so both paths agree.
  */
 import { Prisma, PrismaClient } from '@prisma/client';
 
-/** Runtime settings. Registration starts CLOSED so the placeholder fee can never be charged. */
-export const DEFAULT_SETTINGS: Readonly<Record<string, Prisma.InputJsonValue>> = {
+/** Runtime settings. Registration starts CLOSED; an admin opens it (and may set the window) after the checks. */
+export const DEFAULT_SETTINGS: Readonly<
+  Record<string, Prisma.InputJsonValue | typeof Prisma.JsonNull>
+> = {
   registration_open: false,
-  registration_fee_minor: 0, // PLACEHOLDER (OQ #2): admin sets the real fee before opening registration
+  registration_fee_minor: 40000, // 400 BDT in paisa (DECISIONS 2026-10-31 "Registration fee", owner)
+  registration_opens_at: Prisma.JsonNull, // ISO UTC or null (no lower bound)
+  registration_closes_at: Prisma.JsonNull, // ISO UTC or null (no upper bound)
   currency: 'BDT',
   leaderboard_public: false,
   payment_expiry_minutes: 60,

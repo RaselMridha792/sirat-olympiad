@@ -71,13 +71,28 @@ export class EnvVars {
   @IsOptional() @IsString() SES_SECRET_ACCESS_KEY?: string;
   @IsOptional() @Matches(/^https?:\/\/\S+$/) MAILPIT_URL?: string;
   @IsInt() @Min(1) @Max(65535) WORKER_HEALTH_PORT: number = 4001;
+
+  // PayStation (payments plan section 3.5). Unset PAYSTATION_ENV = payments disabled; once set, the cross-field rules
+  // in modules/payments/payment.config.ts apply at boot. The host is not configurable: an allow-list picks it.
+  @IsOptional() @IsIn(['sandbox', 'live', 'fake']) PAYSTATION_ENV?: string;
+  /** Blank, or exactly the allow-listed host of PAYSTATION_ENV; any URL only for the fake server. */
+  @IsOptional() @Matches(/^https?:\/\/\S+$/) PAYSTATION_BASE_URL?: string;
+  /** Used exactly as issued (keeps its "-"). Never logged. */
+  @IsOptional() @IsString() PAYSTATION_MERCHANT_ID?: string;
+  @IsOptional() @IsString() PAYSTATION_PASSWORD?: string;
+  @IsOptional() @IsString() PAYSTATION_ACCOUNT_LABEL?: string;
+  @IsOptional() @IsString() PAYSTATION_INVOICE_PREFIX?: string;
+  @IsOptional() @Matches(/^https?:\/\/\S+$/) PAYSTATION_CALLBACK_URL?: string;
+  @IsOptional() @Matches(/^https?:\/\/\S+$/) PAYSTATION_IPN_URL?: string;
+  @IsOptional() @IsString() PAYSTATION_PAY_WITH_CHARGE?: string;
+  @IsInt() @Min(1_000) @Max(30_000) PAYSTATION_TIMEOUT_MS: number = 10_000;
 }
 
 const MIN_SECRET_LENGTH = 32;
 /** A random 32-byte secret (hex or base64) easily clears this; "aaaa…" or "abab…" do not. */
 const MIN_DISTINCT_CHARS = 10;
 /** Words that only appear in example values. Matching any of them means the secret was never really set. */
-const PLACEHOLDER = /(fake|change.?me|example|placeholder|dummy|sample|your.?secret|xxxx)/i;
+export const PLACEHOLDER = /(fake|change.?me|example|placeholder|dummy|sample|your.?secret|xxxx)/i;
 
 /**
  * Why a signing secret is unacceptable, or null if it is fine. Applies in every environment (A2.0 gate 3): compose
