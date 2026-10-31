@@ -4,6 +4,7 @@ import { bookMessages } from '../../i18n/messages/book.ts';
 import {
   bookProblem,
   initialBookValues,
+  pickOrderView,
   toBookInput,
   validateBookForm,
 } from './book-order-rules.ts';
@@ -97,4 +98,9 @@ test('maps the API codes; every problem has a bn and an en text', () => {
   assert.equal(bookProblem(null), 'network');
   for (const m of [bookMessages.en, bookMessages.bn])
     for (const text of Object.values(m.errors)) assert.ok(text.length > 5);
+});
+
+test('only the order fields cross to the client form', () => {
+  const leaky = { ...order, userId: 'canary-user', passwordHash: 'canary' } as typeof order;
+  assert.deepEqual(pickOrderView(leaky), order);
 });

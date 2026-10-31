@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { BookOpen, Lock } from 'lucide-react';
 import { Card } from '@sirat/ui';
+import { pickOrderView } from '@/components/book/book-order-rules';
 import { BookOrderForm } from '@/components/book/BookOrderForm';
 import { getData } from '@/data';
 import type { SearchParams } from '@/data/query';
@@ -59,7 +60,7 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
         {mine.eligible ? (
           <BookOrderForm
             locale={locale}
-            order={mine.order}
+            order={mine.order && pickOrderView(mine.order)}
             profile={{ name: profile.name, phone: profile.phone, district: profile.district }}
           />
         ) : (

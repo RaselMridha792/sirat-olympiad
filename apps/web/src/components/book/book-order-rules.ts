@@ -27,6 +27,26 @@ export type BookInvalidKey = keyof BookMessages['invalid'];
 const squash = (s: string) => s.trim().replace(/\s+/g, ' ');
 const L = BOOK_ORDER_LIMITS;
 
+/**
+ * The order's own fields, one by one, before it crosses to the client form (props are serialised into the page): a
+ * field the data layer did not expect can never reach the browser (`?mock=leak` checks it).
+ */
+export function pickOrderView(o: MyBookOrderView): MyBookOrderView {
+  return {
+    status: o.status,
+    recipientName: o.recipientName,
+    recipientPhone: o.recipientPhone,
+    district: o.district,
+    upazila: o.upazila,
+    addressLine: o.addressLine,
+    note: o.note,
+    bookTitle: o.bookTitle,
+    version: o.version,
+    confirmedAt: o.confirmedAt,
+    shippedAt: o.shippedAt,
+  };
+}
+
 /** The form's starting values: the order when there is one, else the student's own name, phone and district. */
 export function initialBookValues(
   order: MyBookOrderView | null,
