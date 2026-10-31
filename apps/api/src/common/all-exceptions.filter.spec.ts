@@ -1,4 +1,4 @@
-import { ArgumentsHost, Logger, NotFoundException } from '@nestjs/common';
+import { ArgumentsHost, ConflictException, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 
@@ -117,5 +117,27 @@ describe('AllExceptionsFilter', () => {
     expect(res.status).toHaveBeenCalledWith(404);
     expect(body).toMatchObject({ statusCode: 404, code: 'NOT_FOUND', requestId: 'req-123' });
     expect(error).not.toHaveBeenCalled();
+  });
+
+  it('passes on an application code a service set on purpose, so the web can pick a bn/en text', () => {
+    const { res, body } = run(
+      new ConflictException({
+        code: 'EMAIL_REGISTERED',
+        message: 'Already registered. Please log in.',
+      }),
+    );
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(body).toMatchObject({
+      statusCode: 409,
+      code: 'EMAIL_REGISTERED',
+      message: 'Already registered. Please log in.',
+    });
+  });
+
+  it('ignores a code that is not an application code, and keeps the status name', () => {
+    for (const code of ['email registered', 'x', 42, '<script>', 'A'.repeat(50)]) {
+      const { body } = run(new ConflictException({ code, message: 'Conflict' }));
+      expect(body).toMatchObject({ code: 'CONFLICT' });
+    }
   });
 });
