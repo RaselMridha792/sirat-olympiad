@@ -27,8 +27,11 @@ function isSessionUser(value: unknown): value is SessionUser {
   );
 }
 
-/** /refresh, coming back to the page being rendered (src/proxy.ts puts its path in x-sirat-path). */
-async function refreshUrl(): Promise<string> {
+/**
+ * /refresh, coming back to the page being rendered (src/proxy.ts puts its path in x-sirat-path). Also used by the
+ * HTTP data source when a read gets 401 (data/http/server.ts).
+ */
+export async function refreshUrl(): Promise<string> {
   const path = (await headers()).get('x-sirat-path');
   const next = path && path.startsWith('/') && !path.startsWith('//') ? path : '/dashboard';
   return `/refresh?next=${encodeURIComponent(next)}`;

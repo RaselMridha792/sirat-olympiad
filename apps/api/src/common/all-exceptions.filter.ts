@@ -23,6 +23,9 @@ const CLIENT_ERROR_MESSAGES: Readonly<Record<number, string>> = {
   415: 'Unsupported media type',
 };
 
+/** An application error code an HttpException may carry in its body (`{ code, message }`), e.g. EMAIL_REGISTERED. */
+const APP_CODE = /^[A-Z][A-Z0-9_]{2,40}$/;
+
 /** Only these Prisma `meta` keys are logged: they name the model/constraint/column, never values. */
 const SAFE_PRISMA_META_KEYS = ['modelName', 'target', 'constraint', 'field_name'] as const;
 
@@ -64,15 +67,18 @@ export class AllExceptionsFilter implements ExceptionFilter {
     let status: number = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Internal server error';
     let details: unknown;
+    let appCode: string | undefined;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
       const body = exception.getResponse();
       if (typeof body === 'string') message = body;
       else if (body && typeof body === 'object') {
-        const b = body as { message?: string | string[]; error?: string };
+        const b = body as { message?: string | string[]; error?: string; code?: unknown };
         message = Array.isArray(b.message) ? 'Validation failed' : (b.message ?? message);
         if (Array.isArray(b.message)) details = b.message;
+        // A machine code a service set on purpose (e.g. EMAIL_REGISTERED), so the web can pick a bn/en text.
+        if (typeof b.code === 'string' && APP_CODE.test(b.code)) appCode = b.code;
       }
     } else if (isClientHttpError(exception)) {
       status = exception.status ?? exception.statusCode ?? HttpStatus.BAD_REQUEST;
@@ -95,7 +101,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     const payload: ApiError = {
       statusCode: status,
-      code: HttpStatus[status] ?? 'ERROR',
+      code: appCode ?? HttpStatus[status] ?? 'ERROR',
       message,
       requestId: req.id === undefined ? undefined : String(req.id),
       details,
