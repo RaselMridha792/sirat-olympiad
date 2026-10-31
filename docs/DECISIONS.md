@@ -13,6 +13,20 @@ One short entry per non-obvious technical or product decision. Newest first. For
 6. **Start waits for hydration**, like the auth forms: a click before React ran did nothing (found by the e2e).
 7. **Proof:** `scripts/e2e-exam.mjs`. An admin publishes a 15-minute exam; a fixture student takes it up to the 6th violation, with a reload in between; every response, the HTML and localStorage are searched for explanations, correct keys, scores and question or lineage ids. On a throwaway Postgres with the exam session's own API: 6/6. With the API changed to add `correctKey` and the question id to the start answer, the leak step fails.
 8. `Countdown` shows h:mm:ss from one hour on (`formatCountdown`, unit-tested); `@sirat/ui` gets a `test` script (lead's approval).
+## 2026-10-31 — Public entry page and legal pages (core C2; plan `docs/plans/CORE-PLAN.md` section 3)
+
+1. **Why now, before Phase D:** PayStation's merchant review asks for a live site with an about page, terms, a privacy policy, contact details (one email and at least one phone number) and the registered business name; a refund policy depends on the business. So only these five pages are built (entry, about, privacy, terms, refund policy): no design work, no other marketing sections.
+2. **One source each:**
+   - **The facts:** `content/site.ts` holds the registered name, address, email, phone, effective date and a `placeholder` flag. The client sends the values; until then they are null and the footer says the details follow.
+   - **The texts:** `i18n/messages/legal.ts` (bn mirrors en at compile time, sentence for sentence).
+   - **Placeholder texts claim only what the system does:** the data collected, PayStation for payments, the cookies, the exam rules. The refund page states the owner's rule: "The registration fee is non-refundable." / "রেজিস্ট্রেশন ফি ফেরতযোগ্য নয়।"
+3. **While `placeholder` is true,** every public page carries `noindex` and a visible draft note. Turning it off is part of putting the client's texts in.
+4. **Routes:** English at `/`, `/about`, `/privacy`, `/terms`, `/refund-policy`; Bangla at the same paths under `/bn`, with `hreflang` alternates and a language link on each page.
+   - **Static:** each route file only picks its page and locale, and no cookie or header is read (tested).
+   - **The fee and the open state** on the entry page come from payments' `GET /registrations/info`, fetched server-side without any cookie and revalidated at most every 60 s (ISR). On any failure, including a build with no API, the page shows no fee and keeps its buttons.
+   - **`<html lang>`** stays "en" in the shared root layout (UI port #16); Bangla pages set `lang` on their wrapper.
+5. **No HTML strings:** legal texts are structured data rendered by `Prose` (`packages/ui`). A unit test fails on any `dangerouslySetInnerHTML` in `apps/web/src`.
+6. **Checks:** `check-pages.mjs prod` also opens the ten public routes without a cookie (200, the brand, a heading, no error state, no raw error) (lead's OK). `public.test.ts` covers the routes, the refund sentence in both languages, the HTML scan and the info parser.
 
 ## 2026-10-31 — Web data layer over HTTP (Lead's order; core session implementation)
 

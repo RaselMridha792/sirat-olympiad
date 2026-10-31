@@ -10,7 +10,8 @@
 //   node scripts/check-pages.mjs prod [baseUrl]
 //     Production server whose data source is not connected yet. Every dashboard page must render the app shell,
 //     a heading and its polite error state (or, for a page that reads no data, its content) in a real browser:
-//     never a blank page, never raw error text.
+//     never a blank page, never raw error text. The public pages (PUBLIC_ROUTES: the entry page and the legal pages,
+//     English and Bangla) must answer 200 without any cookie and render their content the same way.
 //
 //   node scripts/check-pages.mjs api-down [baseUrl]
 //     Production server whose API is stopped or unreachable. A dashboard page with a session cookie must show the
@@ -27,6 +28,7 @@
 import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { PUBLIC_PAGES, publicPath } from '../src/content/site.ts';
 import { decideAccess } from '../src/lib/access.ts';
 import { apiLogin, launchBrowser } from './lib/cdp.mjs';
 
@@ -194,12 +196,32 @@ function checkRendered(url, { markup, text }) {
   }
 }
 
+/** The public pages in both languages (content/site.ts): static, no cookie needed. */
+const PUBLIC_ROUTES = PUBLIC_PAGES.flatMap((page) => [
+  publicPath(page, 'en'),
+  publicPath(page, 'bn'),
+]);
+
 async function prodMode() {
   await checkNoSession();
   const browser = await launchBrowser();
   let errorStates = 0;
   let checked = 0;
   try {
+    const visitor = await browser.newContext();
+    const anonymous = await visitor.newPage();
+    for (const url of PUBLIC_ROUTES) {
+      const res = await fetch(base + url, { redirect: 'manual' });
+      if (res.status !== 200)
+        fail(url, `public page: want 200 without a session, got ${res.status}`);
+      const shown = await render(anonymous, url);
+      checkRendered(url, shown);
+      if (shown.final !== url) fail(url, `public page ended on ${shown.final}`);
+      if (ERROR_TEXT.some((t) => shown.text.includes(t)))
+        fail(url, 'public page shows the error state');
+      checked += 1;
+    }
+    await visitor.close();
     for (const [role, routes, otherArea] of [
       ['student', STUDENT_ROUTES, '/admin'],
       ['admin', ADMIN_ROUTES, '/dashboard'],
