@@ -227,10 +227,12 @@ describe('POST /admin/users/export', () => {
       district: 'Dhaka',
       institution: 'রহিম, উচ্চ বিদ্যালয়',
     });
-    await makeUser(prisma, { role: 'admin', name: `${mk} staff` });
-    await makeUser(prisma, { role: 'jury', name: `${mk} jury` });
+    await makeUser(prisma, { role: 'admin', name: `=HYPERLINK("x") ${mk} staff` });
+    await makeUser(prisma, { role: 'jury', name: `=HYPERLINK("x") ${mk} jury` });
+    // The marker alone has the invoice shape (letters and digits); this term is a name search that also
+    // matches the two staff accounts, which must still stay out of the file.
     const res = await exportCsv(
-      { filters: { q: mk }, reason: 'courier list for the client' },
+      { filters: { q: `HYPERLINK("x") ${mk}` }, reason: 'courier list for the client' },
       exporter.cookie,
     );
     expect(res.status).toBe(200);

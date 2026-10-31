@@ -101,7 +101,8 @@ export async function call<T = unknown>(
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const text = await res.text();
+  // res.text() would drop a leading BOM; the CSV tests must see exactly the bytes a browser saves.
+  const text = new TextDecoder('utf-8', { ignoreBOM: true }).decode(await res.arrayBuffer());
   let json: unknown = null;
   try {
     json = text ? JSON.parse(text) : null;
