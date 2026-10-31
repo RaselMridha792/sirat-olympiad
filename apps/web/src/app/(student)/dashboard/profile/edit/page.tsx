@@ -10,6 +10,7 @@ import { common } from '@/i18n/common';
 import { profileMessages } from '@/i18n/messages/profile';
 import { getMessages } from '@/i18n/server';
 import { updateProfileAction } from './actions';
+import { requireAccess } from '@/lib/session';
 
 export async function generateMetadata(): Promise<Metadata> {
   const { m } = await getMessages(profileMessages);
@@ -22,6 +23,7 @@ export default async function EditProfilePage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  await requireAccess('/dashboard/profile/edit');
   const params = await searchParams;
   const [{ m }, { m: c }, data] = await Promise.all([
     getMessages(profileMessages),

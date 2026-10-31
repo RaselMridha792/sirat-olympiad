@@ -1,0 +1,125 @@
+'use client';
+import { useEffect, useRef, useState } from 'react';
+import { Button } from '@sirat/ui';
+import type { Locale } from '@/i18n';
+import { pick } from '@/i18n/messages';
+import { authMessages } from '@/i18n/messages/auth';
+import { mayRenew, recordRenewal } from '@/lib/auth/loop-guard';
+import { loginUrl, safeNext } from '@/lib/auth/next-param';
+import { retryDelayMs } from '@/lib/auth/refresh';
+import { refreshSession } from '@/lib/auth/refresh-browser';
+
+/** A renewal still unanswered after this is shown as slow; the request itself keeps going (refresh-browser.ts). */
+const SLOW_AFTER_MS = 10_000;
+
+/**
+ * /refresh: renews the session in the browser and goes back to `next` (a dashboard page, checked by safeNext).
+ * The server sends people here when the access cookie is missing or expired; it cannot renew the session itself
+ * because the refresh cookie is only sent to /api/auth. Expired: /login. Slow: says so and keeps waiting for the
+ * answer. Unavailable (network, rate limit, server): keeps trying (after Retry-After when the server sends one,
+ * else with a growing pause), never to /login on its own.
+ * "Try again now" and "Sign in instead" show only while no renewal is in flight: the POST outlives the page
+ * (keepalive), so its late answer would overwrite or clear the cookies of a login made meanwhile, on a shared
+ * computer even another student's.
+ */
+/** Where to go back to: `next` when it is a safe dashboard page, else the student home. */
+function target(): string {
+  const raw = new URLSearchParams(window.location.search).get('next');
+  return safeNext(raw, window.location.origin) ?? '/dashboard';
+}
+
+/** The tab's storage for the loop guard, or null where even reading it throws (blocked site data). */
+function tabStorage(): Storage | null {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+export function RefreshScreen({ locale }: { locale: Locale }) {
+  const m = pick(authMessages, locale);
+  // working/slow: the first renewal is in flight; waiting: unavailable, between tries; retrying: a later try.
+  const [view, setView] = useState<'working' | 'slow' | 'waiting' | 'retrying'>('working');
+  const wake = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    const next = target();
+    if (!mayRenew(tabStorage(), next, Date.now())) {
+      window.location.replace(loginUrl(next));
+      return;
+    }
+    let stopped = false;
+    let slow: ReturnType<typeof setTimeout> | undefined;
+    void (async () => {
+      for (let attempt = 0; !stopped; attempt += 1) {
+        slow = setTimeout(
+          () => setView((now) => (now === 'working' ? 'slow' : now)),
+          SLOW_AFTER_MS,
+        );
+        const result = await refreshSession();
+        clearTimeout(slow);
+        if (stopped) return;
+        if (result.outcome === 'ok') {
+          const back = recordRenewal(tabStorage(), next, Date.now());
+          return window.location.replace(back ? next : loginUrl(next));
+        }
+        if (result.outcome === 'expired') return window.location.replace(loginUrl(next));
+        setView('waiting');
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, retryDelayMs(attempt, result.retryAfterMs));
+          wake.current = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+        });
+        if (stopped) return;
+        setView('retrying');
+      }
+    })();
+    return () => {
+      stopped = true;
+      clearTimeout(slow);
+      wake.current?.();
+    };
+  }, []);
+
+  const loginInstead = (
+    <a
+      href="/login"
+      onClick={(event) => {
+        event.preventDefault();
+        window.location.assign(loginUrl(target()));
+      }}
+      className="block text-sm font-semibold text-secondary hover:underline"
+    >
+      {m.refresh.loginInstead}
+    </a>
+  );
+
+  return (
+    <div className="space-y-5 text-center">
+      <h2 className="text-3xl font-bold">{m.refresh.title}</h2>
+      <noscript>
+        <a href="/login" className="font-semibold text-secondary hover:underline">
+          {m.refresh.loginInstead}
+        </a>
+      </noscript>
+      <div role="status" aria-live="polite" className="space-y-4">
+        {view === 'waiting' ? (
+          <>
+            <p className="text-sm text-ink-muted">{m.refresh.unavailable}</p>
+            <Button type="button" onClick={() => wake.current?.()}>
+              {m.refresh.retry}
+            </Button>
+            {loginInstead}
+          </>
+        ) : view === 'retrying' ? (
+          <p className="text-sm text-ink-muted">{m.refresh.unavailable}</p>
+        ) : view === 'slow' ? (
+          <p className="text-sm text-ink-muted">{m.refresh.slow}</p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
