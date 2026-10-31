@@ -20,7 +20,7 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `POST /auth/reset-password` | Public, 300/min per IP | `{token, password}`. 204; ends every session, verifies the email, unlocks the account; no login. 400 "This link is invalid or has expired" for every bad link; 400 "Validation failed" for a refused password (the link stays usable). Built (A2.1e) |
 | | `POST /auth/verify-email` | Public, 300/min per IP | `{token}`. 204; never logs in (no session, no cookie). One 400 for every bad link. Built (A2.1e) |
 | | `POST /auth/change-password` | Auth, login limits | `{currentPassword, newPassword}`. 204 + fresh cookies for this device; one transaction writes the hash, ends every session and retires reset links. 400 for a wrong current password or a refused new one; 429 + `Retry-After` while locked. Built (A2.1d) |
-| users | `GET /users/me`, `PATCH /users/me` | Auth | **Allow-list DTO**: name, phone, district, institution, education, grade, photo |
+| users | `GET /users/me`, `PATCH /users/me`, `GET /content/profile-options` | Role(student, ambassador) | Student profile (below). Built (core C3) |
 | registrations | `GET /registrations/info`, `POST /registrations/start`, `GET /registrations/current`, `POST /registrations/current/{resume,retry,cancel}`, `GET /registrations/me` | Public (cookie) / Auth | Registration and payment section below. Built (payments PR 2) |
 | payments | `GET /payments/mine`, `GET /payments/:id/status` | Auth / Owner | Built (payments PR 2) |
 | | `POST /payments/:id/recheck` | Owner, throttled | Calls PayStation status (payments PR 3) |
@@ -42,6 +42,7 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | announcements | `GET /announcements` | Auth | |
 | ambassadors | `GET /ambassador/me`, `POST /ambassador/teams`, `GET /ambassador/tasks`, `POST /ambassador/tasks/:id/submit` | Role(ambassador) | Own data only |
 | admin (all `Role(admin)` unless noted) | `GET /admin/users`, `GET /admin/users/:id`, `POST /admin/users/export` | admin | Students list (below). Built (core C1) |
+| | `POST /admin/users/:id/grade-level` | admin | Student profile (below). Built (core C3) |
 | | `PATCH /admin/users/:id`, `POST /admin/users/:id/role` | admin | Audited. Not built (role change and block are later admin writes) |
 | | `GET /admin/exams?page=&pageSize=&q=&status=`, `GET /admin/exams/:id`, `POST /admin/exams`, `PATCH /admin/exams/:id`, `POST /admin/exams/:id/{publish,unpublish,archive}`, `POST /admin/exams/:id/questions`, `PUT`/`DELETE /admin/exams/:id/questions/:questionId`, `GET /admin/exams/:id/questions/:questionId/versions` | admin | Exam admin (below). Lock after publish; questions versioned, never deleted once published. Built (E1) |
 | | `GET/PUT /admin/settings` | admin | Single writer |
@@ -150,6 +151,19 @@ The database enforces the same lock (triggers `exams_frozen_after_publish`, `que
 | `POST /admin/users/export` | `{ filters, reason }`: `filters` = the list filters without `page`/`pageSize`; `reason` 3–200 characters | 200 `text/csv; charset=utf-8`, a UTF-8 BOM first (Bangla in Excel), `Content-Disposition: attachment`, `Cache-Control: no-store`. Only `student` and `ambassador` accounts, newest first. Columns: user id, name, email, phone, district, institution, education type, grade level, category, role, blocked, email verified, registered at and paid at (Asia/Dhaka), invoice, amount (BDT), payment status, referrer's promo code. A cell starting with `=`, `+`, `-`, `@`, tab or CR gets a `'` prefix. The audit row `users.exported` (admin, IP, filters with `q` replaced by its kind, row count, reason; never the rows) is written before the first byte: without it, 503 and no file. 400 `too_many_rows` over 50,000 matching rows (narrow the filter). 429 after 5 exports per admin per hour |
 
 POST for the export keeps the reason and the search out of URLs (nginx logs query strings) and puts it behind the CSRF header. The browser calls it through `lib/api.ts` and saves the file; the rows are read in keyset batches of 1,000, so no statement comes near the 10 s timeout.
+
+## Student profile (core C3; plan: `docs/plans/CORE-PLAN.md` §4, owner Q1 default)
+
+`@Roles('student', 'ambassador')` on the student routes; no route takes an id (the user is the session's), and each call re-reads the user (403 `account_blocked` with a valid token). Shapes `StudentProfile`, `ProfileOptions`, `ProfileUpdate` (`dashboard.ts`), `GradeCorrectionRequest` and `PROFILE_REFUSALS` (`core.ts`).
+
+| Method + path | Request | Answers |
+|---|---|---|
+| `GET /users/me` | — | `StudentProfile`: name, email, phone, district, institution, education type, category, role, `emailVerifiedAt`, `createdAt`, grade level (id, label), `currentRound` (null until rounds exist) |
+| `GET /content/profile-options` | — | `ProfileOptions`: grade levels (id, label, category, in order), the 5 education types and the 64 districts (payments' `registration.ts`, one list for registration and profile) |
+| `PATCH /users/me` | Any of `name` (2–100), `phone` (any BD form, stored `01XXXXXXXXX`), `district` (one of 64), `institution` (2–150), `educationType` (one of 5); at least one; none can be cleared. The same limits as the registration form | 200 `StudentProfile`. 400 `Validation failed` (details: the field messages) or `nothing_to_update`; any other field (`email`, `gradeLevelId`, `role`, `category`, `promoCode` …) → 400. 409 `PHONE_REGISTERED` (`ApiError.code`, the owner's text in `REGISTRATION_MESSAGES`) when another account has the number or a registration in progress holds it, also when two people claim it at once (the UNIQUE index decides). Audit `user.profile_updated` with the changed field names only, never the values |
+| `POST /admin/users/:id/grade-level` (admin) | `{ gradeLevelId, reason }` (reason 3–200) | 200 `StudentProfile` of that student; the category follows the grade table. 409 `has_attempt` once the student has any exam attempt (a category decides the exam), `not_a_student` for staff; 400 `grade_level_unknown`; 404 unknown user. Audit `user.grade_corrected` (old and new label, category, reason) in the same transaction. The admin is re-read |
+
+Email changes are not offered at launch (they need a verified flow with A2's email tokens; core plan Q1).
 
 ## DTO and security rules
 

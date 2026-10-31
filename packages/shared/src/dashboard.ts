@@ -89,8 +89,9 @@ export type StudentProfile = Pick<
 };
 
 /**
- * PATCH /users/me allow-list (RULEBOOK §18). role, category, email, points and payment fields are
- * never client-writable; the server derives category from the grade level.
+ * PATCH /users/me allow-list (RULEBOOK §18; core plan Q1). role, category, email, grade, points and payment
+ * fields are never client-writable: an admin corrects the grade (and so the category) before the first exam.
+ * Every field is optional; the ones sent must be valid (none of them can be cleared).
  */
 export const PROFILE_UPDATE_FIELDS = [
   'name',
@@ -98,18 +99,25 @@ export const PROFILE_UPDATE_FIELDS = [
   'district',
   'institution',
   'educationType',
-  'gradeLevelId',
 ] as const;
-export type ProfileUpdate = Pick<UserRecord, (typeof PROFILE_UPDATE_FIELDS)[number]>;
-export type ProfileFieldError = 'required' | 'tooLong' | 'invalid';
+export type ProfileField = (typeof PROFILE_UPDATE_FIELDS)[number];
+export type ProfileUpdate = Partial<Record<ProfileField, string>>;
+/** `taken`: the phone belongs to another account or to a registration in progress (owner's rule). */
+export type ProfileFieldError = 'required' | 'tooLong' | 'tooShort' | 'invalid' | 'taken';
+/** The same limits as the registration form (payments' StartRegistrationDto). */
+export const PROFILE_LIMITS = {
+  name: { min: 2, max: 100 },
+  institution: { min: 2, max: 150 },
+} as const;
 export type ProfileUpdateResult =
   | { ok: true }
   | { ok: false; fieldErrors: Partial<Record<keyof ProfileUpdate, ProfileFieldError>> };
 
-/** Option lists for the profile form come from the server (grade table, configured education types). */
+/** Option lists for the profile form come from the server (grade table, education types, districts). */
 export interface ProfileOptions {
   gradeLevels: Pick<GradeLevelRecord, 'id' | 'label' | 'category'>[];
   educationTypes: string[];
+  districts: string[];
 }
 
 export interface AmbassadorOverview {
