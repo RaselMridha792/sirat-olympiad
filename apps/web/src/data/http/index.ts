@@ -4,6 +4,7 @@ import { adminExams } from './admin-exams.ts';
 import { studentExams } from './exams.ts';
 import { adminLeaderboard, leaderboard } from './leaderboard.ts';
 import type { ApiGet } from './request.ts';
+import { adminUsers } from './users.ts';
 
 /**
  * The production data source: server-side reads from the API, one file per area (DECISIONS "Web data layer over
@@ -26,6 +27,7 @@ export function createHttpSource(get: ApiGet): DataSource {
       ...unavailableSource.admin,
       ...adminLeaderboard(get),
       ...adminExams(get),
+      ...adminUsers(get),
     },
   };
 }

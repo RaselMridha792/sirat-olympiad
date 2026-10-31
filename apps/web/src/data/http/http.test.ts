@@ -84,10 +84,7 @@ test('the HTTP source implements every DataSource method, unconnected ones fall 
       group,
     );
   }
-  await assert.rejects(
-    source.admin.listUsers({ page: 1, pageSize: 20 }),
-    DataSourceUnavailableError,
-  );
+  await assert.rejects(source.admin.getStats(), DataSourceUnavailableError);
   await assert.rejects(source.student.getHome(), DataSourceUnavailableError);
 });
 

@@ -59,3 +59,4 @@ export * from './dashboard';
 export * from './phone';
 export * from './registration';
 export * from './exam';
+export * from './core';

@@ -168,22 +168,29 @@ function examAttempts(w: MockWorld, exam: MockExam): AdminAttemptDetail[] {
   });
 }
 
-const userRow = ({
-  id,
-  name,
-  email,
-  role,
-  isBlocked,
-  category,
-  createdAt,
-}: MockUser): AdminUserRow => ({
-  id,
-  name,
-  email,
-  role,
-  isBlocked,
-  category,
-  createdAt,
+const userRow = (u: MockUser): AdminUserRow => ({
+  id: u.id,
+  name: u.name,
+  email: u.email,
+  role: u.role,
+  isBlocked: u.isBlocked,
+  category: u.category,
+  district: u.district,
+  createdAt: u.createdAt,
+  phoneLast3: u.phone ? u.phone.slice(-3) : null,
+  gradeLabel: gradeOf(u.gradeLevelId)?.label ?? null,
+  emailVerified: u.emailVerifiedAt !== null,
+  // A registration exists only for a paid payment (payments' trigger), so only those carry one here.
+  registration:
+    u.payment?.status === 'paid'
+      ? {
+          registeredAt: u.payment.paidAt ?? u.createdAt,
+          invoiceNumber: u.payment.invoiceNumber,
+          paymentStatus: u.payment.status,
+          paidAt: u.payment.paidAt,
+        }
+      : null,
+  needsPaymentReview: false,
 });
 
 export function createMockSource(state: MockState | null): DataSource {
@@ -550,7 +557,13 @@ export function createMockSource(state: MockState | null): DataSource {
               .users.filter((u) => matches(u.name, query.q) || matches(u.email, query.q))
               .filter((u) => !query.role || u.role === query.role)
               .filter((u) => query.blocked === undefined || u.isBlocked === query.blocked)
-              .map(userRow);
+              .filter((u) => !query.category || u.category === query.category)
+              .map(userRow)
+              .filter(
+                (r) =>
+                  query.registered === undefined || (r.registration !== null) === query.registered,
+              )
+              .filter((r) => query.verified === undefined || r.emailVerified === query.verified);
             return paginate(rows, query);
           },
           () => emptyPage<AdminUserRow>(query),
@@ -565,12 +578,13 @@ export function createMockSource(state: MockState | null): DataSource {
             return {
               ...userRow(user),
               phone: user.phone,
-              district: user.district,
               institution: user.institution,
               educationType: user.educationType,
               emailVerifiedAt: user.emailVerifiedAt,
               gradeLevel: grade ? { id: grade.id, label: grade.label } : null,
               payment: user.payment,
+              referredBy: null,
+              ambassador: null,
             };
           },
           () => null,

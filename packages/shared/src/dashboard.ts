@@ -173,23 +173,50 @@ export interface AdminStats {
   byCategory: Array<{ category: Category; count: number }>;
 }
 
+/** The account's registration and the status of the payment behind it (payments' tables, read only). */
+export interface AdminUserRegistration {
+  /** registrations.created_at (ISO). */
+  registeredAt: string;
+  invoiceNumber: PaymentRecord['invoiceNumber'];
+  paymentStatus: PaymentRecord['status'];
+  paidAt: PaymentRecord['paidAt'];
+}
+
+/** One row of the admin students list (06-API "Admin students list"). Never the full phone (core plan D2). */
 export type AdminUserRow = Pick<
   UserRecord,
-  'id' | 'name' | 'email' | 'role' | 'isBlocked' | 'category' | 'createdAt'
->;
+  'id' | 'name' | 'email' | 'role' | 'isBlocked' | 'category' | 'district' | 'createdAt'
+> & {
+  /** The last 3 digits of the phone, or null without one. */
+  phoneLast3: string | null;
+  gradeLabel: GradeLevelRecord['label'] | null;
+  emailVerified: boolean;
+  registration: AdminUserRegistration | null;
+  /** A payment of this user carries a review reason (payments' admin page has the details). */
+  needsPaymentReview: boolean;
+};
 
 export type AdminUserDetail = AdminUserRow &
-  Pick<UserRecord, 'phone' | 'district' | 'institution' | 'educationType' | 'emailVerifiedAt'> & {
+  Pick<UserRecord, 'phone' | 'institution' | 'educationType' | 'emailVerifiedAt'> & {
     gradeLevel: Pick<GradeLevelRecord, 'id' | 'label'> | null;
     payment: Pick<
       PaymentRecord,
       'status' | 'invoiceNumber' | 'amountMinor' | 'currency' | 'paidAt'
     > | null;
+    /** The ambassador whose promo code the student used (no contact details). */
+    referredBy:
+      | (Pick<UserRecord, 'name'> & { promoCode: AmbassadorProfileRecord['promoCode'] | null })
+      | null;
+    ambassador: Pick<AmbassadorProfileRecord, 'promoCode' | 'approvedAt'> | null;
   };
 
 export interface AdminUserQuery extends PageQuery {
   role?: Role;
   blocked?: boolean;
+  category?: Category;
+  /** true: has a registration; false: none (e.g. staff, or an account whose payment needs review). */
+  registered?: boolean;
+  verified?: boolean;
 }
 
 export type AdminExamCard = Pick<
