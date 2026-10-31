@@ -13,6 +13,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 6. **Start waits for hydration**, like the auth forms: a click before React ran did nothing (found by the e2e).
 7. **Proof:** `scripts/e2e-exam.mjs`. An admin publishes a 15-minute exam; a fixture student takes it up to the 6th violation, with a reload in between; every response, the HTML and localStorage are searched for explanations, correct keys, scores and question or lineage ids. On a throwaway Postgres with the exam session's own API: 6/6. With the API changed to add `correctKey` and the question id to the start answer, the leak step fails.
 8. `Countdown` shows h:mm:ss from one hour on (`formatCountdown`, unit-tested); `@sirat/ui` gets a `test` script (lead's approval).
+
 ## 2026-10-31 — Public entry page and legal pages (core C2; plan `docs/plans/CORE-PLAN.md` section 3)
 
 1. **Why now, before Phase D:** PayStation's merchant review asks for a live site with an about page, terms, a privacy policy, contact details (one email and at least one phone number) and the registered business name; a refund policy depends on the business. So only these five pages are built (entry, about, privacy, terms, refund policy): no design work, no other marketing sections.
