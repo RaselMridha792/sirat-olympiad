@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import type { AttemptView, StudentExamDetail, SubmissionReceipt } from '@sirat/shared';
 import { Badge, Button, buttonClasses, Card, cn, Countdown, Dialog } from '@sirat/ui';
+import { useHydrated } from '@/components/auth/useHydrated';
 import type { Locale } from '@/i18n';
 import { formatDateTime, formatNumber } from '@/i18n/format';
 import { pick } from '@/i18n/messages';
@@ -179,6 +180,8 @@ function WaitingRoom({
   const [openNow, setOpenNow] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const onOpened = useCallback(() => setOpenNow(true), []);
+  // A click before React runs would do nothing: the button waits for hydration, like the auth forms.
+  const hydrated = useHydrated();
   const n = (v: number) => formatNumber(locale, v);
 
   if (exam.state === 'submitted' && exam.attempt?.receipt) {
@@ -210,7 +213,7 @@ function WaitingRoom({
       )}
       <Button
         size="lg"
-        disabled={!canStart}
+        disabled={!canStart || !hydrated}
         onClick={() => (exam.state === 'in_progress' ? onEnter('resume') : setRulesOpen(true))}
       >
         {exam.state === 'in_progress' ? m.waiting.continue : m.waiting.start}
