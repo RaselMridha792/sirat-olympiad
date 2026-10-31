@@ -1,5 +1,10 @@
 // Prepares the dedicated integration-test database: creates it if missing, then applies all migrations.
-// Non-destructive (no reset/drop). Refuses any database whose name does not end with `_test`.
+// No reset/drop. Refuses any database whose name does not end with `_test`.
+// One exception, for migrations that refuse a database holding rows of their tables: the payments migration
+// (docs/plans/PAYMENTS-PLAN.md section 4.2) and the exam engine migration (docs/plans/EXAM-PLAN.md section 2.3). Older
+// test runs leave such rows behind. While such a migration is not yet applied, the leftover test rows of its tables
+// are emptied here (test data only; this file refuses any database that is not *_test), and a failed attempt of it is
+// marked rolled back so it can run again.
 import { execFileSync } from 'node:child_process';
 import prismaPkg from '@prisma/client';
 
@@ -30,8 +35,59 @@ try {
   await admin.$disconnect();
 }
 
-execFileSync('prisma', ['migrate', 'deploy'], {
-  stdio: 'inherit',
-  env: { ...process.env, DATABASE_URL: url, DIRECT_URL: url },
-  shell: process.platform === 'win32', // prisma is a .cmd shim on Windows
-});
+const prismaEnv = { ...process.env, DATABASE_URL: url, DIRECT_URL: url };
+const prismaOpts = { env: prismaEnv, shell: process.platform === 'win32' }; // prisma is a .cmd shim on Windows
+
+// Each guarded migration: the suffix of its directory name, the tables it refuses to find rows in (with their
+// dependants), emptied together in one TRUNCATE before `migrate deploy`, and the line it logs (from the row counts per
+// table). Fixed names only, never input.
+const GUARDED_MIGRATIONS = [
+  {
+    suffix: '_payments_registration',
+    tables: ['registrations', 'pending_registrations', 'payments'],
+    report: (n) =>
+      `emptied the payment tables of ${dbName} before the payments migration (${n.payments} payments)`,
+  },
+  {
+    suffix: '_exam_engine',
+    tables: ['submissions', 'attempts', 'questions'],
+    report: (n) =>
+      `emptied the exam tables of ${dbName} before the exam migration (${n.submissions + n.attempts + n.questions} rows)`,
+  },
+];
+
+const db = new PrismaClient({ datasourceUrl: url });
+try {
+  const [state] = await db.$queryRaw`
+    SELECT to_regclass('public._prisma_migrations') IS NOT NULL AS "hasLog"`;
+  for (const guarded of state.hasLog ? GUARDED_MIGRATIONS : []) {
+    const runs = await db.$queryRaw`
+      SELECT "migration_name" AS name, "finished_at" IS NOT NULL AS done, "rolled_back_at" IS NOT NULL AS undone
+      FROM "_prisma_migrations" WHERE "migration_name" LIKE ${'%' + guarded.suffix}`;
+    if (runs.some((r) => r.done)) continue;
+    const [present] = await db.$queryRaw`
+      SELECT count(*)::int AS n FROM unnest(${guarded.tables}::text[]) AS t(name)
+      WHERE to_regclass('public.' || quote_ident(t.name)) IS NOT NULL`;
+    if (present.n !== guarded.tables.length) continue; // an older database: these tables come with later migrations
+    const counts = {};
+    for (const table of guarded.tables) {
+      const [row] = await db.$queryRawUnsafe(`SELECT count(*)::int AS n FROM "public"."${table}"`);
+      counts[table] = row.n;
+    }
+    if (Object.values(counts).some((n) => n > 0)) {
+      const list = guarded.tables.map((t) => `"public"."${t}"`).join(', ');
+      await db.$executeRawUnsafe(`TRUNCATE TABLE ${list}`);
+      console.log(guarded.report(counts));
+    }
+    for (const failed of runs.filter((r) => !r.done && !r.undone)) {
+      execFileSync('prisma', ['migrate', 'resolve', '--rolled-back', failed.name], {
+        ...prismaOpts,
+        stdio: 'inherit',
+      });
+    }
+  }
+} finally {
+  await db.$disconnect();
+}
+
+execFileSync('prisma', ['migrate', 'deploy'], { ...prismaOpts, stdio: 'inherit' });
