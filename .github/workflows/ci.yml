@@ -238,6 +238,11 @@ jobs:
           api=$(curl -fsS -D - -o /dev/null http://127.0.0.1:8080/api/health)
           echo "$api" | grep -qi '^cache-control: no-store' || { echo "::error::an API answer without no-store"; exit 1; }
           if echo "$page$api" | grep -qi '^strict-transport-security:'; then echo "::error::HSTS on plain http"; exit 1; fi
+          # API answers: helmet sets these, nginx must not add a second copy (infra/nginx/api-headers.conf).
+          for h in X-Content-Type-Options Referrer-Policy Content-Security-Policy; do
+            [ "$(echo "$api" | grep -ci "^$h:")" = 1 ] || { echo "::error::$h is not exactly once on an API answer"; exit 1; }
+          done
+          if echo "$api" | grep -qi '^content-security-policy-report-only:'; then echo "::error::the page CSP on an API answer"; exit 1; fi
           q="q$(openssl rand -hex 8)"; r="r$(openssl rand -hex 8)"
           curl -fsS -o /dev/null -H "Referer: http://127.0.0.1:8080/admin/users?q=$r" "http://127.0.0.1:8080/api/health?q=$q"
           sleep 1

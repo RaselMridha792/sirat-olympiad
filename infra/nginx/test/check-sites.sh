@@ -80,10 +80,12 @@ q="q$RANDOM$RANDOM$RANDOM"
 r="r$RANDOM$RANDOM$RANDOM"
 error=$(https -D - -H "Referer: https://$host/admin/users?q=$r" "https://$host:$p443/api/health?q=$q")
 echo "$error" | grep -q 'BAD_GATEWAY' && pass "nginx's own 502 is JSON" || fail "nginx's own 502 is JSON"
-[ "$(echo "$error" | grep -ci '^strict-transport-security:')" = 1 ] &&
-  echo "$error" | grep -qi '^x-content-type-options: nosniff' &&
-  echo "$error" | grep -qi '^content-security-policy-report-only:' &&
-  pass "nginx's own errors keep the security headers" || fail "nginx's own errors keep the security headers"
+once=0
+for h in Strict-Transport-Security X-Content-Type-Options Referrer-Policy Content-Security-Policy-Report-Only; do
+  [ "$(echo "$error" | grep -ci "^$h:")" = 1 ] || once=1
+done
+[ "$once" = 0 ] && pass "nginx's own errors carry each security header exactly once" ||
+  fail "nginx's own errors carry each security header exactly once"
 
 redirect=$(curl -s --max-time 10 -D - -o /dev/null -H "Host: $host" "http://127.0.0.1:$p80/some/page?x=1")
 echo "$redirect" | grep -q '^HTTP/[0-9.]* 301' &&
