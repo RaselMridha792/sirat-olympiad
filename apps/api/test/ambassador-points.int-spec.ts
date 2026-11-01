@@ -18,21 +18,41 @@ import {
 } from '../src/modules/ambassadors/referral-points';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { QUEUE_REDIS_OPTIONS } from '../src/redis/redis.module';
-import { registeredStudent } from './core-helpers';
+import type { AmbassadorPointsConfig, PointsAdjustResult } from '@sirat/shared';
+import { bootCoreApp, call, registeredStudent, sessionFor, type CoreApp } from './core-helpers';
 import { makePaidPayment, makeUser, testPrisma } from './helpers';
 
 let prisma: PrismaClient;
 let sweep: ReferralPoints;
+let env: CoreApp;
+let admin: { id: string; cookie: string };
 
-beforeAll(() => {
+/** The core plan's Q3 defaults, restored after the settings tests (other suites read the ranks). */
+const DEFAULTS: AmbassadorPointsConfig = {
+  pointsPerReferral: 10,
+  thresholds: [
+    { name: 'Bronze', minPoints: 0 },
+    { name: 'Silver', minPoints: 100 },
+    { name: 'Gold', minPoints: 250 },
+  ],
+};
+
+beforeAll(async () => {
   prisma = testPrisma();
   sweep = new ReferralPoints(prisma as unknown as PrismaService);
+  env = await bootCoreApp();
+  admin = await sessionFor(env, prisma, { role: 'admin' });
 });
 
 afterAll(async () => {
   await setPoints(10);
+  await prisma.rankThreshold.deleteMany({});
+  await prisma.rankThreshold.createMany({ data: DEFAULTS.thresholds });
+  await env?.app.close();
   await prisma?.$disconnect();
 });
+
+const details = (json: unknown) => (json as { details?: string[] }).details;
 
 const setPoints = (value: number) =>
   prisma.setting.upsert({
@@ -171,5 +191,151 @@ describe('the schedulers', () => {
       eventsRedis.disconnect();
       redis.disconnect();
     }
+  });
+});
+
+describe('the points settings', () => {
+  const read = (cookie = admin.cookie) =>
+    call<AmbassadorPointsConfig>(env, 'GET', '/admin/ambassador-points', cookie);
+  const put = (body: unknown, cookie = admin.cookie) =>
+    call<AmbassadorPointsConfig>(env, 'PUT', '/admin/ambassador-points', cookie, body);
+
+  async function reset() {
+    await setPoints(DEFAULTS.pointsPerReferral);
+    await prisma.rankThreshold.deleteMany({});
+    await prisma.rankThreshold.createMany({ data: DEFAULTS.thresholds });
+  }
+
+  it('admins change points per referral and the ranks with the values they saw; a change in between is 409', async () => {
+    await reset();
+    expect((await read()).json).toEqual(DEFAULTS);
+    const next = {
+      pointsPerReferral: 12,
+      thresholds: [
+        { name: 'Bronze', minPoints: 0 },
+        { name: 'Silver', minPoints: 120 },
+        { name: 'Gold', minPoints: 300 },
+        { name: 'Platinum', minPoints: 600 },
+      ],
+    };
+    const res = await put({ ...next, expected: DEFAULTS, reason: 'Season two' });
+    expect([res.status, res.json]).toEqual([200, next]);
+    expect((await read()).json).toEqual(next);
+    const audit = await prisma.auditLog.findFirst({
+      where: { action: 'ambassador_points.changed', actorId: admin.id },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(audit?.meta).toEqual({ before: DEFAULTS, after: next, reason: 'Season two' });
+
+    const stale = await put({ ...DEFAULTS, expected: DEFAULTS, reason: 'Back again' });
+    expect([stale.status, details(stale.json)]).toEqual([409, ['stale']]);
+    await reset();
+  });
+
+  it('two admins saving at once: one wins, the other gets 409', async () => {
+    await reset();
+    const a = { ...DEFAULTS, pointsPerReferral: 20, expected: DEFAULTS, reason: 'Admin A' };
+    const b = { ...DEFAULTS, pointsPerReferral: 30, expected: DEFAULTS, reason: 'Admin B' };
+    const statuses = (await Promise.all([put(a), put(b)])).map((r) => r.status).sort();
+    expect(statuses).toEqual([200, 409]);
+    expect([20, 30]).toContain((await read()).json.pointsPerReferral);
+    await reset();
+  });
+
+  it('refuses ranks that do not start at 0, do not rise, repeat a name, or are too many', async () => {
+    await reset();
+    const base = { ...DEFAULTS, expected: DEFAULTS, reason: 'Check' };
+    const bad = [
+      [{ name: 'Bronze', minPoints: 5 }],
+      [
+        { name: 'Bronze', minPoints: 0 },
+        { name: 'Silver', minPoints: 0 },
+      ],
+      [
+        { name: 'Bronze', minPoints: 0 },
+        { name: 'Gold', minPoints: 300 },
+        { name: 'Silver', minPoints: 100 },
+      ],
+      [
+        { name: 'Bronze', minPoints: 0 },
+        { name: 'bronze', minPoints: 50 },
+      ],
+    ];
+    for (const thresholds of bad) {
+      const res = await put({ ...base, thresholds });
+      expect([res.status, details(res.json)]).toEqual([400, ['bad_thresholds']]);
+    }
+    const many = Array.from({ length: 11 }, (_, i) => ({ name: 'Rank ' + i, minPoints: i * 10 }));
+    for (const body of [
+      { ...base, thresholds: many },
+      { ...base, thresholds: [] },
+      { ...base, pointsPerReferral: 1001 },
+      { ...base, pointsPerReferral: -1 },
+      { ...base, reason: 'ab' },
+      { ...base, extra: true },
+      { pointsPerReferral: 10, thresholds: DEFAULTS.thresholds, reason: 'No expected' },
+    ])
+      expect((await put(body)).status).toBe(400);
+    expect((await read()).json).toEqual(DEFAULTS);
+  });
+});
+
+describe('point adjustments', () => {
+  const adjust = (body: unknown, cookie = admin.cookie) =>
+    call<PointsAdjustResult>(env, 'POST', '/admin/points/adjust', cookie, body);
+
+  it('writes a compensating entry for an ambassador, audited, and never edits a row', async () => {
+    const a = await ambassador();
+    const up = await adjust({ userId: a.id, amount: 15, reason: 'Event help' });
+    expect([up.status, up.json]).toEqual([200, { userId: a.id, points: 15 }]);
+    const down = await adjust({ userId: a.id, amount: -5, reason: 'Correction' });
+    expect(down.json.points).toBe(10);
+    const rows = await ledgerOf(a.id);
+    expect(rows).toHaveLength(2);
+    for (const r of rows) {
+      expect(r.eventKey).toMatch(/^adjust:[0-9a-f-]{36}$/);
+      expect(r.createdById).toBe(admin.id);
+    }
+    expect(
+      await prisma.auditLog.count({ where: { action: 'points.adjusted', entityId: a.id } }),
+    ).toBe(2);
+    // A revoked ambassador keeps the profile, so an adjustment still lands.
+    const gone = await ambassador(false);
+    expect((await adjust({ userId: gone.id, amount: 3, reason: 'Late credit' })).status).toBe(200);
+  });
+
+  it('refuses a student without a profile, an unknown user, a zero or too large amount, and a missing reason', async () => {
+    const { user } = await registeredStudent(prisma);
+    const res = await adjust({ userId: user.id, amount: 5, reason: 'Not one' });
+    expect([res.status, details(res.json)]).toEqual([409, ['not_ambassador']]);
+    expect((await adjust({ userId: randomUUID(), amount: 5, reason: 'Nobody' })).status).toBe(404);
+    const a = await ambassador();
+    for (const body of [
+      { userId: a.id, amount: 0, reason: 'Zero' },
+      { userId: a.id, amount: 10_001, reason: 'Too big' },
+      { userId: a.id, amount: 1.5, reason: 'Half' },
+      { userId: a.id, amount: 5 },
+      { userId: 'not-a-uuid', amount: 5, reason: 'Bad id' },
+    ])
+      expect((await adjust(body)).status).toBe(400);
+    expect(await ledgerOf(a.id)).toHaveLength(0);
+  });
+});
+
+describe('who may change points', () => {
+  it('is for admins only: manager, ambassador, student and a demoted admin get 403', async () => {
+    const a = await ambassador();
+    const body = { userId: a.id, amount: 5, reason: 'Try' };
+    for (const role of ['manager', 'ambassador', 'student'] as const) {
+      const other = await sessionFor(env, prisma, { role });
+      expect((await call(env, 'GET', '/admin/ambassador-points', other.cookie)).status).toBe(403);
+      expect((await call(env, 'POST', '/admin/points/adjust', other.cookie, body)).status).toBe(
+        403,
+      );
+    }
+    const demoted = await sessionFor(env, prisma, { role: 'admin' });
+    await prisma.user.update({ where: { id: demoted.id }, data: { role: 'student' } });
+    expect((await call(env, 'GET', '/admin/ambassador-points', demoted.cookie)).status).toBe(403);
+    expect(await ledgerOf(a.id)).toHaveLength(0);
   });
 });
