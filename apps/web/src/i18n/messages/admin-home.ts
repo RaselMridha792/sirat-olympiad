@@ -5,10 +5,6 @@ export const adminHomeMessages = defineMessages({
   en: {
     title: 'Admin dashboard',
     /** Jury members land here; their screens are not built yet, and the statistics are for admins and managers. */
-    jury: {
-      title: 'Jury',
-      body: 'The jury screens are not ready yet. You will find your assigned scripts here once they are.',
-    },
     hero: {
       title: 'System overview',
       subtitle: 'Registrations, payments and exam activity',
@@ -84,10 +80,6 @@ export const adminHomeMessages = defineMessages({
   },
   bn: {
     title: 'অ্যাডমিন ড্যাশবোর্ড',
-    jury: {
-      title: 'জুরি',
-      body: 'জুরির স্ক্রিন এখনো তৈরি হয়নি। তৈরি হলে আপনাকে দেওয়া খাতাগুলো এখানে পাবেন।',
-    },
     hero: {
       title: 'সিস্টেমের সার্বিক চিত্র',
       subtitle: 'নিবন্ধন, পেমেন্ট ও পরীক্ষার কার্যক্রম',

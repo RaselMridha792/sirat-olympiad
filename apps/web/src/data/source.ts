@@ -1,5 +1,9 @@
 import type {
   AdminRound,
+  AdminRoundJury,
+  JuryEntryQuery,
+  JuryEntryRow,
+  JuryRound,
   MyRound,
   AdminTeamDetail,
   AdminTeamRow,
@@ -125,6 +129,12 @@ export interface DataSource {
     getTeam(id: string): Promise<AdminTeamDetail | null>;
     /** GET /admin/rounds (every round in order, with entries by status and the promotions; admin only) */
     listRounds(): Promise<AdminRound[]>;
+    /** GET /admin/rounds/:id/jury (a video round's judges and the jury accounts to add; null = not found) */
+    getRoundJury(id: string): Promise<AdminRoundJury | null>;
+    /** GET /jury/rounds (role jury: the video rounds this judge scores in) */
+    listJuryRounds(): Promise<JuryRound[]>;
+    /** GET /jury/entries?round=&status=&page= (role jury: blind rows after the close) */
+    listJuryEntries(query: JuryEntryQuery): Promise<Paginated<JuryEntryRow>>;
     /** GET /admin/announcements?page=&status= (every status, with audience and author) */
     listAnnouncements(query: AdminAnnouncementQuery): Promise<Paginated<AdminAnnouncement>>;
     /** GET /admin/payments?invoice=&trx=&phone=&email=&status=&review=1&page= (admin only) */

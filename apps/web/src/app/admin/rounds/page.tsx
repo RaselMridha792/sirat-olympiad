@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { ENTRY_STATUSES, ROUND_LIMITS } from '@sirat/shared';
 import { Badge, Card, PageHeader } from '@sirat/ui';
+import { JuryButton } from '@/components/admin/rounds/JuryButton';
 import { PromoteButton } from '@/components/admin/rounds/PromoteButton';
 import { RoundEditor } from '@/components/admin/rounds/RoundEditor';
 import { getData } from '@/data';
@@ -36,6 +37,13 @@ export default async function AdminRoundsPage({
     getData(params),
   ]);
   const rounds = await data.admin.listRounds();
+  const juries = new Map(
+    await Promise.all(
+      rounds
+        .filter((r) => r.type === 'video')
+        .map(async (r) => [r.id, await data.admin.getRoundJury(r.id)] as const),
+    ),
+  );
   const n = (value: number) => formatNumber(locale, value);
   const canAdd = rounds.length < ROUND_LIMITS.maxRounds && !rounds.some((r) => r.type === 'final');
 
@@ -81,6 +89,9 @@ export default async function AdminRoundsPage({
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-2">
                     <RoundEditor locale={locale} round={round} />
+                    {juries.get(round.id) ? (
+                      <JuryButton locale={locale} jury={juries.get(round.id)!} />
+                    ) : null}
                     {next && round.type !== 'final' ? (
                       <PromoteButton
                         locale={locale}

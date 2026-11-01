@@ -13,6 +13,7 @@ import {
   Users,
   UsersRound,
   Milestone,
+  Gavel,
   type LucideIcon,
 } from 'lucide-react';
 import { Avatar, initialOf, type NavItem } from '@sirat/ui';
@@ -29,7 +30,7 @@ import { requireArea } from '@/lib/session';
 /**
  * Sidebar links, shown to the roles that may open them (lib/access.ts). Hiding a link only shapes the UI: each
  * admin page checks access itself and each API endpoint has its own server guard. Screens that are not
- * built yet (jury) are not linked at all.
+ * built yet are not linked at all.
  */
 const NAV: ReadonlyArray<{
   key: keyof AdminShellMessages['nav'];
@@ -44,6 +45,7 @@ const NAV: ReadonlyArray<{
   { key: 'tasks', href: '/admin/tasks', Icon: ClipboardList },
   { key: 'teams', href: '/admin/teams', Icon: UsersRound },
   { key: 'rounds', href: '/admin/rounds', Icon: Milestone },
+  { key: 'jury', href: '/admin/jury', Icon: Gavel },
   { key: 'announcements', href: '/admin/announcements', Icon: Megaphone },
   { key: 'payments', href: '/admin/payments', Icon: CreditCard },
   { key: 'settings', href: '/admin/settings', Icon: Settings },
