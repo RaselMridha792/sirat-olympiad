@@ -10,6 +10,11 @@ import {
   editableFields,
   examFormProblems,
   hasQuestionProblems,
+  importErrorText,
+  importFailure,
+  importFileProblem,
+  importRequest,
+  isImportPreview,
   isoToDhaka,
   patchExamBody,
   pickQuestion,
@@ -25,6 +30,7 @@ import {
   type ExamFormValues,
   type ExamSettings,
 } from './exam-authoring.ts';
+import { adminExamAuthoringMessages } from '../../../i18n/messages/admin-exam-authoring.ts';
 
 const exam = (over: Partial<ExamSettings> = {}): ExamSettings => ({
   id: '0b6f7d2e-8f1c-4c1e-9a55-1f2d3c4b5a69',
@@ -426,4 +432,126 @@ test('every reason a write was refused comes back, known codes only', () => {
   assert.deepEqual(authoringProblems(refused(403)), ['failed']);
   assert.deepEqual(authoringProblems(new SessionExpiredError()), ['expired']);
   assert.deepEqual(authoringProblems(new TypeError('Failed to fetch')), ['failed']);
+});
+
+// ───────────── CSV import (E7a) ─────────────
+
+const importRefused = (status: number, code: string, details?: unknown) =>
+  new ApiRequestError(status, { statusCode: status, code, message: 'x', details });
+
+test('the file check before sending: a .csv of 1 to 1,000,000 bytes', () => {
+  assert.equal(importFileProblem({ name: 'questions.csv', size: 1_000_000 }), null);
+  assert.equal(importFileProblem({ name: 'QUESTIONS.CSV', size: 10 }), null);
+  assert.equal(importFileProblem({ name: 'questions.csv', size: 1_000_001 }), 'tooBig');
+  assert.equal(importFileProblem({ name: 'questions.csv', size: 0 }), 'emptyFile');
+  assert.equal(importFileProblem({ name: 'questions.xlsx', size: 10 }), 'notCsv');
+  assert.equal(importFileProblem({ name: 'csv', size: 10 }), 'notCsv');
+});
+
+test('the import request: the dry-run flag in the path, the file as the multipart field `file`', () => {
+  const file = new Blob(['text,A\r\n'], { type: 'text/csv' });
+  const [path, init] = importRequest('0b6f7d2e-8f1c-4c1e-9a55-1f2d3c4b5a69', file, true);
+  assert.equal(
+    path,
+    '/admin/exams/0b6f7d2e-8f1c-4c1e-9a55-1f2d3c4b5a69/questions/import?dryRun=true',
+  );
+  assert.equal(init.method, 'POST');
+  assert.ok(init.body.get('file') instanceof Blob);
+  assert.deepEqual([...init.body.keys()], ['file']);
+  assert.match(
+    importRequest('a/b', file, false)[0],
+    /^\/admin\/exams\/a%2Fb\/questions\/import\?dryRun=false$/,
+  );
+});
+
+test('a refused import maps to the file problems, too big, or the general refusals', () => {
+  const rows = [
+    { row: 3, field: 'B', code: 'required' },
+    { row: 0, field: 'file', code: 'not_utf8' },
+    { row: 2, field: 'nonsense', code: 'required' }, // unknown field: dropped
+    { row: 2, field: 'A', code: 'made_up' }, // unknown code: dropped
+    'free text',
+  ];
+  assert.deepEqual(importFailure(importRefused(400, 'QUESTION_IMPORT_INVALID', rows)), {
+    kind: 'rows',
+    errors: [
+      { row: 3, field: 'B', code: 'required' },
+      { row: 0, field: 'file', code: 'not_utf8' },
+    ],
+  });
+  assert.deepEqual(importFailure(importRefused(413, 'PAYLOAD_TOO_LARGE')), { kind: 'tooBig' });
+  // nginx's own 413 (above 1 MiB) is an HTML page: no API body at all, still "too big".
+  assert.deepEqual(importFailure(new ApiRequestError(413, null)), { kind: 'tooBig' });
+  assert.deepEqual(importFailure(importRefused(409, 'CONFLICT', ['pool_fixed'])), {
+    kind: 'refused',
+    problems: ['pool_fixed'],
+  });
+  assert.deepEqual(importFailure(importRefused(409, 'CONFLICT', ['exam_archived'])), {
+    kind: 'refused',
+    problems: ['exam_archived'],
+  });
+  // A 400 that is not the import's own (e.g. no dryRun flag), or one with nothing usable: the general "invalid".
+  assert.deepEqual(importFailure(importRefused(400, 'BAD_REQUEST', ['dryRun must be one of'])), {
+    kind: 'refused',
+    problems: ['invalid'],
+  });
+  assert.deepEqual(importFailure(importRefused(400, 'QUESTION_IMPORT_INVALID', ['junk'])), {
+    kind: 'refused',
+    problems: ['invalid'],
+  });
+  assert.deepEqual(importFailure(new SessionExpiredError()), {
+    kind: 'refused',
+    problems: ['expired'],
+  });
+  assert.deepEqual(importFailure(new TypeError('Failed to fetch')), {
+    kind: 'refused',
+    problems: ['failed'],
+  });
+});
+
+test('a dry-run answer is used only when it has the expected shape', () => {
+  assert.ok(isImportPreview({ rows: 2, errors: [], truncated: false }));
+  assert.ok(
+    isImportPreview({
+      rows: 1,
+      errors: [{ row: 2, field: 'text', code: 'too_long' }],
+      truncated: true,
+    }),
+  );
+  assert.ok(!isImportPreview({ rows: 2, errors: [] }));
+  assert.ok(!isImportPreview({ rows: '2', errors: [], truncated: false }));
+  assert.ok(
+    !isImportPreview({
+      rows: 2,
+      errors: [{ row: -1, field: 'text', code: 'too_long' }],
+      truncated: false,
+    }),
+  );
+  assert.ok(!isImportPreview(null));
+});
+
+test('each problem reads as its spreadsheet row and column, in both languages, with every code worded', () => {
+  const en = adminExamAuthoringMessages.en.import;
+  const bn = adminExamAuthoringMessages.bn.import;
+  assert.equal(
+    importErrorText({ row: 7, field: 'C', code: 'gap' }, en),
+    'Row 7, option C: Empty while a later option is filled.',
+  );
+  assert.equal(
+    importErrorText({ row: 4, field: 'row', code: 'column_count' }, en),
+    'Row 4: It does not have exactly 10 cells.',
+  );
+  assert.equal(
+    importErrorText({ row: 0, field: 'file', code: 'too_many_rows' }, en),
+    'The file: It has more than 500 questions. Split it into smaller files.',
+  );
+  const bnDigits = (n: number) => new Intl.NumberFormat('bn-BD').format(n);
+  assert.equal(
+    importErrorText({ row: 12, field: 'correct', code: 'correct_key_missing' }, bn, bnDigits),
+    'সারি ১২, correct: পূরণ করা কোনো বিকল্পের অক্ষর হতে হবে।',
+  );
+  for (const t of [en, bn]) {
+    for (const text of [...Object.values(t.codes), ...Object.values(t.columns)])
+      assert.ok(typeof text === 'string' && text.length > 0);
+  }
 });
