@@ -193,6 +193,8 @@ jobs:
       REDIS_CACHE_URL: redis://localhost:6379
       # The AppModule wiring tests boot the real app, which validates these at startup.
       # JWT_ACCESS_SECRET is generated per run (see the first step): the app refuses weak or placeholder secrets.
+      # No TOTP_ENCRYPTION_KEY: admin 2FA is off for the suites, so their admin sessions open the admin routes; the 2FA
+      # suites (auth-two-factor*.int-spec.ts) set their own throwaway key.
       REDIS_QUEUE_URL: redis://localhost:6379
       MAILPIT_URL: http://localhost:8025
     steps:
@@ -261,6 +263,8 @@ jobs:
           cp .env.example .env
           sed -i "s|^JWT_ACCESS_SECRET=.*|JWT_ACCESS_SECRET=$(openssl rand -hex 32)|" .env
           sed -i "s|^POSTGRES_APP_PASSWORD=.*|POSTGRES_APP_PASSWORD=$(openssl rand -hex 32)|" .env
+          # The api runs with NODE_ENV=production, which requires the admin 2FA key (commented out in the example).
+          printf 'TOTP_ENCRYPTION_KEY=%s\n' "$(openssl rand -base64 32)" >> .env
           $DCD config --quiet
       - name: Nginx on the pinned image - both sites pass nginx -t; the TLS site, its headers and its logs
         run: infra/nginx/test/check-sites.sh
@@ -380,7 +384,7 @@ jobs:
           # The word is padded to 8 columns (N/A takes 5 spaces). The disk line depends on the runner, so it is not asserted.
           bad=$(grep -vE '^(PASS|FAIL|N/A|MANUAL) +[a-zA-Z.]|^prelaunch-check: ' <<< "$out" || true)
           [ -z "$bad" ] || { echo "::error::a line that is not PASS, FAIL, N/A or MANUAL"; exit 1; }
-          for v in $(grep -E '^(JWT_ACCESS_SECRET|POSTGRES_PASSWORD)=' .env | cut -d= -f2-); do
+          for v in $(grep -E '^(JWT_ACCESS_SECRET|POSTGRES_PASSWORD|TOTP_ENCRYPTION_KEY)=' .env | cut -d= -f2-); do
             ! grep -qF -- "$v" <<< "$out" || { echo "::error::a secret value reached the output"; exit 1; }
           done
           for line in 'PASS    migrations are up to date' 'PASS    the worker is healthy' 'PASS    no published exam yet' \

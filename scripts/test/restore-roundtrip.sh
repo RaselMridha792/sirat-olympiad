@@ -27,6 +27,7 @@ sed -e "s|change-me-fake|$pw|g" -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$p
   -e "s|^POSTGRES_APP_PASSWORD=.*|POSTGRES_APP_PASSWORD=$(hex 32)|" \
   -e "s|^EMAIL_PROVIDER=.*|EMAIL_PROVIDER=mailpit|" -e "s|^PAYSTATION_ENV=.*|PAYSTATION_ENV=|" .env.example > "$OUT/src.env"
 printf 'MAILPIT_URL=http://mailpit:8025\nSIRAT_TAG=%s\n' "$TAG" >> "$OUT/src.env"
+printf 'TOTP_ENCRYPTION_KEY=%s\n' "$(hex 32)" >> "$OUT/src.env" # production mode requires the admin 2FA key
 unset pw
 export DRILL_ENV_FILE="$OUT/src.env"
 SDC=(docker compose -p "$S" --env-file "$OUT/src.env" -f infra/docker-compose.yml -f infra/backup/drill.compose.yml)

@@ -56,6 +56,7 @@ sed -e "s|change-me-fake|$pw|g" -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$p
   -e "s|^PAYSTATION_ENV=.*|PAYSTATION_ENV=|" -e "s|^SECURITY_ALERT_EMAIL=.*|SECURITY_ALERT_EMAIL=|" .env.example > "$OUT/load.env"
 grep -q '^POSTGRES_APP_PASSWORD=' "$OUT/load.env" || printf 'POSTGRES_APP_PASSWORD=%s\n' "$(hex 32)" >> "$OUT/load.env"
 printf 'MAILPIT_URL=http://127.0.0.1:9\nSIRAT_TAG=%s\n' "$TAG" >> "$OUT/load.env"
+printf 'TOTP_ENCRYPTION_KEY=%s\n' "$(hex 32)" >> "$OUT/load.env" # production mode requires the admin 2FA key
 umask 022
 LOAD_ENV_FILE=$(hostpath "$OUT/load.env")
 export LOAD_ENV_FILE

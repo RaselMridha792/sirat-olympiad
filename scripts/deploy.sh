@@ -135,7 +135,7 @@ if [ "$MODE" = first ]; then
       fail "a $s container of project $PROJECT already exists: --first is only for a fresh host (it never recreates a data service)"
     fi
   done
-  for key in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB DATABASE_URL DIRECT_URL JWT_ACCESS_SECRET APP_URL; do
+  for key in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB DATABASE_URL DIRECT_URL JWT_ACCESS_SECRET TOTP_ENCRYPTION_KEY APP_URL; do
     [ -n "$(envval "$key")" ] || fail ".env has no value for $key"
   done
   for f in infra/nginx/certs/origin.pem infra/nginx/certs/origin.key; do
