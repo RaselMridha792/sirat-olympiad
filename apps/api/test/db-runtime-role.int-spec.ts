@@ -12,6 +12,7 @@ import {
   applyDatabaseTimeouts,
   assertRestrictions,
   clearRoleSettings,
+  grantProblems,
   quietUrl,
   scramVerifier,
 } from '../prisma/runtime-role';
@@ -275,6 +276,18 @@ describe('the runtime role sirat_app', () => {
     }
   });
 
+  it('runtime-role.ts stops the migrate job when sirat_app lost rights the app needs, and passes a sound database', async () => {
+    expect(await grantProblems(owner)).toBeNull();
+    const problem = await rolledBack(owner, async (tx) => {
+      await tx.$executeRawUnsafe('REVOKE SELECT ON TABLE "settings" FROM sirat_app');
+      await tx.$executeRawUnsafe(
+        'ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE SELECT ON TABLES FROM sirat_app',
+      );
+      return grantProblems(tx);
+    });
+    expect(problem).toMatch(/cannot read 1 table\(s\) and lacks 1 default privilege\(s\)/);
+  });
+
   it('runs the script on a connection that keeps statement text out of the server log (QUIET_SESSION)', async () => {
     const quiet = new PrismaClient({
       datasourceUrl: quietUrl(process.env.TEST_DATABASE_URL ?? ''),
@@ -301,6 +314,17 @@ describe('the runtime role sirat_app', () => {
   });
   afterAll(async () => {
     await app.$disconnect();
+  });
+
+  it('may drop its default privileges (DROP OWNED, PostgreSQL allows it), which the migrate job then refuses to run with', async () => {
+    // Rolled back, so the test database keeps the default privileges that later migrations rely on.
+    const problem = await rolledBack(app, async (tx) => {
+      await tx.$executeRawUnsafe('DROP OWNED BY CURRENT_USER');
+      return grantProblems(tx);
+    });
+    expect(problem).toMatch(
+      /^sirat_app cannot read 0 table\(s\) and lacks 6 default privilege\(s\)/,
+    );
   });
 
   it('is what the app under test connects as (PrismaService reads the DATABASE_URL load-env.ts set)', async () => {

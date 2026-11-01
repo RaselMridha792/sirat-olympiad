@@ -15,9 +15,11 @@
  * One run at a time per database (an advisory lock), all steps in one transaction. It prints one line and never a
  * value, plus a warning line when it cleared settings.
  *
- * On a cluster marked `sirat.environment=development` (the shared dev stack, used by every worktree) the password is
- * set only while the role has none, so one worktree's value can never reset another's. Until L8 switches the API to the
- * role, an empty POSTGRES_APP_PASSWORD only skips the password step.
+ * It also stops the job when sirat_app has lost rights the app needs (grantProblems), before the app would.
+ *
+ * The app connects as sirat_app (L8), so POSTGRES_APP_PASSWORD is required, except on a cluster marked
+ * `sirat.environment=development` (the shared dev stack, used by every worktree): there the password is set only while
+ * the role has none, so one worktree's value can never reset another's, and a worktree without the key skips the step.
  */
 import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'node:crypto';
 // Types only: main() loads Prisma Client after it has checked DIRECT_URL (see there).
@@ -77,15 +79,18 @@ export function passwordProblem(password: string): string | null {
   return null;
 }
 
-export type PasswordStep = 'skip-empty' | 'keep-dev' | 'set';
+export type PasswordStep = 'missing' | 'skip-empty' | 'keep-dev' | 'set';
 
-/** Whether to set the password now. The development cluster keeps the first value it was given. */
+/**
+ * Whether to set the password now. The app connects as sirat_app (L8), so outside the development cluster the key is
+ * required; the development cluster keeps the first value it was given, and lets a worktree without the key skip.
+ */
 export function passwordStep(input: {
   password: string;
   development: boolean;
   hasPassword: boolean;
 }): PasswordStep {
-  if (!input.password) return 'skip-empty';
+  if (!input.password) return input.development ? 'skip-empty' : 'missing';
   if (input.development && input.hasPassword) return 'keep-dev';
   return 'set';
 }
@@ -210,6 +215,31 @@ export async function applyDatabaseTimeouts(db: Db): Promise<number> {
   return applied;
 }
 
+/** The default privileges the migration gives sirat_app: SELECT, INSERT, UPDATE, DELETE on tables; USAGE, SELECT on sequences. */
+const DEFAULT_PRIVILEGES = 6;
+
+/**
+ * What sirat_app is missing to run the app, or null. The script adds no rights (a later migration may narrow them), so a
+ * right the role lost stops the migrate job instead of the app. `DROP OWNED BY CURRENT_USER`, which every role may run
+ * on itself, removes its default privileges (its table rights stay: the owner granted them), so every table a later
+ * migration creates would lack its rights. Counts only; the repair is a reviewed migration.
+ */
+export async function grantProblems(db: Db): Promise<string | null> {
+  // By oid, not by name: PostgreSQL may test the privilege before the schema filter, and a name lookup outside public
+  // (pg_catalog's tables) would fail.
+  const [row] = await db.$queryRaw<{ unreadable: number; defaults: number }[]>`
+    SELECT
+      (SELECT count(*)::int FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND c.relname <> '_prisma_migrations'
+           AND NOT has_table_privilege(${RUNTIME_ROLE}, c.oid, 'SELECT')) AS "unreadable",
+      (SELECT count(*)::int FROM pg_default_acl d JOIN pg_namespace n ON n.oid = d.defaclnamespace, aclexplode(d.defaclacl) a
+         WHERE n.nspname = 'public' AND a.grantee = (SELECT oid FROM pg_roles WHERE rolname = ${RUNTIME_ROLE})) AS "defaults"`;
+  const unreadable = row?.unreadable ?? 0;
+  const missingDefaults = Math.max(0, DEFAULT_PRIVILEGES - (row?.defaults ?? 0));
+  if (unreadable === 0 && missingDefaults === 0) return null;
+  return `${RUNTIME_ROLE} cannot read ${unreadable} table(s) and lacks ${missingDefaults} default privilege(s); restore them with a reviewed migration (docs/05-DATABASE.md "Roles")`;
+}
+
 /**
  * Gives the role its login. A utility statement takes no parameters, so the verifier is in the statement text: it is
  * sent only on a connection whose settings keep statement text out of the server log (QUIET_SESSION).
@@ -259,6 +289,7 @@ async function main(): Promise<number> {
         await assertRestrictions(tx);
         const cleared = await clearRoleSettings(tx);
         await applyDatabaseTimeouts(tx);
+        const grants = await grantProblems(tx);
         const [state] = await tx.$queryRaw<
           { development: boolean; hasPassword: boolean; canLogin: boolean }[]
         >`
@@ -269,7 +300,7 @@ async function main(): Promise<number> {
         const development = state?.development ?? false;
         const step = passwordStep({ password, development, hasPassword });
         if (step === 'set') await setLogin(tx, scramVerifier(password));
-        return { cleared, line: readyLine(step, hasPassword && (state?.canLogin ?? false)) };
+        return { cleared, grants, step, hadLogin: hasPassword && (state?.canLogin ?? false) };
       },
       { maxWait: 10_000, timeout: 60_000 },
     );
@@ -278,7 +309,17 @@ async function main(): Promise<number> {
         `runtime role: cleared ${outcome.cleared} role-level setting(s) of ${RUNTIME_ROLE}`,
       );
     }
-    console.log(outcome.line);
+    if (outcome.grants) {
+      console.error(`runtime role: ${outcome.grants}`);
+      return 1;
+    }
+    if (outcome.step === 'missing') {
+      console.error(
+        `runtime role: POSTGRES_APP_PASSWORD is required: the app connects as ${RUNTIME_ROLE} (LAUNCH-PLAN L8)`,
+      );
+      return 2;
+    }
+    console.log(readyLine(outcome.step, outcome.hadLogin));
     return 0;
   } finally {
     await db.$disconnect();

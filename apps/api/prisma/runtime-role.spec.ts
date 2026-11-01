@@ -119,13 +119,12 @@ describe('runtime-role: the password rules', () => {
     expect(passwordProblem(`${secret}!`) ?? '').not.toContain(secret);
   });
 
-  it('skips an empty key, keeps the first password on the development cluster, sets it anywhere else', () => {
+  it('requires the key outside the development cluster, which keeps its first password; sets it anywhere else', () => {
     expect(passwordStep({ password: '', development: true, hasPassword: false })).toBe(
       'skip-empty',
     );
-    expect(passwordStep({ password: '', development: false, hasPassword: true })).toBe(
-      'skip-empty',
-    );
+    expect(passwordStep({ password: '', development: false, hasPassword: true })).toBe('missing');
+    expect(passwordStep({ password: '', development: false, hasPassword: false })).toBe('missing');
     expect(passwordStep({ password: 'x', development: true, hasPassword: true })).toBe('keep-dev');
     expect(passwordStep({ password: 'x', development: true, hasPassword: false })).toBe('set');
     expect(passwordStep({ password: 'x', development: false, hasPassword: true })).toBe('set');
