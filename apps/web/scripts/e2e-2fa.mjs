@@ -81,9 +81,19 @@ async function submitCode(page, code) {
   await page.evaluate(`document.querySelector('button[type=submit]').click(), true`);
 }
 
+/** Clicks "Log out" until the browser is on /login: a click before React has hydrated the button does nothing. */
 async function logout(page) {
-  check(await clickButton(page, 'Log out'), 'no logout button');
-  await page.waitFor(`location.pathname === '/login'`, { timeout: 20_000 });
+  for (let tries = 0; tries < 20; tries += 1) {
+    // false while a logout is pending (the button is disabled): then only wait
+    await clickButton(page, 'Log out');
+    try {
+      await page.waitFor(`location.pathname === '/login'`, { timeout: 1_500 });
+      return;
+    } catch {
+      /* not hydrated yet, or the logout still runs: click again (a second logout is harmless) */
+    }
+  }
+  throw new Error('the logout never reached /login');
 }
 
 /** A run that stopped half way leaves the account enrolled: turn it off through the API first. */
