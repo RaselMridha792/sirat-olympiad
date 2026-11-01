@@ -18,8 +18,10 @@ import { SessionService } from '../src/modules/auth/session.service';
 import {
   HOUSEKEEPING_JOBS,
   HOUSEKEEPING_JOB_OPTIONS,
+  ATTEMPT_SCRUB_SCHEDULER_ID,
   SESSION_CLEANUP_SCHEDULER_ID,
 } from '../src/modules/housekeeping/housekeeping-queue';
+import { AttemptScrub } from '../src/modules/housekeeping/attempt-scrub';
 import { HousekeepingWorker } from '../src/modules/housekeeping/housekeeping.worker';
 import {
   type CleanupLimits,
@@ -263,7 +265,7 @@ describe('a purged token replayed over HTTP', () => {
 });
 
 describe('the nightly scheduler', () => {
-  it('two workers starting give one scheduler at 03:30 Dhaka, and its job runs the cleanup', async () => {
+  it('two workers starting give one scheduler per job (03:30 and 04:00 Dhaka), and the jobs run', async () => {
     const queueName = `housekeeping-test-${randomUUID().slice(0, 8)}`;
     const values: Record<string, string | undefined> = {
       REDIS_QUEUE_URL: process.env.REDIS_QUEUE_URL,
@@ -271,9 +273,14 @@ describe('the nightly scheduler', () => {
     };
     const config = { get: (key: string) => values[key] } as unknown as ConfigService<EnvVars, true>;
     const cleanup = cleanupWith();
+    const scrub = new AttemptScrub(
+      app.get(PrismaService),
+      app.get(AuditService),
+      DEFAULT_CLEANUP_LIMITS,
+    );
     const workers = [
-      new HousekeepingWorker(cleanup, config),
-      new HousekeepingWorker(cleanup, config),
+      new HousekeepingWorker(cleanup, scrub, config),
+      new HousekeepingWorker(cleanup, scrub, config),
     ];
     const redis = new Redis(process.env.REDIS_QUEUE_URL as string, QUEUE_REDIS_OPTIONS);
     const queue = new Queue(queueName, { connection: redis });
@@ -282,18 +289,26 @@ describe('the nightly scheduler', () => {
     try {
       for (const w of workers) await w.onModuleInit();
       const schedulers = await queue.getJobSchedulers(0, 10, true);
-      expect(schedulers).toHaveLength(1);
-      expect(schedulers[0]).toMatchObject({
-        key: SESSION_CLEANUP_SCHEDULER_ID,
-        pattern: '30 3 * * *',
-        tz: 'Asia/Dhaka',
-      });
+      expect(schedulers).toHaveLength(2);
+      expect([...schedulers].sort((a, b) => a.key.localeCompare(b.key))).toMatchObject([
+        { key: ATTEMPT_SCRUB_SCHEDULER_ID, pattern: '0 4 * * *', tz: 'Asia/Dhaka' },
+        { key: SESSION_CLEANUP_SCHEDULER_ID, pattern: '30 3 * * *', tz: 'Asia/Dhaka' },
+      ]);
 
       const now = new Date();
       await due(now, 2, 1);
       await events.waitUntilReady();
       const job = await queue.add(HOUSEKEEPING_JOBS.sessionCleanup, {}, HOUSEKEEPING_JOB_OPTIONS);
       expect(await job.waitUntilFinished(events, 20_000)).toMatchObject({ sessions: 2, tokens: 1 });
+      const scrubJob = await queue.add(
+        HOUSEKEEPING_JOBS.attemptScrub,
+        {},
+        HOUSEKEEPING_JOB_OPTIONS,
+      );
+      expect(await scrubJob.waitUntilFinished(events, 20_000)).toMatchObject({
+        abandoned: expect.any(Number),
+        dead: expect.any(Number),
+      });
     } finally {
       for (const w of workers) await w.onApplicationShutdown();
       await events.close();

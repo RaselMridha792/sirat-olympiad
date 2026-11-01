@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { drainBatches } from './batch-drain';
 
 /** DECISIONS A2.1b #9: a session row goes 30 days after it expired or was revoked (a rotation revokes it). */
 export const SESSION_RETENTION_DAYS = 30;
@@ -40,8 +40,6 @@ export function cleanupCutoffs(now: Date): { sessions: Date; tokens: Date } {
   };
 }
 
-type DeleteBatch = (tx: Prisma.TransactionClient, limit: number) => Prisma.PrismaPromise<number>;
-
 /**
  * Deletes old session and auth-token rows (LAUNCH-PLAN §9, L13). Sessions keep minors' IPs and browsers, so they go
  * once they can no longer be used: 30 days after expiry or revocation. A replay of a purged token is then simply
@@ -64,7 +62,9 @@ export class SessionCleanup {
 
   async run(now: Date = new Date()): Promise<CleanupResult> {
     const cut = cleanupCutoffs(now);
-    const sessions = await this.drain(
+    const sessions = await drainBatches(
+      this.prisma,
+      this.limits,
       (tx, limit) => tx.$executeRaw`
         DELETE FROM sessions WHERE id IN (
           SELECT id FROM sessions
@@ -72,7 +72,9 @@ export class SessionCleanup {
           LIMIT ${limit}
           FOR UPDATE SKIP LOCKED)`,
     );
-    const tokens = await this.drain(
+    const tokens = await drainBatches(
+      this.prisma,
+      this.limits,
       (tx, limit) => tx.$executeRaw`
         DELETE FROM auth_tokens WHERE id IN (
           SELECT id FROM auth_tokens
@@ -81,8 +83,8 @@ export class SessionCleanup {
           FOR UPDATE SKIP LOCKED)`,
     );
     const result: CleanupResult = {
-      sessions: sessions.deleted,
-      tokens: tokens.deleted,
+      sessions: sessions.count,
+      tokens: tokens.count,
       batches: sessions.batches + tokens.batches,
       more: sessions.more || tokens.more,
     };
@@ -92,22 +94,5 @@ export class SessionCleanup {
       meta: { ...result },
     });
     return result;
-  }
-
-  /** Batch after batch until one comes back short, or the cap is reached. */
-  private async drain(
-    deleteBatch: DeleteBatch,
-  ): Promise<{ deleted: number; batches: number; more: boolean }> {
-    const { batchSize, maxBatches, statementTimeoutMs } = this.limits;
-    let deleted = 0;
-    for (let batches = 1; batches <= maxBatches; batches += 1) {
-      const count = await this.prisma.$transaction(async (tx) => {
-        await tx.$queryRaw`SELECT set_config('statement_timeout', ${String(statementTimeoutMs)}, true)`;
-        return deleteBatch(tx, batchSize);
-      });
-      deleted += count;
-      if (count < batchSize) return { deleted, batches, more: false };
-    }
-    return { deleted, batches: maxBatches, more: true };
   }
 }
