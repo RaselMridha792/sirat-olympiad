@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # L7's round trip, inside run-restore-roundtrip.sh's tools container (as root; not to be run on its own). A source in
-# its own project (sirat-drill-src: Postgres and Redis only, throwaway settings): migrations, admin A, a dump, admin B.
+# its own project (sirat-drill-src: Postgres, PgBouncer and Redis only, throwaway settings): migrations, admin A, a dump, admin B.
 # Then restore-drill.sh restores the dump into sirat-drill (--keep): A logs in (204), B does not (401). Then
 # restore.sh --mode beside restores it again over the running drill: the names are swapped, the old database is kept,
 # and the logins answer the same. Everything is wiped at the end.
