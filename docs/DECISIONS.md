@@ -2,6 +2,19 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-01 — Restores never overwrite, and the drill never reads the real settings (L7; exam session, LAUNCH-PLAN §5)
+
+1. **No `--clean` over a live schema.**
+   - **A rebuilt server** restores into the empty database of a fresh volume; the script refuses a database that has tables.
+   - **A server still up** restores into `<db>_restore_<stamp>`, which is checked, then the names are swapped. The old database stays as `<db>_old_<stamp>`, for payments newer than the dump. PgBouncer is restarted so no pooled connection keeps pointing at the old database.
+2. **Roles are not in a dump,** so `sirat_app` is made first (`runtime-role.ts --ensure`, L2). The normal migrate run then puts back what a fresh database lacks: the database timeouts, CONNECT, and the role's restrictions and login. The script checks them.
+3. **Sessions and tokens are cleared after a restore,** so everyone logs in again. The JWT secret's rotation and the comparison with PayStation's export stay manual steps, which the script prints.
+4. **The drill never reads the clone's `.env`:** compose's `env_file: ../.env` would have given the drill's api and worker the server's real settings (production secrets, live PayStation, SES). `infra/backup/drill.compose.yml` replaces it with the drill's throwaway file through `DRILL_ENV_FILE`, which compose refuses to run without. `restore-drill.sh` also refuses to start unless both services resolve the drill's own secret, compared and never printed. Found while writing the drill; the lead asked for it in RUNBOOK §5 and here.
+5. **The drill runs on loopback only** (it refuses any port bound beyond 127.0.0.1) and wipes only containers that carry its project label, never project `sirat`.
+6. **The drill never builds:** its images must be of the dump's code (`--tag`). A first local run failed for that reason: the PC's `latest` images predated L2.
+7. **The round trip** (admin A, a dump, admin B; A logs in, B does not; then the beside mode over the running drill) runs from a tools container, with the clone in a Docker volume so compose's relative bind mounts name a path the daemon has (as in L9's rehearsal). CI runs it in the docker job.
+8. **The app check after a restore settles first,** as `deploy.sh` does: three good rounds in a row of `/api/ready` and the home page through the internal listener, within 30 s. The restarted api and web may get new addresses (the migrate run takes one meanwhile), and nginx keeps a resolved address for up to 10 s. CI's first run failed on a single check there; the local run had passed only because the PC was slower.
+
 ## 2026-11-01 — Ambassador tasks (core C5b-2; lead's plan, defaults and rules)
 
 1. **Approval is final** (lead's default): one transaction with a row lock writes the ledger row `task:<assignmentId>` (task points, `task_id`, `created_by`) `ON CONFLICT DO NOTHING` and sets `approved`. A double click or three admins at once award once; a mistake is corrected with "Adjust points" (C5b-1), so the ledger stays append-only.
