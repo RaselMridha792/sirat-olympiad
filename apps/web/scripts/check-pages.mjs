@@ -9,10 +9,11 @@
 //     may open (src/lib/access.ts) are checked the same way with CHECK_AMBASSADOR_EMAIL / _PASSWORD.
 //
 //   node scripts/check-pages.mjs prod [baseUrl]
-//     Production server whose data source is not connected yet. Every dashboard page must render the app shell,
-//     a heading and its polite error state (or, for a page that reads no data, its content) in a real browser:
-//     never a blank page, never raw error text. The public pages (PUBLIC_ROUTES: the entry page and the legal pages,
-//     English and Bangla) must answer 200 without any cookie and render their content the same way.
+//     Production server (the HTTP source). Every dashboard page renders the app shell and a heading in a real
+//     browser, never a blank page or raw error text, as the launch table says (src/data/launch.ts): a `live` page
+//     shows its content, never the error state; a `soon` page shows ComingSoon (data-state="coming-soon") with HTTP
+//     200. A page without a row in the table fails. The public pages (PUBLIC_ROUTES: the entry page and the legal
+//     pages, English and Bangla) must answer 200 without any cookie and render their content the same way.
 //
 //   node scripts/check-pages.mjs api-down [baseUrl]
 //     Production server whose API is stopped or unreachable. A dashboard page with a session cookie must show the
@@ -30,6 +31,7 @@ import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PUBLIC_PAGES, publicPath } from '../src/content/site.ts';
+import { LAUNCH } from '../src/data/launch.ts';
 import { decideAccess } from '../src/lib/access.ts';
 import { apiLogin, launchBrowser } from './lib/cdp.mjs';
 
@@ -228,10 +230,12 @@ const PUBLIC_ROUTES = PUBLIC_PAGES.flatMap((page) => [
   publicPath(page, 'bn'),
 ]);
 
+const COMING_SOON = 'data-state="coming-soon"';
+
 async function prodMode() {
   await checkNoSession();
   const browser = await launchBrowser();
-  let errorStates = 0;
+  let soonPages = 0;
   let checked = 0;
   try {
     const visitor = await browser.newContext();
@@ -277,18 +281,27 @@ async function prodMode() {
           continue;
         }
         checked += 1;
-        // 500 is fine (the data source failed and the error boundary rendered); 404/502 etc. are not.
-        if (![200, 500].includes(res.status)) fail(url, `HTTP ${res.status}`);
         if (shown.final !== url)
           fail(url, `${role}: ended on ${shown.final}, not on the page asked for`);
-        if (ERROR_TEXT.some((t) => shown.text.includes(t))) errorStates += 1;
+        const errorShown = ERROR_TEXT.some((t) => shown.text.includes(t));
+        const launch = LAUNCH[route];
+        if (!launch) fail(url, `no row for ${route} in src/data/launch.ts`);
+        else if (launch === 'soon') {
+          soonPages += 1;
+          if (res.status !== 200) fail(url, `coming soon: want HTTP 200, got ${res.status}`);
+          if (!shown.markup.includes(COMING_SOON)) fail(url, 'coming soon: ComingSoon is missing');
+          if (errorShown) fail(url, 'coming soon: shows the error state instead');
+        } else {
+          if (res.status !== 200) fail(url, `live: want HTTP 200, got ${res.status}`);
+          if (errorShown) fail(url, 'live: shows the error state');
+        }
       }
       await context.close();
     }
   } finally {
     await browser.close();
   }
-  console.log(`check-pages (prod): ${errorStates} page(s) showed the polite error state`);
+  console.log(`check-pages (prod): ${soonPages} page(s) coming soon by the launch table`);
   console.log(
     'check-pages (prod): ambassador, manager and jury sessions are not in this run; their pages are covered by src/lib/access.test.ts',
   );
@@ -303,7 +316,10 @@ async function apiDownMode() {
     const context = await browser.newContext();
     await context.setCookie(base, 'sirat_access', 'api-down-check');
     const page = await context.newPage();
-    for (const url of ['/dashboard', '/dashboard/profile', '/admin']) {
+    // A `soon` page too (the first in the launch table, if any): with the API down, requireAccess() fails before
+    // its guard, so it shows the error page like any other.
+    const soon = ROUTES.find(({ route }) => LAUNCH[route] === 'soon');
+    for (const url of ['/dashboard', '/dashboard/profile', '/admin', ...(soon ? [soon.url] : [])]) {
       const shown = await render(page, url);
       if (shown.final !== url)
         fail(url, `API down: ended on ${shown.final}, want the error page on ${url}`);
