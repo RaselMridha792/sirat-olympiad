@@ -389,7 +389,8 @@ export class AdminExamsService {
       await assertAdmin(tx, actor.id);
       const exam = await lockExam(tx, examId);
       if (exam.status === 'archived') throw refuse('exam_archived');
-      // Published, even with a random draw: questions come one by one there (EXAM-PLAN 4.1), never in bulk.
+      // Published, even with a random draw: the import narrows EXAM-PLAN 4.1 to drafts (the E7a handover), since a
+      // bulk add would reshape every remaining draw at once.
       if (exam.status === 'published') throw refuse('pool_fixed');
       const active = await tx.question.findMany({
         where: { examId, isActive: true },
