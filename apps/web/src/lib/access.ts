@@ -29,6 +29,8 @@ export const PAGE_ROLES: ReadonlyArray<{ path: string; roles: readonly Role[] }>
   { path: '/admin/rounds', roles: ['admin'] },
   { path: '/admin/jury', roles: ['jury'] },
   { path: '/admin/leaderboard', roles: ['admin', 'manager'] },
+  // Two-factor login (lib/auth/two-factor.ts): the roles that must sign in with a code.
+  { path: '/admin/security', roles: ['admin', 'manager'] },
 ];
 
 const within = (path: string, prefix: string) => path === prefix || path.startsWith(`${prefix}/`);

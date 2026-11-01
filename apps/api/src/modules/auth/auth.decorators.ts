@@ -5,6 +5,7 @@ import type { AuthedRequest, AuthUser } from './access-token.service';
 export const IS_PUBLIC = 'auth:public';
 export const REQUIRED_ROLES = 'auth:roles';
 export const SKIP_CSRF = 'auth:skip-csrf';
+export const TWO_FACTOR_OPTIONAL = 'auth:two-factor-optional';
 
 /**
  * No session needed. Every route is closed by default; each @Public() route must also be in the reviewed allow-list
@@ -14,6 +15,13 @@ export const Public = () => SetMetadata(IS_PUBLIC, true);
 
 /** The session user must have one of these roles (403 otherwise). Never combine with @Public(). */
 export const Roles = (...roles: Role[]) => SetMetadata(REQUIRED_ROLES, roles);
+
+/**
+ * Reachable by an admin or manager whose session has not proved a second factor yet, so they can enrol (DECISIONS
+ * "Admin two-factor login"). Exactly GET /auth/me, POST /auth/logout and GET /auth/2fa, POST /auth/2fa/setup and
+ * POST /auth/2fa/enable: test/app-routes.int-spec.ts fails on any other.
+ */
+export const TwoFactorOptional = () => SetMetadata(TWO_FACTOR_OPTIONAL, true);
 
 /**
  * Only for server-to-server callbacks that cannot send the CSRF header (PayStation IPN). Reviewed allow-list in

@@ -21,6 +21,7 @@ export const adminShellMessages = defineMessages({
       book: 'Free book',
       bookOrders: 'Book orders',
       audit: 'Audit log',
+      security: 'Sign-in security',
     },
   },
   bn: {
@@ -43,6 +44,7 @@ export const adminShellMessages = defineMessages({
       book: 'ফ্রি বই',
       bookOrders: 'বইয়ের অর্ডার',
       audit: 'অডিট লগ',
+      security: 'লগইন নিরাপত্তা',
     },
   },
 });

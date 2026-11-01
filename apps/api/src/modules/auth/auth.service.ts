@@ -19,9 +19,13 @@ import type { AuthUser } from './access-token.service';
 import { emailLink, resetPasswordMessage, verifyEmailMessage } from './auth-emails';
 import { EmailSendLimiter } from './email-send-limiter';
 import { EmailTokenService } from './email-tokens.service';
+import { reportLoginFailure } from './login-failure-report';
 import { LoginLimiter } from './login-limiter';
 import { PasswordService } from './password.service';
 import { type ClientInfo, type IssuedSession, SessionService } from './session.service';
+import { TwoFactorChallenges } from './two-factor/two-factor-challenges';
+import { TwoFactorConfig } from './two-factor/two-factor.config';
+import { twoFactorRequired } from './two-factor/two-factor.errors';
 
 /** One message for every failed login: it never tells whether the email has an account. */
 export const LOGIN_FAILED_MESSAGE = 'Email or password is incorrect';
@@ -42,6 +46,10 @@ export class TooManyAttemptsException extends HttpException {
   }
 }
 
+/** A right password: a session, or (two-factor login on) the challenge for the code step. */
+export type LoginOutcome =
+  { kind: 'session'; session: IssuedSession } | { kind: 'two_factor'; challengeId: string };
+
 /** Login, password and email-token flows (RULEBOOK §5, owner rules of 2026-10-31). */
 @Injectable()
 export class AuthService {
@@ -58,11 +66,17 @@ export class AuthService {
     private readonly emails: EmailQueue,
     private readonly sendLimiter: EmailSendLimiter,
     private readonly background: BackgroundTasks,
+    private readonly twoFactor: TwoFactorConfig,
+    private readonly challenges: TwoFactorChallenges,
     config: ConfigService<EnvVars, true>,
   ) {
     this.appUrl = config.get('APP_URL', { infer: true }) ?? 'http://localhost:3000';
     this.resetMinutes = config.get('PASSWORD_RESET_TOKEN_MINUTES', { infer: true });
     this.verifyHours = config.get('EMAIL_VERIFY_TOKEN_HOURS', { infer: true });
+  }
+
+  private get signals() {
+    return { audit: this.audit, alerts: this.alerts };
   }
 
   /** Web origin for email links (APP_URL; required in production). */
@@ -117,10 +131,12 @@ export class AuthService {
   /**
    * Limits first: during a lock the password is not even checked, so the right one is refused too (owner).
    * An unknown email costs the same argon2 work as a real one and is counted the same way. Returns the new session
-   * only (the caller sets cookies; the body stays empty and the web reads /auth/me). A successful login is not
-   * audited: the sessions row records it, keeping login at one read and one write (02-SYSTEM-DESIGN §3).
+   * (the caller sets cookies; the body stays empty and the web reads /auth/me), or, for an account with two-factor
+   * login on, a challenge for the code step: then nothing resets the failure counts and no session exists until the
+   * code (POST /auth/2fa/verify). A successful login is not audited: the sessions row records it, keeping a student's
+   * login at one read and one write (02-SYSTEM-DESIGN §3).
    */
-  async login(email: string, password: string, client: ClientInfo): Promise<IssuedSession> {
+  async login(email: string, password: string, client: ClientInfo): Promise<LoginOutcome> {
     const verdict = await this.limiter.check(email, client.ip);
     if (!verdict.allowed)
       throw new TooManyAttemptsException(Math.ceil(verdict.retryAfterMs / 1000));
@@ -143,34 +159,22 @@ export class AuthService {
         ip: client.ip,
         meta: { reason: user ? 'bad_password' : 'unknown_email' },
       });
-      if (failure.lockedForMs > 0)
-        await this.audit.record({
-          action: 'auth.login_locked',
-          actorId,
-          ip: client.ip,
-          meta: {
-            scope: 'account_ip',
-            level: failure.lockLevel,
-            minutes: failure.lockedForMs / 60_000,
-          },
-        });
-      // Owner conditions for the account limit (2026-10-31): its start and a distributed attempt are alerts.
-      if (failure.accountLimitStarted)
-        await this.alerts.raise('login.account_limit', {
-          actorId,
-          ip: client.ip,
-          meta: { accountFailures: failure.accountFailures, distinctIps: failure.distinctIps },
-        });
-      if (failure.distributedSignal)
-        await this.alerts.raise('login.distributed', {
-          actorId,
-          ip: client.ip,
-          meta: { accountFailures: failure.accountFailures, distinctIps: failure.distinctIps },
-        });
+      // Owner conditions (2026-10-31): a lock is audited; the account limit's start and a distributed attempt alert.
+      await reportLoginFailure(this.signals, failure, actorId, client.ip);
       throw new UnauthorizedException(LOGIN_FAILED_MESSAGE);
     }
 
-    await this.limiter.recordSuccess(email, client.ip);
+    // Only the roles that may enrol can have a second factor, so a student's login reads nothing more.
+    const codeStep =
+      this.twoFactor.requiredFor(user.role) &&
+      (
+        await this.prisma.userTwoFactor.findUnique({
+          where: { userId: user.id },
+          select: { enabledAt: true },
+        })
+      )?.enabledAt != null;
+    // With 2FA the counts reset only after the right code: a right password with wrong codes never clears them.
+    if (!codeStep) await this.limiter.recordSuccess(email, client.ip);
     if (user.isBlocked) {
       // Only someone who knows the password learns that the account is blocked.
       await this.audit.record({
@@ -182,13 +186,19 @@ export class AuthService {
     }
     if (this.passwords.needsRehash(user.passwordHash)) await this.rehash(user.id, password);
 
-    return this.sessions.start({ id: user.id, role: user.role }, client);
+    if (codeStep) return { kind: 'two_factor', challengeId: await this.challenges.create(user.id) };
+    return {
+      kind: 'session',
+      session: await this.sessions.start({ id: user.id, role: user.role }, client),
+    };
   }
 
   /**
    * Change password (RULEBOOK §5): the current password is checked under the same limits as login, since a stolen
    * session must not become a way to guess it. Success ends every session on every device and starts a fresh one
-   * for this device, which the caller sets as cookies.
+   * for this device, which the caller sets as cookies. The access token's session row must still be alive (401
+   * otherwise), and for an enrolled user it must have proved the second factor (403 TWO_FACTOR_REQUIRED, nothing
+   * changed): a token outlives its row, and the new session inherits the row's proof, never the token's claim.
    */
   async changePassword(
     actor: AuthUser,
@@ -198,9 +208,21 @@ export class AuthService {
   ): Promise<IssuedSession> {
     const user = await this.prisma.user.findUnique({
       where: { id: actor.id },
-      select: { id: true, email: true, role: true, isBlocked: true, passwordHash: true },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        isBlocked: true,
+        passwordHash: true,
+        twoFactor: { select: { enabledAt: true } },
+      },
     });
     if (!user || user.isBlocked) throw new UnauthorizedException('Authentication required');
+    // A session ended by enable (or anything else) must not come back as a fresh one, let alone a verified one.
+    const proof = await this.sessions.liveProof(actor.sessionId, user.id);
+    if (proof === null) throw new UnauthorizedException('Session expired, log in again');
+    const enrolled = this.twoFactor.enabled && user.twoFactor?.enabledAt != null;
+    if (enrolled && !proof) throw twoFactorRequired(); // nothing changed, nothing counted
 
     const verdict = await this.limiter.check(user.email, client.ip);
     if (!verdict.allowed)
@@ -229,7 +251,13 @@ export class AuthService {
       });
       return this.sessions.endAllForUser(user.id, tx);
     });
-    const session = await this.sessions.start({ id: user.id, role: user.role }, client);
+    // This device keeps what its session row proved, while the user is enrolled: a password change is no second
+    // factor, and never takes one away.
+    const fresh = { id: user.id, role: user.role };
+    const session =
+      proof && enrolled
+        ? await this.sessions.startVerified(fresh, client)
+        : await this.sessions.start(fresh, client);
     await this.audit.record({
       action: 'auth.password_changed',
       actorId: user.id,

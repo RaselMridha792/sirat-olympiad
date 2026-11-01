@@ -101,6 +101,7 @@ sed -e "s|^APP_URL=.*|APP_URL=https://$HOST|" -e "s|change-me-fake|$pw|g" -e "s|
   -e "s|^EMAIL_FROM=.*|EMAIL_FROM=Sirat rehearsal <no-reply@$HOST>|" -e "s|^PAYSTATION_ENV=.*|PAYSTATION_ENV=|" \
   -e "s|^SECURITY_ALERT_EMAIL=.*|SECURITY_ALERT_EMAIL=|" "$CLONE_DIR/.env.example" > /tmp/rh.env
 printf 'MAILPIT_URL=http://mailpit:8025\n' >> /tmp/rh.env
+printf 'TOTP_ENCRYPTION_KEY=%s\n' "$(hex 32)" >> /tmp/rh.env # production mode requires the admin 2FA key
 install -o deploy -m 600 /tmp/rh.env "$CLONE_DIR/.env"
 rm -f /tmp/rh.env
 unset pw jwt

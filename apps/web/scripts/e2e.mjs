@@ -12,6 +12,7 @@
 import { randomBytes } from 'node:crypto';
 import { cspReport, launchBrowser } from './lib/cdp.mjs';
 import { isLoopbackUrl } from './lib/local-only.mjs';
+import { nextCode } from './lib/totp.mjs';
 
 const BASE = process.argv[2] ?? process.env.APP_URL ?? 'http://127.0.0.1:8080';
 const MAILPIT = process.env.MAILPIT_URL ?? 'http://127.0.0.1:18025';
@@ -75,14 +76,24 @@ async function typeInto(page, selector, text) {
   await page.send('Input.insertText', { text });
 }
 
-/** Through the login form, starting at `loginPath`; resolves once the browser shows `expectPath`. */
+/**
+ * Through the login form, starting at `loginPath`; resolves once the browser shows `expectPath`. An admin with
+ * two-factor login gets the code step, passed with the secret `e2e:2fa-enrol` kept (lib/totp.mjs).
+ */
 async function uiLogin(page, user, loginPath, expectPath) {
   await page.goto(BASE + loginPath);
   await page.waitFor(`!!document.querySelector('button[type=submit]:not([disabled])')`);
   await typeInto(page, 'input[name=email]', user.email);
   await typeInto(page, 'input[name=password]', user.password);
   await page.evaluate(`document.querySelector('button[type=submit]').click(), true`);
-  await page.waitFor(shows(expectPath), { timeout: 20_000 });
+  await page.waitFor(`!!document.querySelector('input[name=code]') || (${shows(expectPath)})`, {
+    timeout: 20_000,
+  });
+  if (await page.evaluate(`!!document.querySelector('input[name=code]')`)) {
+    await typeInto(page, 'input[name=code]', await nextCode(user.email));
+    await page.evaluate(`document.querySelector('button[type=submit]').click(), true`);
+    await page.waitFor(shows(expectPath), { timeout: 20_000 });
+  }
 }
 
 async function loggedInContext(browser, user = STUDENT, landing = '/dashboard') {

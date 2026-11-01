@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { nextCode } from './totp.mjs';
 
 export function findBrowser() {
   const candidates = [
@@ -363,19 +364,46 @@ async function openPage(conn, browserContextId, onCspViolation = () => {}, onDoc
   return page;
 }
 
-/** Logs in through the API (POST /api/auth/login) and returns the session cookies by name. */
-export async function apiLogin(apiBase, email, password) {
-  const res = await fetch(`${apiBase}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-requested-with': 'sirat-web' },
-    body: JSON.stringify({ email, password }),
-  });
-  if (res.status !== 204) throw new Error(`login for ${email} answered ${res.status}`);
+/** The cookies a response sets, by name. */
+function cookiesOf(res) {
   const cookies = {};
   for (const line of res.headers.getSetCookie()) {
     const [pair] = line.split(';');
     const eq = pair.indexOf('=');
     cookies[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim();
+  }
+  return cookies;
+}
+
+const AUTH_HEADERS = { 'content-type': 'application/json', 'x-requested-with': 'sirat-web' };
+
+/**
+ * Logs in through the API (POST /api/auth/login) and returns the session cookies by name. An admin or manager with
+ * two-factor login gets a challenge instead (200 { twoFactorRequired }): the code step follows with the account's
+ * secret from apps/web/.e2e-totp.json (lib/totp.mjs; `pnpm --filter @sirat/web e2e:2fa-enrol` writes it).
+ */
+export async function apiLogin(apiBase, email, password) {
+  const res = await fetch(`${apiBase}/api/auth/login`, {
+    method: 'POST',
+    headers: AUTH_HEADERS,
+    body: JSON.stringify({ email, password }),
+  });
+  let cookies;
+  if (res.status === 200 && (await res.json().catch(() => null))?.twoFactorRequired) {
+    const challenge = cookiesOf(res).sirat_2fa;
+    if (!challenge) throw new Error(`login for ${email} set no two-factor challenge cookie`);
+    const verify = await fetch(`${apiBase}/api/auth/2fa/verify`, {
+      method: 'POST',
+      headers: { ...AUTH_HEADERS, cookie: `sirat_2fa=${challenge}` },
+      body: JSON.stringify({ code: await nextCode(email) }),
+    });
+    if (verify.status !== 204)
+      throw new Error(`the code step for ${email} answered ${verify.status}`);
+    cookies = cookiesOf(verify);
+  } else if (res.status === 204) {
+    cookies = cookiesOf(res);
+  } else {
+    throw new Error(`login for ${email} answered ${res.status}`);
   }
   if (!cookies.sirat_access) throw new Error(`login for ${email} set no access cookie`);
   return cookies;

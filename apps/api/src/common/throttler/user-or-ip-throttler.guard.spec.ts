@@ -6,7 +6,7 @@ import type { EnvVars } from '../../config/env';
 import type { AccessTokenService, AuthUser } from '../../modules/auth/access-token.service';
 import { UserOrIpThrottlerGuard } from './user-or-ip-throttler.guard';
 
-const student: AuthUser = { id: 'u-1', role: 'student', sessionId: 's-1' };
+const student: AuthUser = { id: 'u-1', role: 'student', sessionId: 's-1', twoFactor: false };
 
 class Routes {
   open() {}
