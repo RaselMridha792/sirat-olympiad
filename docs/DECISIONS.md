@@ -16,6 +16,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - It uses the session cleanup's batch loop, now shared (`batch-drain.ts`): 1,000 rows per batch, `FOR UPDATE SKIP LOCKED`, `SET LOCAL statement_timeout`, a cap, idempotent.
    - Counts-only log and audit (`housekeeping.attempt_scrub`). A failed run shows in ops-check as a warning on the same queue.
    - No migration: `@@index([status, updatedAt])` and the payments foreign-key index serve the scans.
+
 ## 2026-11-01 — Deploys: SHA-tagged images, a release file and deploy.sh (L9; exam session, LAUNCH-PLAN §2, owner Q4 default)
 
 1. **Images are `sirat-<service>:<sha>`** (`image: sirat-<service>:${SIRAT_TAG:-latest}`). `latest` is the old compose default name, so CI and the shared dev stack see no change. On the VPS, `deploy.sh` writes `SIRAT_TAG` (and the previous one) to `/var/lib/sirat/release.env`, and the RUNBOOK's `$DC` reads it as a second `--env-file`. A command run by hand therefore uses the live images, and with `--no-build` (and `--no-deps` for app services) it never builds or touches a data service.
