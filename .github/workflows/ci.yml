@@ -278,6 +278,11 @@ jobs:
           $DCD logs migrate | grep -q 'config seed done' || { echo "::error::config seed did not run"; exit 1; }
           $DCD logs migrate | grep -q 'runtime role ready: sirat_app (login and password set)' ||
             { echo "::error::the migrate job did not set up the runtime role"; exit 1; }
+          # The API and the worker connect as the runtime role through PgBouncer (L8), never as the superuser.
+          for s in api worker; do
+            grep -q 'database role=sirat_app superuser=false' <<<"$($DCD logs "$s")" ||
+              { echo "::error::$s does not connect to Postgres as sirat_app"; exit 1; }
+          done
       - name: Through nginx - readiness (DB + both Redis), liveness and the web app
         run: |
           curl -fsS http://127.0.0.1:8080/api/ready
