@@ -214,6 +214,7 @@ const session = (role: AuthUser['role'] = 'student'): AuthUser => ({
   id: randomUUID(),
   role,
   sessionId: randomUUID(),
+  twoFactor: false,
 });
 const cookieFor = async (user: AuthUser, service = app.get(AccessTokenService)) =>
   `${ACCESS_COOKIE}=${await service.sign(user)}`;

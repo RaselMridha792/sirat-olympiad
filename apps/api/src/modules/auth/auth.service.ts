@@ -229,7 +229,11 @@ export class AuthService {
       });
       return this.sessions.endAllForUser(user.id, tx);
     });
-    const session = await this.sessions.start({ id: user.id, role: user.role }, client);
+    // This device keeps what its session proved: a password change is no second factor, and never takes one away.
+    const fresh = { id: user.id, role: user.role };
+    const session = actor.twoFactor
+      ? await this.sessions.startVerified(fresh, client)
+      : await this.sessions.start(fresh, client);
     await this.audit.record({
       action: 'auth.password_changed',
       actorId: user.id,

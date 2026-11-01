@@ -64,9 +64,17 @@ export class SessionService {
     this.rotationBudgetMs = config.get('REFRESH_ROTATION_BUDGET_MS', { infer: true });
   }
 
-  /** A new session family, after a successful login. */
+  /** A new session family, after a successful login. Its tokens say no second factor was proved (`tfa` false). */
   start(user: { id: string; role: Role }, client: ClientInfo): Promise<IssuedSession> {
-    return this.issue(this.prisma, user, randomUUID(), client);
+    return this.issue(this.prisma, user, randomUUID(), client, false);
+  }
+
+  /**
+   * A new session family whose tokens carry `tfa` true: only after the second factor was proved (the login's code
+   * step, or turning 2FA on with a code). Its refreshes keep the flag while the user's 2FA stays on (rotate).
+   */
+  startVerified(user: { id: string; role: Role }, client: ClientInfo): Promise<IssuedSession> {
+    return this.issue(this.prisma, user, randomUUID(), client, true);
   }
 
   /**
@@ -84,7 +92,16 @@ export class SessionService {
     const deadline = startedAt + this.rotationBudgetMs;
     const current = await this.prisma.session.findUnique({
       where: { tokenHash: sha256(refreshToken) },
-      include: { user: { select: { id: true, role: true, isBlocked: true } } },
+      include: {
+        user: {
+          select: {
+            id: true,
+            role: true,
+            isBlocked: true,
+            twoFactor: { select: { enabledAt: true } },
+          },
+        },
+      },
     });
     if (!current) return { status: 'invalid' };
     const now = new Date();
@@ -94,6 +111,9 @@ export class SessionService {
       await this.endFamily(current.familyId);
       return { status: 'invalid' };
     }
+    // The user's CURRENT 2FA state, not the old token's: every change of it ends the user's other sessions, so a
+    // family still alive while 2FA is on proved the code (DECISIONS "Admin two-factor login").
+    const twoFactor = current.user.twoFactor?.enabledAt != null;
     const budget = deadline - Date.now();
     if (budget < MIN_ROTATION_MS) return { status: 'busy' };
     // Assigned inside the transaction callback, which TypeScript's flow analysis does not follow.
@@ -118,7 +138,7 @@ export class SessionService {
           });
           if (count !== 1) return;
           await bound();
-          issued = await this.issue(tx, current.user, current.familyId, client);
+          issued = await this.issue(tx, current.user, current.familyId, client, twoFactor);
           // Retired as of now, not as of when the UPDATE was sent (it may have waited for a lock): the reuse grace
           // counts from when the token really stops working.
           await tx.session.update({ where: { id: current.id }, data: { revokedAt: new Date() } });
@@ -205,6 +225,7 @@ export class SessionService {
     user: { id: string; role: Role },
     familyId: string,
     client: ClientInfo,
+    twoFactor: boolean,
   ): Promise<IssuedSession> {
     const refreshToken = randomBytes(32).toString('base64url');
     const refreshExpiresAt = new Date(Date.now() + this.refreshTtlMs);
@@ -218,7 +239,7 @@ export class SessionService {
         userAgent: client.userAgent?.slice(0, 512) ?? null,
       },
     });
-    const authUser: AuthUser = { id: user.id, role: user.role, sessionId: row.id };
+    const authUser: AuthUser = { id: user.id, role: user.role, sessionId: row.id, twoFactor };
     return {
       user: authUser,
       accessToken: await this.tokens.sign(authUser),

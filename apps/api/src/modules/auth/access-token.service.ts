@@ -13,6 +13,12 @@ export interface AuthUser {
   id: string;
   role: Role;
   sessionId: string;
+  /**
+   * The session proved a second factor (the `tfa` claim; DECISIONS "Admin two-factor login"). A session of a user with
+   * 2FA on always did: turning it on or off and every reset end the user's other sessions. A token without the claim
+   * (issued before 2FA existed) reads as false.
+   */
+  twoFactor: boolean;
 }
 export type AuthedRequest = Request & { user?: AuthUser };
 
@@ -34,6 +40,9 @@ export function accessTokenJwtOptions(secret: string, ttlSeconds: number): JwtMo
   };
 }
 
+/** What a verified token may carry; each claim is checked before use. */
+type Claims = { sub?: unknown; role?: unknown; sid?: unknown; tfa?: unknown };
+
 const isRole = (value: unknown): value is Role =>
   typeof value === 'string' && (ROLES as readonly string[]).includes(value);
 
@@ -43,19 +52,23 @@ export class AccessTokenService {
   constructor(private readonly jwt: JwtService) {}
 
   sign(user: AuthUser): Promise<string> {
-    return this.jwt.signAsync({ role: user.role, sid: user.sessionId }, { subject: user.id });
+    return this.jwt.signAsync(
+      { role: user.role, sid: user.sessionId, tfa: user.twoFactor },
+      { subject: user.id },
+    );
   }
 
   /** The session user, or null for a missing, expired, tampered or malformed token. Never throws. */
   async verify(token: string): Promise<AuthUser | null> {
-    let claims: { sub?: unknown; role?: unknown; sid?: unknown };
+    let claims: Claims;
     try {
-      claims = await this.jwt.verifyAsync<{ sub?: unknown; role?: unknown; sid?: unknown }>(token);
+      claims = await this.jwt.verifyAsync<Claims>(token);
     } catch {
       return null;
     }
-    const { sub, role, sid } = claims;
+    const { sub, role, sid, tfa } = claims;
     if (typeof sub !== 'string' || typeof sid !== 'string' || !isRole(role)) return null;
-    return { id: sub, role, sessionId: sid };
+    // Only a literal true counts: a missing claim (an older token) or any other value is "not proved".
+    return { id: sub, role, sessionId: sid, twoFactor: tfa === true };
   }
 }
