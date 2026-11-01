@@ -17,7 +17,7 @@ import { SessionCookies } from './session-cookies';
 import { SessionService } from './session.service';
 import { TwoFactorChallenges } from './two-factor/two-factor-challenges';
 import { TwoFactorConfig } from './two-factor/two-factor.config';
-import { TwoFactorController } from './two-factor/two-factor.controller';
+import { TwoFactorAdminController, TwoFactorController } from './two-factor/two-factor.controller';
 import { TwoFactorService } from './two-factor/two-factor.service';
 
 /**
@@ -38,7 +38,7 @@ import { TwoFactorService } from './two-factor/two-factor.service';
         ),
     }),
   ],
-  controllers: [AuthController, TwoFactorController],
+  controllers: [AuthController, TwoFactorController, TwoFactorAdminController],
   providers: [
     AccessTokenService,
     PasswordService,

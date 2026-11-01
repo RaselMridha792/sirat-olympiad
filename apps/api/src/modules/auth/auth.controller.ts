@@ -24,6 +24,7 @@ import { ResetPasswordDto, VerifyEmailDto } from './dto/email-link.dto';
 import { LoginDto } from './dto/login.dto';
 import { REFRESH_COOKIE, SessionCookies } from './session-cookies';
 import { type ClientInfo, SessionService } from './session.service';
+import { TwoFactorService } from './two-factor/two-factor.service';
 
 /**
  * Per client IP and route, for the email-link endpoints people use without a session (DECISIONS "Per-user API
@@ -54,6 +55,7 @@ export class AuthController {
     private readonly cookies: SessionCookies,
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly twoFactor: TwoFactorService,
   ) {}
 
   /**
@@ -217,6 +219,13 @@ export class AuthController {
       select: { id: true, name: true, email: true, role: true, isBlocked: true },
     });
     if (!row || row.isBlocked) throw new UnauthorizedException('Authentication required');
-    return { id: row.id, name: row.name, email: row.email, role: row.role };
+    return {
+      id: row.id,
+      name: row.name,
+      email: row.email,
+      role: row.role,
+      // Enabled, required and whether this session proved it: the web sends an admin to enrolment or the code step.
+      twoFactor: await this.twoFactor.sessionState(row, user.twoFactor),
+    };
   }
 }

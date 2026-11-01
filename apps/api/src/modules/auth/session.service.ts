@@ -7,6 +7,7 @@ import type { EnvVars } from '../../config/env';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AccessTokenService, type AuthUser } from './access-token.service';
+import { endSessionsOf } from './end-sessions';
 
 /**
  * A retired refresh token that comes back this soon, while its family is still alive, is two tabs refreshing at
@@ -178,12 +179,8 @@ export class SessionService {
    * Logout everywhere (also after a password change or reset). Returns how many sessions were still active.
    * Pass `tx` to end them in the same transaction as the password change (RULEBOOK §6: one transaction).
    */
-  async endAllForUser(userId: string, tx: Prisma.TransactionClient = this.prisma): Promise<number> {
-    const { count } = await tx.session.updateMany({
-      where: { userId, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
-    return count;
+  endAllForUser(userId: string, tx: Prisma.TransactionClient = this.prisma): Promise<number> {
+    return endSessionsOf(tx, userId);
   }
 
   private async endFamily(familyId: string): Promise<void> {

@@ -1,13 +1,16 @@
 import { randomBytes } from 'node:crypto';
 import type { ExecutionContext } from '@nestjs/common';
 import { ForbiddenException, HttpException, UnauthorizedException } from '@nestjs/common';
+import { PATH_METADATA } from '@nestjs/common/constants';
 import type { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import type { Role } from '@sirat/shared';
 import type { EnvVars } from '../../config/env';
 import { ACCESS_COOKIE, type AccessTokenService, type AuthUser } from './access-token.service';
-import { Public, Roles, TwoFactorOptional } from './auth.decorators';
+import { AuthController } from './auth.controller';
+import { Public, Roles, TWO_FACTOR_OPTIONAL, TwoFactorOptional } from './auth.decorators';
 import { AuthGuard } from './auth.guard';
+import { TwoFactorAdminController, TwoFactorController } from './two-factor/two-factor.controller';
 import { TwoFactorConfig } from './two-factor/two-factor.config';
 
 /* The global guard's two-factor rule (DECISIONS "Admin two-factor login"), without HTTP: a token is "verified" by a fake. */
@@ -110,5 +113,31 @@ describe('AuthGuard: two-factor login', () => {
   it('enforces nothing while 2FA is off (no TOTP_ENCRYPTION_KEY)', async () => {
     for (const handler of ['adminOnly', 'staff', 'mixed'] as const)
       expect(await outcome(guardFor(user('admin', false), false), handler)).toBe('allowed');
+  });
+});
+
+describe('@TwoFactorOptional()', () => {
+  it('is on exactly the five enrolment routes of the auth module', () => {
+    const marked: string[] = [];
+    for (const controller of [AuthController, TwoFactorController, TwoFactorAdminController]) {
+      const base = String(Reflect.getMetadata(PATH_METADATA, controller));
+      const proto = controller.prototype as unknown as Record<string, object>;
+      for (const name of Object.getOwnPropertyNames(proto)) {
+        const handler = proto[name];
+        if (name === 'constructor' || typeof handler !== 'function') continue;
+        if (Reflect.getMetadata(TWO_FACTOR_OPTIONAL, handler) === true) {
+          const path = String(Reflect.getMetadata(PATH_METADATA, handler));
+          marked.push(
+            [base, path]
+              .flatMap((p) => p.split('/'))
+              .filter(Boolean)
+              .join('/'),
+          );
+        }
+      }
+    }
+    expect(marked.sort()).toEqual(
+      ['auth/2fa', 'auth/2fa/enable', 'auth/2fa/setup', 'auth/logout', 'auth/me'].sort(),
+    );
   });
 });

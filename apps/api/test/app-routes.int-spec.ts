@@ -26,6 +26,7 @@ import {
   REQUIRED_ROLES,
   Roles,
   SKIP_CSRF,
+  TWO_FACTOR_OPTIONAL,
 } from '../src/modules/auth/auth.decorators';
 
 /** Reviewed: 06-API "Public allow-list". A new entry here needs the owner's review. */
@@ -38,6 +39,9 @@ const PUBLIC_ROUTES = new Set([
   'POST /api/auth/reset-password',
   'POST /api/auth/verify-email',
   'POST /api/auth/resend-verification',
+  // The login's code step (DECISIONS "Admin two-factor login"): the sirat_2fa challenge cookie is the credential, like
+  // the password before it; under the login limits.
+  'POST /api/auth/2fa/verify',
   'POST /api/registrations/start',
   // Payments plan 6.7: before an account exists, the sirat_reg cookie is the only proof of "my attempt"; no route
   // takes an id, and none returns personal data.
@@ -54,6 +58,17 @@ const PUBLIC_ROUTES = new Set([
   'GET /api/book/cover/:imageId', // the free book's cover image (plan 16.3): no personal data, cached a year
   'GET /api/content/*',
   'GET /api/certificates/verify/:code',
+]);
+/**
+ * Reviewed (DECISIONS "Admin two-factor login"): the routes an admin or manager whose session has not proved a second
+ * factor may use, so they can enrol. Any other route that names admin or manager answers 403 TWO_FACTOR_REQUIRED.
+ */
+const TWO_FACTOR_OPTIONAL_ROUTES = new Set([
+  'GET /api/auth/me',
+  'POST /api/auth/logout',
+  'GET /api/auth/2fa',
+  'POST /api/auth/2fa/setup',
+  'POST /api/auth/2fa/enable',
 ]);
 /** Reviewed: server-to-server callbacks that cannot send X-Requested-With. */
 const CSRF_EXEMPT = new Set(['POST /api/payments/paystation/ipn']);
@@ -120,6 +135,7 @@ interface DeclaredRoute {
   isPublic: boolean;
   roles: string[] | undefined;
   skipCsrf: boolean;
+  twoFactorOptional: boolean;
 }
 
 const joinPath = (...parts: string[]) =>
@@ -151,6 +167,8 @@ function declaredRoutes(): DeclaredRoute[] {
             isPublic: reflector.getAllAndOverride<boolean>(IS_PUBLIC, targets) === true,
             roles: reflector.getAllAndOverride<string[] | undefined>(REQUIRED_ROLES, targets),
             skipCsrf: reflector.getAllAndOverride<boolean>(SKIP_CSRF, targets) === true,
+            twoFactorOptional:
+              reflector.getAllAndOverride<boolean>(TWO_FACTOR_OPTIONAL, targets) === true,
           });
     }
   }
@@ -207,6 +225,13 @@ describe('route inventory: deny by default', () => {
       [],
     );
     expect(routes.filter((r) => r.isPublic && r.roles).map((r) => r.key)).toEqual([]);
+  });
+
+  it('lets an admin without a proved second factor reach exactly the reviewed enrolment routes', () => {
+    const optional = declaredRoutes().filter((r) => r.twoFactorOptional);
+    expect(optional.map((r) => r.key).sort()).toEqual([...TWO_FACTOR_OPTIONAL_ROUTES].sort());
+    // None of them is public: the exemption only ever relaxes the second factor, never the session.
+    expect(optional.filter((r) => r.isPublic).map((r) => r.key)).toEqual([]);
   });
 });
 

@@ -46,11 +46,23 @@ export interface Paginated<T> {
   total: number;
 }
 
+/** Two-factor login of the session user (GET /auth/me; DECISIONS "Admin two-factor login"). */
+export interface SessionTwoFactor {
+  /** Enrolled and confirmed with a code. */
+  enabled: boolean;
+  /** This role must sign in with a second factor on this server (admin, manager; never while 2FA is off). */
+  required: boolean;
+  /** This session proved the second factor. `required && !verified`: the admin pages answer 403 TWO_FACTOR_REQUIRED. */
+  verified: boolean;
+}
+
 export interface SessionUser {
   id: string;
   name: string;
   email: string;
   role: Role;
+  /** Always sent by GET /auth/me; optional so older mocks still type-check. */
+  twoFactor?: SessionTwoFactor;
 }
 
 // Schema mirrors and the dashboard response contract (web data layer + API).
