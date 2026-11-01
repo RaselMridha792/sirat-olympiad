@@ -95,15 +95,17 @@ note "A=${A:0:7} B=${B:0:7} C=${C:0:7} D=${D:0:7} E=${E:0:7}"
 # Throwaway secrets, never printed; a self-signed certificate the tools container trusts.
 hex() { head -c "$1" /dev/urandom | od -An -tx1 | tr -d ' \n'; }
 pw=$(hex 24)
+apppw=$(hex 32)
 jwt=$(hex 32)
 sed -e "s|^APP_URL=.*|APP_URL=https://$HOST|" -e "s|change-me-fake|$pw|g" -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$pw|" \
+  -e "s|^POSTGRES_APP_PASSWORD=.*|POSTGRES_APP_PASSWORD=$apppw|" \
   -e "s|^JWT_ACCESS_SECRET=.*|JWT_ACCESS_SECRET=$jwt|" -e "s|^EMAIL_PROVIDER=.*|EMAIL_PROVIDER=mailpit|" \
   -e "s|^EMAIL_FROM=.*|EMAIL_FROM=Sirat rehearsal <no-reply@$HOST>|" -e "s|^PAYSTATION_ENV=.*|PAYSTATION_ENV=|" \
   -e "s|^SECURITY_ALERT_EMAIL=.*|SECURITY_ALERT_EMAIL=|" "$CLONE_DIR/.env.example" > /tmp/rh.env
 printf 'MAILPIT_URL=http://mailpit:8025\n' >> /tmp/rh.env
 install -o deploy -m 600 /tmp/rh.env "$CLONE_DIR/.env"
 rm -f /tmp/rh.env
-unset pw jwt
+unset pw apppw jwt
 in_clone openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 2 -subj "/CN=$HOST" \
   -addext "subjectAltName=DNS:$HOST" -keyout infra/nginx/certs/origin.key -out infra/nginx/certs/origin.pem 2> /dev/null
 cp "$CLONE_DIR/infra/nginx/certs/origin.pem" /usr/local/share/ca-certificates/sirat-rh.crt

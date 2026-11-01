@@ -89,7 +89,7 @@ for tool in docker git curl flock jq; do command -v "$tool" >/dev/null || fail "
 [ -f .env ] || fail "no .env in $ROOT"
 [ "$(stat -c '%a' .env)" = 600 ] || fail ".env must be mode 600 (chmod 600 .env)"
 # Exported values beat the files compose reads: a stray one would point the stack elsewhere.
-for v in DATABASE_URL DIRECT_URL POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB SIRAT_TAG; do
+for v in DATABASE_URL DIRECT_URL POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB POSTGRES_APP_PASSWORD SIRAT_TAG; do
   [ -z "${!v+x}" ] || fail "$v is exported in this shell: unset it first (compose must read .env and the release file)"
 done
 if grep -q '^COMPOSE_' <<< "$(compgen -e)"; then fail "COMPOSE_* variables are exported in this shell: unset them first"; fi
@@ -135,7 +135,7 @@ if [ "$MODE" = first ]; then
       fail "a $s container of project $PROJECT already exists: --first is only for a fresh host (it never recreates a data service)"
     fi
   done
-  for key in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB DATABASE_URL DIRECT_URL JWT_ACCESS_SECRET APP_URL; do
+  for key in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB POSTGRES_APP_PASSWORD DIRECT_URL JWT_ACCESS_SECRET APP_URL; do
     [ -n "$(envval "$key")" ] || fail ".env has no value for $key"
   done
   for f in infra/nginx/certs/origin.pem infra/nginx/certs/origin.key; do
