@@ -1,0 +1,53 @@
+# The restore drill only (scripts/restore-drill.sh, project sirat-drill; never project sirat). nginx on the plain site
+# and Mailpit's page on 127.0.0.1 only, no data ports, one API replica, small sizes, email only to Mailpit, and no
+# development marker on Postgres (restore.sh must accept the drill's server as it would a production one).
+services:
+  nginx:
+    ports: !override ['127.0.0.1:18180:80']
+    volumes:
+      - ./nginx/sites/plain:/etc/nginx/templates:ro
+
+  # The drill's own throwaway settings, never the clone's .env (on a server that holds the production secrets):
+  # restore-drill.sh sets DRILL_ENV_FILE, and compose refuses to run without it.
+  api:
+    env_file: !override ['${DRILL_ENV_FILE:?DRILL_ENV_FILE is set by scripts/restore-drill.sh}']
+    deploy:
+      replicas: 1
+
+  worker:
+    env_file: !override ['${DRILL_ENV_FILE:?DRILL_ENV_FILE is set by scripts/restore-drill.sh}']
+    environment:
+      EMAIL_PROVIDER: mailpit
+      MAILPIT_URL: http://mailpit:8025
+
+  mailpit:
+    image: axllent/mailpit:v1.32.0
+    restart: unless-stopped
+    ports: ['127.0.0.1:18125:8025']
+    healthcheck:
+      test: ['CMD', '/mailpit', 'readyz']
+      interval: 15s
+    deploy: { resources: { limits: { cpus: '0.5', memory: 128M } } }
+
+  postgres:
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=1GB
+      - -c
+      - maintenance_work_mem=128MB
+      - -c
+      - work_mem=8MB
+    deploy: { resources: { limits: { cpus: '2', memory: 2G } } }
+
+  redis-cache:
+    command: ['redis-server', '/usr/local/etc/redis/redis-cache.conf', '--maxmemory', '256mb']
+    deploy: { resources: { limits: { cpus: '0.5', memory: 512M } } }
+
+  redis-queue:
+    command: ['redis-server', '/usr/local/etc/redis/redis-queue.conf', '--maxmemory', '256mb']
+    deploy: { resources: { limits: { cpus: '0.5', memory: 512M } } }
