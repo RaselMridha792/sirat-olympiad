@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ClipboardList, Medal, Star, UserPlus, Users, UsersRound } from 'lucide-react';
 import { Badge, Card, DataTable, EmptyState, StatCard } from '@sirat/ui';
@@ -225,6 +226,12 @@ export default async function AmbassadorPage({
           ) : (
             <p className="mt-4 text-sm text-ink-muted">{m.team.none}</p>
           )}
+          <Link
+            href="/dashboard/team"
+            className="mt-4 inline-flex text-sm font-semibold text-secondary hover:underline"
+          >
+            {m.team.manage}
+          </Link>
         </Card>
       </div>
 
