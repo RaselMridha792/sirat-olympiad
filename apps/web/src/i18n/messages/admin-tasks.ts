@@ -44,7 +44,8 @@ export const adminTasksMessages = defineMessages({
     state: {
       archive: 'Archive',
       restore: 'Restore',
-      archiveText: 'An archived task disappears from the ambassadors’ panels and takes no new proof. Nothing is deleted.',
+      archiveText:
+        'An archived task disappears from the ambassadors’ panels and takes no new proof. Nothing is deleted.',
       restoreText: 'The task comes back to the panels of the ambassadors who have it.',
       confirm: 'Yes, go ahead',
     },
@@ -55,13 +56,15 @@ export const adminTasksMessages = defineMessages({
       choose: 'Choose a task',
       none: 'There is no active task. Create one on the Tasks page first.',
       confirm: 'Assign',
-      done: (assigned: number) => (assigned ? 'Assigned.' : 'This ambassador has that task already.'),
+      done: (assigned: number) =>
+        assigned ? 'Assigned.' : 'This ambassador has that task already.',
     },
     decision: {
       approve: 'Approve',
       reject: 'Reject',
       approveTitle: 'Approve this proof?',
-      approveText: (points: string) => `The ambassador gets ${points} points. An approval is final.`,
+      approveText: (points: string) =>
+        `The ambassador gets ${points} points. An approval is final.`,
       rejectTitle: 'Reject this proof?',
       rejectText: 'The ambassador sees your note and can send the proof again.',
       note: 'Note for the ambassador',
@@ -79,7 +82,8 @@ export const adminTasksMessages = defineMessages({
       notOpen: 'This task is not open for proof right now.',
       notSubmitted: 'This proof was already decided.',
       limit: 'Too many tries. Wait a few minutes and try again.',
-      invalid: 'Check the fields: a title of 3 to 120 characters, a description, 0 to 1,000 points, and a note of 3 to 500 characters when rejecting.',
+      invalid:
+        'Check the fields: a title of 3 to 120 characters, a description, 0 to 1,000 points, and a note of 3 to 500 characters when rejecting.',
       failed: 'It was not saved. Try again.',
     },
   },
@@ -125,7 +129,8 @@ export const adminTasksMessages = defineMessages({
     state: {
       archive: 'আর্কাইভ',
       restore: 'ফিরিয়ে আনুন',
-      archiveText: 'আর্কাইভ করা কাজ অ্যাম্বাসেডরদের প্যানেল থেকে সরে যায় এবং নতুন প্রমাণ নেয় না। কিছুই মোছা হয় না।',
+      archiveText:
+        'আর্কাইভ করা কাজ অ্যাম্বাসেডরদের প্যানেল থেকে সরে যায় এবং নতুন প্রমাণ নেয় না। কিছুই মোছা হয় না।',
       restoreText: 'যাদের কাজটি দেওয়া আছে, তাদের প্যানেলে আবার দেখা যাবে।',
       confirm: 'হ্যাঁ, করুন',
     },
@@ -136,7 +141,8 @@ export const adminTasksMessages = defineMessages({
       choose: 'একটি কাজ বাছুন',
       none: 'কোনো চলমান কাজ নেই। আগে কাজের পাতায় একটি তৈরি করুন।',
       confirm: 'দিন',
-      done: (assigned: number) => (assigned ? 'দেওয়া হয়েছে।' : 'এই অ্যাম্বাসেডরের কাছে কাজটি আগে থেকেই আছে।'),
+      done: (assigned: number) =>
+        assigned ? 'দেওয়া হয়েছে।' : 'এই অ্যাম্বাসেডরের কাছে কাজটি আগে থেকেই আছে।',
     },
     decision: {
       approve: 'অনুমোদন',
@@ -160,7 +166,8 @@ export const adminTasksMessages = defineMessages({
       notOpen: 'এই কাজে এখন প্রমাণ পাঠানো যাবে না।',
       notSubmitted: 'এই প্রমাণের সিদ্ধান্ত আগেই হয়ে গেছে।',
       limit: 'অনেকবার চেষ্টা হয়েছে। কয়েক মিনিট পরে আবার চেষ্টা করুন।',
-      invalid: 'ঘরগুলো দেখুন: ৩ থেকে ১২০ অক্ষরের শিরোনাম, বিবরণ, ০ থেকে ১,০০০ পয়েন্ট, আর বাতিলের সময় ৩ থেকে ৫০০ অক্ষরের নোট।',
+      invalid:
+        'ঘরগুলো দেখুন: ৩ থেকে ১২০ অক্ষরের শিরোনাম, বিবরণ, ০ থেকে ১,০০০ পয়েন্ট, আর বাতিলের সময় ৩ থেকে ৫০০ অক্ষরের নোট।',
       failed: 'সংরক্ষণ হয়নি। আবার চেষ্টা করুন।',
     },
   },

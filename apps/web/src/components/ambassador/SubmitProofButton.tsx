@@ -53,7 +53,9 @@ export function SubmitProofButton({
     } catch (error) {
       if (error instanceof SessionExpiredError) return;
       const p = taskProblem(error);
-      setProblem(p === 'notOpen' || p === 'archived' || p === 'limit' || p === 'invalid' ? p : 'failed');
+      setProblem(
+        p === 'notOpen' || p === 'archived' || p === 'limit' || p === 'invalid' ? p : 'failed',
+      );
     } finally {
       setPending(false);
     }
@@ -73,7 +75,12 @@ export function SubmitProofButton({
         <Send aria-hidden="true" size={16} />
         {again ? m.submitAgain : m.submit}
       </Button>
-      <Dialog open={open} onClose={() => !pending && setOpen(false)} title={m.submitTitle} closeLabel={m.cancel}>
+      <Dialog
+        open={open}
+        onClose={() => !pending && setOpen(false)}
+        title={m.submitTitle}
+        closeLabel={m.cancel}
+      >
         <form onSubmit={submit} className="flex flex-col gap-4" noValidate>
           <p className="text-sm text-ink-muted">{m.submitText}</p>
           <TextAreaField

@@ -63,7 +63,12 @@ export function AssignTaskButton({
           {done}
         </p>
       ) : null}
-      <Dialog open={open} onClose={() => !pending && setOpen(false)} title={a.title} closeLabel={m.cancel}>
+      <Dialog
+        open={open}
+        onClose={() => !pending && setOpen(false)}
+        title={a.title}
+        closeLabel={m.cancel}
+      >
         <form onSubmit={submit} className="flex flex-col gap-4" noValidate>
           {tasks.length === 0 ? (
             <p className="text-sm text-ink-muted">{a.none}</p>

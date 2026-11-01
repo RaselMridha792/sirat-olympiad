@@ -1,6 +1,7 @@
 import {
   Award,
   BookOpen,
+  ClipboardList,
   CreditCard,
   FileText,
   LayoutDashboard,
@@ -38,6 +39,7 @@ const NAV: ReadonlyArray<{
   { key: 'exams', href: '/admin/exams', Icon: FileText },
   { key: 'leaderboard', href: '/admin/leaderboard', Icon: Trophy },
   { key: 'ambassadors', href: '/admin/ambassadors', Icon: Award },
+  { key: 'tasks', href: '/admin/tasks', Icon: ClipboardList },
   { key: 'announcements', href: '/admin/announcements', Icon: Megaphone },
   { key: 'payments', href: '/admin/payments', Icon: CreditCard },
   { key: 'settings', href: '/admin/settings', Icon: Settings },

@@ -15,7 +15,10 @@ test('each refusal of a task write gets its own message', () => {
   assert.equal(taskProblem(refused(409, ['not_open'])), 'notOpen');
   assert.equal(taskProblem(refused(409, ['not_submitted'])), 'notSubmitted');
   assert.equal(taskProblem(refused(429)), 'limit');
-  assert.equal(taskProblem(refused(400, ['title must be longer than or equal to 3 characters'])), 'invalid');
+  assert.equal(
+    taskProblem(refused(400, ['title must be longer than or equal to 3 characters'])),
+    'invalid',
+  );
   assert.equal(taskProblem(refused(404)), 'failed');
   assert.equal(taskProblem(new TypeError('Failed to fetch')), 'failed');
 });

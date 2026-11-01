@@ -86,7 +86,11 @@ export function TaskDecision({
             <Button type="button" variant="ghost" onClick={() => setMode(null)} disabled={pending}>
               {m.cancel}
             </Button>
-            <Button type="submit" variant={mode === 'reject' ? 'danger' : 'primary'} disabled={pending}>
+            <Button
+              type="submit"
+              variant={mode === 'reject' ? 'danger' : 'primary'}
+              disabled={pending}
+            >
               {pending ? m.pending : mode === 'reject' ? d.confirmReject : d.confirmApprove}
             </Button>
           </div>
