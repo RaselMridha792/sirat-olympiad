@@ -1,5 +1,8 @@
 import {
   ADMIN_AUDIT_EXPORT,
+  CATEGORIES,
+  DEFAULT_VIDEO_CRITERIA,
+  type AdminRound,
   BD_DISTRICTS,
   type AdminAnnouncement,
   type AdminTaskReviewRow,
@@ -497,6 +500,30 @@ export function createMockSource(state: MockState | null): DataSource {
           () => emptyPage<AnnouncementItem>(query),
         ),
 
+      getMyRound: () =>
+        run(
+          () => {
+            const w = getWorld();
+            const r = w.rounds.find((x) => x.id === w.currentRoundId) ?? w.rounds[0];
+            return r
+              ? {
+                  round: {
+                    id: r.id,
+                    name: r.name,
+                    type: r.type,
+                    sortOrder: r.sortOrder,
+                    opensAt: r.opensAt,
+                    closesAt: r.closesAt,
+                  },
+                  entryStatus: 'pending' as const,
+                  videoUrl: null,
+                  videoSubmittedAt: null,
+                }
+              : null;
+          },
+          () => null,
+        ),
+
       getMyTeam: () =>
         run(
           () => {
@@ -896,6 +923,41 @@ export function createMockSource(state: MockState | null): DataSource {
             return (e && examAttempts(w, e).find((a) => a.attemptId === attemptId)) ?? null;
           },
           () => null,
+        ),
+
+      listRounds: () =>
+        run(
+          () =>
+            getWorld().rounds.map((r, i): AdminRound => {
+              const at = r.opensAt ?? '2026-10-01T00:00:00.000Z';
+              return {
+                ...r,
+                criteria: r.type === 'video' ? DEFAULT_VIDEO_CRITERIA.map((c) => ({ ...c })) : null,
+                scored: false,
+                entries: {
+                  pending: i === 1 ? 180 : 0,
+                  submitted: i === 1 ? 64 : 0,
+                  evaluated: 0,
+                  promoted: i === 0 ? 246 : 0,
+                  eliminated: i === 0 ? 1240 : 0,
+                },
+                promotions:
+                  i === 0
+                    ? CATEGORIES.map((category, k) => ({
+                        id: `pr-${k}`,
+                        category,
+                        toRoundId: 'rd-2',
+                        topN: 80,
+                        promoted: k === 1 ? 86 : 80,
+                        eliminated: 400 + k * 20,
+                        createdAt: r.closesAt ?? at,
+                      }))
+                    : [],
+                createdAt: at,
+                updatedAt: at,
+              };
+            }),
+          () => [],
         ),
 
       listTeams: (query) =>
