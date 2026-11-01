@@ -8,9 +8,11 @@
 import { randomBytes } from 'node:crypto';
 import { Prisma, PrismaClient } from '@prisma/client';
 import {
+  QUIET_SESSION,
   applyDatabaseTimeouts,
   assertRestrictions,
   clearRoleSettings,
+  quietUrl,
   scramVerifier,
 } from '../prisma/runtime-role';
 import { PrismaService, describeDatabaseRole } from '../src/prisma/prisma.service';
@@ -270,6 +272,21 @@ describe('the runtime role sirat_app', () => {
       }
     } finally {
       await owner.$executeRawUnsafe(`DROP ROLE IF EXISTS ${name}`);
+    }
+  });
+
+  it('runs the script on a connection that keeps statement text out of the server log (QUIET_SESSION)', async () => {
+    const quiet = new PrismaClient({
+      datasourceUrl: quietUrl(process.env.TEST_DATABASE_URL ?? ''),
+    });
+    try {
+      const names = Object.keys(QUIET_SESSION);
+      const [row] = await quiet.$queryRawUnsafe<Record<string, string>[]>(
+        `SELECT ${names.map((n) => `current_setting('${n}') AS "${n}"`).join(', ')}`,
+      );
+      expect(row).toEqual(QUIET_SESSION);
+    } finally {
+      await quiet.$disconnect();
     }
   });
 

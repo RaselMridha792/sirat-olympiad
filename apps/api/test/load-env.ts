@@ -27,9 +27,17 @@ process.env.DATABASE_URL = testUrl;
 const appUrl = process.env.TEST_APP_DATABASE_URL ?? '';
 if (process.env.CI === 'true' && !appUrl)
   throw new Error('TEST_APP_DATABASE_URL is required in CI: the app under test runs as sirat_app');
+/** The URL parsed. A malformed one throws without its value: Node's own error would print it, password included. */
+function parsed(name: string, value: string): URL {
+  try {
+    return new URL(value);
+  } catch {
+    throw new Error(`${name} is not a valid URL (value not shown)`);
+  }
+}
 if (appUrl) {
-  const app = new URL(appUrl);
-  const owner = new URL(testUrl);
+  const app = parsed('TEST_APP_DATABASE_URL', appUrl);
+  const owner = parsed('TEST_DATABASE_URL', testUrl);
   // The same host and database: another session's test database on the shared cluster would also accept sirat_app.
   if (app.username !== 'sirat_app' || app.host !== owner.host || app.pathname !== owner.pathname)
     throw new Error(
