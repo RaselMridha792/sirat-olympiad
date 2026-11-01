@@ -15,7 +15,7 @@ while IFS= read -r f; do
   grep -q 'pipefail' "$f" || continue
   hits=$(grep -nE "$EARLY" "$f" | grep -vE '^[0-9]+:[[:space:]]*#' | grep -vE '\|[[:space:]]*head[[:space:]]+-n[[:space:]]+-' || true)
   if [ -n "$hits" ]; then
-    sed "s#^#$f:#" <<< "$hits"
+    while IFS= read -r hit; do printf '%s:%s\n' "$f" "$hit"; done <<< "$hits"
     found=1
   fi
 done < <(git ls-files '*.sh')
