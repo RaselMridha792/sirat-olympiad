@@ -194,6 +194,12 @@ export class UpdateQuestionDto extends QuestionDto {
   expectedUpdatedAt!: string;
 }
 
+/** POST /admin/exams/:id/questions/import. Required: a request without it never imports by accident. */
+export class QuestionImportQueryDto {
+  @IsIn(['true', 'false'])
+  dryRun!: 'true' | 'false';
+}
+
 export class ExamListQueryDto {
   @IsOptional()
   @Type(() => Number)

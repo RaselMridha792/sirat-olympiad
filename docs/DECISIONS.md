@@ -20,6 +20,21 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - `prelaunch-check.sh` fails while any file exists, and every k6 run ends with `off`.
    - Nothing else enforces the expiry: nginx keeps trusting the file until `off`.
 8. **The registration staging's cookies are not Secure** (`COOKIE_SECURE=false`, only there): payments' k6 script uses k6's cookie jar, which does not send Secure cookies over plain http, so the result page could never read its registration. The first rehearsal failed exactly there (`current 200`: 0 of 1,275). The API allows it because that staging runs in development mode; the exam staging stays in production mode with Secure cookies, which the exam simulation keeps itself.
+## 2026-11-01 — CSV question import (E7a; payments, exam's handover, lead)
+
+1. **A multipart upload, not a JSON body** (lead approved):
+   - `POST /admin/exams/:id/questions/import?dryRun=true|false`, one field `file`, read by `FileInterceptor` (memory storage, `fileSize` 1,000,000, `files` 1, `fields` 0), as the book cover is.
+   - Interceptors run after guards, so nothing is read for an anonymous caller or a non-admin (an anonymous 1 MB upload gets 401).
+   - The global 100 KB JSON limit and `configure-app.ts` are untouched (a test keeps 101 KB at 413). A JSON body would have needed a route-only parser before the guard, and express is not a direct dependency of the API.
+   - The cap of 1,000,000 bytes stays under nginx's `client_max_body_size 1m` (1,048,576 bytes) with room for the multipart framing; change both together.
+2. **UTF-8 is checked on the raw bytes** (`TextDecoder` with `fatal`): a Windows-1252 export is refused (`not_utf8`), never shown as broken Bangla. A BOM is allowed.
+3. **All rows or none, draft exams only.** One transaction under the exam's row lock re-reads the admin, checks every row and the duplicates against the active questions, then `createMany` and one audit row. A published exam is refused as `pool_fixed` even with a random draw: the import narrows EXAM-PLAN 4.1 (which lets a random-draw pool take new questions) to drafts, as exam's handover asked, because a bulk add would reshape every remaining draw at once. The dry run takes the same lock and writes nothing.
+4. **The reader is in-house** (`common/csv-read.ts`, RFC 4180, about 50 lines; no dependency). A stray quote is refused (`bad_quote`) rather than guessed. Line breaks inside a quoted cell are kept as LF.
+5. **Control characters are refused** (`control_character`; exam's review): `CONTROL_CHARACTERS` in `@sirat/shared` (C0 and DEL, tab and line feed allowed). U+0000 is valid UTF-8 but Postgres refuses it in text and jsonb, which would turn a bad cell into a 500. Exam uses the same pattern in `QuestionDto` (E7b).
+6. **Duplicates use the publish rule** (`normaliseText` in `exam-rules.ts`, now exported): NFKC, trimmed, spaces collapsed, lower case.
+7. **The audit row holds the count and the file's sha256**, never question text.
+8. **Problems are listed by spreadsheet row** (header = row 1; 0 = the whole file) and column, at most 200 in one answer (`truncated`).
+9. **Export later:** if questions are ever exported to CSV, use `csvCell` in `common/csv.ts`, which already prefixes a cell starting with `= + - @`, a tab or CR with `'`. The import does not strip such a prefix: there is no export yet.
 
 ## 2026-11-01 — Exam simulation, local k6 (E6; exam session, EXAM-PLAN 6.2; provisional until the VPS)
 

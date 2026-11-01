@@ -2,6 +2,9 @@ import {
   EXAM_ADMIN_REFUSALS,
   EXAM_LIMITS,
   EXAM_MAX_DURATION_MINUTES,
+  QUESTION_IMPORT_CODES,
+  QUESTION_IMPORT_COLUMNS,
+  QUESTION_IMPORT_LIMITS,
   type AdminExamInput,
   type AdminExamPatch,
   type AdminExamView,
@@ -10,6 +13,10 @@ import {
   type Category,
   type ExamAdminRefusal,
   type ExamStatus,
+  type QuestionImportCode,
+  type QuestionImportError,
+  type QuestionImportField,
+  type QuestionImportPreview,
 } from '@sirat/shared';
 import { ApiRequestError, SessionExpiredError } from '../../../lib/api.ts';
 
@@ -413,4 +420,99 @@ export function authoringProblems(error: unknown): AuthoringProblem[] {
   if (error.status === 400) return ['invalid'];
   if (error.status === 404) return ['notFound'];
   return ['failed'];
+}
+
+// ───────────── CSV import (E7a) ─────────────
+
+export type ImportFileProblem = 'notCsv' | 'emptyFile' | 'tooBig';
+
+/** Spares an obviously wrong upload before anything is sent; the server reads the bytes and decides. */
+export function importFileProblem(file: { name: string; size: number }): ImportFileProblem | null {
+  if (!/\.csv$/i.test(file.name)) return 'notCsv';
+  if (file.size === 0) return 'emptyFile';
+  if (file.size > QUESTION_IMPORT_LIMITS.maxBytes) return 'tooBig';
+  return null;
+}
+
+/** POST …/questions/import as a dry run (the check) or the import; the file goes as the multipart field `file`. */
+export function importRequest(
+  examId: string,
+  file: Blob,
+  dryRun: boolean,
+): [string, { method: 'POST'; body: FormData }] {
+  const body = new FormData();
+  body.append('file', file);
+  const path = `/admin/exams/${encodeURIComponent(examId)}/questions/import?dryRun=${dryRun}`;
+  return [path, { method: 'POST', body }];
+}
+
+const IMPORT_FIELDS: readonly unknown[] = [...QUESTION_IMPORT_COLUMNS, 'row', 'file'];
+
+export function isImportError(value: unknown): value is QuestionImportError {
+  if (!value || typeof value !== 'object') return false;
+  const e = value as Record<string, unknown>;
+  return (
+    Number.isInteger(e.row) &&
+    (e.row as number) >= 0 &&
+    IMPORT_FIELDS.includes(e.field) &&
+    (QUESTION_IMPORT_CODES as readonly unknown[]).includes(e.code)
+  );
+}
+
+export function isImportPreview(value: unknown): value is QuestionImportPreview {
+  if (!value || typeof value !== 'object') return false;
+  const p = value as Record<string, unknown>;
+  return (
+    Number.isInteger(p.rows) &&
+    typeof p.truncated === 'boolean' &&
+    Array.isArray(p.errors) &&
+    p.errors.every(isImportError)
+  );
+}
+
+/** What a refused check or import means for the dialog. */
+export type ImportFailure =
+  /** 400 QUESTION_IMPORT_INVALID: the file's own problems; nothing was written. */
+  | { kind: 'rows'; errors: QuestionImportError[] }
+  /** 413: over 1,000,000 bytes. */
+  | { kind: 'tooBig' }
+  /** Anything else: a published or archived exam, an ended session, the network. */
+  | { kind: 'refused'; problems: AuthoringProblem[] };
+
+export function importFailure(error: unknown): ImportFailure {
+  if (error instanceof ApiRequestError) {
+    if (error.status === 413) return { kind: 'tooBig' };
+    if (error.status === 400 && error.body?.code === 'QUESTION_IMPORT_INVALID') {
+      const details: unknown[] = Array.isArray(error.body.details) ? error.body.details : [];
+      const errors = details.filter(isImportError);
+      if (errors.length) return { kind: 'rows', errors };
+    }
+  }
+  return { kind: 'refused', problems: authoringProblems(error) };
+}
+
+/** The texts one problem line needs (messages.import). */
+export interface ImportErrorTexts {
+  where: {
+    file: string;
+    row: (row: string) => string;
+    cell: (row: string, column: string) => string;
+  };
+  columns: Record<QuestionImportField, string>;
+  codes: Record<QuestionImportCode, string>;
+}
+
+/** "Row 7, option C: Empty while a later option is filled." Rows as the spreadsheet numbers them (header = 1). */
+export function importErrorText(
+  e: QuestionImportError,
+  t: ImportErrorTexts,
+  formatRow: (n: number) => string = String,
+): string {
+  const where =
+    e.row === 0
+      ? t.where.file
+      : e.field === 'row' || e.field === 'file'
+        ? t.where.row(formatRow(e.row))
+        : t.where.cell(formatRow(e.row), t.columns[e.field]);
+  return `${where}: ${t.codes[e.code]}`;
 }

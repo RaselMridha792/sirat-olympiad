@@ -25,6 +25,7 @@ import {
   MIN_VIOLATIONS_FILTER,
 } from '@/components/exam/admin/ExamResultsPanel';
 import { AddQuestionButton, QuestionActions } from '@/components/exam/admin/QuestionEditor';
+import { ImportQuestionsButton } from '@/components/exam/admin/QuestionImport';
 import { examStatusTone } from '@/components/status';
 import { getData } from '@/data';
 import { parseEnum, parseId, parsePageQuery, type SearchParams } from '@/data/query';
@@ -47,7 +48,8 @@ export async function generateMetadata(): Promise<Metadata> {
  * Admin exam detail (old quiz-management/view/[id]) with the answer keys. Staff only: no student
  * shape carries `correctKey`. Once published, the results panel and the attempts with their
  * violations (owner Q4) come first. Authoring (E5b): edit settings, publish, unpublish, archive, and
- * the questions (add, edit or version, delete or retire); the client parts get picked props only.
+ * the questions (add, edit or version, delete or retire); a draft also takes a CSV import (E7a). The client parts get
+ * picked props only.
  */
 export default async function AdminExamDetailPage({
   params,
@@ -226,7 +228,14 @@ export default async function AdminExamDetailPage({
           >
             {m.detail.questionsHeading(formatNumber(locale, exam.questions.length))}
           </h2>
-          {rules.canAdd ? <AddQuestionButton locale={locale} examId={exam.id} /> : null}
+          {rules.canAdd ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {exam.status === 'draft' ? (
+                <ImportQuestionsButton locale={locale} examId={exam.id} />
+              ) : null}
+              <AddQuestionButton locale={locale} examId={exam.id} />
+            </div>
+          ) : null}
         </div>
         {exam.status === 'published' ? (
           <p className="mb-4 text-sm text-ink-muted">
