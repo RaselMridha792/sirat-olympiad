@@ -39,7 +39,7 @@ Students take the exam as the exam room does:
 - log in, open the dashboard's exam list and the waiting room;
 - start the attempt;
 - answer locally and send a checkpoint every 60–120 s (the server refuses one sooner than 20 s after the last);
-- submit with a client request id (sent once more with the same id after a 5xx), then open the waiting room, which must show the receipt.
+- submit with a client request id (sent again with the same id after no answer, a 429 or a 5xx, on the exam room's backoff of 2, 4, 8, 16 and 30 s), then open the waiting room, which must show the receipt.
 
 A share of the students (`LEAVE_SHARE`, default 2 %) close the tab instead: the worker's sweep submits their last checkpoint once the time and the grace are over.
 
