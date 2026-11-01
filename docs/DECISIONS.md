@@ -18,7 +18,10 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - **The audit row** keeps the counts, never a student. The snapshot decides: a disqualification is exam's rebuild before the promotion, not a filter here.
 5. **The student's round** (`GET /rounds/me`, the home, the profile): the latest round with an own entry; before any entry, Round 1.
 6. **Stats:** `secondRound` and `finalists` count the entries of Round 2 and of the final round, in the same snapshot; null while that round does not exist.
-7. **Schema** (one generated and one CHECKs migration): `promotion_runs` (new); `rounds.criteria`; `round_entries.promotion_run_id`, `video_submitted_at` (for C6b); CHECKs for the limits. New table: `sirat_app` gets it through #57's default privileges; no trigger.
+7. **Schema** (a generated, a CHECKs and an append-only migration): `promotion_runs` (new); `rounds.criteria`; `round_entries.promotion_run_id`, `video_submitted_at` (for C6b); CHECKs for the limits.
+   - **`promotion_runs` is append-only** (lead's review of #71): a historical record. `promotion_runs_append_only()` refuses UPDATE and DELETE (row trigger) and TRUNCATE (statement trigger), and the migration has its own `REVOKE UPDATE, DELETE … FROM sirat_app`, guarded on the role. A new table gets #57's default privileges but not its REVOKE.
+   - **TRUNCATE is allowed where the name ends exactly in `_test`** (`right(current_database(), 5) = '_test'`), unlike `payment_events`: this table references users and rounds, so the tests' `truncateAll` (TRUNCATE … CASCADE) reaches it. Production's database is `sirat`, and the runtime role has no TRUNCATE right anyway. A test runs the migration's own SQL in a scratch database named `…xtest` and sees all three refused there.
+   - **The category is the student's current one** in the jury ranking (lead's note): it cannot change after the student's first exam attempt (an admin's grade correction is refused once an attempt exists, core C3), so a promoted student's category is fixed.
 8. **Web:**
    - `/admin/rounds` (admin only): the rounds in order with entries and promotions.
    - Dialogs: "Add round", "Edit" (Bangladesh times, the criteria as `key | English | বাংলা` lines) and "Promote" (preview, tie count, typed confirmation).

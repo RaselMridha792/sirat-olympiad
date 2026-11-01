@@ -315,6 +315,7 @@ Shapes `AdminRound`, `RoundCreateRequest`, `RoundUpdateRequest`, `RoundCriterion
 - **The cut:** rank ≤ N goes through, **ties at the cut included** (owner Q4a default). 409 `no_entries` when nobody would.
 - **One transaction under the round's row lock:** a `promotion_runs` row; the next round's entries (`pending`, `INSERT … SELECT … ON CONFLICT (user_id, round_id) DO NOTHING`: an existing entry, its video and score are never overwritten); the source round's entries set to `promoted` or `eliminated` (Round 1's are created then, for everyone on the snapshot); the audit row.
 - **One run per (round, category)** (UNIQUE; 409 `already_promoted`, also on the preview). Nothing after the last round (409 `no_next_round`). A student whose snapshot row has no category is in no category's promotion.
+- **`promotion_runs` is append-only** (`*_core_rounds_append_only`): UPDATE, DELETE and TRUNCATE are refused (TRUNCATE only passes in a database named `*_test`), and `sirat_app` has no UPDATE or DELETE on it. A student who already had an entry in the next round keeps it and is counted in `promoted`.
 
 The database keeps the limits (`*_core_rounds_checks`): round name 2–60, at most 10 rounds, the window order, 1–20 criteria, a video round with its window and criteria; an entry's score 0–100, the video link ≤ 500 with its time; a run's top N 1–25,000, counts ≥ 0, from ≠ to, and the source (`exam` with its exam and results version, or `jury`).
 

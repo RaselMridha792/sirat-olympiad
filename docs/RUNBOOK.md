@@ -720,6 +720,7 @@ SQL
   2. Type the number that will go through, then "Promote now".
   3. It cannot be undone, and each category is promoted from a round once (audited `round.promoted`, counts only).
 - **"Someone changed this in the meantime":** the results were re-published or a score changed after the preview. Preview again.
+- **A student who already had an entry in the next round** keeps it as it was (its video and score, `promotion_run_id` empty) and still counts in the run's "went through" number. A promotion never overwrites an entry.
 - **From the video round:** after its close and once every sent video has a jury score (C6b). Students without a video are eliminated.
 - **Check the counts** (no names):
 
