@@ -317,9 +317,16 @@ describe('the runtime role sirat_app', () => {
   });
 
   it('may drop its default privileges (DROP OWNED, PostgreSQL allows it), which the migrate job then refuses to run with', async () => {
-    // Rolled back, so the test database keeps the default privileges that later migrations rely on.
+    // Rolled back, so the test database keeps the default privileges that later migrations rely on. Default privileges
+    // sirat_app then stores under its own name (allowed, and useless: it creates no objects) do not count as restored.
     const problem = await rolledBack(app, async (tx) => {
       await tx.$executeRawUnsafe('DROP OWNED BY CURRENT_USER');
+      await tx.$executeRawUnsafe(
+        'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO sirat_app',
+      );
+      await tx.$executeRawUnsafe(
+        'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO sirat_app',
+      );
       return grantProblems(tx);
     });
     expect(problem).toMatch(
