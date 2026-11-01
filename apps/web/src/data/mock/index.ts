@@ -2,6 +2,8 @@ import {
   ADMIN_AUDIT_EXPORT,
   BD_DISTRICTS,
   type AdminAnnouncement,
+  type AdminTaskReviewRow,
+  type AdminTaskRow,
   EXAM_VIOLATION_WARNINGS,
   type AdminLeaderboardRow,
   BOOK_COVER_LIMITS,
@@ -513,13 +515,17 @@ export function createMockSource(state: MockState | null): DataSource {
                 next: next ? { name: next.name, minPoints: next.minPoints } : null,
               },
               team: { ...w.team, isOwner: true },
-              tasks: w.tasks.map(({ id, title, description, points: p, status }) => ({
-                id,
-                title,
-                description,
-                points: p,
-                status,
-              })),
+              tasks: w.tasks.map(
+                ({ id, title, description, points: p, status, reviewNote, submittedAt }) => ({
+                  id,
+                  title,
+                  description,
+                  points: p,
+                  status,
+                  reviewNote,
+                  submittedAt,
+                }),
+              ),
               recentReferrals: w.users
                 .filter((u) => u.referredById === w.me.id)
                 .slice(0, 10)
@@ -869,6 +875,66 @@ export function createMockSource(state: MockState | null): DataSource {
           () => null,
         ),
 
+      listTasks: (query) =>
+        run(
+          () => {
+            const w = getWorld();
+            const rows = w.tasks
+              .filter((t) =>
+                query.status === 'archived' ? t.archivedAt !== null : t.archivedAt === null,
+              )
+              .map(
+                ({
+                  id,
+                  title,
+                  description,
+                  points: p,
+                  archivedAt,
+                  createdAt,
+                  updatedAt,
+                  status,
+                }) => ({
+                  id,
+                  title,
+                  description,
+                  points: p,
+                  archivedAt,
+                  createdAt,
+                  updatedAt,
+                  counts: {
+                    assigned: status === 'assigned' ? 4 : 1,
+                    submitted: status === 'submitted' ? 2 : 0,
+                    approved: status === 'approved' ? 5 : 1,
+                    rejected: status === 'rejected' ? 1 : 0,
+                  },
+                }),
+              );
+            return paginate(rows, query);
+          },
+          () => emptyPage<AdminTaskRow>(query),
+        ),
+      listTaskReviews: (query) =>
+        run(
+          () => {
+            const w = getWorld();
+            const rows = w.tasks
+              .filter((t) => t.status === 'submitted')
+              .flatMap((t) =>
+                w.ambassadors.slice(0, 3).map((a, i) => ({
+                  assignmentId: `${t.id}-${i}`,
+                  taskId: t.id,
+                  taskTitle: t.title,
+                  points: t.points,
+                  ambassador: { userId: a.user.id, name: a.user.name },
+                  proof:
+                    'Held the session with 32 students. Attendance photo: https://example.org/photo',
+                  submittedAt: t.submittedAt ?? t.createdAt,
+                })),
+              );
+            return paginate(rows, query);
+          },
+          () => emptyPage<AdminTaskReviewRow>(query),
+        ),
       getAmbassadorPoints: () =>
         run(
           () => ({

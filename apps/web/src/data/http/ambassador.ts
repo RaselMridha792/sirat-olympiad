@@ -43,7 +43,9 @@ function isOverview(v: unknown): v is AmbassadorOverview {
         text(t.title) &&
         text(t.description) &&
         count(t.points) &&
-        text(t.status),
+        text(t.status) &&
+        textOrNull(t.reviewNote) &&
+        textOrNull(t.submittedAt),
     ) &&
     Array.isArray(v.recentReferrals) &&
     v.recentReferrals.every(
@@ -75,6 +77,8 @@ export function pickOverview(o: AmbassadorOverview): AmbassadorOverview {
       description: t.description,
       points: t.points,
       status: t.status,
+      reviewNote: t.reviewNote,
+      submittedAt: t.submittedAt,
     })),
     recentReferrals: o.recentReferrals.map((r) => ({
       name: r.name,
