@@ -4,6 +4,11 @@ Plan only, no product code (2026-10-31, branch `feat/a2-launch-plan`, A2 session
 
 **Launch:** registration and payment only (Lead, 2026-10-31). A student registers, pays, logs in and sees their own registration and payment status. All times below are estimates at the measured pace (section 12), not promises.
 
+**Dates (owner, 2026-11-01; DECISIONS):**
+- Launch readiness on Sun 15 Nov: everything deployed and checked, with registration still closed.
+- An admin opens registration from `/admin/settings` (audited) when the owner says. Expected Wed 25 Nov, the client's date: registration 25 Nov – 15 Feb, the selection round 19–20 Mar, the knockout 18 Apr.
+- The "coming soon" states (section 8) stay on until then.
+
 Sources: RULEBOOK §3, §5, §6, §9, §11–§14, §18; RUNBOOK §2–§5, §7, §9, §10, §12, §13; `plans/PAYMENTS-PLAN.md` §10, §13, §16; `plans/EXAM-PLAN.md`; `plans/CORE-PLAN.md`; DECISIONS (A1 approval, A2.1b, A2.1e, "Per-user API limits", "Registration start and status", "Web data layer over HTTP", "Public entry page and legal pages"); OPEN-QUESTIONS #17, #18, #22, #23, #27. Six read-only passes over `main` at aef64c9 (deploy, TLS, backups, DB role and cleanup, monitoring, dashboards) established today's state. An independent review then checked every claim again against `main` at a6876ec, after #19, #21, #22, #23 and #25 had merged, and a second review at f952ade, after #24 and #26; #27 merged after that and is reflected below. `main` moves several times a day: the lead re-reads the "Today" lines at review.
 
 ## 0. Scope, dependencies and dates
@@ -535,7 +540,8 @@ The table assumes about 2 h per medium PR, review rounds included. These are est
 | Thu 12 Nov | Final release candidate deployed, with L14; `prelaunch-check.sh` all PASS | Live merchant at the latest |
 | Fri 13 Nov | Freeze from 00:00; restore drill 2 (T-2) | SES at the latest |
 | Sat 14 Nov | Go/no-go (Rasel) | |
-| Sun 15 Nov | Registration opens through the audited admin setting | |
+| Sun 15 Nov | Launch readiness: everything deployed and checked; registration stays closed | |
+| Wed 25 Nov (expected) | An admin opens registration from `/admin/settings` (audited), when the owner says | The client's date (registration to 15 Feb) |
 
 - **L14 "VPS tuning" (1–2 h, two small parts):**
   - **Part 1, only if the VPS is not 8 vCPU / 32 GB:** retune `postgresql.conf` and the compose limits before the data services first start. `deploy.sh` never restarts them, so a later change needs its own Postgres restart.

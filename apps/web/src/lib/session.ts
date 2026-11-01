@@ -4,6 +4,7 @@ import { notFound, redirect } from 'next/navigation';
 import { ROLES, type SessionUser } from '@sirat/shared';
 import { areaFor, decideAccess, homeFor, type Area } from './access';
 import { MeCache } from './auth/me-cache';
+import { needsTwoFactor, TWO_FACTOR_PAGE } from './auth/two-factor';
 import { ACCESS_COOKIE, serverGet, ServerApiError } from './server-api';
 
 /**
@@ -60,12 +61,14 @@ export async function requireArea(area: Area): Promise<SessionUser> {
 
 /**
  * For every dashboard page and Server Action, before any data call: `path` is the page's route (lib/access.ts).
- * Layouts do not re-render on client-side navigation, so each page checks for itself.
+ * Layouts do not re-render on client-side navigation, so each page checks for itself. An admin or manager whose
+ * session has not proved the second factor goes to enrolment: the API refuses them every other admin page (403).
  */
 export async function requireAccess(path: string): Promise<SessionUser> {
   const user = await getSession();
   const decision = decideAccess(path, user.role);
   if (decision.kind === 'redirect') redirect(decision.to);
   if (decision.kind === 'not-found') notFound();
+  if (needsTwoFactor(user.twoFactor) && path !== TWO_FACTOR_PAGE) redirect(TWO_FACTOR_PAGE);
   return user;
 }

@@ -12,6 +12,7 @@ import {
   Min,
   validateSync,
 } from 'class-validator';
+import { parseSecretBoxKey } from '../modules/auth/two-factor/secret-box';
 
 const ADDRESS = '[^<>\\s@]+@[^<>\\s@]+\\.[^<>\\s@]+';
 const SENDER = new RegExp(`^([^<>]+ <${ADDRESS}>|${ADDRESS})$`);
@@ -24,6 +25,13 @@ export class EnvVars {
   @IsString() @Matches(/^rediss?:\/\/\S+$/) REDIS_CACHE_URL!: string;
   @IsString() @Matches(/^rediss?:\/\/\S+$/) REDIS_QUEUE_URL!: string;
   @IsString() @IsNotEmpty() JWT_ACCESS_SECRET!: string;
+  /**
+   * Admin two-factor login: the AES-256-GCM key for stored TOTP secrets, 32 random bytes as base64 or 64 hex
+   * (`openssl rand -base64 32`). Required with NODE_ENV=production; without it elsewhere, 2FA is off. _PREVIOUS only
+   * opens secrets sealed before a key rotation.
+   */
+  @IsOptional() @IsString() TOTP_ENCRYPTION_KEY?: string;
+  @IsOptional() @IsString() TOTP_ENCRYPTION_KEY_PREVIOUS?: string;
   @IsInt() @Min(60) JWT_ACCESS_TTL_SECONDS: number = 900;
   @IsInt() @Min(1) REFRESH_TTL_DAYS: number = 7;
   /**
@@ -132,7 +140,11 @@ export function secretProblem(value: string): string | null {
   return null;
 }
 
-export function validateEnv(raw: Record<string, unknown>): EnvVars {
+/**
+ * `app`: which process reads it. Only the API needs TOTP_ENCRYPTION_KEY (it seals and opens the secrets); the worker
+ * never touches them, so a missing key can stop the API but never the jobs (A2).
+ */
+export function validateEnv(raw: Record<string, unknown>, app: 'api' | 'worker' = 'api'): EnvVars {
   // `KEY=` in an env file means "not set": @IsOptional() only skips undefined, and a blank line copied from an
   // example must not stop the API (required variables still fail, as missing).
   const set = Object.fromEntries(Object.entries(raw).filter(([, value]) => value !== ''));
@@ -160,7 +172,37 @@ export function validateEnv(raw: Record<string, unknown>): EnvVars {
       'COOKIE_SECURE=false is for local development only, never with NODE_ENV=production',
     );
   }
+  const totp = totpKeyProblem(env, app === 'api');
+  if (totp) throw new Error(totp);
   return env;
+}
+
+/**
+ * Why the two-factor key setting is unacceptable, or null. Each key: the signing-secret rules (length, no placeholder,
+ * not repetitive) and exactly 32 bytes. Required in production. Never includes a value.
+ */
+export function totpKeyProblem(
+  env: Pick<EnvVars, 'NODE_ENV' | 'TOTP_ENCRYPTION_KEY' | 'TOTP_ENCRYPTION_KEY_PREVIOUS'>,
+  requiredInProduction = true,
+): string | null {
+  const generate = 'Generate one with: openssl rand -base64 32';
+  for (const name of ['TOTP_ENCRYPTION_KEY', 'TOTP_ENCRYPTION_KEY_PREVIOUS'] as const) {
+    const value = env[name];
+    if (value === undefined) continue;
+    const problem = secretProblem(value);
+    if (problem) return `${name} ${problem}. ${generate}`;
+    if (!parseSecretBoxKey(value))
+      return `${name} must be 32 bytes as base64 or 64 hex characters. ${generate}`;
+  }
+  if (
+    requiredInProduction &&
+    env.NODE_ENV === 'production' &&
+    env.TOTP_ENCRYPTION_KEY === undefined
+  )
+    return `TOTP_ENCRYPTION_KEY is required in production (admin two-factor login). ${generate}`;
+  if (env.TOTP_ENCRYPTION_KEY_PREVIOUS !== undefined && env.TOTP_ENCRYPTION_KEY === undefined)
+    return 'TOTP_ENCRYPTION_KEY_PREVIOUS needs TOTP_ENCRYPTION_KEY';
+  return null;
 }
 
 /** https, or plain http on this machine only (the local stack runs in production mode on http://localhost:8080). */
@@ -191,7 +233,7 @@ export function emailConfigProblem(env: EnvVars): string | null {
 
 /** The worker's environment: everything the API needs, plus a usable email configuration. */
 export function validateWorkerEnv(raw: Record<string, unknown>): EnvVars {
-  const env = validateEnv(raw);
+  const env = validateEnv(raw, 'worker');
   const problem = emailConfigProblem(env);
   if (problem) throw new Error(`Invalid email configuration: ${problem}`);
   return env;

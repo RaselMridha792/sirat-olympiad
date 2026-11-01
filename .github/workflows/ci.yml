@@ -197,6 +197,8 @@ jobs:
       REDIS_CACHE_URL: redis://localhost:6379
       # The AppModule wiring tests boot the real app, which validates these at startup.
       # JWT_ACCESS_SECRET is generated per run (see the first step): the app refuses weak or placeholder secrets.
+      # No TOTP_ENCRYPTION_KEY: admin 2FA is off for the suites, so their admin sessions open the admin routes; the 2FA
+      # suites (auth-two-factor*.int-spec.ts) set their own throwaway key.
       REDIS_QUEUE_URL: redis://localhost:6379
       MAILPIT_URL: http://localhost:8025
     steps:
@@ -260,11 +262,16 @@ jobs:
       DCD: docker compose --env-file .env -f infra/docker-compose.yml -f infra/docker-compose.dev.yml
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
       - name: Compose files are valid (example env plus a random signing secret)
         run: |
           cp .env.example .env
           sed -i "s|^JWT_ACCESS_SECRET=.*|JWT_ACCESS_SECRET=$(openssl rand -hex 32)|" .env
           sed -i "s|^POSTGRES_APP_PASSWORD=.*|POSTGRES_APP_PASSWORD=$(openssl rand -hex 32)|" .env
+          # The api runs with NODE_ENV=production, which requires the admin 2FA key (commented out in the example).
+          printf 'TOTP_ENCRYPTION_KEY=%s\n' "$(openssl rand -base64 32)" >> .env
           $DCD config --quiet
       - name: Nginx on the pinned image - both sites pass nginx -t; the TLS site, its headers and its logs
         run: infra/nginx/test/check-sites.sh
@@ -311,6 +318,15 @@ jobs:
           logs=$($DCD logs --no-log-prefix nginx 2>&1)
           echo "$logs" | grep -q '"GET /api/health HTTP' || { echo "::error::the request is not in nginx's log"; exit 1; }
           if echo "$logs" | grep -q -e "$q" -e "$r"; then echo "::error::a query string or Referer reached nginx's log"; exit 1; fi
+      - name: Admin two-factor login in Chrome through nginx (e2e:2fa) - enrolment, the code step, a recovery code, a refresh, turning it off, the page CSP
+        # A throwaway admin from the CLI, as on the VPS (--password-stdin: no terminal here). The script has no
+        # dependencies; its password and the authenticator secret never reach the log (RUNBOOK section 22).
+        run: |
+          pw=$(openssl rand -hex 16)
+          echo "::add-mask::$pw"
+          printf '%s\n' "$pw" | $DCD run --rm --no-deps -T api node dist/cli/create-admin.js --password-stdin \
+            --email e2e-2fa@ci.invalid --name "CI Two Factor"
+          E2E_2FA_EMAIL=e2e-2fa@ci.invalid E2E_2FA_PASSWORD="$pw" node apps/web/scripts/e2e-2fa.mjs http://localhost:8080
       - name: Images contain no env files, keys, dumps, old project, tests or dev fixtures
         # Scan the app roots as root (non-root find exits 1 on unreadable dirs and `bash -e` aborts the step).
         # node_modules is skipped: some packages ship test certificates.
@@ -392,11 +408,13 @@ jobs:
           # The word is padded to 8 columns (N/A takes 5 spaces). The disk line depends on the runner, so it is not asserted.
           bad=$(grep -vE '^(PASS|FAIL|N/A|MANUAL) +[a-zA-Z.]|^prelaunch-check: ' <<< "$out" || true)
           [ -z "$bad" ] || { echo "::error::a line that is not PASS, FAIL, N/A or MANUAL"; exit 1; }
-          for v in $(grep -E '^(JWT_ACCESS_SECRET|POSTGRES_PASSWORD)=' .env | cut -d= -f2-); do
+          for v in $(grep -E '^(JWT_ACCESS_SECRET|POSTGRES_PASSWORD|TOTP_ENCRYPTION_KEY)=' .env | cut -d= -f2-); do
             ! grep -qF -- "$v" <<< "$out" || { echo "::error::a secret value reached the output"; exit 1; }
           done
           for line in 'PASS    migrations are up to date' 'PASS    the worker is healthy' 'PASS    no published exam yet' \
             'PASS    the registration fee is 400 BDT (40000 paisa)' 'PASS    registration_open is false' 'PASS    the page CSP is sent' \
+            'PASS    TOTP_ENCRYPTION_KEY is set: 32 random bytes, base64 or 64 hex (admin 2FA)' \
+            'PASS    every API logs two-factor=on (admin 2FA enforced)' \
             'FAIL    no development marker on Postgres' 'FAIL    no Mailpit in the project' 'FAIL    APP_URL is https' \
             'N/A     the newest off-server backup is under 26 h old (on the VPS only)' \
             'PASS    no trusted load-test generators (scripts/loadtest-generators.sh off)'; do

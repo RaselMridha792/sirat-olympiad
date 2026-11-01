@@ -74,6 +74,8 @@ services:
     image: sirat-api:${SIRAT_TAG:-latest}
     env_file: ../.env
     environment:
+      # Admin two-factor login depends on this pin: production requires TOTP_ENCRYPTION_KEY (env.ts), and with the key
+      # the admin pages need a proved second factor. Outside production the API would start without it (2FA off).
       NODE_ENV: production # beats env_file: a NODE_ENV=development left in .env cannot downgrade the API
     # Longer than nginx proxy_read_timeout (30 s): SIGTERM lets in-flight requests finish before pools close.
     stop_grace_period: 35s

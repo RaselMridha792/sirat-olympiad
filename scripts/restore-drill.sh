@@ -87,6 +87,9 @@ sed -e "s|^APP_URL=.*|APP_URL=http://127.0.0.1:18180|" -e "s|change-me-fake|$pw|
   -e "s|^PAYSTATION_ENV=.*|PAYSTATION_ENV=|" -e "s|^SECURITY_ALERT_EMAIL=.*|SECURITY_ALERT_EMAIL=|" .env.example > "$work/drill.env"
 grep -q '^POSTGRES_APP_PASSWORD=' "$work/drill.env" || printf 'POSTGRES_APP_PASSWORD=%s\n' "$(hex 32)" >> "$work/drill.env"
 printf 'MAILPIT_URL=http://mailpit:8025\n' >> "$work/drill.env"
+# Production mode requires the admin 2FA key: a throwaway one. The copy's enrolled admins cannot pass the code step
+# in the drill; nothing here signs them in.
+printf 'TOTP_ENCRYPTION_KEY=%s\n' "$(hex 32)" >> "$work/drill.env"
 printf 'SIRAT_TAG=%s\n' "$TAG" > "$work/release.env"
 unset pw
 # The API and worker read this file instead of the clone's .env (infra/backup/drill.compose.yml).
