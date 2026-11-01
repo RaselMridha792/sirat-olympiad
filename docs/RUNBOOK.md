@@ -459,6 +459,16 @@ The container mounts the whole `infra/nginx` folder, so it sees the new file at 
 The script refuses (exit non-zero, live file untouched) when a download fails, returns anything that is not a CIDR, or has fewer than 10 IPv4 / 5 IPv6 ranges. Never edit `infra/nginx/cloudflare-realip.conf` by hand and never paste the old one-liner: it wrote an empty list when the download failed, which made every student behind a Cloudflare edge share one rate-limit bucket.
 After go-live, confirm in the nginx access log that client addresses are real users, not Cloudflare edges. If Cloudflare reaches the origin over IPv6 while the compose network has none, Docker replaces the source address and real-IP restore cannot work: keep the origin A-record-only.
 
+**Load-test generators (k6 on the VPS, L4).** nginx takes `CF-Connecting-IP` from Cloudflare only. For a k6 run it can also take it from up to four generator machines, for a few hours:
+```bash
+scripts/loadtest-generators.sh on 198.51.100.7,2001:db8::7 --hours 3   # single addresses, at most 4, 1 to 12 hours (default 2)
+scripts/loadtest-generators.sh status                                  # on/off, the addresses, the expiry (EXPIRED: turn it off)
+scripts/loadtest-generators.sh off                                     # right after the run; idempotent
+```
+- Each generator connects straight to the server on 443, with SNI and Host set to the public host (k6 `hosts` maps the domain to the server's address), and sends `CF-Connecting-IP: <simulated client address>`.
+- Each change runs `nginx -t` before the reload, and a failure puts the previous state back (exit 1).
+- Nothing turns it off at the expiry, so run `off`. The file is `infra/nginx/loadtest-realip.local.conf` (git-ignored); while it exists, `deploy.sh` still sees a clean clone.
+
 ## 11. Payments: the review list, refunds and manual reconciliation (PayStation has no refund API)
 
 **Where to look:** `GET /admin/payments?review=1` (admin only) lists every payment set aside for a person; `GET /admin/payments/:id` shows its events (every PayStation answer, callback and IPN, stored redacted). Look up by `invoice`, `trx`, `phone` (any Bangladeshi form) or `email`. Every admin action is in the audit log with the admin's id and IP. A critical case also raises `security.payments.needs_review` (audit log, and the operator email when `SECURITY_ALERT_EMAIL` is set).
