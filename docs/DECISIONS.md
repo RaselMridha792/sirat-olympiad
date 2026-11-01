@@ -28,6 +28,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - two worker inits → one scheduler, and its job runs the cleanup.
    Mutation checks (cutoff 30 → 28 days, OR → AND, no batch cap) each fail the unit and the integration tests.
 8. **Next:** payments' D6 payload scrub (abandoned attempts after 30 days) joins this job as a follow-up after L1 (lead).
+
 ## 2026-11-01 — Registration surge, local k6 (Claude; payments PR 5, plan step 13; provisional until the VPS)
 
 1. **The scenario** (`loadtests/registration-surge.js`). One iteration is one student, as the browser would do it:
