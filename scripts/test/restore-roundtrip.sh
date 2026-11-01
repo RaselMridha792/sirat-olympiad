@@ -5,7 +5,7 @@
 # restore.sh --mode beside restores it again over the running drill: the names are swapped, the old database is kept,
 # and the logins answer the same. Everything is wiped at the end.
 set -euo pipefail
-: "${CLONE_DIR:?}" "${OUT:?}"
+: "${CLONE_DIR:?}" "${OUT:?}" "${TAG:?}"
 cd "$CLONE_DIR"
 S=sirat-drill-src
 fails=0
@@ -25,7 +25,7 @@ pw=$(hex 24)
 sed -e "s|change-me-fake|$pw|g" -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$pw|" \
   -e "s|@pgbouncer:6432/\([a-z_]*\)?[^ ]*|@postgres:5432/\1|" -e "s|^JWT_ACCESS_SECRET=.*|JWT_ACCESS_SECRET=$(hex 32)|" \
   -e "s|^EMAIL_PROVIDER=.*|EMAIL_PROVIDER=mailpit|" -e "s|^PAYSTATION_ENV=.*|PAYSTATION_ENV=|" .env.example > "$OUT/src.env"
-printf 'MAILPIT_URL=http://mailpit:8025\nSIRAT_TAG=latest\n' >> "$OUT/src.env"
+printf 'MAILPIT_URL=http://mailpit:8025\nSIRAT_TAG=%s\n' "$TAG" >> "$OUT/src.env"
 unset pw
 export DRILL_ENV_FILE="$OUT/src.env"
 SDC=(docker compose -p "$S" --env-file "$OUT/src.env" -f infra/docker-compose.yml -f infra/backup/drill.compose.yml)
@@ -48,7 +48,7 @@ unset DRILL_ENV_FILE
 # ---- the drill: rebuild ----
 t0=$SECONDS
 s=0
-RESTORE_DRILL_WORK="$OUT/drill" bash scripts/restore-drill.sh --dump "$OUT/src.dump" --keep > "$OUT/drill.log" 2>&1 || s=$?
+RESTORE_DRILL_WORK="$OUT/drill" bash scripts/restore-drill.sh --dump "$OUT/src.dump" --tag "$TAG" --keep > "$OUT/drill.log" 2>&1 || s=$?
 sed 's/^/        | /' "$OUT/drill.log" | tail -n 22
 check "restore-drill.sh: the restore and every check pass ($((SECONDS - t0)) s in all)" test "$s" = 0
 docker network connect sirat-drill_default "$(hostname)"

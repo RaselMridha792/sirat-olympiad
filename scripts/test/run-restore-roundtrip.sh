@@ -3,7 +3,8 @@
 # sirat-drill-src and sirat-drill, the drill's ports on 127.0.0.1:18180 and 18125, the sirat-*:latest images (never a
 # build), a clone of this checkout's HEAD in a Docker volume (so compose's relative bind mounts name a path the daemon
 # has). Everything it made is removed at the end. Announce it on a shared machine (about 1.5 GB of RAM for a minute or
-# two). Usage: bash scripts/test/run-restore-roundtrip.sh   (CI's docker job runs it, after the stack's build)
+# two). Usage: [SIRAT_TAG=<tag>] bash scripts/test/run-restore-roundtrip.sh   (default latest; CI's docker job runs it
+# after the stack's build). The images must be of this checkout's code: the drill never builds.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 dk() { MSYS_NO_PATHCONV=1 docker "$@"; }
@@ -35,6 +36,6 @@ dk run --rm --name "$TOOLS" \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$VOL:$MOUNT" \
   -v "$(hostpath "$tmp"):/work/in:ro" \
-  -e CLONE_DIR="$MOUNT/sirat" -e OUT=/work/out \
+  -e CLONE_DIR="$MOUNT/sirat" -e OUT=/work/out -e TAG="${SIRAT_TAG:-latest}" \
   alpine:3.22 sh -c 'apk add --no-cache -q bash git curl jq coreutils age docker-cli docker-cli-compose > /dev/null &&
     mkdir -p /work/out && git clone -q /work/in/repo.bundle "$CLONE_DIR" && bash "$CLONE_DIR/scripts/test/restore-roundtrip.sh"'
