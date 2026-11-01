@@ -24,6 +24,7 @@ trap cleanup EXIT
 pw=$(hex 24)
 sed -e "s|change-me-fake|$pw|g" -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$pw|" \
   -e "s|@pgbouncer:6432/\([a-z_]*\)?[^ ]*|@postgres:5432/\1|" -e "s|^JWT_ACCESS_SECRET=.*|JWT_ACCESS_SECRET=$(hex 32)|" \
+  -e "s|^POSTGRES_APP_PASSWORD=.*|POSTGRES_APP_PASSWORD=$(hex 32)|" \
   -e "s|^EMAIL_PROVIDER=.*|EMAIL_PROVIDER=mailpit|" -e "s|^PAYSTATION_ENV=.*|PAYSTATION_ENV=|" .env.example > "$OUT/src.env"
 printf 'MAILPIT_URL=http://mailpit:8025\nSIRAT_TAG=%s\n' "$TAG" >> "$OUT/src.env"
 unset pw
