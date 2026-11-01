@@ -20,6 +20,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    The k6 script retries a busy start as the wizard does.
 6. **The shared-IP test** (300 starts from one IP, then the 301st refused) no longer depends on wall time. The first start goes alone, its throttler window gets a long TTL, and all 301 count in that one window. It passed with a 61 s pause added.
 7. **Not changed:** the transaction limits (answering 503 fast is better than waiting longer), and `connection_limit` (A2's L14 VPS tuning).
+
 ## 2026-11-01 — The audit-log viewer (core; lead's task, plan and review, M13)
 
 1. **Admins only** (lead: not manager), re-read on every call. Read only: `audit_logs` stays append-only.
