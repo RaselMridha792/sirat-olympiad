@@ -34,15 +34,20 @@ POST /exams/:id/attempts  (Start)
    → draw questions from pool, shuffle order + options, store `layout` on the attempt
    → return questions WITHOUT correct answers + remaining_seconds
 every answer change:  saved immediately in browser (IndexedDB/localStorage), nothing sent
-every 60–120 s:       PUT /attempts/:id/checkpoint {answers, request_id}
-                      → written to Redis only; response carries remaining_seconds (client re-syncs timer)
-final submit:         POST /attempts/:id/submit {answers, request_id, events?}
+every 60–120 s:       PUT /attempts/:id/checkpoint {seq, answers, violationCount, events}
+                      → written to Redis only (429 sooner than 20 s after the last); response carries
+                        remaining_seconds (client re-syncs timer)
+final submit:         POST /attempts/:id/submit {requestId, answers, endReason, violationCount, events}
                       → lock attempt → reject if now > ends_at + grace → insert submission (idempotent)
                       → mark submitted → return receipt → enqueue scoring
 time-up (client):     auto-submit CURRENT answers after random 0–20 s delay (spike control)
 failure:              keep local copy, retry with backoff until a receipt arrives
 resume:               GET /attempts/me?exam=:id → same questions, saved answers (Redis then local), remaining time
+no submit (tab closed): the worker's sweep (every minute) submits the last checkpoint once ends_at + grace has
+                      passed (`server_checkpoint`; `server_empty` without one), then scores it
 ```
+
+Load test: `loadtests/exam-simulation.js` runs this flow (steady, the window-open surge, the time-up burst) and checks that no submission is lost and that checkpoints never write to Postgres (`loadtests/README.md`).
 
 Rules: client timer is display-only; `time_taken` is computed by the server; one attempt per student per exam; timer can never be reset; disconnect does not pause the clock. A test must prove auto-submit sends real answers, not `{}`.
 
