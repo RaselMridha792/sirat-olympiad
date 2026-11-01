@@ -199,6 +199,8 @@ model AuditLog {
 
   @@index([actorId])
   @@index([action, createdAt])
+  @@index([createdAt(sort: Desc), id(sort: Desc)]) // the admin audit viewer: newest first, keyset paging (core)
+  @@index([actorId, createdAt(sort: Desc)]) // the viewer's actor filter (core)
   @@map("audit_logs")
 }
 
