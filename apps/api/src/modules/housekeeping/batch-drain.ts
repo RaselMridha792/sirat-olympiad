@@ -2,7 +2,12 @@ import type { Prisma } from '@prisma/client';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { CleanupLimits } from './session-cleanup';
 
-/** One batch: a DELETE or UPDATE of at most `limit` rows (… WHERE id IN (SELECT … LIMIT n FOR UPDATE SKIP LOCKED)). */
+/**
+ * One batch: a DELETE or UPDATE of at most `limit` rows, its ids picked first in a MATERIALIZED CTE
+ * (`WITH batch AS MATERIALIZED (SELECT id … LIMIT n FOR UPDATE SKIP LOCKED) DELETE … USING batch`). Not
+ * `… WHERE id IN (SELECT … LIMIT n …)`: Postgres may run such a subquery more than once, and a batch then goes past
+ * its limit (seen in session-cleanup.int-spec).
+ */
 export type Batch = (tx: Prisma.TransactionClient, limit: number) => Prisma.PrismaPromise<number>;
 
 export interface Drained {

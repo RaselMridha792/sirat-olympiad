@@ -40,7 +40,11 @@ it('clears only the payload: abandoned by its last change, open only when no pay
   expect(await scrub.run(NOW)).toEqual({ abandoned: 2, dead: 1, batches: 2, more: false });
   const cut = scrubCutoff(NOW);
 
-  expect(sql[0]).toContain('UPDATE pending_registrations SET payload = NULL WHERE id IN (');
+  // The ids are picked once, in a MATERIALIZED CTE: an IN (subquery LIMIT n) can run more than once and pass n.
+  expect(sql[0]).toContain('WITH batch AS MATERIALIZED (');
+  expect(sql[0]).toContain(
+    'UPDATE pending_registrations r SET payload = NULL FROM batch WHERE r.id = batch.id',
+  );
   expect(sql[0]).toContain("status = 'abandoned' AND payload IS NOT NULL AND updated_at < ?");
   expect(sql[0]).toContain('FOR UPDATE SKIP LOCKED');
   expect(params[0]).toEqual([cut, 3]);
@@ -52,7 +56,7 @@ it('clears only the payload: abandoned by its last change, open only when no pay
   expect(sql[1]).toContain('NOT EXISTS');
   expect(sql[1]).toContain('FOR UPDATE OF a SKIP LOCKED');
   expect(params[1]).toEqual([cut, cut, 3]);
-  for (const s of sql) expect(s).not.toMatch(/conflict|completed|DELETE/);
+  for (const s of sql) expect(s).not.toMatch(/conflict|completed|DELETE|WHERE id IN \(/);
 });
 
 it('audits counts only, once per run', async () => {

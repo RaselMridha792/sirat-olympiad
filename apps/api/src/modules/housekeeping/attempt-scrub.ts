@@ -50,17 +50,18 @@ export class AttemptScrub {
       this.prisma,
       this.limits,
       (tx, limit) => tx.$executeRaw`
-        UPDATE pending_registrations SET payload = NULL WHERE id IN (
+        WITH batch AS MATERIALIZED (
           SELECT id FROM pending_registrations
           WHERE status = 'abandoned' AND payload IS NOT NULL AND updated_at < ${cut}
           LIMIT ${limit}
-          FOR UPDATE SKIP LOCKED)`,
+          FOR UPDATE SKIP LOCKED)
+        UPDATE pending_registrations r SET payload = NULL FROM batch WHERE r.id = batch.id`,
     );
     const dead = await drainBatches(
       this.prisma,
       this.limits,
       (tx, limit) => tx.$executeRaw`
-        UPDATE pending_registrations SET payload = NULL WHERE id IN (
+        WITH batch AS MATERIALIZED (
           SELECT a.id FROM pending_registrations a
           WHERE a.status = 'open' AND a.payload IS NOT NULL AND a.updated_at < ${cut}
             AND NOT EXISTS (
@@ -68,7 +69,8 @@ export class AttemptScrub {
               WHERE p.pending_registration_id = a.id
                 AND (p.status IN ('initiated', 'pending', 'paid', 'refunded') OR p.expires_at >= ${cut}))
           LIMIT ${limit}
-          FOR UPDATE OF a SKIP LOCKED)`,
+          FOR UPDATE OF a SKIP LOCKED)
+        UPDATE pending_registrations r SET payload = NULL FROM batch WHERE r.id = batch.id`,
     );
     const result: ScrubResult = {
       abandoned: abandoned.count,

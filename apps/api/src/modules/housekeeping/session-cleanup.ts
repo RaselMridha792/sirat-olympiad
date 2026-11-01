@@ -66,21 +66,23 @@ export class SessionCleanup {
       this.prisma,
       this.limits,
       (tx, limit) => tx.$executeRaw`
-        DELETE FROM sessions WHERE id IN (
+        WITH batch AS MATERIALIZED (
           SELECT id FROM sessions
           WHERE expires_at < ${cut.sessions} OR revoked_at < ${cut.sessions}
           LIMIT ${limit}
-          FOR UPDATE SKIP LOCKED)`,
+          FOR UPDATE SKIP LOCKED)
+        DELETE FROM sessions s USING batch WHERE s.id = batch.id`,
     );
     const tokens = await drainBatches(
       this.prisma,
       this.limits,
       (tx, limit) => tx.$executeRaw`
-        DELETE FROM auth_tokens WHERE id IN (
+        WITH batch AS MATERIALIZED (
           SELECT id FROM auth_tokens
           WHERE expires_at < ${cut.tokens}
           LIMIT ${limit}
-          FOR UPDATE SKIP LOCKED)`,
+          FOR UPDATE SKIP LOCKED)
+        DELETE FROM auth_tokens t USING batch WHERE t.id = batch.id`,
     );
     const result: CleanupResult = {
       sessions: sessions.count,

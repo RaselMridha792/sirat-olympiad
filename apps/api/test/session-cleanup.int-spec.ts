@@ -300,15 +300,16 @@ describe('the nightly scheduler', () => {
       await events.waitUntilReady();
       const job = await queue.add(HOUSEKEEPING_JOBS.sessionCleanup, {}, HOUSEKEEPING_JOB_OPTIONS);
       expect(await job.waitUntilFinished(events, 20_000)).toMatchObject({ sessions: 2, tokens: 1 });
-      const scrubJob = await queue.add(
-        HOUSEKEEPING_JOBS.attemptScrub,
-        {},
-        HOUSEKEEPING_JOB_OPTIONS,
-      );
-      expect(await scrubJob.waitUntilFinished(events, 20_000)).toMatchObject({
-        abandoned: expect.any(Number),
-        dead: expect.any(Number),
-      });
+      // The scrub job, waited on by its effect (its audit row), not by waitUntilFinished: with removeOnComplete the
+      // job can be gone before the wait starts ("Missing key for job").
+      const scrubRuns = () =>
+        prisma.auditLog.count({ where: { action: 'housekeeping.attempt_scrub' } });
+      const before = await scrubRuns();
+      await queue.add(HOUSEKEEPING_JOBS.attemptScrub, {}, HOUSEKEEPING_JOB_OPTIONS);
+      const deadline = Date.now() + 20_000;
+      while ((await scrubRuns()) === before && Date.now() < deadline)
+        await new Promise((r) => setTimeout(r, 200));
+      expect(await scrubRuns()).toBe(before + 1);
     } finally {
       for (const w of workers) await w.onApplicationShutdown();
       await events.close();
