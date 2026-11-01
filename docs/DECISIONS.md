@@ -14,6 +14,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 8. **The test is an Ubuntu 24.04 container** (no VM, Q4's default). Real: apt, users, keys, `sshd -t`, `visudo`, `sudo -l`, git. Faked: systemd, the clock, UFW and swap, which a container cannot run. The first full run on a real host is the VPS.
 9. **`prelaunch-check.sh` prints PASS, FAIL, N/A or MANUAL lines and never a value.** `--local` marks the VPS-only checks N/A; CI runs it against its development stack and asserts what must pass, what must fail, and that no `.env` value reaches the output.
 10. **`check-early-exit-pipes.sh` no longer takes `||` for a pipe** (it flagged `x || grep -q`, found while writing bootstrap). shellcheck now runs in CI on every script, at warning level.
+
 ## 2026-11-01 — The runtime database role sirat_app (Claude; LAUNCH-PLAN L2, OPEN-QUESTIONS #27)
 
 1. **Two roles:**
