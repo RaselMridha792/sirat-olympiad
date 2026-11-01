@@ -401,6 +401,8 @@ jobs:
           done
           for line in 'PASS    migrations are up to date' 'PASS    the worker is healthy' 'PASS    no published exam yet' \
             'PASS    the registration fee is 400 BDT (40000 paisa)' 'PASS    registration_open is false' 'PASS    the page CSP is sent' \
+            'PASS    TOTP_ENCRYPTION_KEY is set: 32 random bytes, base64 or 64 hex (admin 2FA)' \
+            'PASS    every API logs two-factor=on (admin 2FA enforced)' \
             'FAIL    no development marker on Postgres' 'FAIL    no Mailpit in the project' 'FAIL    APP_URL is https' \
             'N/A     the newest off-server backup is under 26 h old (on the VPS only)' \
             'PASS    no trusted load-test generators (scripts/loadtest-generators.sh off)'; do
