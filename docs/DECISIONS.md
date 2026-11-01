@@ -2,6 +2,33 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-01 — Rounds and promotion (core C6a; the C6 plan the lead approved, owner Q4 defaults)
+
+1. **Rounds are data** (Q4 default): Round 1 (quiz) exists; admins append a video and a final round. The server picks the order under an advisory lock; the type and the order never change; nothing follows the final; at most 10.
+2. **Windows:**
+   - A video round has both times; a final round has both or neither.
+   - Once open, the start stays and the close only moves later; once closed, the window stays closed, because the jury scores frozen videos (C6b).
+   - Round 1's times come from its exam (exam's), so only its name changes here.
+3. **Criteria are data** on the round: the old ten by default (0–10 each, total 0–100). They are frozen once a jury score exists.
+4. **Promotion** (lead's review):
+   - **The source:** from a quiz round, the category's rows of the round's one **published** exam snapshot. An archived exam is retired, never a source. The rank is recomputed inside the category in exam's order, because an all-category exam's rank is global. From a video round, the jury averages, after the close and with every sent video scored.
+   - **Ties at the cut all go through** (Q4a default). The preview shows the tie count, so an admin sees why N + k were promoted.
+   - **The run:** the preview's `expected` (the count and a source key: the exam and its results version, or a digest of the round's entries) comes back with the run, so a re-published snapshot or a changed score after the preview is refused (409 `stale`). The web asks the admin to type the number that will go through; Bangla digits count too.
+   - **One run per (round, category)** (UNIQUE), under the round's row lock, in one transaction: the run row, the next round's entries (`ON CONFLICT DO NOTHING`: an existing entry, video or score is never overwritten), and the source entries marked promoted or eliminated. Round 1's entries are created at its promotion, so the home can say "promoted" or "eliminated".
+   - **The audit row** keeps the counts, never a student. The snapshot decides: a disqualification is exam's rebuild before the promotion, not a filter here.
+5. **The student's round** (`GET /rounds/me`, the home, the profile): the latest round with an own entry; before any entry, Round 1.
+6. **Stats:** `secondRound` and `finalists` count the entries of Round 2 and of the final round, in the same snapshot; null while that round does not exist.
+7. **Schema** (one generated and one CHECKs migration): `promotion_runs` (new); `rounds.criteria`; `round_entries.promotion_run_id`, `video_submitted_at` (for C6b); CHECKs for the limits. New table: `sirat_app` gets it through #57's default privileges; no trigger.
+8. **Web:**
+   - `/admin/rounds` (admin only): the rounds in order with entries and promotions.
+   - Dialogs: "Add round", "Edit" (Bangladesh times, the criteria as `key | English | বাংলা` lines) and "Promote" (preview, tie count, typed confirmation).
+   - One page with dialogs instead of the planned `/admin/rounds/[id]`: there are at most 10 rounds, so a detail page adds a route and no information.
+   - The home's round card already showed every status: it now reads `GET /rounds/me`.
+9. **Tests:**
+   - `rounds.int-spec.ts`: rounds and their rules; frozen criteria; promotion from Round 1 (in-category rank, ties, stale, the run, nothing overwritten, already promoted, the audit counts); the student's round, the profile and the stats; the source refusals; two simultaneous runs (one wins); promotion from a video round (close, unscored, stale after a score change, statuses, videos and scores kept); admins only; the CHECKs.
+   - The test cleans its own rounds, because rounds are global data in the shared test database. `admin-stats` and `users-me` follow the new values.
+   - web: the area file picks, the problem mapper (a message for every code in both languages), the criteria lines, the typed count.
+
 ## 2026-11-01 — Ambassador teams (core C5b-3; lead's plan and rules)
 
 1. **Shape (CORE-PLAN D7):**

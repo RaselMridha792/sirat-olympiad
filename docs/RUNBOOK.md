@@ -673,3 +673,25 @@ SQL
 - **"This team is not taking new members":** the team lead is no longer an approved ambassador (revoked or blocked). The members keep the team; there is no dissolve or hand-over in v1.
 - **The lead cannot leave** their own team (by design). A member leaves from the team page.
 - **An unsuitable team name:** an admin renames it on `/admin/teams` with a reason (audited `team.renamed`; the audit row keeps the reason, not the names).
+
+## 19. Rounds and promotion (core C6a)
+
+- **Where:** `/admin/rounds` (admins only). Round 1 is the quiz; add Round 2 (video, with its window) and the final after it, in order. Times are Bangladesh time.
+- **Before promoting from Round 1:**
+  - The Round 1 exam of the category (or the one for all categories) has its results **published** (exam's results panel).
+  - Exactly one published Round 1 exam covers each category: archive a test or replaced exam first (else "More than one published Round 1 exam…").
+  - Round 2 exists.
+- **Promote, one category at a time:**
+  1. "Promote", choose the category and N, then "Preview": the counts, the tie count (students tied with the last place also go through) and the last place.
+  2. Type the number that will go through, then "Promote now".
+  3. It cannot be undone, and each category is promoted from a round once (audited `round.promoted`, counts only).
+- **"Someone changed this in the meantime":** the results were re-published or a score changed after the preview. Preview again.
+- **From the video round:** after its close and once every sent video has a jury score (C6b). Students without a video are eliminated.
+- **Check the counts** (no names):
+
+```bash
+$DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+select r.sort_order, r.name, e.status, count(*) from round_entries e join rounds r on r.id = e.round_id group by 1, 2, 3 order by 1, 3;
+select r.name as from_round, p.category, p.top_n, p.promoted_count, p.eliminated_count, p.created_at from promotion_runs p join rounds r on r.id = p.from_round_id order by p.created_at;
+SQL
+```
