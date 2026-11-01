@@ -173,7 +173,9 @@ stats_pid=$!
 
 say "k6 $SCENARIO: $USERS students against http://api:4000 on ${P}_default"
 k6_status=0
-PASSWORD=$FIXTURE_PASSWORD dk run --rm --name "$P-k6" --network "${P}_default" \
+# k6's image runs as its own user; on a Linux host the output folder belongs to whoever runs this, so k6 runs as that
+# user, or it could not write its summary (Docker Desktop hides this on Windows).
+PASSWORD=$FIXTURE_PASSWORD dk run --rm --name "$P-k6" --network "${P}_default" --user "$(id -u):$(id -g)" \
   -v "$(hostpath "$PWD/loadtests"):/scripts:ro" -v "$(hostpath "$OUT"):/out" \
   -e PASSWORD -e BASE_URL=http://api:4000 -e "EXAM_ID=$EXAM_ID" -e "SCENARIO=$SCENARIO" \
   -e "USERS=$USERS" -e "RAMP=$RAMP" -e "RATE=$RATE" -e "MIN_WORK=$MIN_WORK" \
@@ -189,6 +191,12 @@ if [ -n "$cpu_pid" ]; then # typeperf is a Windows program: stop it by its Windo
 fi
 [ -z "$watch_pid" ] || wait "$watch_pid" || true
 say "k6 exit $k6_status (99 = a threshold failed) after $((SECONDS - t0)) s"
+# Without its summary every count below would read 0 and compare zeros: say so and stop instead.
+if [ ! -s "$OUT/summary.json" ]; then
+  say "no k6 summary at $OUT/summary.json: k6 did not write it; its log ends with:" >&2
+  tail -n 20 "$OUT/k6.log" >&2
+  exit 1
+fi
 sed -n '/THRESHOLDS/,$p' "$OUT/k6.log" > "$OUT/k6-summary.txt" || true
 cat "$OUT/k6-summary.txt"
 
@@ -203,8 +211,9 @@ fields() {
   ' "$1"
 }
 metric() {
+  # An unreadable summary stops the run (set -e) rather than reading as zeros.
   node -e 'const m = require(process.argv[1]).metrics[process.argv[2]]; console.log(m ? m.count || 0 : 0)' \
-    "$(hostpath "$OUT/summary.json")" "$1" 2> /dev/null || echo 0
+    "$(hostpath "$OUT/summary.json")" "$1"
 }
 
 # The sweep finalizes the students who left once their time and the grace are over; the worker scores every
