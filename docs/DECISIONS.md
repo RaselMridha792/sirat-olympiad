@@ -16,6 +16,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 6. **The audit row holds the count and the file's sha256**, never question text.
 7. **Problems are listed by spreadsheet row** (header = row 1; 0 = the whole file) and column, at most 200 in one answer (`truncated`).
 8. **Export later:** if questions are ever exported to CSV, use `csvCell` in `common/csv.ts`, which already prefixes a cell starting with `= + - @`, a tab or CR with `'`. The import does not strip such a prefix: there is no export yet.
+
 ## 2026-11-01 — Exam simulation, local k6 (E6; exam session, EXAM-PLAN 6.2; provisional until the VPS)
 
 1. **The scenario** (`loadtests/exam-simulation.js`). One iteration is one student, as the exam room does it:
