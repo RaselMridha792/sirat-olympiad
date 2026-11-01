@@ -20,3 +20,16 @@ export function isRetryableDbError(error: unknown): boolean {
     RETRYABLE_SQLSTATE.test(error.message)
   );
 }
+
+/**
+ * The database is too busy right now, and nothing was applied: a passing refusal (isRetryableDbError: the transaction
+ * rolled back), or P2024 (no connection could be taken from the pool, so nothing ran). The API answers 503
+ * SERVICE_BUSY and the same request can be sent again. Connection-lost errors (P1001, P1017) are NOT in this set: they
+ * can hit during COMMIT with an unknown outcome, so a retry could apply a POST twice; they stay 500.
+ */
+export function isBusyDbError(error: unknown): boolean {
+  return (
+    isRetryableDbError(error) ||
+    (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2024')
+  );
+}
