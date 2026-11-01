@@ -185,6 +185,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 2. **One snapshot:** every count is read in one `REPEATABLE READ` batch transaction on one connection, so the totals agree with the breakdowns and the queries never take more than one pool connection.
 3. **Cache:** 60 s in the cache Redis (`admin-stats:v1`); `asOf` says when the counts were computed.
    - **Single flight:** a lock (`SET NX PX`, released only by its holder) makes a burst compute once. The others wait up to 5 s for that result, then compute on their own.
+   - **The lock holder looks at the cache once more before computing** (fix, 2026-11-01, found by exam's CI): a request that missed the cache just before the leader wrote it, and took the lock just after the leader released it, used to compute a second time. The burst test now holds the leader until all six requests have tried the lock, and a separate test feeds one stale miss.
    - **Redis trouble:** every call reads Postgres, with a warning logged at most every 30 s.
    - **No invalidation:** counts up to a minute old are fine for an overview.
 4. **Others' tables, read only:** payments' `registrations`, `payments` and `pending_registrations`, and exam's `attempts`. No index was added to them.
