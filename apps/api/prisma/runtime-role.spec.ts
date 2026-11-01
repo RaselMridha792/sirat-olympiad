@@ -1,15 +1,35 @@
 import { spawnSync } from 'node:child_process';
 import { createHash, createHmac } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  DATABASE_TIMEOUTS,
+  QUIET_SESSION,
   ROLE_ATTRIBUTES,
   passwordProblem,
   passwordStep,
+  quietUrl,
   readyLine,
   scramVerifier,
 } from './runtime-role';
+
+/**
+ * A preload hook that fails any load of Prisma Client: a require of the bare name, and the load of its files by path,
+ * which is how Node loads it for a dynamic import(). It writes a marker first, because the script's own error line
+ * shows only the error class.
+ */
+const NO_PRISMA_HOOK = String.raw`const Module = require('node:module');
+const load = Module._load;
+const prisma = /(^|[\\/])(@prisma[\\/]client|\.prisma[\\/]client)([\\/]|$)/;
+Module._load = function (request, ...rest) {
+  if (prisma.test(String(request))) {
+    process.stderr.write('PRISMA_LOADED\n');
+    throw new Error('PRISMA_LOADED');
+  }
+  return load.call(this, request, ...rest);
+};
+`;
 
 describe('runtime-role: the role', () => {
   it("creates the role with the migration's attributes (ensureRole runs on a fresh cluster before a restore)", () => {
@@ -21,15 +41,10 @@ describe('runtime-role: the role', () => {
   });
 
   it('refuses to run without DIRECT_URL in its own environment, before Prisma Client (which reads a local .env) loads', () => {
-    // A preload hook makes any load of @prisma/client fail, so the script must decide before it loads Prisma Client.
     const dir = mkdtempSync(join(tmpdir(), 'runtime-role-'));
     try {
       const hook = join(dir, 'no-prisma.cjs');
-      writeFileSync(
-        hook,
-        "const Module = require('node:module'); const load = Module._load;\n" +
-          "Module._load = function (request, ...rest) { if (request === '@prisma/client') throw new Error('PRISMA_LOADED'); return load.call(this, request, ...rest); };\n",
-      );
+      writeFileSync(hook, NO_PRISMA_HOOK);
       const env: NodeJS.ProcessEnv = {
         ...process.env,
         NODE_OPTIONS: `--require "${hook.replace(/\\/g, '/')}"`,
@@ -48,6 +63,34 @@ describe('runtime-role: the role', () => {
       expect(run.status).toBe(2);
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('puts back the timeouts the migrations set (the newest migration that sets one wins)', () => {
+    const dir = join(__dirname, 'migrations');
+    const set = new Map<string, string>();
+    for (const name of readdirSync(dir)
+      .filter((n) => /^\d+_/.test(n))
+      .sort()) {
+      const sql = readFileSync(join(dir, name, 'migration.sql'), 'utf8');
+      for (const m of sql.matchAll(
+        /ALTER DATABASE %I SET (\w+) = %L', current_database\(\), '([^']+)'/g,
+      )) {
+        set.set(m[1] ?? '', m[2] ?? '');
+      }
+    }
+    expect([...set.entries()].sort()).toEqual(DATABASE_TIMEOUTS.map(([n, v]) => [n, v]).sort());
+  });
+
+  it('connects with QUIET_SESSION as the connection options and keeps the rest of DIRECT_URL', () => {
+    const url = new URL(quietUrl('postgresql://owner:pw@db.internal:5432/sirat?schema=public'));
+    expect(`${url.protocol}//${url.host}${url.pathname}`).toBe(
+      'postgresql://db.internal:5432/sirat',
+    );
+    expect(url.searchParams.get('schema')).toBe('public');
+    const options = url.searchParams.get('options') ?? '';
+    for (const [name, value] of Object.entries(QUIET_SESSION)) {
+      expect(options).toContain(`-c ${name}=${value}`);
     }
   });
 

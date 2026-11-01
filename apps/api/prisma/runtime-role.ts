@@ -6,13 +6,14 @@
  *  - re-asserts the restrictions that a restore or a late-merged migration can undo (CONNECT for sirat_app, no
  *    temporary tables, nothing on `_prisma_migrations`, no UPDATE or DELETE on the append-only tables). It never adds
  *    other rights, so a later migration that narrows a table's grants stays in charge;
- *  - clears the session defaults sirat_app set for itself (PostgreSQL lets every role do that, and no grant stops it);
+ *  - clears every role-level setting of sirat_app (PostgreSQL lets every role set its own, and no grant stops it);
  *  - puts back a database timeout only where it is missing: a restore into a fresh database loses them, while the
  *    migration that set them stays recorded as applied. A later migration that changes one stays in charge;
  *  - sets its LOGIN and password from POSTGRES_APP_PASSWORD with a SCRAM-SHA-256 verifier computed here, so the
- *    plaintext never reaches Postgres, and with statement logging off, so the verifier stays out of its log;
+ *    plaintext never reaches Postgres. Its connection keeps statement text out of the server log (QUIET_SESSION);
  *  - with `--ensure`, only makes sure the role exists (NOLOGIN), for a restore before pg_restore (LAUNCH-PLAN L7).
- * It prints one line and never a value, plus a warning line when it had to clear settings.
+ * One run at a time per database (an advisory lock), all steps in one transaction. It prints one line and never a
+ * value, plus a warning line when it cleared settings.
  *
  * On a cluster marked `sirat.environment=development` (the shared dev stack, used by every worktree) the password is
  * set only while the role has none, so one worktree's value can never reset another's. Until L8 switches the API to the
@@ -20,7 +21,7 @@
  */
 import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'node:crypto';
 // Types only: main() loads Prisma Client after it has checked DIRECT_URL (see there).
-import type { Prisma, PrismaClient } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 
 export const RUNTIME_ROLE = 'sirat_app';
 
@@ -34,6 +35,34 @@ export const DATABASE_TIMEOUTS = [
   ['lock_timeout', '5s'],
   ['idle_in_transaction_session_timeout', '60s'],
 ] as const;
+
+/**
+ * Settings for the script's own connection, set at connection start (the URL's `options`): no statement text in the
+ * server log whatever postgresql.conf or ALTER DATABASE says, because the ALTER ROLE carries the verifier. At start,
+ * not with SET LOCAL, because transaction sampling is decided at BEGIN. Superuser-only settings among them: the migrate
+ * job connects as the bootstrap superuser.
+ */
+export const QUIET_SESSION = {
+  log_statement: 'none',
+  log_min_duration_statement: '-1',
+  log_min_error_statement: 'panic',
+  log_min_messages: 'warning',
+  log_min_duration_sample: '-1',
+  log_transaction_sample_rate: '0',
+  debug_print_parse: 'off',
+  debug_print_rewritten: 'off',
+} as const;
+
+/** DIRECT_URL with QUIET_SESSION as its connection options. */
+export function quietUrl(url: string): string {
+  const quiet = new URL(url);
+  const options = Object.entries(QUIET_SESSION).map(([name, value]) => `-c ${name}=${value}`);
+  quiet.searchParams.set('options', options.join(' '));
+  return quiet.toString();
+}
+
+/** One run at a time per database: two at once would otherwise both rewrite the same catalog rows (XX000). */
+const ADVISORY_LOCK = 72_707_370; // any fixed key; Prisma's migrate lock is 72707369
 
 /** URL-safe (it is also part of DATABASE_URL), long enough, and never a placeholder. `openssl rand -hex 32` fits. */
 const PASSWORD_SHAPE = /^[A-Za-z0-9_-]{32,128}$/;
@@ -182,19 +211,18 @@ export async function applyDatabaseTimeouts(db: Db): Promise<number> {
 }
 
 /**
- * Gives the role its login. A utility statement takes no parameters, so the verifier is in the statement text, and
- * PostgreSQL logs that text on an error (log_min_error_statement) or a slow run (log_min_duration_statement, see
- * infra/postgres/postgresql.conf). Statement logging is off for this one transaction, on its one connection.
+ * Gives the role its login. A utility statement takes no parameters, so the verifier is in the statement text: it is
+ * sent only on a connection whose settings keep statement text out of the server log (QUIET_SESSION).
  */
-async function setLogin(db: PrismaClient, verifier: string): Promise<void> {
+async function setLogin(db: Db, verifier: string): Promise<void> {
   if (!VERIFIER_SHAPE.test(verifier)) throw new Error('unexpected verifier shape');
-  await db.$transaction([
-    db.$executeRawUnsafe(`SET LOCAL log_statement = 'none'`),
-    db.$executeRawUnsafe(`SET LOCAL log_min_duration_statement = -1`),
-    db.$executeRawUnsafe(`SET LOCAL log_min_error_statement = 'panic'`),
-    // The verifier holds only base64 characters, digits, "$" and ":", so it cannot leave the string literal.
-    db.$executeRawUnsafe(`ALTER ROLE ${RUNTIME_ROLE} WITH LOGIN PASSWORD '${verifier}'`),
-  ]);
+  const quiet = Object.entries(QUIET_SESSION)
+    .map(([name, value]) => `current_setting('${name}') = '${value}'`)
+    .join(' AND ');
+  const [row] = await db.$queryRawUnsafe<{ quiet: boolean }[]>(`SELECT ${quiet} AS quiet`);
+  if (!row?.quiet) throw new Error('the connection may log statement text');
+  // The verifier holds only base64 characters, digits, "$" and ":", so it cannot leave the string literal.
+  await db.$executeRawUnsafe(`ALTER ROLE ${RUNTIME_ROLE} WITH LOGIN PASSWORD '${verifier}'`);
 }
 
 async function main(): Promise<number> {
@@ -206,7 +234,6 @@ async function main(): Promise<number> {
     console.error('runtime role: DIRECT_URL is not set');
     return 2;
   }
-  const { PrismaClient: Client } = await import('@prisma/client');
   const ensureOnly = process.argv.includes('--ensure');
   const password = process.env.POSTGRES_APP_PASSWORD ?? '';
   const problem = password && !ensureOnly ? passwordProblem(password) : null;
@@ -214,32 +241,44 @@ async function main(): Promise<number> {
     console.error(`runtime role: ${problem}`);
     return 2;
   }
-  const db = new Client({ datasourceUrl: url });
+  const { PrismaClient: Client } = await import('@prisma/client');
+  const db = new Client({ datasourceUrl: quietUrl(url) });
   try {
-    await ensureRole(db);
     if (ensureOnly) {
+      await ensureRole(db);
       console.log(`runtime role exists: ${RUNTIME_ROLE}`);
       return 0;
     }
-    await assertRestrictions(db);
-    const cleared = await clearRoleSettings(db);
-    if (cleared > 0) {
+    // All or nothing, and one run at a time per database. A second run waits for the lock (up to 30 s, not the
+    // database's 5 s lock_timeout) and then finds nothing left to change.
+    const outcome = await db.$transaction(
+      async (tx) => {
+        await tx.$executeRawUnsafe(`SET LOCAL lock_timeout = '30s'`);
+        await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(${ADVISORY_LOCK})`);
+        await ensureRole(tx);
+        await assertRestrictions(tx);
+        const cleared = await clearRoleSettings(tx);
+        await applyDatabaseTimeouts(tx);
+        const [state] = await tx.$queryRaw<
+          { development: boolean; hasPassword: boolean; canLogin: boolean }[]
+        >`
+          SELECT coalesce(current_setting('sirat.environment', true), '') = 'development' AS "development",
+                 a.rolpassword IS NOT NULL AS "hasPassword", a.rolcanlogin AS "canLogin"
+          FROM pg_authid a WHERE a.rolname = ${RUNTIME_ROLE}`;
+        const hasPassword = state?.hasPassword ?? false;
+        const development = state?.development ?? false;
+        const step = passwordStep({ password, development, hasPassword });
+        if (step === 'set') await setLogin(tx, scramVerifier(password));
+        return { cleared, line: readyLine(step, hasPassword && (state?.canLogin ?? false)) };
+      },
+      { maxWait: 10_000, timeout: 60_000 },
+    );
+    if (outcome.cleared > 0) {
       console.warn(
-        `runtime role: cleared ${cleared} session setting(s) that ${RUNTIME_ROLE} had set for itself`,
+        `runtime role: cleared ${outcome.cleared} role-level setting(s) of ${RUNTIME_ROLE}`,
       );
     }
-    await applyDatabaseTimeouts(db);
-
-    const [state] = await db.$queryRaw<
-      { development: boolean; hasPassword: boolean; canLogin: boolean }[]
-    >`
-      SELECT coalesce(current_setting('sirat.environment', true), '') = 'development' AS "development",
-             a.rolpassword IS NOT NULL AS "hasPassword", a.rolcanlogin AS "canLogin"
-      FROM pg_authid a WHERE a.rolname = ${RUNTIME_ROLE}`;
-    const hasPassword = state?.hasPassword ?? false;
-    const step = passwordStep({ password, development: state?.development ?? false, hasPassword });
-    if (step === 'set') await setLogin(db, scramVerifier(password));
-    console.log(readyLine(step, hasPassword && (state?.canLogin ?? false)));
+    console.log(outcome.line);
     return 0;
   } finally {
     await db.$disconnect();
@@ -250,9 +289,16 @@ if (require.main === module) {
   main().then(
     (code) => process.exit(code),
     (error: unknown) => {
-      // The error class and Postgres code only: never a statement that could hold a verifier.
-      const e = error as { name?: string; code?: string; meta?: { code?: string } };
-      console.error(`runtime role: failed (${e.name ?? 'Error'} ${e.meta?.code ?? e.code ?? ''})`);
+      // The error class and a code only: never a statement that could hold a verifier, never a URL. Prisma puts the
+      // Postgres code in meta.code (raw queries) and its own code in code or, for a failed connection, errorCode.
+      const e = error as {
+        name?: string;
+        code?: string;
+        errorCode?: string;
+        meta?: { code?: string };
+      };
+      const code = e.meta?.code ?? e.code ?? e.errorCode ?? '';
+      console.error(`runtime role: failed (${e.name ?? 'Error'} ${code})`);
       process.exit(1);
     },
   );
