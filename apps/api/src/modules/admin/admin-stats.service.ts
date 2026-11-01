@@ -63,6 +63,10 @@ export class AdminStatsService {
       return this.compute();
     }
     try {
+      // A leader may have written the result and released the lock between our miss and our lock: look again, so
+      // a request that arrives late in a burst never computes a second time.
+      const landed = await this.cached();
+      if (landed) return landed;
       const stats = await this.compute();
       await this.safe(() => this.redis.set(STATS_KEY, JSON.stringify(stats), 'EX', STATS_TTL_S));
       return stats;
