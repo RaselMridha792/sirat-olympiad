@@ -1,5 +1,69 @@
+import { spawnSync } from 'node:child_process';
 import { createHash, createHmac } from 'node:crypto';
-import { passwordProblem, passwordStep, scramVerifier } from './runtime-role';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  ROLE_ATTRIBUTES,
+  passwordProblem,
+  passwordStep,
+  readyLine,
+  scramVerifier,
+} from './runtime-role';
+
+describe('runtime-role: the role', () => {
+  it("creates the role with the migration's attributes (ensureRole runs on a fresh cluster before a restore)", () => {
+    const sql = readFileSync(
+      join(__dirname, 'migrations', '20261031224147_runtime_role', 'migration.sql'),
+      'utf8',
+    );
+    expect(/CREATE ROLE sirat_app ([A-Z ]+);/.exec(sql)?.[1]).toBe(ROLE_ATTRIBUTES);
+  });
+
+  it('refuses to run without DIRECT_URL in its own environment, before Prisma Client (which reads a local .env) loads', () => {
+    // A preload hook makes any load of @prisma/client fail, so the script must decide before it loads Prisma Client.
+    const dir = mkdtempSync(join(tmpdir(), 'runtime-role-'));
+    try {
+      const hook = join(dir, 'no-prisma.cjs');
+      writeFileSync(
+        hook,
+        "const Module = require('node:module'); const load = Module._load;\n" +
+          "Module._load = function (request, ...rest) { if (request === '@prisma/client') throw new Error('PRISMA_LOADED'); return load.call(this, request, ...rest); };\n",
+      );
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        NODE_OPTIONS: `--require "${hook.replace(/\\/g, '/')}"`,
+      };
+      delete env.DIRECT_URL;
+      const apiDir = join(__dirname, '..');
+      const tsxCli = require.resolve('tsx/cli', { paths: [apiDir] });
+      const run = spawnSync(process.execPath, [tsxCli, 'prisma/runtime-role.ts'], {
+        cwd: apiDir,
+        env,
+        encoding: 'utf8',
+        timeout: 60_000,
+      });
+      expect(`${run.stdout}${run.stderr}`).not.toContain('PRISMA_LOADED');
+      expect(run.stderr).toContain('runtime role: DIRECT_URL is not set');
+      expect(run.status).toBe(2);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('prints one line that says what the role was left with (CI greps the "set" line)', () => {
+    expect(readyLine('set', false)).toBe('runtime role ready: sirat_app (login and password set)');
+    expect(readyLine('keep-dev', true)).toBe(
+      'runtime role ready: sirat_app (development cluster: password already set, kept)',
+    );
+    expect(readyLine('skip-empty', false)).toBe(
+      'runtime role ready: sirat_app (no login yet: POSTGRES_APP_PASSWORD is empty)',
+    );
+    expect(readyLine('skip-empty', true)).toBe(
+      'runtime role ready: sirat_app (POSTGRES_APP_PASSWORD is empty: the existing login is kept)',
+    );
+  });
+});
 
 describe('runtime-role: the password rules', () => {
   it('accepts a long URL-safe value and refuses short, unsafe or placeholder ones, naming only the rule', () => {

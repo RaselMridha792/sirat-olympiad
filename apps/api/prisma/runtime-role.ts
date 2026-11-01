@@ -1,23 +1,32 @@
 /**
- * The runtime role's login (OPEN-QUESTIONS #27, LAUNCH-PLAN L2). The migrate job runs it after `prisma migrate deploy`
- * (apps/api/Dockerfile), connected as the bootstrap superuser through DIRECT_URL. The migration
+ * The runtime role's login and restrictions (OPEN-QUESTIONS #27, LAUNCH-PLAN L2). The migrate job runs it after
+ * `prisma migrate deploy` (apps/api/Dockerfile), connected as the bootstrap superuser through DIRECT_URL. The migration
  * 20261031224147_runtime_role creates `sirat_app` (NOLOGIN) and its grants; this script:
  *  - manages only the fixed role `sirat_app`, never the role in DIRECT_URL and never a name from input;
+ *  - re-asserts the restrictions that a restore or a late-merged migration can undo (CONNECT for sirat_app, no
+ *    temporary tables, nothing on `_prisma_migrations`, no UPDATE or DELETE on the append-only tables). It never adds
+ *    other rights, so a later migration that narrows a table's grants stays in charge;
+ *  - clears the session defaults sirat_app set for itself (PostgreSQL lets every role do that, and no grant stops it);
+ *  - puts back a database timeout only where it is missing: a restore into a fresh database loses them, while the
+ *    migration that set them stays recorded as applied. A later migration that changes one stays in charge;
  *  - sets its LOGIN and password from POSTGRES_APP_PASSWORD with a SCRAM-SHA-256 verifier computed here, so the
- *    plaintext never reaches Postgres or its log;
- *  - re-applies the database's statement, lock and idle timeouts, because a restore into a fresh database loses them
- *    while the migration that set them stays recorded as applied;
+ *    plaintext never reaches Postgres, and with statement logging off, so the verifier stays out of its log;
  *  - with `--ensure`, only makes sure the role exists (NOLOGIN), for a restore before pg_restore (LAUNCH-PLAN L7).
- * It prints one line and never a value.
+ * It prints one line and never a value, plus a warning line when it had to clear settings.
  *
  * On a cluster marked `sirat.environment=development` (the shared dev stack, used by every worktree) the password is
  * set only while the role has none, so one worktree's value can never reset another's. Until L8 switches the API to the
  * role, an empty POSTGRES_APP_PASSWORD only skips the password step.
  */
 import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'node:crypto';
-import { PrismaClient } from '@prisma/client';
+// Types only: main() loads Prisma Client after it has checked DIRECT_URL (see there).
+import type { Prisma, PrismaClient } from '@prisma/client';
 
 export const RUNTIME_ROLE = 'sirat_app';
+
+/** The attributes of the migration's CREATE ROLE (runtime-role.spec.ts keeps the two the same). */
+export const ROLE_ATTRIBUTES =
+  'NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS';
 
 /** The same values as migration 20261030165953_db_session_timeouts (A2.1). */
 export const DATABASE_TIMEOUTS = [
@@ -52,6 +61,16 @@ export function passwordStep(input: {
   return 'set';
 }
 
+/** The one line the script prints; `hadLogin` is whether the role could log in before this run. */
+export function readyLine(step: PasswordStep, hadLogin: boolean): string {
+  const prefix = `runtime role ready: ${RUNTIME_ROLE}`;
+  if (step === 'set') return `${prefix} (login and password set)`;
+  if (step === 'keep-dev') return `${prefix} (development cluster: password already set, kept)`;
+  return hadLogin
+    ? `${prefix} (POSTGRES_APP_PASSWORD is empty: the existing login is kept)`
+    : `${prefix} (no login yet: POSTGRES_APP_PASSWORD is empty)`;
+}
+
 /**
  * A SCRAM-SHA-256 verifier in PostgreSQL's stored format (RFC 5802/7677). PostgreSQL stores a password given in this
  * form as it is, so the plaintext never travels to the server. The password must be ASCII (SASLprep is then a no-op).
@@ -66,13 +85,16 @@ export function scramVerifier(password: string, salt = randomBytes(16), iteratio
 
 const VERIFIER_SHAPE = /^SCRAM-SHA-256\$[0-9]+:[A-Za-z0-9+/=]+\$[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+$/;
 
+/** A client or an interactive transaction: the tests run these steps inside a transaction they roll back. */
+type Db = Prisma.TransactionClient;
+
 /** Creates the role if it is missing (NOLOGIN, no password); safe to repeat. */
-export async function ensureRole(db: PrismaClient): Promise<void> {
+export async function ensureRole(db: Db): Promise<void> {
   await db.$executeRawUnsafe(`
     DO $$
     BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${RUNTIME_ROLE}') THEN
-        CREATE ROLE ${RUNTIME_ROLE} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+        CREATE ROLE ${RUNTIME_ROLE} ${ROLE_ATTRIBUTES};
       END IF;
     EXCEPTION
       WHEN duplicate_object OR unique_violation THEN NULL;
@@ -80,9 +102,73 @@ export async function ensureRole(db: PrismaClient): Promise<void> {
     $$`);
 }
 
-/** Puts the database-level timeouts back on the connected database. */
-export async function applyDatabaseTimeouts(db: PrismaClient): Promise<void> {
+/**
+ * Re-asserts the migration's restrictions on the connected database, where each can be lost:
+ *  - a dump made without --create carries no database-level grants, so a restore into a fresh database gives PUBLIC
+ *    its TEMPORARY back and drops sirat_app's CONNECT;
+ *  - `pg_restore --clean` over a live schema re-creates each table under the default privileges, so sirat_app gets
+ *    UPDATE and DELETE on the append-only tables and every right on `_prisma_migrations`;
+ *  - a migration merged later but named earlier runs after the runtime-role migration on an existing database.
+ */
+export async function assertRestrictions(db: Db): Promise<void> {
+  await db.$executeRawUnsafe(`
+    DO $$
+    DECLARE
+      t record;
+    BEGIN
+      EXECUTE format('GRANT CONNECT ON DATABASE %I TO ${RUNTIME_ROLE}', current_database());
+      EXECUTE format('REVOKE TEMPORARY ON DATABASE %I FROM PUBLIC', current_database());
+      IF to_regclass('public."_prisma_migrations"') IS NOT NULL THEN
+        REVOKE ALL ON TABLE "_prisma_migrations" FROM ${RUNTIME_ROLE};
+      END IF;
+      FOR t IN
+        SELECT DISTINCT c.relname FROM pg_trigger tg
+        JOIN pg_class c ON c.oid = tg.tgrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_proc p ON p.oid = tg.tgfoid
+        WHERE n.nspname = 'public' AND NOT tg.tgisinternal AND p.proname LIKE '%\\_append\\_only'
+      LOOP
+        EXECUTE format('REVOKE UPDATE, DELETE ON TABLE public.%I FROM ${RUNTIME_ROLE}', t.relname);
+      END LOOP;
+    END
+    $$`);
+}
+
+/**
+ * Clears the session defaults sirat_app gave itself, for all databases and for this one. Every PostgreSQL role may set
+ * its own (`ALTER ROLE sirat_app SET statement_timeout = 0`, or `default_transaction_read_only = on`), and a role-level
+ * value beats the database's. The app never sets any, so each one found is counted (never shown) and removed.
+ */
+export async function clearRoleSettings(db: Db): Promise<number> {
+  const [row] = await db.$queryRaw<{ n: number }[]>`
+    SELECT coalesce(sum(cardinality(s.setconfig)), 0)::int AS n
+    FROM pg_db_role_setting s JOIN pg_roles r ON r.oid = s.setrole
+    WHERE r.rolname = ${RUNTIME_ROLE}
+      AND s.setdatabase IN (0, (SELECT oid FROM pg_database WHERE datname = current_database()))`;
+  const count = row?.n ?? 0;
+  if (count === 0) return 0;
+  await db.$executeRawUnsafe(`
+    DO $$
+    BEGIN
+      ALTER ROLE ${RUNTIME_ROLE} RESET ALL;
+      EXECUTE format('ALTER ROLE ${RUNTIME_ROLE} IN DATABASE %I RESET ALL', current_database());
+    END
+    $$`);
+  return count;
+}
+
+/** Puts back each database-level timeout that is missing on the connected database; returns how many it set. */
+export async function applyDatabaseTimeouts(db: Db): Promise<number> {
+  let applied = 0;
   for (const [name, value] of DATABASE_TIMEOUTS) {
+    const [row] = await db.$queryRaw<{ present: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1 FROM pg_db_role_setting s, unnest(s.setconfig) AS c(setting)
+        WHERE s.setrole = 0
+          AND s.setdatabase = (SELECT oid FROM pg_database WHERE datname = current_database())
+          AND split_part(c.setting, '=', 1) = ${name}
+      ) AS present`;
+    if (row?.present) continue;
     // Fixed names and values; only the database name comes from the server, quoted by format(%I).
     await db.$executeRawUnsafe(`
       DO $$
@@ -90,57 +176,70 @@ export async function applyDatabaseTimeouts(db: PrismaClient): Promise<void> {
         EXECUTE format('ALTER DATABASE %I SET ${name} = %L', current_database(), '${value}');
       END
       $$`);
+    applied += 1;
   }
+  return applied;
+}
+
+/**
+ * Gives the role its login. A utility statement takes no parameters, so the verifier is in the statement text, and
+ * PostgreSQL logs that text on an error (log_min_error_statement) or a slow run (log_min_duration_statement, see
+ * infra/postgres/postgresql.conf). Statement logging is off for this one transaction, on its one connection.
+ */
+async function setLogin(db: PrismaClient, verifier: string): Promise<void> {
+  if (!VERIFIER_SHAPE.test(verifier)) throw new Error('unexpected verifier shape');
+  await db.$transaction([
+    db.$executeRawUnsafe(`SET LOCAL log_statement = 'none'`),
+    db.$executeRawUnsafe(`SET LOCAL log_min_duration_statement = -1`),
+    db.$executeRawUnsafe(`SET LOCAL log_min_error_statement = 'panic'`),
+    // The verifier holds only base64 characters, digits, "$" and ":", so it cannot leave the string literal.
+    db.$executeRawUnsafe(`ALTER ROLE ${RUNTIME_ROLE} WITH LOGIN PASSWORD '${verifier}'`),
+  ]);
 }
 
 async function main(): Promise<number> {
+  // DIRECT_URL must come from this process's own environment (compose sets it for the migrate job). Prisma Client loads
+  // a local .env when it is first loaded, and in a worktree that file names the dev database, so it is loaded only
+  // after this check.
   const url = process.env.DIRECT_URL;
   if (!url) {
     console.error('runtime role: DIRECT_URL is not set');
     return 2;
   }
-  const db = new PrismaClient({ datasourceUrl: url });
+  const { PrismaClient: Client } = await import('@prisma/client');
+  const ensureOnly = process.argv.includes('--ensure');
+  const password = process.env.POSTGRES_APP_PASSWORD ?? '';
+  const problem = password && !ensureOnly ? passwordProblem(password) : null;
+  if (problem) {
+    console.error(`runtime role: ${problem}`);
+    return 2;
+  }
+  const db = new Client({ datasourceUrl: url });
   try {
     await ensureRole(db);
-    if (process.argv.includes('--ensure')) {
+    if (ensureOnly) {
       console.log(`runtime role exists: ${RUNTIME_ROLE}`);
       return 0;
     }
+    await assertRestrictions(db);
+    const cleared = await clearRoleSettings(db);
+    if (cleared > 0) {
+      console.warn(
+        `runtime role: cleared ${cleared} session setting(s) that ${RUNTIME_ROLE} had set for itself`,
+      );
+    }
     await applyDatabaseTimeouts(db);
 
-    const password = process.env.POSTGRES_APP_PASSWORD ?? '';
-    if (password) {
-      const problem = passwordProblem(password);
-      if (problem) {
-        console.error(`runtime role: ${problem}`);
-        return 2;
-      }
-    }
-    const [state] = await db.$queryRaw<{ development: boolean; hasPassword: boolean }[]>`
+    const [state] = await db.$queryRaw<
+      { development: boolean; hasPassword: boolean; canLogin: boolean }[]
+    >`
       SELECT coalesce(current_setting('sirat.environment', true), '') = 'development' AS "development",
-             (SELECT rolpassword IS NOT NULL FROM pg_authid WHERE rolname = ${RUNTIME_ROLE}) AS "hasPassword"`;
-    const step = passwordStep({
-      password,
-      development: state?.development ?? false,
-      hasPassword: state?.hasPassword ?? false,
-    });
-    if (step === 'skip-empty') {
-      console.log(
-        `runtime role ready: ${RUNTIME_ROLE} (no login yet: POSTGRES_APP_PASSWORD is empty)`,
-      );
-      return 0;
-    }
-    if (step === 'keep-dev') {
-      console.log(
-        `runtime role ready: ${RUNTIME_ROLE} (development cluster: password already set, kept)`,
-      );
-      return 0;
-    }
-    const verifier = scramVerifier(password);
-    if (!VERIFIER_SHAPE.test(verifier)) throw new Error('unexpected verifier shape');
-    // The verifier holds only base64 characters, digits, "$" and ":", so it cannot leave the string literal.
-    await db.$executeRawUnsafe(`ALTER ROLE ${RUNTIME_ROLE} WITH LOGIN PASSWORD '${verifier}'`);
-    console.log(`runtime role ready: ${RUNTIME_ROLE} (login and password set)`);
+             a.rolpassword IS NOT NULL AS "hasPassword", a.rolcanlogin AS "canLogin"
+      FROM pg_authid a WHERE a.rolname = ${RUNTIME_ROLE}`;
+    const hasPassword = state?.hasPassword ?? false;
+    const step = passwordStep({ password, development: state?.development ?? false, hasPassword });
+    if (step === 'set') await setLogin(db, scramVerifier(password));
+    console.log(readyLine(step, hasPassword && (state?.canLogin ?? false)));
     return 0;
   } finally {
     await db.$disconnect();
