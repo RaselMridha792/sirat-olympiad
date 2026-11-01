@@ -39,6 +39,7 @@ export class SessionExpiredError extends Error {
 /** These work without a session, or are the renewal itself: a 401 from them never triggers a refresh. */
 const NO_REFRESH = new Set([
   '/auth/login',
+  '/auth/2fa/verify', // the login's code step: its 401 is a wrong code or an ended challenge, not a lost session
   '/auth/refresh',
   '/auth/forgot-password',
   '/auth/reset-password',

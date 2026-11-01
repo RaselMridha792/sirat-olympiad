@@ -107,6 +107,7 @@ describe('GET /api/auth/me', () => {
       name: 'Ayesha',
       email: user.email,
       role: 'ambassador',
+      twoFactor: { enabled: false, required: false, verified: false },
     });
   });
 

@@ -1,5 +1,11 @@
 import { randomBytes } from 'node:crypto';
-import { emailConfigProblem, secretProblem, validateEnv, validateWorkerEnv } from './env';
+import {
+  emailConfigProblem,
+  secretProblem,
+  totpKeyProblem,
+  validateEnv,
+  validateWorkerEnv,
+} from './env';
 
 const strongSecret = () => randomBytes(32).toString('base64');
 const valid = () => ({
@@ -8,6 +14,7 @@ const valid = () => ({
   REDIS_CACHE_URL: 'redis://redis-cache:6379',
   REDIS_QUEUE_URL: 'redis://redis-queue:6379',
   JWT_ACCESS_SECRET: strongSecret(),
+  TOTP_ENCRYPTION_KEY: randomBytes(32).toString('base64'),
   APP_URL: 'https://sirat.test',
 });
 
@@ -238,5 +245,78 @@ describe('EXAM_QUEUE_NAME (tests only: each run has its own exam queue)', () => 
     expect(() => validateEnv(valid())).not.toThrow();
     for (const bad of ['exam queue', 'exam:1', 'x'.repeat(65)])
       expect(() => validateEnv({ ...valid(), EXAM_QUEUE_NAME: bad })).toThrow(/EXAM_QUEUE_NAME/);
+  });
+});
+
+describe('TOTP_ENCRYPTION_KEY (admin two-factor login)', () => {
+  const key = () => randomBytes(32);
+  const without = (extra: Record<string, string> = {}) => {
+    const env: Record<string, unknown> = { ...valid(), ...extra };
+    delete env.TOTP_ENCRYPTION_KEY;
+    return env;
+  };
+
+  it('is required in production, and optional elsewhere (2FA is then off)', () => {
+    expect(() => validateEnv(without())).toThrow(/TOTP_ENCRYPTION_KEY is required in production/);
+    expect(() => validateEnv(without({ NODE_ENV: 'development' }))).not.toThrow();
+    expect(() => validateEnv(without({ NODE_ENV: 'test' }))).not.toThrow();
+  });
+
+  it('the worker never needs it: a missing key stops the API, not the jobs (A2)', () => {
+    const worker = {
+      ...without(),
+      EMAIL_PROVIDER: 'mailpit',
+      MAILPIT_URL: 'http://mailpit:8025',
+      EMAIL_FROM: 'Sirat <no-reply@sirat.test>',
+    };
+    expect(() => validateWorkerEnv(worker)).not.toThrow();
+    expect(() => validateEnv(worker)).toThrow(/TOTP_ENCRYPTION_KEY is required in production/);
+  });
+
+  it('takes 32 bytes as base64, base64url or 64 hex', () => {
+    for (const value of [
+      key().toString('base64'),
+      key().toString('base64url'),
+      key().toString('hex'),
+    ])
+      expect(totpKeyProblem({ NODE_ENV: 'production', TOTP_ENCRYPTION_KEY: value })).toBeNull();
+  });
+
+  it('refuses short, placeholder, repetitive or wrong-size keys, and names the variable, never the value', () => {
+    for (const value of [
+      'too-short',
+      'change-me-change-me-change-me-change-me-cha=',
+      'a'.repeat(64),
+      randomBytes(16).toString('hex'),
+      randomBytes(48).toString('base64'),
+    ]) {
+      const problem = totpKeyProblem({ NODE_ENV: 'development', TOTP_ENCRYPTION_KEY: value });
+      expect(problem).toMatch(/^TOTP_ENCRYPTION_KEY /);
+      expect(problem).not.toContain(value);
+    }
+  });
+
+  it('checks the previous key the same way, and only next to a current one', () => {
+    const current = key().toString('base64');
+    expect(
+      totpKeyProblem({
+        NODE_ENV: 'production',
+        TOTP_ENCRYPTION_KEY: current,
+        TOTP_ENCRYPTION_KEY_PREVIOUS: key().toString('hex'),
+      }),
+    ).toBeNull();
+    expect(
+      totpKeyProblem({
+        NODE_ENV: 'production',
+        TOTP_ENCRYPTION_KEY: current,
+        TOTP_ENCRYPTION_KEY_PREVIOUS: 'placeholder-placeholder-placeholder-1234',
+      }),
+    ).toMatch(/^TOTP_ENCRYPTION_KEY_PREVIOUS /);
+    expect(
+      totpKeyProblem({
+        NODE_ENV: 'development',
+        TOTP_ENCRYPTION_KEY_PREVIOUS: key().toString('hex'),
+      }),
+    ).toMatch(/needs TOTP_ENCRYPTION_KEY/);
   });
 });

@@ -7,6 +7,7 @@ import type { EnvVars } from '../../config/env';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AccessTokenService, type AuthUser } from './access-token.service';
+import { endSessionsOf } from './end-sessions';
 
 /**
  * A retired refresh token that comes back this soon, while its family is still alive, is two tabs refreshing at
@@ -64,9 +65,17 @@ export class SessionService {
     this.rotationBudgetMs = config.get('REFRESH_ROTATION_BUDGET_MS', { infer: true });
   }
 
-  /** A new session family, after a successful login. */
+  /** A new session family, after a successful login. Its tokens say no second factor was proved (`tfa` false). */
   start(user: { id: string; role: Role }, client: ClientInfo): Promise<IssuedSession> {
-    return this.issue(this.prisma, user, randomUUID(), client);
+    return this.issue(this.prisma, user, randomUUID(), client, false);
+  }
+
+  /**
+   * A new session family that proved the second factor (the row's `two_factor_verified`, the tokens' `tfa`): only
+   * after the login's code step, or turning 2FA on with a code. Its refreshes keep it while the user's 2FA stays on.
+   */
+  startVerified(user: { id: string; role: Role }, client: ClientInfo): Promise<IssuedSession> {
+    return this.issue(this.prisma, user, randomUUID(), client, true);
   }
 
   /**
@@ -84,7 +93,16 @@ export class SessionService {
     const deadline = startedAt + this.rotationBudgetMs;
     const current = await this.prisma.session.findUnique({
       where: { tokenHash: sha256(refreshToken) },
-      include: { user: { select: { id: true, role: true, isBlocked: true } } },
+      include: {
+        user: {
+          select: {
+            id: true,
+            role: true,
+            isBlocked: true,
+            twoFactor: { select: { enabledAt: true } },
+          },
+        },
+      },
     });
     if (!current) return { status: 'invalid' };
     const now = new Date();
@@ -94,6 +112,10 @@ export class SessionService {
       await this.endFamily(current.familyId);
       return { status: 'invalid' };
     }
+    // What THIS family proved (its row), and only while the user is still enrolled: a refresh may drop the claim
+    // (2FA turned off or reset), never raise it. Enrolling later never upgrades a session that skipped the code, also
+    // one that slips past enable's end-all in a race (DECISIONS "Admin two-factor login").
+    const twoFactor = current.twoFactorVerified && current.user.twoFactor?.enabledAt != null;
     const budget = deadline - Date.now();
     if (budget < MIN_ROTATION_MS) return { status: 'busy' };
     // Assigned inside the transaction callback, which TypeScript's flow analysis does not follow.
@@ -118,7 +140,7 @@ export class SessionService {
           });
           if (count !== 1) return;
           await bound();
-          issued = await this.issue(tx, current.user, current.familyId, client);
+          issued = await this.issue(tx, current.user, current.familyId, client, twoFactor);
           // Retired as of now, not as of when the UPDATE was sent (it may have waited for a lock): the reuse grace
           // counts from when the token really stops working.
           await tx.session.update({ where: { id: current.id }, data: { revokedAt: new Date() } });
@@ -145,6 +167,19 @@ export class SessionService {
     return issued ? { status: 'rotated', session: issued } : { status: 'race' };
   }
 
+  /**
+   * The session row an access token names, if it is still alive: its second-factor proof, or null when it is missing,
+   * revoked or expired. An access token outlives its row by up to its TTL; actions that start a new session from one
+   * (change-password) must not trust the token alone.
+   */
+  async liveProof(sessionId: string, userId: string): Promise<boolean | null> {
+    const row = await this.prisma.session.findFirst({
+      where: { id: sessionId, userId, revokedAt: null, expiresAt: { gt: new Date() } },
+      select: { twoFactorVerified: true },
+    });
+    return row ? row.twoFactorVerified : null;
+  }
+
   /** Logout on this device: ends the family of the session the access token belongs to. */
   async endFamilyOfSession(sessionId: string, userId: string): Promise<void> {
     const session = await this.prisma.session.findFirst({
@@ -158,12 +193,8 @@ export class SessionService {
    * Logout everywhere (also after a password change or reset). Returns how many sessions were still active.
    * Pass `tx` to end them in the same transaction as the password change (RULEBOOK §6: one transaction).
    */
-  async endAllForUser(userId: string, tx: Prisma.TransactionClient = this.prisma): Promise<number> {
-    const { count } = await tx.session.updateMany({
-      where: { userId, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
-    return count;
+  endAllForUser(userId: string, tx: Prisma.TransactionClient = this.prisma): Promise<number> {
+    return endSessionsOf(tx, userId);
   }
 
   private async endFamily(familyId: string): Promise<void> {
@@ -205,6 +236,7 @@ export class SessionService {
     user: { id: string; role: Role },
     familyId: string,
     client: ClientInfo,
+    twoFactor: boolean,
   ): Promise<IssuedSession> {
     const refreshToken = randomBytes(32).toString('base64url');
     const refreshExpiresAt = new Date(Date.now() + this.refreshTtlMs);
@@ -216,9 +248,11 @@ export class SessionService {
         expiresAt: refreshExpiresAt,
         ip: client.ip ?? null,
         userAgent: client.userAgent?.slice(0, 512) ?? null,
+        // The proof lives on the row: the access token's `tfa` is only ever a copy of it.
+        twoFactorVerified: twoFactor,
       },
     });
-    const authUser: AuthUser = { id: user.id, role: user.role, sessionId: row.id };
+    const authUser: AuthUser = { id: user.id, role: user.role, sessionId: row.id, twoFactor };
     return {
       user: authUser,
       accessToken: await this.tokens.sign(authUser),

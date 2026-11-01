@@ -2,6 +2,61 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-01 — Ready by 15 Nov; registration opens when an admin opens it, expected 25 Nov (owner, via the lead)
+
+- **Decision:**
+  - Everything is ready on Sun 15 Nov as planned (LAUNCH-PLAN): deployed, checked, `prelaunch-check.sh` all PASS.
+  - Registration stays closed (`registration_open=false`). An admin opens it from `/admin/settings` (audited) when the owner says. Expected Wed 25 Nov, the client's date.
+  - The "coming soon" states stay on until then.
+- **Why:** the client's published dates are registration 25 Nov – 15 Feb, the selection round 19–20 Mar and the knockout 18 Apr. Opening is a setting, not a deploy, so it needs no release and no freeze.
+- **Who:** Rasel (owner, 2026-11-01), passed on by the lead; recorded by A2. Per-group fees (senior and junior, set by an admin) are payments' work.
+
+## 2026-11-01 — Admin two-factor login (A2; design approved by the lead, groundwork by payments)
+
+1. **What:** TOTP (RFC 6238: SHA-1, 6 digits, 30 s, one step either side) for **admin and manager** (`TWO_FACTOR_ROLES`).
+   - The secret is sealed with AES-256-GCM under `TOTP_ENCRYPTION_KEY` (`v1:<keyId>:…`). The key is required in production for the API only; the worker and the break-glass CLI never need it.
+   - Without the key (development and tests only) 2FA is **off**: nothing is enforced, and every 2FA route answers 503 `TWO_FACTOR_UNAVAILABLE`. The API logs `two-factor=on` at boot.
+   - Rotation: the old value goes to `TOTP_ENCRYPTION_KEY_PREVIOUS`; each secret is re-sealed with the new key at its next right code.
+2. **The claim:** the access token carries `tfa` (boolean). A token without it (issued before this change) reads as false.
+   - **The proof lives on the session row** (`sessions.two_factor_verified`, migration `20261101080002_session_two_factor_proof`); the token's `tfa` is only a copy of it. `start()` stores false; `startVerified()` true, only after the login's code step or turning 2FA on with a code.
+   - **A refresh never raises it:** the successor carries the previous row's proof AND the user's current enrolment (`user_two_factor.enabled_at` set). So turning 2FA off or a reset drops it, and enrolling later never upgrades a session that skipped the code.
+   - **change-password** (review fix): the access token's session row must still be alive, else 401 (a token outlives its row by up to 15 minutes). For an enrolled user that row must have proved the code, else 403 `TWO_FACTOR_REQUIRED` with nothing changed. The new session inherits that row's proof (AND enrolled now), never the token's claim.
+   - This closes the upgrade the review found: an attacker who logged in with the password before the admin enrolled used change-password, after enable had ended the sessions, to mint a fresh session, then refreshed it to `tfa`. It also closes the same upgrade through races (a login or a rotation committing around enable's end-all): their sessions carry false.
+   - **Also:** turning 2FA on or off, the admin reset and the CLI reset end every other session of the user; on and off also reissue this device's cookies with the new flag.
+3. **The guard:** a route whose `@Roles()` names admin or manager refuses an admin or manager session without `tfa` (403 `TWO_FACTOR_REQUIRED`) while 2FA is on.
+   - `@TwoFactorOptional()` exempts exactly `GET /auth/me`, `POST /auth/logout`, `GET /auth/2fa`, `POST /auth/2fa/setup` and `POST /auth/2fa/enable` (the routes test fails on any other). So an admin who has not enrolled can log in, enrol, and nothing else.
+   - `/auth/me` reports `twoFactor: { enabled, required, verified }` for the web.
+4. **Login:** for an enrolled account the order is limits, password (a failure counts as today), the blocked check, rehash, then a challenge. There is **no** `recordSuccess` and no session yet.
+   - The answer is 200 `{ "twoFactorRequired": true }` with the `sirat_2fa` cookie (httpOnly, SameSite=Strict, Secure like the others, Path `/api/auth/2fa`, Max-Age 300). Everyone else keeps the 204.
+   - The challenge lives in the cache Redis under the SHA-256 of its id and holds the user id only, for 5 minutes. `GETDEL` makes it single use.
+   - **At most 5 codes per challenge, also in parallel** (review fix): each verify first reserves an attempt in one Lua script (missing challenge → refused; INCR; past 5 → both keys deleted, refused), and only then checks its code. The 5th wrong code ends the challenge. The login limits count as before.
+   - Only students' logins stay at one read: the 2FA row is read only for the roles that may enrol.
+5. **`POST /auth/2fa/verify`** (`{ code }` or `{ recoveryCode }`, exactly one; public, the CSRF header like login):
+   - The login limits come first: a lock refuses even the right code (429 + Retry-After). A wrong code counts there (with login's lock audit and alerts) and on the challenge.
+   - A right code claims the challenge, then is used once by a conditional update (`last_step < step`, or `used_at IS NULL` for a recovery code). Two parallel right codes give exactly one session, and a code never works twice. Only then `recordSuccess` and `startVerified`.
+   - Answers: 401 `TWO_FACTOR_CODE_INVALID`; 401 `TWO_FACTOR_CHALLENGE_INVALID` (gone: the cookie is cleared, log in again).
+   - A recovery code is audited with the count left and raises the alert `two_factor.recovery_used`.
+6. **Enrolment and the rest** (`@Roles('admin', 'manager')`):
+   - `setup` asks for the password again under the login limits, creates or replaces a PENDING row, and returns `{ otpauthUri, qrDataUri }` (the QR is rendered server-side).
+   - `enable` takes a code from the pending secret. It is not under the login limits (the caller holds the secret it confirms). It returns 10 recovery codes once (SHA-256 stored), ends every session, and sets new cookies with the proof.
+   - **The enable cap** (review fix): a stolen session with a pending setup must not guess at the per-user rate. Each enable attempt reserves one on the pending row (`user_two_factor.enable_attempts`, migration `20261101080003_two_factor_enable_attempts`, CHECK 0–5) before its code is checked; the 5th wrong code deletes the row, answering 409 `TWO_FACTOR_SETUP_REQUIRED`, so setup (which asks for the password) must run again. A right code and a new setup reset the count.
+   - Why a column, not Redis: the count dies with the row, a new setup resets it in the same statement, and the cache Redis (allkeys-lru) may evict a key.
+   - `recovery-codes` needs a current TOTP code under the limits. `disable` needs both factors under the limits, ends every session, and sets new cookies without `tfa`.
+   - Signed-in step-ups answer **400** (`PASSWORD_INCORRECT`, `TWO_FACTOR_CODE_INVALID`), never 401, so the web never mistakes them for an expired session.
+7. **A lost device:**
+   - `POST /admin/users/:id/2fa/reset` (`{ reason, code }`): the acting admin must have `tfa`, still be admin in the database (the role re-read like `assertAdmin`, 403 otherwise; review fix), and give their **own** current TOTP code (no recovery code; under the limits). The target exists (404), is admin or manager and is never the actor (403 `TWO_FACTOR_RESET_NOT_ALLOWED`), and has 2FA (409 `TWO_FACTOR_NOT_ENABLED`). The reset ends all of the target's sessions and is limited to 5 an hour per admin. Audit `auth.2fa_reset` carries the reason; the alert `two_factor.reset` follows.
+   - The CLI `admin:2fa-reset --email --reason` is break-glass when no other admin is reachable. It needs the database and both Redis, decrypts nothing, audits with no actor, alerts, and prints the user id only.
+8. **Never logged:** a code, a secret, a recovery code, a challenge id or an email. Audit actions: `auth.2fa_failed` (with `purpose`), `auth.2fa_password_failed`, `auth.2fa_setup_started`, `auth.2fa_enabled`, `auth.2fa_recovery_codes_replaced`, `auth.2fa_disabled`, `auth.2fa_recovery_used`, `auth.2fa_reset`.
+9. **Known gaps:**
+   - An access token stays valid until it expires. After a reset (or disable) ends the sessions, the target keeps admin access for at most the access-token TTL (`JWT_ACCESS_TTL_SECONDS`, 15 min); refreshing fails at once.
+   - A rotation committing at the same moment as a reset's or disable's end-all can leave its successor alive (READ COMMITTED; the same holds for every end-all, password changes included). It never gains a proof it lacked. A proved one keeps `tfa` for at most one access-token TTL, and its next refresh drops it, since the user is no longer enrolled.
+   - Losing the key makes every enrolled factor unreadable: every admin then needs the CLI reset. Keep the key with the other server secrets; the database backup does not contain it.
+   - Role changes are not built. When they are, a change away from admin or manager should remove the factor, since the login reads the 2FA row only for those roles.
+10. **Ops:**
+    - Compose pins `NODE_ENV=production` for the api, so the stack requires the key and enforces 2FA.
+    - CI's docker job, the drill, the rehearsal, exam-load and the VPS load staging (`load-staging.sh up`) give their throwaway `.env` a random key.
+    - The integration tests ignore a key in `apps/api/.env` (`test/load-env.ts`): only the 2FA suites set their own, so every other admin suite runs with 2FA off.
+
 ## 2026-11-01 — Video and jury (core C6b; the C6 plan, the lead's notes, owner Q4b–Q4d defaults)
 
 1. **The video link** (Q4b default):

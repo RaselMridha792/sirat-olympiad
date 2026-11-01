@@ -85,6 +85,8 @@ pw=$(sed -n 's/^POSTGRES_PASSWORD=//p' "$STAGING_DIR/staging.env")
 lpw=$(sed -n 's/^PASSWORD=//p' "$STAGING_DIR/k6.env")
 expect "throwaway secrets were made" '[ "${#pw}" -ge 32 ] && [ "${#lpw}" -ge 16 ]'
 expect "no secret in the output" '! grep -qF -- "$pw" <<< "$out" && ! grep -qF -- "$lpw" <<< "$out"'
+tfa=$(sed -n 's/^TOTP_ENCRYPTION_KEY=//p' "$STAGING_DIR/staging.env")
+expect "a throwaway admin 2FA key (production mode requires one), not printed" '[[ $tfa =~ ^[0-9a-f]{64}$ ]] && ! grep -qF -- "$tfa" <<< "$out"'
 expect "payments are off and the JWT secret is not the example's" 'grep -qx "PAYSTATION_ENV=" "$STAGING_DIR/staging.env" && ! grep -q "change-me" "$STAGING_DIR/staging.env"'
 expect "production-mode cookies stay Secure for the exam simulation" 'grep -qx "COOKIE_SECURE=true" "$STAGING_DIR/staging.env"'
 expect "the release tag is the deployed one" 'grep -qx "SIRAT_TAG=abc123" "$STAGING_DIR/release.env"'
