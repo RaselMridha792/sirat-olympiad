@@ -480,6 +480,8 @@ test('a refused import maps to the file problems, too big, or the general refusa
     ],
   });
   assert.deepEqual(importFailure(importRefused(413, 'PAYLOAD_TOO_LARGE')), { kind: 'tooBig' });
+  // nginx's own 413 (above 1 MiB) is an HTML page: no API body at all, still "too big".
+  assert.deepEqual(importFailure(new ApiRequestError(413, null)), { kind: 'tooBig' });
   assert.deepEqual(importFailure(importRefused(409, 'CONFLICT', ['pool_fixed'])), {
     kind: 'refused',
     problems: ['pool_fixed'],

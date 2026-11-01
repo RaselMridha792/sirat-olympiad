@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
+  CONTROL_CHARACTERS,
   EXAM_LIMITS,
   QUESTION_IMPORT_COLUMNS,
   QUESTION_IMPORT_LIMITS,
@@ -97,7 +98,11 @@ function readRow(
     problem('row', 'column_count');
     return { question: null, errors };
   }
-  const [text = '', ...rest] = cells.map((c) => c.trim());
+  const trimmed = cells.map((c) => c.trim());
+  QUESTION_IMPORT_COLUMNS.forEach((column, i) => {
+    if (CONTROL_CHARACTERS.test(trimmed[i] ?? '')) problem(column, 'control_character');
+  });
+  const [text = '', ...rest] = trimmed;
   const optionCells = rest.slice(0, OPTION_KEYS.length);
   const [correct = '', explanation = '', keepOrder = ''] = rest.slice(OPTION_KEYS.length);
 

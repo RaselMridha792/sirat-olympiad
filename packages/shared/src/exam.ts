@@ -352,6 +352,12 @@ export const QUESTION_IMPORT_COLUMNS = [
 /** Where a problem is: a column of the header, `row` for the whole row, `file` for the whole file. */
 export type QuestionImportField = (typeof QUESTION_IMPORT_COLUMNS)[number] | 'row' | 'file';
 
+/**
+ * C0 control characters and DEL, except tab and line feed. None belongs in a question, and Postgres refuses U+0000 in
+ * text and jsonb (a 500 instead of a row error). The CSV import refuses them; QuestionDto is meant to use it too.
+ */
+export const CONTROL_CHARACTERS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
+
 export const QUESTION_IMPORT_CODES = [
   'not_utf8',
   'empty',
@@ -365,6 +371,7 @@ export const QUESTION_IMPORT_CODES = [
   'gap',
   'correct_key_missing',
   'invalid_boolean',
+  'control_character',
   'duplicate_in_file',
   'duplicate_in_exam',
 ] as const;

@@ -185,6 +185,8 @@ export const adminExamAuthoringMessages = defineMessages({
         gap: 'Empty while a later option is filled.',
         correct_key_missing: 'Must be the letter of a filled option.',
         invalid_boolean: 'Must be true, false or empty.',
+        control_character:
+          'It holds an invisible control character (often pasted from another program). Type the cell again.',
         duplicate_in_file: 'The same question is earlier in the file.',
         duplicate_in_exam: 'The exam already has this question.',
       },
@@ -399,6 +401,8 @@ export const adminExamAuthoringMessages = defineMessages({
         gap: 'ফাঁকা, অথচ পরের কোনো বিকল্প পূরণ করা।',
         correct_key_missing: 'পূরণ করা কোনো বিকল্পের অক্ষর হতে হবে।',
         invalid_boolean: 'true, false বা ফাঁকা হতে হবে।',
+        control_character:
+          'এতে একটি অদৃশ্য নিয়ন্ত্রণ-অক্ষর আছে (প্রায়ই অন্য প্রোগ্রাম থেকে কপি করলে আসে)। ঘরটি আবার টাইপ করুন।',
         duplicate_in_file: 'একই প্রশ্ন ফাইলে আগেও আছে।',
         duplicate_in_exam: 'এই প্রশ্নটি পরীক্ষায় আগে থেকেই আছে।',
       },

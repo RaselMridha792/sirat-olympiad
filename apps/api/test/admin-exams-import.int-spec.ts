@@ -236,6 +236,28 @@ describe('dry run and import', () => {
     expect(await questionsOf(exam.id)).toHaveLength(1);
   });
 
+  it('a NUL in a question or a control character in an option is a row error (400), never a 500', async () => {
+    const exam = await draft();
+    const file = csv(
+      `Null ${String.fromCharCode(0)} inside,a,b,,,,,A,,`,
+      `Bell in an option,a,b${String.fromCharCode(7)},,,,,A,,`,
+      'Fine one,a,b,,,,,A,,',
+    );
+    const res = await upload<ApiError>(exam.id, file, false);
+    expect(res).toMatchObject({
+      status: 400,
+      json: {
+        code: 'QUESTION_IMPORT_INVALID',
+        details: [
+          { row: 2, field: 'text', code: 'control_character' },
+          { row: 3, field: 'B', code: 'control_character' },
+        ],
+      },
+    });
+    expect(await questionsOf(exam.id)).toHaveLength(0);
+    expect(await importAudits(exam.id)).toHaveLength(0);
+  });
+
   it('refuses a file that is not UTF-8 and a file without the header', async () => {
     const exam = await draft();
     const latin1 = Buffer.concat([

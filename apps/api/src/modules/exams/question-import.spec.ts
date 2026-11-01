@@ -122,6 +122,30 @@ describe('readQuestionFile', () => {
     ]);
   });
 
+  it('refuses control characters in any cell (Postgres refuses U+0000), but keeps tabs and line breaks', () => {
+    const NUL = String.fromCharCode(0);
+    const BEL = String.fromCharCode(7);
+    const DEL = String.fromCharCode(0x7f);
+    expect(
+      codes(
+        file(
+          HEADER,
+          `Q${NUL}one,a,b,,,,,A,,`,
+          `Q two,a,b${BEL},,,,,A,,`,
+          `Q three,a,b,,,,,A,why${DEL},`,
+        ),
+      ),
+    ).toEqual([
+      '2:text:control_character',
+      '3:B:control_character',
+      '4:explanation:control_character',
+    ]);
+    const tab = String.fromCharCode(9);
+    const read = readQuestionFile(file(HEADER, `"Q${tab}four\nline two",a,b,,,,,A,,`));
+    expect(read.errors).toEqual([]);
+    expect(read.rows[0]?.question.text).toBe(`Q${tab}four\nline two`);
+  });
+
   it('refuses a question twice in the file, by the publish rule (NFKC, spaces, case)', () => {
     expect(codes(file(HEADER, 'What is  CSV?,a,b,,,,,A,,', ' what is csv? ,a,b,,,,,A,,'))).toEqual([
       '3:text:duplicate_in_file',
