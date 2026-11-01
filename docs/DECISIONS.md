@@ -37,6 +37,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 6. **For the VPS run** (RULEBOOK §13):
    - **The load:** k6 from other machines through nginx, against a staging stack (`scripts/load-staging.sh`, RUNBOOK §18), at 1.5–2× the expected peak: about 5,700–7,600 concurrent attempts (OPEN-QUESTIONS #24). Use a 30-minute exam with the surge at 10 starts/s.
    - **Recommendation:** keep 4 API replicas over the 8 vCPUs, with no start jitter (D12) unless the VPS surge misses 500 ms. If it misses, raise the replicas first. Only then consider jitter (0–30 s before the client's start), which costs students time inside their window.
+
 ## 2026-11-01 — Ambassador teams (core C5b-3; lead's plan and rules)
 
 1. **Shape (CORE-PLAN D7):**
