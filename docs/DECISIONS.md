@@ -17,6 +17,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    No latency limit and no timed write window: a shared CI runner's timing proves nothing, and a wall-time assert would only add flakes.
 3. **The runner's fixtures now run in a container** that shares Postgres's network (the migrate image, with the clone's fixtures and `src` mounted read-only), as in the VPS kit. The docker job has no pnpm, and the local runner no longer publishes Postgres on 127.0.0.1.
 4. **Validated locally before the PR:** a build run, and then CI's path with no build (220 s). Each had 20 attempts submitted and scored, receipts equal to the own submissions, and the sweep taking exactly the leavers.
+
 ## 2026-11-01 — Rounds and promotion (core C6a; the C6 plan the lead approved, owner Q4 defaults)
 
 1. **Rounds are data** (Q4 default): Round 1 (quiz) exists; admins append a video and a final round. The server picks the order under an advisory lock; the type and the order never change; nothing follows the final; at most 10.
