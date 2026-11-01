@@ -27,6 +27,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - auth-refresh-timeout: the lock is held until the 503 arrives, or released once the rotation is seen waiting on it (`pg_blocking_pids`); the 503 is recognised by its message.
    - app-throttle and security-alerts stretch the Redis call timeouts in their own file only (the timeout itself is redis-throttler's test). "Never blocks" holds the email path and asserts the call returned while it is held, and the inbox check waits for the email queue to drain.
    - email: the permanent-failure probe reads the job again once it is failed, because a copy read before the check could still show 0 attempts.
+
 ## 2026-11-01 — CSV question import (E7a; payments, exam's handover, lead)
 
 1. **A multipart upload, not a JSON body** (lead approved):
