@@ -20,6 +20,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - It uses the session cleanup's batch loop, now shared (`batch-drain.ts`): 1,000 rows per batch, `FOR UPDATE SKIP LOCKED`, `SET LOCAL statement_timeout`, a cap, idempotent.
    - Counts-only log and audit (`housekeeping.attempt_scrub`). A failed run shows in ops-check as a warning on the same queue.
    - No migration: `@@index([status, updatedAt])` and the payments foreign-key index serve the scans.
+
 ## 2026-11-01 — Restores never overwrite, and the drill never reads the real settings (L7; exam session, LAUNCH-PLAN §5)
 
 1. **No `--clean` over a live schema.**
