@@ -44,6 +44,7 @@ Source of truth: `apps/api/prisma/schema.prisma` (validated; see note at bottom)
 | `point_ledger` append-only: UPDATE, DELETE and TRUNCATE refused (TRUNCATE allowed only in a `*_test` database); `ambassador_profiles` promo code `^[A-Za-z0-9_-]{3,40}$` (`*_core_ambassador_checks`) | Corrections are compensating rows; codes fit payments' registration form (core C5a) |
 | `round_entries UNIQUE(user_id, round_id)` | Promotion never duplicates/overwrites |
 | `task_assignments UNIQUE(task_id, user_id)` | |
+| `admin_tasks` title 3–120, description 1–2,000, points 0–1,000, `archived_at >= created_at`; `task_assignments` proof ≤ 1,000 and note ≤ 500 characters, and the status rules (`*_core_ambassador_tasks_checks`) | The limits hold for every writer; an approved assignment always names its admin and time |
 | `ambassador_profiles UNIQUE(user_id)`, `UNIQUE(promo_code)` (CITEXT, case-insensitive) | Promo code uniqueness enforced by DB (old code raced) |
 | Foreign keys `ON DELETE RESTRICT` (only `sessions`, `auth_tokens`, `team_members` cascade) | Deleting a row never silently rewrites history |
 | CHECKs on enum columns compare `col::text` | Enum-literal CHECKs break Prisma enum migrations (catalog test) |
