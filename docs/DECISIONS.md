@@ -31,6 +31,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - `rounds.int-spec.ts`: rounds and their rules; frozen criteria; promotion from Round 1 (in-category rank, ties, stale, the run, nothing overwritten, already promoted, the audit counts); the student's round, the profile and the stats; the source refusals; two simultaneous runs (one wins); promotion from a video round (close, unscored, stale after a score change, statuses, videos and scores kept); admins only; the CHECKs.
    - The test cleans its own rounds, because rounds are global data in the shared test database. `admin-stats` and `users-me` follow the new values.
    - web: the area file picks, the problem mapper (a message for every code in both languages), the criteria lines, the typed count.
+
 ## 2026-11-01 — bootstrap's sshd drop-in sorts first, and sshd -T proves it (L12 fix; exam session, found by the lead on the VPS)
 
 1. **sshd keeps the first value it reads, and it reads `/etc/ssh/sshd_config.d/*.conf` in lexical order.** The VPS image ships `50-cloud-init.conf` with `PasswordAuthentication yes`, which sorted before bootstrap's `50-sirat.conf` ('c' < 's'), so password logins would have stayed on. The drop-in is now `00-sirat.conf`, and the old name is removed.
