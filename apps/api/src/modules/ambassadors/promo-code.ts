@@ -10,3 +10,10 @@ export function newPromoCode(): string {
   for (let i = 0; i < LENGTH; i += 1) code += PROMO_ALPHABET[randomInt(PROMO_ALPHABET.length)];
   return code;
 }
+
+/** `TM-` + 6 random Crockford characters: a team's join code (core C5b-3); the database checks the same shape. */
+export function newJoinCode(): string {
+  let code = 'TM-';
+  for (let i = 0; i < LENGTH; i += 1) code += PROMO_ALPHABET[randomInt(PROMO_ALPHABET.length)];
+  return code;
+}

@@ -110,6 +110,7 @@ export const REGISTRATION_ERROR_CODES = [
   'NOTHING_TO_RESUME',
   'RETRY_NOT_ALLOWED',
   'CANNOT_CANCEL',
+  'START_OVER',
 ] as const;
 export type RegistrationErrorCode = (typeof REGISTRATION_ERROR_CODES)[number];
 

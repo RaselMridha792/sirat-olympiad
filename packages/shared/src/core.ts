@@ -317,3 +317,66 @@ export interface TaskReviewResult {
   /** The ambassador's points after an approval. */
   points: number | null;
 }
+
+// ───────────── Ambassador teams (core C5b-3; 06-API "Ambassadors") ─────────────
+
+export const TEAM_LIMITS = {
+  nameMin: 3,
+  nameMax: 60,
+  /** Members including the owner. */
+  maxMembers: 10,
+  /** Join attempts per user and per IP in 10 minutes (refusals count too: the codes are short). */
+  joinsPerUser: 10,
+  joinsPerIp: 60,
+  reasonMin: 3,
+  reasonMax: 200,
+} as const;
+
+/** Refusal codes in ApiError.details for teams. */
+export const TEAM_REFUSALS = [
+  'already_has_team',
+  'name_taken',
+  'already_in_team',
+  'team_full',
+  'team_closed',
+  'owner_cannot_leave',
+  'not_in_team',
+  'stale',
+  'nothing_to_update',
+] as const;
+export type TeamRefusal = (typeof TEAM_REFUSALS)[number];
+
+/** GET /teams/mine: the caller's own team. Members are shown by first name only (they are minors). */
+export interface MyTeam {
+  id: string;
+  name: string;
+  memberCount: number;
+  isOwner: boolean;
+  /** Only for the owner, who shares it. */
+  joinCode: string | null;
+  members: Array<{ firstName: string; isOwner: boolean }>;
+}
+
+/** One team in the admin list. */
+export interface AdminTeamRow {
+  id: string;
+  name: string;
+  owner: { userId: string; name: string };
+  /** The owner is still an approved, unblocked ambassador (otherwise the team takes no new members). */
+  open: boolean;
+  memberCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** GET /admin/teams/:id: the members with their contact, for admins only. */
+export type AdminTeamDetail = AdminTeamRow & {
+  members: Array<{ userId: string; name: string; email: string; joinedAt: string }>;
+};
+
+/** PATCH /admin/teams/:id: an admin renames a team (moderation), with a reason and the version they saw. */
+export interface TeamRenameRequest {
+  name: string;
+  reason: string;
+  expectedUpdatedAt: string;
+}
