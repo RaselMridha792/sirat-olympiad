@@ -16,17 +16,21 @@ import {
 } from 'lucide-react';
 import { EXAM_VIOLATION_WARNINGS } from '@sirat/shared';
 import { Badge, Card, cn, EmptyState, PageHeader } from '@sirat/ui';
+import { pickQuestion, pickSettings, questionRules } from '@/components/exam/admin/exam-authoring';
+import { ExamStateActions } from '@/components/exam/admin/ExamStateActions';
 import {
   ATTEMPT_FILTERS,
   ExamAttemptsSection,
   ExamResultsSection,
   MIN_VIOLATIONS_FILTER,
 } from '@/components/exam/admin/ExamResultsPanel';
+import { AddQuestionButton, QuestionActions } from '@/components/exam/admin/QuestionEditor';
 import { examStatusTone } from '@/components/status';
 import { getData } from '@/data';
 import { parseEnum, parseId, parsePageQuery, type SearchParams } from '@/data/query';
 import { common } from '@/i18n/common';
 import { formatDateTime, formatNumber } from '@/i18n/format';
+import { adminExamAuthoringMessages } from '@/i18n/messages/admin-exam-authoring';
 import { adminExamResultsMessages } from '@/i18n/messages/admin-exam-results';
 import { adminExamsMessages } from '@/i18n/messages/admin-exams';
 import { getMessages } from '@/i18n/server';
@@ -42,7 +46,8 @@ export async function generateMetadata(): Promise<Metadata> {
 /**
  * Admin exam detail (old quiz-management/view/[id]) with the answer keys. Staff only: no student
  * shape carries `correctKey`. Once published, the results panel and the attempts with their
- * violations (owner Q4) come first. Editing arrives with E5b.
+ * violations (owner Q4) come first. Authoring (E5b): edit settings, publish, unpublish, archive, and
+ * the questions (add, edit or version, delete or retire); the client parts get picked props only.
  */
 export default async function AdminExamDetailPage({
   params,
@@ -55,10 +60,11 @@ export default async function AdminExamDetailPage({
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const examId = parseId(id);
   if (!examId) notFound();
-  const [{ locale, m }, { m: c }, { m: r }, data] = await Promise.all([
+  const [{ locale, m }, { m: c }, { m: r }, { m: a }, data] = await Promise.all([
     getMessages(adminExamsMessages),
     getMessages(common),
     getMessages(adminExamResultsMessages),
+    getMessages(adminExamAuthoringMessages),
     getData(query),
   ]);
   const filter = parseEnum(query.filter, ATTEMPT_FILTERS);
@@ -76,6 +82,7 @@ export default async function AdminExamDetailPage({
   ]);
   if (!exam) notFound();
   const path = `/admin/exams/${encodeURIComponent(exam.id)}`;
+  const rules = questionRules(exam, exam.questions.length);
 
   const info: Array<{ key: string; label: string; value: string; icon: ReactNode; tone: string }> =
     [
@@ -166,6 +173,10 @@ export default async function AdminExamDetailPage({
         }
       />
 
+      <div className="mb-6">
+        <ExamStateActions locale={locale} exam={pickSettings(exam)} />
+      </div>
+
       <dl className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {info.map((item) => (
           <div
@@ -208,12 +219,25 @@ export default async function AdminExamDetailPage({
       ) : null}
 
       <section aria-labelledby="exam-questions">
-        <h2
-          id="exam-questions"
-          className="mb-4 border-l-4 border-secondary pl-3 text-xl font-black text-ink"
-        >
-          {m.detail.questionsHeading(formatNumber(locale, exam.questions.length))}
-        </h2>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2
+            id="exam-questions"
+            className="border-l-4 border-secondary pl-3 text-xl font-black text-ink"
+          >
+            {m.detail.questionsHeading(formatNumber(locale, exam.questions.length))}
+          </h2>
+          {rules.canAdd ? <AddQuestionButton locale={locale} examId={exam.id} /> : null}
+        </div>
+        {exam.status === 'published' ? (
+          <p className="mb-4 text-sm text-ink-muted">
+            {exam.randomDraw
+              ? a.questions.poolNote(
+                  formatNumber(locale, exam.questionsPerAttempt),
+                  formatNumber(locale, exam.questions.length),
+                )
+              : a.questions.fixedNote}
+          </p>
+        ) : null}
 
         {exam.questions.length === 0 ? (
           <EmptyState icon={<ListChecks size={26} />} title={m.detail.noQuestions} />
@@ -288,6 +312,13 @@ export default async function AdminExamDetailPage({
                       {question.explanation}
                     </p>
                   ) : null}
+                  <QuestionActions
+                    locale={locale}
+                    examId={exam.id}
+                    question={pickQuestion(question)}
+                    number={formatNumber(locale, index + 1)}
+                    rules={rules}
+                  />
                 </Card>
               </li>
             ))}
