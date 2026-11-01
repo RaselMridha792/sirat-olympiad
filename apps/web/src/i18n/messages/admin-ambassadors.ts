@@ -51,6 +51,51 @@ export const adminAmbassadorsMessages = defineMessages({
         failed: 'It was not saved. Try again.',
       },
     },
+    points: {
+      title: 'Points and ranks',
+      perReferral: (n: string) =>
+        `${n} points for each paid registration with an ambassador's code`,
+      ranks: 'Ranks',
+      from: (n: string) => `from ${n}`,
+      note: 'Points are added within 5 minutes of a registration; earlier points are never changed.',
+      edit: 'Edit points and ranks',
+      editTitle: 'Points and ranks',
+      editText:
+        'A new value counts for registrations from now on; points already given stay. The first rank starts at 0 and each rank needs more points than the one before.',
+      perReferralLabel: 'Points per paid referral',
+      rankName: 'Rank name',
+      rankMin: 'From points',
+      addRank: 'Add a rank',
+      removeRank: (name: string) => `Remove the rank ${name}`,
+      reason: 'Reason',
+      save: 'Save',
+      pending: 'Saving…',
+      cancel: 'Cancel',
+      errors: {
+        badThresholds:
+          'Start the first rank at 0, give each rank more points than the one before, and use distinct names of 2 to 30 characters.',
+        stale: 'Another admin changed these values in the meantime. Close this and open it again.',
+        invalid:
+          'Check the values: points per referral from 0 to 1,000, and a reason of 3 to 200 characters.',
+        failed: 'It was not saved. Try again.',
+      },
+    },
+    adjust: {
+      button: 'Adjust points',
+      title: 'Adjust points',
+      text: 'Adds a correction to the points history. Use a minus sign to take points away. Nothing earlier is changed.',
+      amount: 'Points (+ or −)',
+      reason: 'Reason',
+      confirm: 'Add the correction',
+      pending: 'Saving…',
+      cancel: 'Cancel',
+      errors: {
+        invalid:
+          'Enter a whole number from −10,000 to 10,000, not 0, and a reason of 3 to 200 characters.',
+        notAmbassador: 'This account has never been an ambassador.',
+        failed: 'It was not saved. Try again.',
+      },
+    },
   },
   bn: {
     title: 'অ্যাম্বাসেডর',
@@ -98,6 +143,50 @@ export const adminAmbassadorsMessages = defineMessages({
         blocked: 'এই অ্যাকাউন্টটি ব্লক করা।',
         wrongRole: 'স্টাফ অ্যাকাউন্ট অ্যাম্বাসেডর হতে পারে না।',
         notAmbassador: 'এই অ্যাকাউন্টটি এখন অ্যাম্বাসেডর নয়।',
+        failed: 'সংরক্ষণ হয়নি। আবার চেষ্টা করুন।',
+      },
+    },
+    points: {
+      title: 'পয়েন্ট ও র‍্যাঙ্ক',
+      perReferral: (n: string) =>
+        `অ্যাম্বাসেডরের কোড দিয়ে প্রতিটি পেমেন্টসহ রেজিস্ট্রেশনে ${n} পয়েন্ট`,
+      ranks: 'র‍্যাঙ্ক',
+      from: (n: string) => `${n} থেকে`,
+      note: 'রেজিস্ট্রেশনের ৫ মিনিটের মধ্যে পয়েন্ট যোগ হয়; আগের পয়েন্ট কখনো বদলায় না।',
+      edit: 'পয়েন্ট ও র‍্যাঙ্ক বদলান',
+      editTitle: 'পয়েন্ট ও র‍্যাঙ্ক',
+      editText:
+        'নতুন মান এখন থেকে হওয়া রেজিস্ট্রেশনে গুনবে; আগে দেওয়া পয়েন্ট থেকে যাবে। প্রথম র‍্যাঙ্ক ০ থেকে শুরু, আর প্রতিটি র‍্যাঙ্কে আগেরটির চেয়ে বেশি পয়েন্ট লাগবে।',
+      perReferralLabel: 'প্রতি পেমেন্টসহ রেফারেলে পয়েন্ট',
+      rankName: 'র‍্যাঙ্কের নাম',
+      rankMin: 'যত পয়েন্ট থেকে',
+      addRank: 'র‍্যাঙ্ক যোগ করুন',
+      removeRank: (name: string) => `${name} র‍্যাঙ্কটি সরান`,
+      reason: 'কারণ',
+      save: 'সংরক্ষণ করুন',
+      pending: 'সংরক্ষণ হচ্ছে…',
+      cancel: 'বাতিল',
+      errors: {
+        badThresholds:
+          'প্রথম র‍্যাঙ্ক ০ থেকে শুরু করুন, প্রতিটি র‍্যাঙ্কে আগেরটির চেয়ে বেশি পয়েন্ট দিন, আর ২ থেকে ৩০ অক্ষরের আলাদা আলাদা নাম দিন।',
+        stale: 'এর মধ্যে অন্য একজন অ্যাডমিন মানগুলো বদলেছেন। এটি বন্ধ করে আবার খুলুন।',
+        invalid: 'মানগুলো দেখুন: প্রতি রেফারেলে ০ থেকে ১,০০০ পয়েন্ট, আর ৩ থেকে ২০০ অক্ষরের কারণ।',
+        failed: 'সংরক্ষণ হয়নি। আবার চেষ্টা করুন।',
+      },
+    },
+    adjust: {
+      button: 'পয়েন্ট সমন্বয়',
+      title: 'পয়েন্ট সমন্বয়',
+      text: 'পয়েন্টের ইতিহাসে একটি সংশোধন যোগ করে। পয়েন্ট কমাতে বিয়োগ চিহ্ন দিন। আগের কিছুই বদলায় না।',
+      amount: 'পয়েন্ট (+ বা −)',
+      reason: 'কারণ',
+      confirm: 'সংশোধন যোগ করুন',
+      pending: 'সংরক্ষণ হচ্ছে…',
+      cancel: 'বাতিল',
+      errors: {
+        invalid:
+          '−১০,০০০ থেকে ১০,০০০-এর মধ্যে একটি পূর্ণ সংখ্যা দিন (০ নয়), আর ৩ থেকে ২০০ অক্ষরের কারণ।',
+        notAmbassador: 'এই অ্যাকাউন্টটি কখনো অ্যাম্বাসেডর ছিল না।',
         failed: 'সংরক্ষণ হয়নি। আবার চেষ্টা করুন।',
       },
     },

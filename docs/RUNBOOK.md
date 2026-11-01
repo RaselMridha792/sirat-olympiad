@@ -292,7 +292,7 @@ scripts/prelaunch-check.sh
 | `containers` | a service not running or unhealthy on two checks | `$DC ps -a`; `$DC logs --tail=100 <service>`; `$DC up -d --no-deps --no-build <service>` |
 | `workers` | a job queue (email, payments, exam) has no worker on two checks | `$DC ps worker`; `$DC logs --tail=100 worker`; `$DC up -d --no-deps --no-build worker`. Payments are confirmed only by the worker: critical |
 | `queue_backlog` | over 500 waiting, or the oldest over 5 min (warning); a payments or email job waiting 15 min while workers are connected (critical: a stuck worker) | worker logs; restart the worker; the queue Redis memory |
-| `failed_jobs` | jobs failed for good since the last check (a payment verify job: critical) | worker logs by job name; payments: the review list (section 11) |
+| `failed_jobs` | jobs failed for good since the last check (a payment verify job: critical) | worker logs by job name; payments: the review list (section 11). An exam `sweep` job fails when one of its items failed: `$DC logs worker \| grep 'exam sweep item failed'` names the step (finalize, score, build) and the attempt or exam id; every other item went on, and the next minute's sweep tries again |
 | `reconciliation` | the payments reconciliation is more than 3 intervals late | worker running? `$DC logs worker \| grep reconcile` |
 | `queue_redis_memory` | the queue Redis over 300 MB (warning), 400 MB of 512 (critical) | failed jobs piling up; `redis-cli INFO memory` in `redis-queue` |
 | `http_5xx` | over 2% (warning) or 10% (critical) of at least 50 requests in 5 min | `$DC logs --since 10m nginx api`; `/api/ready`; recent deploy? |
@@ -577,3 +577,22 @@ SQL
 - **Indexes:** `sessions(expires_at)`, `sessions(revoked_at)` and `auth_tokens(expires_at)` came with a plain `CREATE INDEX`, fine while the tables were young. A later index on a big `sessions` table must use `CREATE INDEX CONCURRENTLY`, in a migration of its own: Prisma runs each migration in a transaction, and `CONCURRENTLY` cannot run inside one. A plain build would lock writes, and so logins and refreshes, until it finished.
 - **At worker start** the log says `housekeeping scheduler set` (id, pattern, time zone). Every start says so, but Redis keeps one scheduler: `$DC exec -T redis-queue redis-cli ZRANGE bull:housekeeping:repeat 0 -1` lists exactly `session-cleanup`.
 - **After a purge,** a refresh token replayed more than 30 days after its rotation gets 401, like any unknown token. It no longer ends its family or writes `auth.refresh_reuse` (DECISIONS A2.1b #9).
+
+## 17. Ambassador referral points (core C5b-1)
+
+- **What runs:** the worker's `ambassador-points` queue has two schedulers, one run each however many workers start.
+  - `referral-points`: every 5 minutes, the registrations of the last 2 days (the whole table on the very first run).
+  - `referral-points-backfill`: every night at 03:45 Asia/Dhaka, every registration.
+  - Each writes one ledger row `referral_paid:<paymentId>` per paid registration with a referrer, and never one twice (`ON CONFLICT DO NOTHING`). It reads registrations and writes only `point_ledger`.
+- **Points per referral and the ranks** are data, changed by an admin on /admin/ambassadors ("Edit points and ranks"; audited `ambassador_points.changed`). A new value counts for later awards only. 0 pauses the awards; the next run after a value above 0 gives them.
+- **A failed run** is retried 3 times; a job that failed for good is kept 7 days, and `ops-check` reports it as a `failed_jobs` warning (queue `ambassador`). No manual trigger is needed: the next run catches up.
+- **At worker start** the log says `ambassador points schedulers set`. Redis keeps one of each: `$DC exec -T redis-queue redis-cli ZRANGE bull:ambassador-points:repeat 0 -1` lists exactly `referral-points` and `referral-points-backfill`.
+- **Check the awards** (counts only):
+
+```bash
+$DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+select count(*) filter (where event_key like 'referral\_paid:%') as referral_rows, max(created_at) as latest from point_ledger;
+SQL
+```
+
+- **A wrong award** is never edited or deleted (the ledger is append-only): an admin adds a compensating entry with "Adjust points" (audited `points.adjusted`).

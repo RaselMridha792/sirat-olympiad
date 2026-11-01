@@ -1,4 +1,5 @@
 import type {
+  AmbassadorPointsConfig,
   AdminAuditDetail,
   AdminAuditPage,
   AdminAuditQuery,
@@ -100,6 +101,8 @@ export interface DataSource {
     getAttempt(examId: string, attemptId: string): Promise<AdminAttemptDetail | null>;
     /** GET /admin/ambassadors?page=&q= */
     listAmbassadors(query: PageQuery): Promise<Paginated<AdminAmbassadorRow>>;
+    /** GET /admin/ambassador-points (points per paid referral and the rank thresholds; admin only) */
+    getAmbassadorPoints(): Promise<AmbassadorPointsConfig>;
     /** GET /admin/announcements?page=&status= (every status, with audience and author) */
     listAnnouncements(query: AdminAnnouncementQuery): Promise<Paginated<AdminAnnouncement>>;
     /** GET /admin/payments?invoice=&trx=&phone=&email=&status=&review=1&page= (admin only) */
