@@ -30,7 +30,8 @@ function cli(args: string[], stdin: string) {
     cwd: apiDir,
     input: stdin,
     encoding: 'utf8',
-    env: { ...process.env, DATABASE_URL: process.env.TEST_DATABASE_URL },
+    // DATABASE_URL as test/load-env.ts set it: sirat_app when TEST_APP_DATABASE_URL is set (CI), as after L8.
+    env: { ...process.env },
     timeout: 60_000,
   });
   return { code: r.status, out: `${r.stdout}${r.stderr}` };
