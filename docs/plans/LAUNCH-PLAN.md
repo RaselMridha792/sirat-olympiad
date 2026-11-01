@@ -198,7 +198,7 @@ Then: deploy, second deploy, forced rollback and a reboot, rehearsed and timed.
 
 **Now, L7 "restore into an empty database, scripted drill" (2.5–3 h).**
 - **`restore.sh`, two modes:**
-  - **Rebuild:** first make sure `sirat_app` exists (NOLOGIN, no password: a `--ensure` mode of L2's `runtime-role.mjs`), then restore into an empty database on a fresh volume, with no `--clean`. The timeouts are re-applied and checked, then migrate and start; the migrate job sets the role's login afterwards. This also fixes bootstrap's order.
+  - **Rebuild:** first make sure `sirat_app` exists (NOLOGIN, no password: a `--ensure` mode of L2's `runtime-role.ts`), then restore into an empty database on a fresh volume, with no `--clean`. The timeouts are re-applied and checked, then migrate and start; the migrate job sets the role's login afterwards. This also fixes bootstrap's order.
   - **Server still up:** restore into `sirat_restore_<stamp>`, check it, stop traffic, swap the names, and keep the old database for payments newer than the dump.
 - **Before it acts,** it prints the project, the database and the server marker, and asks for the project name to be typed. It refuses a server marked as development unless told otherwise, and it stops the worker too.
 - **After a restore:**
@@ -239,23 +239,23 @@ The superuser password also sits in every app container through `env_file`. The 
 - **A hand-written migration:**
   - creates `sirat_app` if missing (no superuser, createdb, createrole, replication or bypassrls), safe if two databases run it at the same moment;
   - grants CONNECT, USAGE and SELECT/INSERT/UPDATE/DELETE on the app tables;
-  - grants only SELECT/INSERT on `audit_logs`, `payment_events` and `submissions`, and nothing on `_prisma_migrations`;
+  - grants only SELECT/INSERT on the append-only tables (those with an `*_append_only` trigger: `audit_logs`, `payment_events`, `point_ledger`, `submissions`), nothing on `_prisma_migrations`, and no temporary tables;
   - sets default privileges, so every future table gets the same DML.
-- **`prisma/runtime-role.mjs`**, run by the migrate job after `migrate deploy`:
+- **`prisma/runtime-role.ts`**, run by the migrate job after `migrate deploy`:
   - sets the role's login and password with a SCRAM verifier computed locally, so the plaintext never reaches Postgres or its log;
   - manages only the fixed name `sirat_app`;
-  - re-applies the three database timeouts, which closes the restore gap of section 4;
+  - puts back a missing database timeout (a present one stays as a migration set it), which closes the restore gap of section 4;
   - has an `--ensure` mode for restores (section 4);
-  - prints one line and never a value.
+  - prints one line (plus a warning when it cleared role settings) and never a value.
 - **A boot line** in the API and the worker: `database role=<name> superuser=<bool>`. In L2 it warns; after L8 production refuses to boot as a superuser.
 - **Tests:**
   - the integration suite runs the app as `sirat_app` when `TEST_APP_DATABASE_URL` is set (A2 and CI set it), so a missing grant fails in CI, not in production;
   - a catalog test checks every table's privileges;
   - as `sirat_app`, each of these fails with 42501: TRUNCATE, DISABLE TRIGGER, `session_replication_role`, DDL, `COPY … TO PROGRAM`, reading `_prisma_migrations`, UPDATE/DELETE on the append-only tables;
-  - mutation checks on the default privileges, the append-only REVOKE and the timeout re-apply.
+  - mutation checks on the default privileges, the append-only REVOKE and the missing-timeout rule.
 - **Keys, in L2:** the `sirat_app` password key in the root `.env.example` and in the migrate service's environment (optional until L8), and `TEST_APP_DATABASE_URL` in `apps/api/.env.example`.
 - **The shared dev cluster:** roles belong to the whole Postgres cluster, so there is one `sirat_app` password for every session's databases.
-  - On a cluster with the development marker, `runtime-role.mjs` sets the password only while the role has none; with an empty key it skips that step with one line and never fails the migrate job. So stack turns from any worktree keep working after L2, and none can reset another's password. Without the marker (production, from L8), an empty key fails.
+  - On a cluster with the development marker, `runtime-role.ts` sets the password only while the role has none; with an empty key it skips that step with one line and never fails the migrate job. So stack turns from any worktree keep working after L2, and none can reset another's password. Without the marker (production, from L8), an empty key fails.
   - Rasel types the same value into the root `.env` of every worktree that takes stack turns, and into A2's `apps/api/.env` as `TEST_APP_DATABASE_URL`. The first announced stack turn after L2 merges (A2's) sets it.
   - Test preparation never changes it: it only logs in as `sirat_app` and stops with a clear message if that fails. CI's database job sets the role's password in its own Postgres before `test:int`.
   - Without `TEST_APP_DATABASE_URL`, a session's tests run the app as the superuser, as today; payments, exam and core each turn the key on when ready.
@@ -572,7 +572,7 @@ The table assumes about 2 h per medium PR, review rounds included. These are est
 - **Freeze and payments' buffer:** with the freeze from Fri 13 00:00 (Q4), Thu 12 is the last day for non-critical deploys, such as a slipped free-book PR. So the non-critical part of `PAYMENTS-PLAN.md` §10.3's buffer (Sun 8 midday – Sat 14) ends on Thu 12. Critical fixes and configuration-only switches still go ahead. The lead tells payments when this plan merges.
 - **Shared stack:** each of these PRs needs a turn, asked for first, announced in one line and released after:
   - L1: web smoke and e2e;
-  - L2: one run of `runtime-role.mjs` that sets the dev `sirat_app` password;
+  - L2: one run of `runtime-role.ts` that sets the dev `sirat_app` password;
   - L3–L5: nginx;
   - L7: one read-only dump of the dev database;
   - L8: it recreates PgBouncer, so it needs one window with Rasel.

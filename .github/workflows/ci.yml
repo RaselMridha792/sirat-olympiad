@@ -217,6 +217,34 @@ jobs:
           --to-schema-datamodel prisma/schema.prisma
           --shadow-database-url "$SHADOW_DATABASE_URL"
           --exit-code
+      # The migrate job's own steps: the migration creates sirat_app, then runtime-role.ts gives it a login with a
+      # throwaway password. The app under test then connects as sirat_app, as production will after L8 (test/load-env.ts).
+      - name: The runtime role sirat_app, as the migrate job sets it up
+        working-directory: apps/api
+        env:
+          PGPASSWORD: ci-only-password # throwaway CI container, not a secret
+        run: |
+          password=$(openssl rand -hex 32)
+          echo "::add-mask::$password"
+          echo "TEST_APP_DATABASE_URL=postgresql://sirat_app:${password}@localhost:5432/sirat_test" >> "$GITHUB_ENV"
+          pnpm exec prisma migrate deploy
+          # The migrations alone protect the append-only tables and the migration log, and allow no temporary tables
+          # (runtime-role.ts re-asserts the same, so the tests below cannot tell the two apart).
+          wrong=$(psql -h localhost -U sirat -d sirat_test -tAc "
+            SELECT c.relname FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_proc p ON p.oid = t.tgfoid
+            WHERE NOT t.tgisinternal AND p.proname LIKE '%\_append\_only'
+              AND (has_table_privilege('sirat_app', c.oid, 'UPDATE') OR has_table_privilege('sirat_app', c.oid, 'DELETE'))
+            UNION SELECT '_prisma_migrations' WHERE has_table_privilege('sirat_app', 'public._prisma_migrations', 'SELECT')
+            UNION SELECT 'TEMPORARY for PUBLIC' WHERE has_database_privilege('public', current_database(), 'TEMPORARY')")
+          [ -z "$wrong" ] || { echo "::error::the migrations leave too many rights: $wrong"; exit 1; }
+          # Undo one thing per repair step: the tests below fail if runtime-role.ts skips one.
+          psql -h localhost -U sirat -d sirat_test -q -c "GRANT UPDATE, DELETE ON audit_logs TO sirat_app" \
+            -c "GRANT TEMPORARY ON DATABASE sirat_test TO PUBLIC" -c "ALTER DATABASE sirat_test RESET lock_timeout" \
+            -c "ALTER ROLE sirat_app SET statement_timeout = 0"
+          out=$(POSTGRES_APP_PASSWORD="$password" pnpm exec tsx prisma/runtime-role.ts 2>&1)
+          echo "$out"
+          grep -qF 'runtime role ready: sirat_app (login and password set)' <<<"$out"
+          grep -qF 'runtime role: cleared 1 role-level setting(s) of sirat_app' <<<"$out"
       - name: Apply migrations to a fresh DB, then constraint/seed/rate-limit/app tests
         run: pnpm --filter @sirat/api test:int
 
@@ -232,6 +260,7 @@ jobs:
         run: |
           cp .env.example .env
           sed -i "s|^JWT_ACCESS_SECRET=.*|JWT_ACCESS_SECRET=$(openssl rand -hex 32)|" .env
+          sed -i "s|^POSTGRES_APP_PASSWORD=.*|POSTGRES_APP_PASSWORD=$(openssl rand -hex 32)|" .env
           $DCD config --quiet
       - name: Nginx on the pinned image - both sites pass nginx -t; the TLS site, its headers and its logs
         run: infra/nginx/test/check-sites.sh
@@ -249,6 +278,8 @@ jobs:
           code=$(docker inspect -f '{{.State.ExitCode}}' "$($DCD ps -a -q migrate)")
           [ "$code" = 0 ] || { echo "::error::migrate exited $code"; exit 1; }
           $DCD logs migrate | grep -q 'config seed done' || { echo "::error::config seed did not run"; exit 1; }
+          $DCD logs migrate | grep -q 'runtime role ready: sirat_app (login and password set)' ||
+            { echo "::error::the migrate job did not set up the runtime role"; exit 1; }
       - name: Through nginx - readiness (DB + both Redis), liveness and the web app
         run: |
           curl -fsS http://127.0.0.1:8080/api/ready
