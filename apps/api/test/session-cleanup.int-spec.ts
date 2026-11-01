@@ -9,7 +9,7 @@ import type { ConfigService } from '@nestjs/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import type { PrismaClient } from '@prisma/client';
-import { Queue, QueueEvents } from 'bullmq';
+import { Queue } from 'bullmq';
 import Redis from 'ioredis';
 import type { EnvVars } from '../src/config/env';
 import { AuditService } from '../src/modules/audit/audit.service';
@@ -277,8 +277,6 @@ describe('the nightly scheduler', () => {
     ];
     const redis = new Redis(process.env.REDIS_QUEUE_URL as string, QUEUE_REDIS_OPTIONS);
     const queue = new Queue(queueName, { connection: redis });
-    const eventsRedis = redis.duplicate(); // BullMQ never closes a connection it was given
-    const events = new QueueEvents(queueName, { connection: eventsRedis });
     try {
       for (const w of workers) await w.onModuleInit();
       const schedulers = await queue.getJobSchedulers(0, 10, true);
@@ -291,15 +289,18 @@ describe('the nightly scheduler', () => {
 
       const now = new Date();
       await due(now, 2, 1);
-      await events.waitUntilReady();
-      const job = await queue.add(HOUSEKEEPING_JOBS.sessionCleanup, {}, HOUSEKEEPING_JOB_OPTIONS);
-      expect(await job.waitUntilFinished(events, 20_000)).toMatchObject({ sessions: 2, tokens: 1 });
+      // Wait on the effect (the worker ran the cleanup), not on the job: with the real options the job's key is
+      // removed on completion, and reading it back after that races (BullMQ "Missing key for job").
+      const run = jest.spyOn(cleanup, 'run');
+      await queue.add(HOUSEKEEPING_JOBS.sessionCleanup, {}, HOUSEKEEPING_JOB_OPTIONS);
+      for (let i = 0; i < 400 && run.mock.results.length === 0; i += 1)
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(run).toHaveBeenCalledTimes(1);
+      await expect(run.mock.results[0]!.value).resolves.toMatchObject({ sessions: 2, tokens: 1 });
     } finally {
       for (const w of workers) await w.onApplicationShutdown();
-      await events.close();
       await queue.obliterate({ force: true });
       await queue.close();
-      eventsRedis.disconnect();
       redis.disconnect();
     }
   });
