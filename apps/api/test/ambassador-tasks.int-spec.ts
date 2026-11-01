@@ -216,6 +216,20 @@ describe('submit and review', () => {
     expect(details((await submit(a.cookie, id, 'again')).json)).toEqual(['not_open']);
   });
 
+  it('two ambassadors on the same task each get its points', async () => {
+    const t = await task(12);
+    const a = await ambassador();
+    const b = await ambassador();
+    await assign(t.id, [a.id, b.id]);
+    for (const who of [a, b]) {
+      const id = await assignmentOf(t.id, who.id);
+      await submit(who.cookie, id, 'Done');
+      expect((await approve(id)).json.points).toBe(12);
+    }
+    const rows = await prisma.pointLedger.findMany({ where: { taskId: t.id } });
+    expect(rows.map((r) => r.userId).sort()).toEqual([a.id, b.id].sort());
+  });
+
   it('three approvals at once award the points once', async () => {
     const t = await task(15);
     const a = await ambassador();
