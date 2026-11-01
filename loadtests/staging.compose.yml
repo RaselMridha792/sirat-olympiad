@@ -1,0 +1,26 @@
+# The load-test staging stack on the VPS only (scripts/load-staging.sh, project sirat-staging; never project sirat).
+# The deployed release's images (never a build), the production sizes, its own volumes and throwaway settings, payments
+# on the fake. nginx serves the plain site on STAGING_PORT (IPv4); the DOCKER-USER guard drops that port from outside
+# until `load-staging.sh window` lets the listed generator machines in for a limited time.
+services:
+  nginx:
+    ports: !override ['0.0.0.0:${STAGING_PORT:-8088}:80']
+    volumes:
+      - ./nginx/sites/plain:/etc/nginx/templates:ro
+
+  # The run's own settings, never the clone's .env (it holds the production secrets): load-staging.sh sets
+  # STAGING_ENV_FILE, and compose refuses to run without it.
+  api:
+    env_file: !override ['${STAGING_ENV_FILE:?STAGING_ENV_FILE is set by scripts/load-staging.sh}']
+
+  worker:
+    env_file: !override ['${STAGING_ENV_FILE:?STAGING_ENV_FILE is set by scripts/load-staging.sh}']
+
+  postgres:
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+      # Test marker: the load fixtures refuse any server without it (production never sets it).
+      - -c
+      - sirat.environment=test

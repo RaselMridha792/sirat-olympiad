@@ -66,4 +66,35 @@ USERS=300 DURATION=3 bash loadtests/exam-local.sh timeup
 
 It prints each check as `ok` or `FAIL` and keeps the logs, the k6 summary, the PC's CPU and each container's peak CPU in the folder it names. `KEEP_IMAGES=1` keeps the built images for the next run. The local numbers are in `docs/DECISIONS.md` ("Exam simulation, local k6").
 
-On the VPS (RULEBOOK §13): k6 from another machine, against a staging stack (its own compose project and database), at 1.5–2× the expected peak, with a 30-minute exam. Through nginx, `SPREAD_IPS` has no effect: the generator's own address counts.
+## On the VPS (`scripts/load-staging.sh`, RUNBOOK §18)
+
+RULEBOOK §13: at 1.5–2× the expected peak, with a 30-minute exam, k6 from other machines. The target is a staging stack, `sirat-staging`, which `scripts/load-staging.sh` builds from the deployed release's images:
+- its own volumes and throwaway settings, payments on the fake;
+- never project `sirat`, never the production database or its secrets;
+- nginx on port 8088, which the firewall drops from outside until a window opens it.
+
+The exam simulation:
+
+```bash
+scripts/load-staging.sh up --users 8000                        # on the VPS, as deploy
+scripts/load-staging.sh exam --duration 30 --window-end-in 60  # writes EXAM_ID into k6.env
+sudo scripts/load-staging.sh window --ips <gen1>,<gen2> --minutes 90   # its own SSH session; Ctrl-C closes it
+# on each generator machine, with k6.env copied over (it holds the throwaway load password), each with its own range:
+set -a; . ./k6.env; set +a
+k6 run -e IP_HEADER=cf-connecting-ip -e SCENARIO=surge -e RATE=10 -e FIRST=1 -e USERS=4000 loadtests/exam-simulation.js
+k6 run -e IP_HEADER=cf-connecting-ip -e SCENARIO=surge -e RATE=10 -e FIRST=4001 -e USERS=4000 loadtests/exam-simulation.js
+scripts/load-staging.sh report <examId>    # after the window and the grace: every attempt submitted and scored
+sudo scripts/load-staging.sh status         # allow-list: closed
+scripts/load-staging.sh down
+```
+
+- **The window** trusts the generators' `CF-Connecting-IP` (A2's `scripts/loadtest-generators.sh`), so each simulated student counts as its own address in nginx's limits. `--no-trusted` skips that; then each generator is a single address.
+- **Zero lost submissions across generators:** add up the receipts in each generator's summary. That sum must equal the report's `submitted + time_up + violations`, and the students who left must equal `server_checkpoint + server_empty`.
+
+The registration surge (payments' script) needs the fake's checkout, which only the stack's own network reaches:
+
+```bash
+scripts/load-staging.sh up --registration
+scripts/load-staging.sh k6 registration -e RATE=4
+scripts/load-staging.sh down
+```

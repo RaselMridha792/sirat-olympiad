@@ -34,6 +34,8 @@ jobs:
         run: bash scripts/test/check-early-exit-pipes.sh
       - name: shellcheck on every shell script (warnings and errors)
         run: shellcheck -S warning $(git ls-files '*.sh')
+      - name: load-staging.sh on faked commands - the firewall window opens only for the listed addresses and closes on a signal, an error and its timer; a dry run changes nothing (E6 kit)
+        run: bash scripts/test/load-staging.test.sh
       - run: pnpm format:check
       - run: pnpm --filter @sirat/shared build
       - run: pnpm db:generate

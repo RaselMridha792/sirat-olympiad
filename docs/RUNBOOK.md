@@ -665,3 +665,30 @@ SQL
 ```
 
 - **A wrong award** is never edited or deleted (the ledger is append-only): an admin adds a compensating entry with "Adjust points" (audited `points.adjusted`).
+
+## 18. Load test on the VPS (staging, `scripts/load-staging.sh`)
+
+The steps and the k6 commands: `loadtests/README.md`, "On the VPS". The rules around them:
+
+- **When:** before launch, or in a quiet hour outside any exam window and any registration surge. Staging shares the server's CPU with the live stack, which keeps running. Never during a live exam window.
+- **What it is:** project `sirat-staging`, built from the deployed release's images (no build; only payments' fake PayStation is built, with `--registration`).
+  - its own volumes and throwaway settings in `/var/lib/sirat/staging` (mode 700);
+  - Postgres with the test marker, so the load fixtures accept only this server;
+  - payments off, or on the fake;
+  - emails to nowhere.
+
+  It never reads the clone's `.env` and never touches project `sirat`.
+- **The firewall:** nginx's staging port (8088) is dropped from outside by the DOCKER-USER guard. `sudo scripts/load-staging.sh window --ips <ip>,<ip> --minutes N` lets at most 4 single public addresses in. It runs in the foreground, in its own SSH session, and the allow-list closes:
+  - on Ctrl-C;
+  - when the session is lost;
+  - on any error;
+  - when the minutes are over;
+  - and by a systemd timer if the script itself is killed.
+
+  It also switches A2's trusted generators on, and off again when it closes. `sudo scripts/load-staging.sh status` must say `allow-list: closed` afterwards. When in doubt, `sudo scripts/load-staging.sh close` (it is safe to repeat).
+- **After the run:**
+  1. `scripts/load-staging.sh report <examId>`;
+  2. the numbers into DECISIONS;
+  3. `scripts/load-staging.sh down` (refused while the window's timer is active), which removes the stack, its volumes and its settings;
+  4. `scripts/prelaunch-check.sh` again: the real-IP lines must show Cloudflare addresses once the trusted generators are off.
+- **CI** runs the script on faked commands (`scripts/test/load-staging.test.sh`): the window opens only for the listed addresses, with its timer, and closes on a signal, on an error and by `close`; a dry run changes nothing; no secret is printed.
