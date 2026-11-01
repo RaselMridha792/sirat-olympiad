@@ -138,9 +138,24 @@ describe('creating and joining', () => {
     const owner = await ambassador();
     const { json: team } = await createTeam(owner.cookie);
     const students = await Promise.all(Array.from({ length: 12 }, () => student()));
-    const answers = await Promise.all(students.map((s) => join(s.cookie, team.joinCode!)));
+    const first = await Promise.all(students.map((s) => join(s.cookie, team.joinCode!)));
+    // Every status, so a failure says what happened. Twelve users with one join each from an IP whose count
+    // beforeEach cleared meet no limit (no 429). Under load a join can wait on the team's row lock past the
+    // transaction timeout and get 503 SERVICE_BUSY (designed: the client retries), so those try once more, as a
+    // client after Retry-After would: the cap must still hold exactly.
+    const seen = first.map((a) => a.status);
+    expect({ seen, unexpected: seen.filter((s) => ![200, 409, 503].includes(s)) }).toEqual({
+      seen,
+      unexpected: [],
+    });
+    const answers = await Promise.all(
+      first.map((a, i) => (a.status === 503 ? join(students[i]!.cookie, team.joinCode!) : a)),
+    );
     const statuses = answers.map((a) => a.status);
-    expect(statuses.filter((s) => s === 200)).toHaveLength(9);
+    expect({ seen, statuses: statuses.filter((s) => s === 200).length }).toEqual({
+      seen,
+      statuses: 9,
+    });
     expect(answers.filter((a) => a.status === 409).map((a) => details(a.json))).toEqual([
       ['team_full'],
       ['team_full'],

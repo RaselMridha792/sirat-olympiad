@@ -741,3 +741,26 @@ The steps and the k6 commands: `loadtests/README.md`, "On the VPS". The rules ar
   4. `scripts/prelaunch-check.sh` again: the real-IP lines must show Cloudflare addresses once the trusted generators are off.
 - **CI** runs the script on faked commands (`scripts/test/load-staging.test.sh`): the window opens only for the listed addresses, with its timer, and closes on a signal, on an error and by `close`; a dry run changes nothing; no secret is printed.
 - **A rehearsal against real Docker,** on a PC with the release's images: `SIRAT_TAG=<tag> [PARTS="exam registration"] bash scripts/test/run-load-staging-rehearsal.sh`. It runs up, exam, k6 inside, the report and down, then the registration staging with payments' fake, on 127.0.0.1:18088. It leaves nothing behind. The window is not part of it (no DOCKER-USER chain there).
+
+## 20. Rounds and promotion (core C6a)
+
+- **Where:** `/admin/rounds` (admins only). Round 1 is the quiz; add Round 2 (video, with its window) and the final after it, in order. Times are Bangladesh time.
+- **Before promoting from Round 1:**
+  - The Round 1 exam of the category (or the one for all categories) has its results **published** (exam's results panel).
+  - Exactly one published Round 1 exam covers each category: archive a test or replaced exam first (else "More than one published Round 1 exam…").
+  - Round 2 exists.
+- **Promote, one category at a time:**
+  1. "Promote", choose the category and N, then "Preview": the counts, the tie count (students tied with the last place also go through) and the last place.
+  2. Type the number that will go through, then "Promote now".
+  3. It cannot be undone, and each category is promoted from a round once (audited `round.promoted`, counts only).
+- **"Someone changed this in the meantime":** the results were re-published or a score changed after the preview. Preview again.
+- **A student who already had an entry in the next round** keeps it as it was (its video and score, `promotion_run_id` empty) and still counts in the run's "went through" number. A promotion never overwrites an entry.
+- **From the video round:** after its close and once every sent video has a jury score (C6b). Students without a video are eliminated.
+- **Check the counts** (no names):
+
+```bash
+$DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+select r.sort_order, r.name, e.status, count(*) from round_entries e join rounds r on r.id = e.round_id group by 1, 2, 3 order by 1, 3;
+select r.name as from_round, p.category, p.top_n, p.promoted_count, p.eliminated_count, p.created_at from promotion_runs p join rounds r on r.id = p.from_round_id order by p.created_at;
+SQL
+```
