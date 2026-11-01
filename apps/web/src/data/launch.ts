@@ -29,6 +29,7 @@ export const LAUNCH = {
   '/admin': 'live',
   '/admin/ambassadors': 'live',
   '/admin/announcements': 'live',
+  '/admin/audit': 'live',
   '/admin/book': 'live',
   '/admin/book-orders': 'live',
   '/admin/exams': 'live',
