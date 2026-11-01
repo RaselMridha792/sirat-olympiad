@@ -43,6 +43,7 @@ export const ambassadorMessages = defineMessages({
       members: (n: string, count: number) => `${n} ${count === 1 ? 'member' : 'members'}`,
       owner: 'Team owner',
       none: 'No team yet',
+      manage: 'Open my team',
     },
     tasks: {
       title: 'Your tasks',
@@ -113,6 +114,7 @@ export const ambassadorMessages = defineMessages({
       members: (n: string) => `${n} জন সদস্য`,
       owner: 'টিম লিডার',
       none: 'এখনো কোনো টিমে নেই',
+      manage: 'আমার টিম খুলুন',
     },
     tasks: {
       title: 'আপনার কাজ',

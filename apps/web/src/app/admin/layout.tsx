@@ -11,6 +11,7 @@ import {
   Trophy,
   Truck,
   Users,
+  UsersRound,
   type LucideIcon,
 } from 'lucide-react';
 import { Avatar, initialOf, type NavItem } from '@sirat/ui';
@@ -40,6 +41,7 @@ const NAV: ReadonlyArray<{
   { key: 'leaderboard', href: '/admin/leaderboard', Icon: Trophy },
   { key: 'ambassadors', href: '/admin/ambassadors', Icon: Award },
   { key: 'tasks', href: '/admin/tasks', Icon: ClipboardList },
+  { key: 'teams', href: '/admin/teams', Icon: UsersRound },
   { key: 'announcements', href: '/admin/announcements', Icon: Megaphone },
   { key: 'payments', href: '/admin/payments', Icon: CreditCard },
   { key: 'settings', href: '/admin/settings', Icon: Settings },
