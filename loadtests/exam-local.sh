@@ -144,7 +144,8 @@ if [ "$SCENARIO" = login ]; then
   dc up -d --wait --no-deps api worker >> "$OUT/setup.log" 2>&1 || { say "api or worker did not start (see $OUT/setup.log)" >&2; exit 1; }
   say "ready after $((SECONDS - t0)) s; logins at ${LOGIN_RATES:-10 20 40 60}/s, ${LOGIN_HOLD:-60s} each"
   # One k6 run per rate, so each has its own summary; the students are logged in again and again in turn.
-  printf '%-6s %-10s %-10s %-9s %-8s %s\n' rate/s "login p95" "me p95" errors dropped "peak CPU (api, postgres)" > "$OUT/login-table.txt"
+  # 429s get their own column: a throttle must never read as CPU.
+  printf '%-6s %-10s %-10s %-9s %-5s %-8s %s\n' rate/s "login p95" "me p95" errors 429s dropped "peak CPU (api, postgres)" > "$OUT/login-table.txt"
   fails=0
   for r in ${LOGIN_RATES:-10 20 40 60}; do
     [[ $r =~ ^[0-9]+$ ]] || { say "LOGIN_RATES: whole numbers" >&2; exit 2; }
@@ -159,15 +160,15 @@ if [ "$SCENARIO" = login ]; then
     kill "$stats_pid" 2> /dev/null || true
     row=$(node -e '
       const m = require(process.argv[1]).metrics, p = (k) => (m[k] && m[k]["p(95)"] !== undefined ? Math.round(m[k]["p(95)"]) + " ms" : "-");
-      const f = m["http_req_failed{kind:api}"], d = m.dropped_iterations;
+      const f = m["http_req_failed{kind:api}"], d = m.dropped_iterations, t = m.responses_429;
       console.log([p("http_req_duration{name:login}"), p("http_req_duration{name:me}"),
-        f ? (100 * (f.value ?? f.rate ?? 0)).toFixed(2) + " %" : "-", d ? d.count : 0].join("|"));
-    ' "$(hostpath "$OUT/login-$r.json")" 2> /dev/null || echo "-|-|-|-")
+        f ? (100 * (f.value ?? f.rate ?? 0)).toFixed(2) + " %" : "-", t ? t.count : 0, d ? d.count : 0].join("|"));
+    ' "$(hostpath "$OUT/login-$r.json")" 2> /dev/null || echo "-|-|-|-|-")
     # No summary is a broken run, never a row of zeros.
     [ -s "$OUT/login-$r.json" ] || { say "rate $r/s: no k6 summary (see $OUT/k6-login-$r.log)" >&2; st=1; }
-    IFS="|" read -r lp mp er dr <<< "$row"
-    printf '%-6s %-10s %-10s %-9s %-8s %s\n' "$r" "$lp" "$mp" "$er" "$dr" "$(peaks "$OUT/docker-stats-$r.txt")" >> "$OUT/login-table.txt"
-    say "rate $r/s: k6 exit $st (99 = a threshold failed); login p95 $lp, errors $er"
+    IFS="|" read -r lp mp er tr dr <<< "$row"
+    printf '%-6s %-10s %-10s %-9s %-5s %-8s %s\n' "$r" "$lp" "$mp" "$er" "$tr" "$dr" "$(peaks "$OUT/docker-stats-$r.txt")" >> "$OUT/login-table.txt"
+    say "rate $r/s: k6 exit $st (99 = a threshold failed); login p95 $lp, errors $er, 429s $tr"
     [ "$st" = 0 ] || [ "$st" = 99 ] || fails=$((fails + 1))
   done
   cat "$OUT/login-table.txt"
