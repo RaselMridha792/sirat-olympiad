@@ -323,6 +323,19 @@ jobs:
           curl -fsS http://127.0.0.1:8080/api/ready
           curl -fsS -o /dev/null http://127.0.0.1:8080/
           [ "$(data)" = "$before" ] || { echo "::error::a data service restarted"; exit 1; }
+      - name: deploy.sh refuses this stack (Postgres carries the development marker) and a second first start (L9)
+        # The full deploy, rollback and failure paths run in the rehearsal (scripts/test/run-deploy-rehearsal.sh).
+        run: |
+          printf 'DEPLOY_PROJECT=sirat\nDEPLOY_COMPOSE_FILES=infra/docker-compose.yml infra/docker-compose.dev.yml\nDEPLOY_RELEASE_DIR=%s\nDEPLOY_MIN_FREE_GB=1\n' \
+            "$RUNNER_TEMP/sirat-release" > .env.deploy
+          chmod 600 .env.deploy .env
+          s=0; out=$(scripts/deploy.sh "$GITHUB_SHA" 2>&1) || s=$?
+          echo "$out"
+          [ "$s" -ne 0 ] && grep -q 'development marker' <<< "$out" || { echo "::error::deploy.sh did not refuse a dev stack"; exit 1; }
+          s=0; out=$(scripts/deploy.sh --first 2>&1) || s=$?
+          echo "$out"
+          [ "$s" -ne 0 ] && grep -q 'already exists' <<< "$out" || { echo "::error::deploy.sh --first did not refuse a host with data containers"; exit 1; }
+          rm -f .env.deploy
       - name: Backups are encrypted, checked and uploaded; a killed dump, a bad remote or a shrunken dump fails (L6)
         # Its own compose project (sirat-backup-test), a throwaway age key and an rclone local remote; see the script.
         run: bash scripts/test/run-backup-test.sh

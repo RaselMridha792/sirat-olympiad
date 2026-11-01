@@ -2,6 +2,8 @@
 # Always run from the repo root WITH the root .env (compose reads .env from infra/ otherwise):
 #   docker compose --env-file .env -f infra/docker-compose.yml up -d --build
 # Local machine: add `-f infra/docker-compose.dev.yml` (see docs/RUNBOOK.md).
+# The VPS deploys with scripts/deploy.sh: built images are tagged sirat-<service>:<sha>, and its release file (a second
+# --env-file) sets SIRAT_TAG, so commands run by hand use the live release; without it the tag is `latest`.
 name: sirat
 x-restart: &restart
   restart: unless-stopped
@@ -37,6 +39,7 @@ services:
   web:
     <<: [*restart, *logging]
     build: { context: .., dockerfile: apps/web/Dockerfile }
+    image: sirat-web:${SIRAT_TAG:-latest}
     # No env_file: the Next.js standalone server needs no secrets (PORT/HOSTNAME come from the image).
     environment:
       # Server-side session lookups (GET /api/auth/me) go straight to the API inside the stack, not via nginx.
@@ -51,6 +54,7 @@ services:
   migrate:
     <<: *logging
     build: { context: .., dockerfile: apps/api/Dockerfile, target: migrate }
+    image: sirat-migrate:${SIRAT_TAG:-latest}
     # Only what `prisma migrate deploy` (DIRECT_URL) and the config seed (DATABASE_URL) read; not the whole .env.
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL missing - run compose with --env-file .env}
@@ -63,6 +67,7 @@ services:
   api:
     <<: [*restart, *logging]
     build: { context: .., dockerfile: apps/api/Dockerfile, target: runtime }
+    image: sirat-api:${SIRAT_TAG:-latest}
     env_file: ../.env
     environment:
       NODE_ENV: production # beats env_file: a NODE_ENV=development left in .env cannot downgrade the API
@@ -89,6 +94,7 @@ services:
   worker:
     <<: [*restart, *logging]
     build: { context: .., dockerfile: apps/api/Dockerfile, target: runtime }
+    image: sirat-worker:${SIRAT_TAG:-latest}
     command: ['node', 'dist/worker.js']
     env_file: ../.env
     environment:

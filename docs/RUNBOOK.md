@@ -3,9 +3,11 @@
 Copy-paste operations. Always run from the repo root. Compose file: `infra/docker-compose.yml`, always with the root `.env` (`--env-file .env`; without it compose refuses to start because required variables are missing). Commands marked VERIFIED were run on the owner's machine during A1 (2026-10-30); everything else is still to be verified on the real VPS.
 
 ```bash
-export DC="docker compose --env-file .env -f infra/docker-compose.yml"
-# Local machine only (never on the VPS): add the dev override
-export DCD="$DC -f infra/docker-compose.dev.yml"
+# The VPS: the live release's images (SIRAT_TAG from the release file scripts/deploy.sh writes). Every `up` takes
+# --no-build and app services take --no-deps, so a command run by hand never builds or touches a data service.
+export DC="docker compose -p sirat --env-file .env --env-file /var/lib/sirat/release.env -f infra/docker-compose.yml"
+# Local machine only (never on the VPS): the dev override; images are tagged :latest
+export DCD="docker compose -p sirat --env-file .env -f infra/docker-compose.yml -f infra/docker-compose.dev.yml"
 ```
 
 ## 0. Local development (VERIFIED)
@@ -30,6 +32,7 @@ pnpm typecheck && pnpm lint && pnpm test && pnpm build  # unit gates
 pnpm --filter @sirat/api test:int                       # DB + Redis integration tests (uses sirat_test only)
 
 $DCD up -d --build                                      # full stack; http://127.0.0.1:8080 and /api/ready
+$DCD up -d --build --no-deps migrate api worker web nginx   # the shared stack (lead's rule): rebuild only the app services
 ```
 
 **nginx after pulling the TLS change once (L3):**
@@ -102,40 +105,51 @@ cat /var/lib/sirat/monitor-state.json   # the checks' state kept between runs (l
 
 ## 2. Deploy and rollback
 
-```bash
-# Run these lines one at a time (or from a script) and stop at the first failure. Never paste them with `set -e`
-# into your login shell: a failing step would close the SSH session.
-prev=$(git rev-parse HEAD); git tag "deploy-$(date -u +%Y%m%dT%H%M%SZ)" "$prev"   # what was running (local tag, never pushed from the VPS)
-git switch main && git fetch origin
-sha=$(git rev-parse origin/main)   # deploy ONLY a commit whose CI run is green (CI is advisory, OPEN-QUESTIONS #25):
-# gh run list --workflow CI --commit "$sha" --json conclusion --jq '.[0].conclusion'   -> must print success
-git merge --ff-only "$sha"
-$DC build                          # new images; nothing restarts yet
-$DC run --rm migrate               # migrate deploy + config seed with the NEW image while the OLD API keeps serving.
-                                   # Its own output must end with "config seed done". If it fails, STOP: the old API is
-                                   # still up; follow "Migration failed" below. (`$DC logs migrate` shows an older run.)
-$DC up -d                          # recreates web/api with the new images; migrate runs again (no-op)
-git diff --quiet "$prev" HEAD -- infra/nginx || $DC exec nginx nginx -c /etc/nginx/sirat/nginx.conf -s reload   # the folder mount sees the new files; a changed site template or entrypoint hook needs `$DC up -d --no-deps --force-recreate nginx`
-for _ in $(seq 1 60); do [ "$($DC ps --format '{{.Health}}' api | grep -vc '^healthy$')" = 0 ] && break; sleep 5; done   # wait until every API replica is healthy
-scripts/healthcheck.sh https://<domain>   # if this fails -> rollback
-# Re-run migrations + seed by hand (safe to repeat):
-$DC run --rm migrate
-# Rollback: git checkout --detach <deploy-tag|sha> && $DC up -d --build   (next deploy starts with `git switch main`)
-# A rollback does NOT undo migrations, and it fails with P3009 while a failed migration is unresolved (see below).
-```
-Every DB session (migrations and psql included) starts with `statement_timeout 10s`, `lock_timeout 5s` and `idle_in_transaction_session_timeout 60s`. A migration that needs longer (backfill, index build) starts with `SET statement_timeout = '15min';`; in psql, run `SET statement_timeout = 0;` before a long manual query. A migration that fails on `lock_timeout` was waiting behind a long transaction: follow "Migration failed" below, then deploy again when traffic is low.
-Migrations must stay backward-compatible: the old API keeps serving between `run migrate` and `up -d`, and a rollback runs old code on the new schema. `up -d` stops every API replica before the new ones start (about 10–20 s of 502s even when the deploy succeeds); zero-downtime deploys are the TODO in `scripts/deploy.sh` (build → migrate → start → health-check → auto-rollback).
+**`scripts/deploy.sh` (L9)**, as the `deploy` user, from the clone (`/srv/sirat`). Settings: `.env.deploy` in the clone (git-ignored, `chmod 600`; names in `infra/deploy/deploy.env.example`), with a read-only GitHub token for the CI check.
 
-**Migration failed** (the `run` output names it, e.g. P3018). Do this before any other `$DC up`:
-1. Leave the old API running; do not run `$DC up`.
+```bash
+git fetch origin && sha=$(git rev-parse origin/main)   # deploy only a commit on main whose CI run passed (the script checks)
+scripts/deploy.sh "$sha"          # preflight, build, a backup if it adds migrations, migrate, start, smoke; rolls back by itself
+scripts/deploy.sh --rollback      # back to the previous release (its images are kept), no build
+cat /var/lib/sirat/release.env    # the live release (SIRAT_TAG) and the one before it
+tail /var/lib/sirat/releases.log  # every deploy, refusal, failure and rollback
+scripts/deploy.sh --first         # once, on a fresh host, with the clone at the commit to deploy first (it names it):
+                                  # the data services, then nginx (refuses if a data container exists)
+```
+
+- **A deploy:**
+  1. **Preflight:**
+     - a lock (`/var/lib/sirat/deploy.lock`; the monitor holds back `/fail` meanwhile); not root; `.env` mode 600; a clean tree;
+     - nothing exported that compose would take over the files (`DATABASE_URL`, `DIRECT_URL`, `POSTGRES_*`, `SIRAT_TAG`, `COMPOSE_*`);
+     - free disk; the commit on `origin/main` with a passed CI run; no exam window open within 30 minutes either side;
+     - the data services running and healthy, no development marker on Postgres, and the data services exactly as this commit's compose file describes them. Otherwise it stops with "data-service change pending: apply it as its own step": a deploy never starts or recreates a data service.
+  2. Builds `sirat-{migrate,api,worker,web}:<sha>` while the live release serves.
+  3. When the release adds migrations, a backup first (`sudo -n systemctl start sirat-backup.service`). A failed backup stops the deploy before migrate.
+  4. `run --rm --no-deps migrate`. It must print `config seed done`; otherwise the deploy stops and the live API keeps serving ("Migration failed" below).
+  5. `up -d --no-deps --no-build --wait api worker web`. nginx is reloaded only when `infra/nginx` changed, or recreated when a site template or entrypoint hook changed.
+  6. **Smoke:**
+     - exact 200s through nginx's internal listener;
+     - the public URL: with maintenance off, `scripts/healthcheck.sh`; with it on, the maintenance answers, and the public app check is named as pending until maintenance is off (section 4);
+     - each API replica's PayStation boot line against `.env` (compared, never printed); with payments disabled, only while `registration_open` is false;
+     - the worker healthy; `prisma migrate status` up to date.
+  7. **Success:** the release file and the log are written. The images of the last 3 releases stay; older `<sha>` tags this script built are removed, never a volume.
+  8. **Failure after the switch:** back to the live release with no build, smoked again, and a loud line that **migrations stay applied**. A failed first release turns maintenance on instead.
+- **The gap:** the replicas restart in place, about 10–20 s without the API (owner question Q4). nginx shows the maintenance page meanwhile, so deploy off-peak (00:00–07:00 Asia/Dhaka after launch).
+- **Migrations stay backward-compatible:** the live API keeps serving between migrate and the switch, and a rollback runs the old code on the new schema.
+- **The rehearsal** (`bash scripts/test/run-deploy-rehearsal.sh`, its own project `sirat-rh`, announce it): first start, two releases under a request loop, the RUNBOOK commands, a release whose API fails at boot (rolled back by itself), a failing migration, a data-service change, maintenance, a rollback during maintenance, and the CI gate.
+
+Every DB session (migrations and psql included) starts with `statement_timeout 10s`, `lock_timeout 5s` and `idle_in_transaction_session_timeout 60s`. A migration that needs longer (backfill, index build) starts with `SET statement_timeout = '15min';`; in psql, run `SET statement_timeout = 0;` before a long manual query. A migration that fails on `lock_timeout` was waiting behind a long transaction: follow "Migration failed" below, then deploy again when traffic is low.
+
+**Migration failed** (the deploy output names it, e.g. P3018). The deploy already stopped before the switch, so the live API keeps serving:
+1. Do not run `$DC up`.
 2. Confirm the failed migration left no changes. Prisma runs each migration file as one transaction on Postgres, unless the file has its own `BEGIN`/`COMMIT` or statements that cannot run in a transaction; check those by hand.
-3. Mark it rolled back: `$DC run --rm migrate node_modules/.bin/prisma migrate resolve --rolled-back <migration_name>` (works with the new or the old image).
-4. Fix forward (a corrected migration in a new commit, then deploy again) or roll back the code (`git checkout --detach <deploy-tag>`, `$DC build`, `$DC up -d`). **No deploys during a live exam window** except a critical fix agreed with the owner.
+3. Mark it rolled back, with the failed release's image (the live one does not have the migration): `SIRAT_TAG=<failed sha> $DC run --rm --no-deps migrate node_modules/.bin/prisma migrate resolve --rolled-back <migration_name>`.
+4. Fix forward: a corrected migration in a new commit, then deploy that. **No deploys during a live exam window**, except a critical fix agreed with the owner.
 
 ## 3. Scale API replicas
 
 ```bash
-$DC up -d --no-recreate --scale api=6 api   # VERIFIED (1 -> 2): nginx picks up new replicas without a restart
+$DC up -d --no-deps --no-build --no-recreate --scale api=<n> api   # VERIFIED (1 -> 2): nginx picks up new replicas without a restart
 ```
 
 ## 4. Maintenance mode
@@ -223,7 +237,7 @@ bash scripts/test/run-backup-test.sh               # the tests (own compose proj
 scripts/maintenance.sh on                 # section 4; visitors get the maintenance page
 $DC stop web api worker                   # the worker too: no job writes during the restore
 scripts/restore.sh <decrypted>.dump  # DESTRUCTIVE, asks for YES (truncated-dump refusal VERIFIED; full restore not yet rehearsed)
-$DC run --rm --no-deps migrate && $DC exec redis-cache redis-cli FLUSHALL && $DC up -d --no-deps api worker web
+$DC run --rm --no-deps migrate && $DC exec redis-cache redis-cli FLUSHALL && $DC up -d --no-deps --no-build api worker web
 $DC exec -T nginx wget -qO- http://127.0.0.1:8081/api/ready   # {"status":"ready"}
 scripts/maintenance.sh off && scripts/healthcheck.sh https://<domain>
 ```
@@ -244,10 +258,10 @@ Credentials are read inside the postgres container; nothing secret is typed on t
 |---|---|---|
 | `disk` | 80% used (warning), 90% (critical) | `df -h`; `docker system df`; prune old images (`docker image prune -a` after a deploy); old local backups are only 3 |
 | `swap`, `memory`, `cpu` | swap in use; memory or CPU above 85% on two checks (memory over 95%: critical) | `docker stats --no-stream`; find the service; scale or restart it (section 3); before an exam, L14's sizing |
-| `containers` | a service not running or unhealthy on two checks | `$DC ps -a`; `$DC logs --tail=100 <service>`; `$DC up -d --no-build <service>` |
-| `workers` | a job queue (email, payments, exam) has no worker on two checks | `$DC ps worker`; `$DC logs --tail=100 worker`; `$DC up -d --no-build worker`. Payments are confirmed only by the worker: critical |
+| `containers` | a service not running or unhealthy on two checks | `$DC ps -a`; `$DC logs --tail=100 <service>`; `$DC up -d --no-deps --no-build <service>` |
+| `workers` | a job queue (email, payments, exam) has no worker on two checks | `$DC ps worker`; `$DC logs --tail=100 worker`; `$DC up -d --no-deps --no-build worker`. Payments are confirmed only by the worker: critical |
 | `queue_backlog` | over 500 waiting, or the oldest over 5 min (warning); a payments or email job waiting 15 min while workers are connected (critical: a stuck worker) | worker logs; restart the worker; the queue Redis memory |
-| `failed_jobs` | jobs failed for good since the last check (a payment verify job: critical) | worker logs by job name; payments: the review list (section 11) |
+| `failed_jobs` | jobs failed for good since the last check (a payment verify job: critical) | worker logs by job name; payments: the review list (section 11). An exam `sweep` job fails when one of its items failed: `$DC logs worker \| grep 'exam sweep item failed'` names the step (finalize, score, build) and the attempt or exam id; every other item went on, and the next minute's sweep tries again |
 | `reconciliation` | the payments reconciliation is more than 3 intervals late | worker running? `$DC logs worker \| grep reconcile` |
 | `queue_redis_memory` | the queue Redis over 300 MB (warning), 400 MB of 512 (critical) | failed jobs piling up; `redis-cli INFO memory` in `redis-queue` |
 | `http_5xx` | over 2% (warning) or 10% (critical) of at least 50 requests in 5 min | `$DC logs --since 10m nginx api`; `/api/ready`; recent deploy? |
@@ -282,7 +296,7 @@ Credentials are read inside the postgres container; nothing secret is typed on t
 
   `backup.sh` raises `ops.backup_failed --meta step=<n>` (with the step names in `scripts/backup.sh`) on any failure, after pinging the heartbeat's `/fail`. When the API cannot raise it, the backup still fails, and the heartbeat is the alert.
 **A student cannot log in ("Too many attempts"):** the account is locked for their IP (10 failures in 15 min; 15 min, doubling on repeats up to 4 h) or reached 50 failures in an hour. The fastest fix is a password reset: completing it unlocks the account at once, on every IP. Logging in from another network (mobile data) also works, since other IPs are not locked. A whole school refused at once usually means its IP reached `LOGIN_IP_FAILURES_PER_MINUTE` (100 failures per minute); it clears within a minute. Limits are set in `.env` (`LOGIN_*`) and need `$DC up -d api` (never during an exam). Audit rows `auth.login_locked` show when locks started.
-**More log detail:** set `LOG_LEVEL=debug` in `.env` and `$DC up -d api` (default `info` in production). **Never during an exam:** this recreates every API replica at once (and re-runs migrate first), a full API outage of about 10–20 s. Container logs rotate at 50 MB × 5 per container.
+**More log detail:** set `LOG_LEVEL=debug` in `.env` and `$DC up -d --no-deps --no-build api` (default `info` in production). **Never during an exam:** this recreates every API replica at once (and re-runs migrate first), a full API outage of about 10–20 s. Container logs rotate at 50 MB × 5 per container.
 **Payments stuck:** admin → Payments → lookup by invoice/trx/phone → manual reconcile (audit-logged). Money taken but DB says unpaid is the worst case: alert on any `pending` beyond expiry.
 **Submissions failing:** check `/api/ready`, Redis queue instance, API logs for 5xx; clients retry with backoff and keep local copies, so fix fast rather than patch hastily.
 
@@ -386,9 +400,9 @@ The `worker` service sends; the API only queues. Locally every email goes to Mai
 ```
 
    While the account is still in the sandbox, SES may also check the verified recipient's identity: if sends fail with an access error, add that identity's ARN to `Resource` until production access is granted.
-5. In the VPS `.env`: `EMAIL_PROVIDER=ses`, `EMAIL_FROM=Sirat Olympiad <no-reply@<sending-domain>>`, `SES_REGION`, `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY`. Then `$DC up -d worker`. The worker refuses to start with a missing or malformed setting; `$DC logs worker` names the variable, never its value.
+5. In the VPS `.env`: `EMAIL_PROVIDER=ses`, `EMAIL_FROM=Sirat Olympiad <no-reply@<sending-domain>>`, `SES_REGION`, `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY`. Then `$DC up -d --no-deps --no-build worker`. The worker refuses to start with a missing or malformed setting; `$DC logs worker` names the variable, never its value.
 
-**Key rotation:** create a second access key for the IAM user → put it in `.env` → `$DC up -d worker` → check `$DC logs worker` for `email sent` → deactivate, then delete the old key.
+**Key rotation:** create a second access key for the IAM user → put it in `.env` → `$DC up -d --no-deps --no-build worker` → check `$DC logs worker` for `email sent` → deactivate, then delete the old key.
 
 **Failed emails:** `$DC logs worker | grep 'email attempt failed'` shows kind, job id, attempt and the SES error name (never the address). Each job is tried 8 times over about 2 hours; failed jobs are kept 3 days. Users can always ask for the email again (resend verification, forgot password).
 
@@ -446,8 +460,8 @@ Once, on the VPS (the private key never leaves it):
    - If the stack already runs, recreate nginx, and also api and worker if they exist. Both read `APP_URL` once at start (email links, the payment return).
    - Do it outside an exam window: every API replica restarts, about 10–20 s without the API.
    ```bash
-   $DC up -d --no-deps --force-recreate nginx
-   [ -z "$($DC ps -aq api worker)" ] || $DC up -d --no-deps --force-recreate api worker
+   $DC up -d --no-deps --no-build --force-recreate nginx
+   [ -z "$($DC ps -aq api worker)" ] || $DC up -d --no-deps --no-build --force-recreate api worker
    $DC exec -T api printenv APP_URL   # must print https://<host>
    ```
 4. Check the origin directly, before Cloudflare is involved. This must print `ok`:

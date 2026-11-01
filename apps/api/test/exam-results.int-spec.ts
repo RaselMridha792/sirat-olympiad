@@ -68,6 +68,25 @@ function correctPositions(view: AttemptView, questions: SeededQuestion[]): numbe
 }
 const wrong = (p: number) => (p + 1) % 4;
 
+/**
+ * Waits until the attempt is past its end plus grace, and its exam's window closed, by the database's clock: finalize
+ * and the results build decide with Postgres's now(), and the database container's clock can trail this machine's. A
+ * JS-clock wait once left both concurrent finalizes seeing "not due" under load.
+ */
+async function untilDueByDatabase(attemptId: string, timeoutMs = 15_000): Promise<void> {
+  const end = Date.now() + timeoutMs;
+  for (;;) {
+    const [row] = await prisma.$queryRaw<{ due: boolean }[]>`
+      SELECT a."ends_at" + make_interval(secs => e."grace_seconds") < now()
+             AND e."window_end" + make_interval(secs => e."grace_seconds") < now() AS "due"
+      FROM "attempts" a JOIN "exams" e ON e."id" = a."exam_id"
+      WHERE a."id" = ${attemptId}::uuid`;
+    if (row?.due) return;
+    if (Date.now() > end) throw new Error('the attempt is still not due by the database clock');
+    await sleep(200);
+  }
+}
+
 describe('who reaches the results routes', () => {
   // GET /leaderboard has no @Roles: the deny-by-default AuthGuard makes it "any signed-in user", never public (it is
   // not @Public(), so app-routes.int-spec.ts would fail if it were opened without being on the reviewed allow-list).
@@ -193,6 +212,7 @@ describe('one exam from start to published results', () => {
     ).toMatchObject({ status: 409, json: { details: ['no_snapshot'] } });
 
     await sleep(Math.max(0, windowEnd.getTime() - Date.now()) + 500); // the window has closed
+    await untilDueByDatabase(cy.view.attemptId);
     // Two finalizes at once for the same attempt: exactly one submission.
     const both = await Promise.all([
       jobs.finalize(cy.view.attemptId),
@@ -365,6 +385,65 @@ describe('one exam from start to published results', () => {
       (await call(env, 'GET', `/attempts/${bo.view.attemptId}/review`, bo.cookie)).status,
     ).toBe(403);
   }, 90_000);
+});
+
+describe('the minute sweep never stops at one attempt (EXAM-PLAN 3.10)', () => {
+  /** An exam closed an hour ago, and an unfinished attempt that ended `hoursAgo` hours ago (older ones come first). */
+  async function dueAttempt(hoursAgo: number) {
+    const exam = await makePublishedExam(prisma, {
+      windowStart: new Date(Date.now() - (hoursAgo + 2) * HOUR_MS),
+      windowEnd: new Date(Date.now() - HOUR_MS),
+      graceSeconds: 0,
+    });
+    const user = await makeUser(prisma);
+    const endsAt = new Date(Date.now() - hoursAgo * HOUR_MS);
+    return makeAttempt(prisma, user.id, exam.id, {
+      startedAt: new Date(endsAt.getTime() - 30 * 60_000),
+      endsAt,
+    });
+  }
+  const statusOf = async (id: string) =>
+    (await prisma.attempt.findUniqueOrThrow({ where: { id }, select: { status: true } })).status;
+
+  it('skips a row another transaction holds, and the next sweep finalizes it', async () => {
+    const attempt = await dueAttempt(30);
+    await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT 1 FROM "attempts" WHERE "id" = ${attempt.id}::uuid FOR UPDATE`;
+      // SKIP LOCKED: the holder wins (a late client submit, another sweep); this finalize is not an error.
+      expect(await jobs.finalize(attempt.id)).toBe(false);
+    });
+    expect(await statusOf(attempt.id)).toBe('in_progress');
+    await jobs.sweep();
+    expect(await statusOf(attempt.id)).not.toBe('in_progress');
+    expect(
+      await prisma.submission.findUniqueOrThrow({
+        where: { attemptId: attempt.id },
+        select: { endReason: true },
+      }),
+    ).toEqual({ endReason: 'server_empty' });
+  });
+
+  it('goes on past an attempt whose finalize throws, fails the run, and finalizes it at the next sweep', async () => {
+    // The older one comes first in the sweep's order, so it stands in front of the other.
+    const bad = await dueAttempt(32);
+    const good = await dueAttempt(31);
+    const store = env.app.get(AttemptStore);
+    const busy = Object.create(store) as AttemptStore;
+    busy.readCheckpoint = async (id: string) => {
+      if (id === bad.id) throw new Error('the checkpoint store is busy');
+      return store.readCheckpoint(id);
+    };
+    const flaky = new ExamJobs(env.appPrisma, busy, {
+      finalizeAfterMs: 0,
+      buildAfterMs: 0,
+      rescoreAfterMs: 0,
+    });
+    await expect(flaky.sweep()).rejects.toThrow(/1 item\(s\) failed/);
+    expect(await statusOf(good.id)).not.toBe('in_progress');
+    expect(await statusOf(bad.id)).toBe('in_progress');
+    await jobs.sweep(); // the store answers again
+    expect(await statusOf(bad.id)).not.toBe('in_progress');
+  });
 });
 
 describe('ranking (owner Q5)', () => {
