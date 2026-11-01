@@ -262,6 +262,9 @@ jobs:
       DCD: docker compose --env-file .env -f infra/docker-compose.yml -f infra/docker-compose.dev.yml
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
       - name: Compose files are valid (example env plus a random signing secret)
         run: |
           cp .env.example .env
@@ -315,6 +318,15 @@ jobs:
           logs=$($DCD logs --no-log-prefix nginx 2>&1)
           echo "$logs" | grep -q '"GET /api/health HTTP' || { echo "::error::the request is not in nginx's log"; exit 1; }
           if echo "$logs" | grep -q -e "$q" -e "$r"; then echo "::error::a query string or Referer reached nginx's log"; exit 1; fi
+      - name: Admin two-factor login in Chrome through nginx (e2e:2fa) - enrolment, the code step, a recovery code, a refresh, turning it off, the page CSP
+        # A throwaway admin from the CLI, as on the VPS (--password-stdin: no terminal here). The script has no
+        # dependencies; its password and the authenticator secret never reach the log (RUNBOOK section 22).
+        run: |
+          pw=$(openssl rand -hex 16)
+          echo "::add-mask::$pw"
+          printf '%s\n' "$pw" | $DCD run --rm --no-deps -T api node dist/cli/create-admin.js --password-stdin \
+            --email e2e-2fa@ci.invalid --name "CI Two Factor"
+          E2E_2FA_EMAIL=e2e-2fa@ci.invalid E2E_2FA_PASSWORD="$pw" node apps/web/scripts/e2e-2fa.mjs http://localhost:8080
       - name: Images contain no env files, keys, dumps, old project, tests or dev fixtures
         # Scan the app roots as root (non-root find exits 1 on unreadable dirs and `bash -e` aborts the step).
         # node_modules is skipped: some packages ship test certificates.
