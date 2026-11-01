@@ -6,6 +6,19 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import Redis from 'ioredis';
 
+// The limiter fails open when Redis has not answered within 300 ms (by design; redis-throttler.int-spec covers it).
+// On a loaded machine a reply can take longer: that hit goes uncounted and the breaker skips counting for 2 s, so
+// request 601 passes. This file proves the wiring, not the timeouts, so every withTimeout here (the readiness
+// probe's too) waits 20 times longer.
+jest.mock('../src/common/with-timeout', () => {
+  const actual = jest.requireActual<typeof import('../src/common/with-timeout')>(
+    '../src/common/with-timeout',
+  );
+  return {
+    withTimeout: <T>(promise: Promise<T>, ms: number) => actual.withTimeout(promise, ms * 20),
+  };
+});
+
 let app: NestExpressApplication;
 let base: string;
 
