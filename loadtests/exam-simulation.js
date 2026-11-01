@@ -5,8 +5,8 @@
 //   2. POST /api/exams/:id/attempts: the attempt and its questions.
 //   3. Answers locally; PUT /api/attempts/:id/checkpoint every CHECKPOINT_MIN..CHECKPOINT_MAX seconds (the server
 //      refuses one sooner than 20 s after the last).
-//   4. POST /api/attempts/:id/submit with a client request id (sent once more with the same id after a 5xx or a
-//      network error, as the player does), then the waiting room again, which must show the receipt.
+//   4. POST /api/attempts/:id/submit with a client request id (sent again with the same id after no answer, a 429 or
+//      a 5xx, on the exam room's backoff), then the waiting room again, which must show the receipt.
 //   LEAVE_SHARE of the students close the tab instead of submitting: the worker's sweep submits their last checkpoint
 //   once the time and the grace are over (server_checkpoint).
 //
@@ -20,8 +20,7 @@
 // Needs: the load students and a published exam from apps/api/prisma/fixtures/loadtest-fixtures.ts (the same password),
 // the API and its worker. Never production. The local run: loadtests/exam-local.sh (README).
 //
-//   k6 run -e BASE_URL=http://127.0.0.1:4200 -e EXAM_ID=<id> -e PASSWORD=<fixture password> -e USERS=300 \
-//     loadtests/exam-simulation.js
+//   PASSWORD=<fixture password> k6 run -e BASE_URL=http://<api> -e EXAM_ID=<id> -e USERS=300 loadtests/exam-simulation.js
 //
 // Options (-e): USERS (default 300) and FIRST (default 1): students load<FIRST>..load<FIRST+USERS-1>. RAMP (steady,
 // default 30 s), RATE (surge, starts per second, default 10), CHECKPOINT_MIN/CHECKPOINT_MAX (default 60/120 s),
@@ -108,6 +107,9 @@ const left = new Counter('students_left');
 const started = new Counter('attempts_started');
 const throttled = new Counter('responses_429');
 const tooSoon = new Counter('checkpoint_too_soon');
+const submitRetries = new Counter('submit_retries');
+/** The exam room's submit backoff (apps/web/src/components/exam/exam-controller.ts), in seconds. */
+const SUBMIT_BACKOFF = [2, 4, 8, 16, 30];
 
 const api = (name, extra = {}) => ({ tags: { name, kind: 'api' }, ...extra });
 
@@ -128,15 +130,34 @@ function ipFor(n) {
 
 const between = (lo, hi) => lo + Math.random() * (hi - lo);
 
-/** One student's browser: its own cookie jar and address, and the session renewal after a 401 (the web does it). */
+/** One student's browser: its own cookies and address, and the session renewal after a 401 (the web does it). */
 function browser(n) {
-  const jar = new http.CookieJar();
+  // The session cookies are kept here, not in k6's jar: they carry Secure in production, and the jar would not send
+  // them over plain http (a local run). Each one goes only under its own path, as a browser sends it.
+  const cookies = {};
+  const remember = (res) => {
+    for (const [name, list] of Object.entries(res.cookies || {})) {
+      const c = list[list.length - 1];
+      if (c) cookies[name] = { value: c.value, path: c.path || '/' };
+    }
+  };
+  const forPath = (path) => {
+    const out = {};
+    for (const [name, c] of Object.entries(cookies))
+      if (path.startsWith(c.path)) out[name] = c.value;
+    return out;
+  };
   const headers = SPREAD_IPS ? { 'x-forwarded-for': ipFor(n) } : {};
   const write = { ...headers, 'content-type': 'application/json', 'x-requested-with': 'k6' };
   const send = (method, path, body, name) => {
-    const params = api(name, { jar, headers: body === null && method === 'GET' ? headers : write });
+    const params = api(name, {
+      jar: new http.CookieJar(), // empty: only the cookies below are sent
+      cookies: forPath(path),
+      headers: body === null && method === 'GET' ? headers : write,
+    });
     const res = http.request(method, `${BASE}${path}`, body, params);
     if (res.status === 429) throttled.add(1, { name });
+    remember(res);
     return res;
   };
   const call = (method, path, body, name) => {
@@ -240,10 +261,14 @@ function takeExam(n, data, startAtMs) {
     events: [],
   });
   const path = `/api/attempts/${view.attemptId}/submit`;
+  // As the exam room: no answer, a 429 or a 5xx is sent again after 2, 4, 8, 16 and 30 s, with the same request id
+  // (the same receipt). Past the grace the server refuses for good, and the sweep submits the last checkpoint.
   let sub = b.call('POST', path, submitBody, 'submit');
-  if (sub.status === 0 || sub.status >= 500) {
-    sleep(2);
-    sub = b.call('POST', path, submitBody, 'submit'); // the same request id: the same receipt
+  for (const wait of SUBMIT_BACKOFF) {
+    if (sub.status !== 0 && sub.status !== 429 && sub.status < 500) break;
+    submitRetries.add(1);
+    sleep(wait);
+    sub = b.call('POST', path, submitBody, 'submit');
   }
   const ok = check(sub, {
     'submit 200 with a receipt': (r) => r.status === 200 && !!r.json('receiptId'),
