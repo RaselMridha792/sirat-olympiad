@@ -426,6 +426,12 @@ jobs:
           out=$($DCD exec -T api node dist/cli/ops-alert.js --kind ops.alert_test --meta ci=1)
           echo "$out"
           echo "$out" | grep -q '^ops-alert: ops.alert_test recorded$' || { echo "::error::ops-alert did not run"; exit 1; }
+      - name: Exam smoke - 20 students take a 1-minute exam on these images; counted outcomes only, never a timing (E6)
+        # Its own compose project (sirat-exam-load) on the :latest images built above, nothing published, removed at the
+        # end. It fails on an error, a lost submission, an unscored attempt or a leaver the sweep missed (loadtests/README.md).
+        run: |
+          SMOKE=1 NO_BUILD=1 LOAD_TAG=latest USERS=20 DURATION=1 RAMP=5 CHECKPOINT_MIN=21 CHECKPOINT_MAX=25 LEAVE_SHARE=0.15 \
+            LOAD_OUT="$RUNNER_TEMP/exam-smoke" bash loadtests/exam-local.sh steady
       - name: The fake PayStation for load and staging stacks (dev/test only) - its own image, internal only, and the api runs on it
         # Last on purpose: it restarts api and worker with PAYSTATION_ENV=fake (infra/fake-paystation.compose.yml).
         run: |

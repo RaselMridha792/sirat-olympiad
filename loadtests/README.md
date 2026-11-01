@@ -56,7 +56,7 @@ Pass:
 - no growing queue: nothing left in progress or unscored once the sweep (every minute) has run;
 - no database writes while the students only checkpoint (steady: between the last start and the first possible submit).
 
-Locally, in its own compose project `sirat-exam-load` (`infra/docker-compose.yml` with `loadtests/exam-load.compose.yml`): the stack as on the server (PgBouncer, 2 API replicas, production mode) built from this checkout as `sirat-*:exam-load`, on throwaway settings; only Postgres is published, on 127.0.0.1, for the fixtures. k6 runs in a container on the project's network and talks to the API replicas directly. A k6 container talking to an API on the Windows host lost new connections for 30 s at a time in Docker Desktop's host forwarding, which is why nothing here crosses it. Everything is removed at the end; nothing shared is touched.
+Locally, in its own compose project `sirat-exam-load` (`infra/docker-compose.yml` with `loadtests/exam-load.compose.yml`): the stack as on the server (PgBouncer, 2 API replicas, production mode) built from this checkout as `sirat-*:exam-load`, on throwaway settings; nothing is published. The fixtures run in a container that shares Postgres's network (the migrate image, with the clone's fixtures and `src` mounted read-only), so the host needs no node or pnpm. k6 runs in a container on the project's network and talks to the API replicas directly. A k6 container talking to an API on the Windows host lost new connections for 30 s at a time in Docker Desktop's host forwarding, which is why nothing here crosses it. Everything is removed at the end; nothing shared is touched.
 
 ```bash
 bash loadtests/exam-local.sh                     # steady: 300 students, a 3-minute exam
@@ -65,5 +65,16 @@ USERS=300 DURATION=3 bash loadtests/exam-local.sh timeup
 ```
 
 It prints each check as `ok` or `FAIL` and keeps the logs, the k6 summary, the PC's CPU and each container's peak CPU in the folder it names. `KEEP_IMAGES=1` keeps the built images for the next run. The local numbers are in `docs/DECISIONS.md` ("Exam simulation, local k6").
+
+**CI's smoke** (the docker job, after the stack's build):
+
+```bash
+SMOKE=1 NO_BUILD=1 LOAD_TAG=latest USERS=20 DURATION=1 RAMP=5 CHECKPOINT_MIN=21 CHECKPOINT_MAX=25 LEAVE_SHARE=0.15 \
+  bash loadtests/exam-local.sh steady
+```
+
+- **Images:** the ones CI just built (`NO_BUILD`, never removed by the runner).
+- **What it asserts:** only counted outcomes. The k6 limits are errors < 0.5 %, checks and every receipt shown in the room; the runner checks every attempt submitted and scored, the receipts equal to the students' own submissions, and the sweep's submissions equal to the students who left.
+- **What it leaves out:** latency limits and the timed write window, since a shared CI runner's timing proves nothing.
 
 On the VPS (RULEBOOK §13): k6 from another machine, against a staging stack (its own compose project and database), at 1.5–2× the expected peak, with a 30-minute exam. Through nginx, `SPREAD_IPS` has no effect: the generator's own address counts.

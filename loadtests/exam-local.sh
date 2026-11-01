@@ -4,15 +4,19 @@
 #
 #   bash loadtests/exam-local.sh [steady|surge|timeup]
 #   env: USERS (300), DURATION exam minutes (3), QUESTIONS (30), RAMP (30 s), RATE (10/s), MIN_WORK (0.6),
-#        API_REPLICAS (2), LOAD_PG_PORT (54533), LOAD_OUT (the output folder), KEEP_IMAGES=1 (keep the built images
-#        for the next run); CHECKPOINT_MIN, CHECKPOINT_MAX and LEAVE_SHARE go to k6 as they are
+#        API_REPLICAS (2), LOAD_OUT (the output folder), KEEP_IMAGES=1 (keep the built images for the next run);
+#        CHECKPOINT_MIN, CHECKPOINT_MAX and LEAVE_SHARE go to k6 as they are
+#        NO_BUILD=1 LOAD_TAG=<tag>: use the existing sirat-*:<tag> images (never removed then), e.g. CI's :latest
+#        SMOKE=1: correctness only (CI): no latency thresholds and no write window, only counted outcomes
 #
 # What it does:
 #   - builds this checkout's migrate, api and worker images as sirat-*:exam-load (the build cache makes a rerun quick);
 #   - starts project sirat-exam-load from infra/docker-compose.yml with loadtests/exam-load.compose.yml: Postgres,
 #     PgBouncer, both Redis, migrate, the API replicas and the worker in production mode, on a throwaway settings file
-#     (no .env is read); only Postgres is published, on 127.0.0.1, for the load fixtures;
-#   - the load students and a new exam (apps/api/prisma/fixtures/loadtest-fixtures.ts, from the host);
+#     (no .env is read); nothing is published;
+#   - the load students and a new exam (apps/api/prisma/fixtures/loadtest-fixtures.ts), in a container that shares
+#     Postgres's network: the migrate image with the clone's fixtures and src mounted read-only, so 127.0.0.1 is
+#     this project's Postgres (the fixtures' local-URL guard and its test marker hold) and the host needs no node;
 #   - k6 in a container on the project's network, straight to the API replicas;
 #   - during a steady run, Postgres's write counters while the students only checkpoint;
 #   - afterwards it waits for the sweep and the scoring, then checks: the k6 thresholds, every attempt submitted and
@@ -32,10 +36,12 @@ RAMP=${RAMP:-30}
 RATE=${RATE:-10}
 MIN_WORK=${MIN_WORK:-0.6}
 export API_REPLICAS=${API_REPLICAS:-2}
-export LOAD_PG_PORT=${LOAD_PG_PORT:-54533}
 K6_IMAGE=grafana/k6:1.0.0
 P=sirat-exam-load
-TAG=exam-load
+TAG=${LOAD_TAG:-exam-load}
+NO_BUILD=${NO_BUILD:-0}
+SMOKE=${SMOKE:-0}
+[[ $TAG =~ ^[A-Za-z0-9._-]{1,64}$ ]] || { echo "LOAD_TAG: letters, digits, . _ - only" >&2; exit 2; }
 OUT=${LOAD_OUT:-$(mktemp -d)}
 mkdir -p "$OUT"
 
@@ -62,7 +68,12 @@ export LOAD_ENV_FILE
 DC=(docker compose -p "$P" --env-file "$OUT/load.env" -f infra/docker-compose.yml -f loadtests/exam-load.compose.yml)
 dc() { "${DC[@]}" "$@"; }
 pgval() { sed -n "s/^$1=//p" "$OUT/load.env"; }
-HOST_DB="postgresql://$(pgval POSTGRES_USER):$pw@127.0.0.1:$LOAD_PG_PORT/$(pgval POSTGRES_DB)"
+FIXTURE_PASSWORD=$(hex 16)
+umask 077
+# For the fixtures' container: 127.0.0.1 there is this project's Postgres (it shares that container's network).
+printf 'NODE_ENV=test\nALLOW_DEV_FIXTURES=yes-this-is-not-production\nFIXTURE_PASSWORD=%s\nDATABASE_URL=postgresql://%s:%s@127.0.0.1:5432/%s\n' \
+  "$FIXTURE_PASSWORD" "$(pgval POSTGRES_USER)" "$pw" "$(pgval POSTGRES_DB)" > "$OUT/fixtures.env"
+umask 022
 unset pw
 
 cleanup() {
@@ -73,8 +84,10 @@ cleanup() {
   dk rm -f "$P-k6" > /dev/null 2>&1 || true
   for v in $(dk volume ls -q --filter "label=com.docker.compose.project=$P"); do dk volume rm "$v" > /dev/null || true; done
   dk network rm "${P}_default" > /dev/null 2>&1 || true
-  [ "${KEEP_IMAGES:-0}" = 1 ] || for s in migrate api worker; do dk image rm -f "sirat-$s:$TAG" > /dev/null 2>&1 || true; done
-  rm -f "$OUT/load.env"
+  # Only images this run built; never ones it was given (NO_BUILD).
+  [ "${KEEP_IMAGES:-0}" = 1 ] || [ "$NO_BUILD" = 1 ] ||
+    for s in migrate api worker; do dk image rm -f "sirat-$s:$TAG" > /dev/null 2>&1 || true; done
+  rm -f "$OUT/load.env" "$OUT/fixtures.env"
   say "logs and the k6 summary: $OUT"
 }
 trap cleanup EXIT
@@ -82,9 +95,17 @@ trap cleanup EXIT
 t0=$SECONDS
 # Pulled first: a pull during the run would shift k6's start past the timers of the write check below.
 dk pull -q "$K6_IMAGE" > /dev/null
-say "build sirat-{migrate,api,worker}:$TAG"
-dc build migrate api worker > "$OUT/build.log" 2>&1 || { say "the build failed (see $OUT/build.log)" >&2; exit 1; }
-say "built in $((SECONDS - t0)) s; project $P: Postgres on 127.0.0.1:$LOAD_PG_PORT, $API_REPLICAS API replicas"
+if [ "$NO_BUILD" = 1 ]; then
+  for s in migrate api worker; do
+    dk image inspect "sirat-$s:$TAG" > /dev/null 2>&1 || { say "image sirat-$s:$TAG is missing (NO_BUILD)" >&2; exit 1; }
+  done
+  say "the existing sirat-{migrate,api,worker}:$TAG images, no build"
+else
+  say "build sirat-{migrate,api,worker}:$TAG"
+  dc build migrate api worker > "$OUT/build.log" 2>&1 || { say "the build failed (see $OUT/build.log)" >&2; exit 1; }
+  say "built in $((SECONDS - t0)) s"
+fi
+say "project $P: $API_REPLICAS API replicas$([ "$SMOKE" = 1 ] && echo ', smoke: counted outcomes only')"
 dc up -d --wait postgres pgbouncer redis-cache redis-queue > "$OUT/setup.log" 2>&1
 dc run --rm --no-deps -T migrate >> "$OUT/setup.log" 2>&1
 
@@ -93,10 +114,14 @@ case "$SCENARIO" in
   timeup) lead=$((DURATION < 5 ? DURATION : 5)); window_in=$((lead + 1)) ;;
   *) window_in=$((DURATION + 30)) ;;
 esac
-FIXTURE_PASSWORD=$(hex 16)
 fixtures() {
-  NODE_ENV=test ALLOW_DEV_FIXTURES=yes-this-is-not-production DATABASE_URL="$HOST_DB" FIXTURE_PASSWORD="$FIXTURE_PASSWORD" \
-    pnpm --filter @sirat/api exec tsx prisma/fixtures/loadtest-fixtures.ts "$@"
+  local pg
+  pg=$(dk ps -q --filter "label=com.docker.compose.project=$P" --filter "label=com.docker.compose.service=postgres")
+  [ -n "$pg" ] || { say "this project's Postgres is not running" >&2; return 1; }
+  dk run --rm --network "container:$pg" --env-file "$(hostpath "$OUT/fixtures.env")" \
+    -v "$(hostpath "$PWD/apps/api/prisma/fixtures"):/repo/apps/api/prisma/fixtures:ro" \
+    -v "$(hostpath "$PWD/apps/api/src"):/repo/apps/api/src:ro" \
+    "sirat-migrate:$TAG" node_modules/.bin/tsx prisma/fixtures/loadtest-fixtures.ts "$@"
 }
 say "$USERS students and the exam"
 fixtures --users "$USERS" --exam --questions "$QUESTIONS" --duration "$DURATION" --window-end-in "$window_in" \
@@ -116,7 +141,8 @@ writes() {
 # Steady: after the last start (RAMP) and before the first possible submit (MIN_WORK of the exam time), students
 # only checkpoint, which never writes to Postgres. Stats reach pg_stat within 10 s of a write, hence the margins.
 watch_pid=''
-if [ "$SCENARIO" = steady ]; then
+# Not in a smoke run: its timers would make a wall-time assert (SMOKE counts outcomes only).
+if [ "$SCENARIO" = steady ] && [ "$SMOKE" != 1 ]; then
   first=$((RAMP + 25))
   last=$(awk -v w="$MIN_WORK" -v d="$DURATION" 'BEGIN { printf "%d", w * d * 60 - 5 }')
   if [ $((last - first)) -ge 20 ]; then
@@ -151,7 +177,7 @@ PASSWORD=$FIXTURE_PASSWORD dk run --rm --name "$P-k6" --network "${P}_default" \
   -v "$(hostpath "$PWD/loadtests"):/scripts:ro" -v "$(hostpath "$OUT"):/out" \
   -e PASSWORD -e BASE_URL=http://api:4000 -e "EXAM_ID=$EXAM_ID" -e "SCENARIO=$SCENARIO" \
   -e "USERS=$USERS" -e "RAMP=$RAMP" -e "RATE=$RATE" -e "MIN_WORK=$MIN_WORK" \
-  -e CHECKPOINT_MIN -e CHECKPOINT_MAX -e LEAVE_SHARE \
+  -e CHECKPOINT_MIN -e CHECKPOINT_MAX -e LEAVE_SHARE -e "SMOKE=$SMOKE" \
   "$K6_IMAGE" run --quiet --summary-export /out/summary.json /scripts/exam-simulation.js > "$OUT/k6.log" 2>&1 ||
   k6_status=$?
 kill "$stats_pid" 2> /dev/null || true
@@ -205,7 +231,9 @@ verdict() {
     fails=$((fails + 1))
   fi
 }
-if [ "$k6_status" = 0 ]; then verdict ok "k6 thresholds (p95 < 500 ms, errors < 0.5 %, checks, every receipt)"
+limits=$([ "$SMOKE" = 1 ] && echo 'errors < 0.5 %, checks, every receipt; smoke: no latency limit' ||
+  echo 'p95 < 500 ms, errors < 0.5 %, checks, every receipt')
+if [ "$k6_status" = 0 ]; then verdict ok "k6 thresholds ($limits)"
 else verdict fail "k6 thresholds (exit $k6_status; $OUT/k6.log)"; fi
 if [ "$scored" = "$startedn" ] && [ "$open" = 0 ] && [ "$unscored" = 0 ]; then
   verdict ok "every attempt k6 started is submitted and scored ($scored)"

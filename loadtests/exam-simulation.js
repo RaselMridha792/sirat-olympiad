@@ -46,6 +46,8 @@ const MIN_WORK = Number(__ENV.MIN_WORK ?? 0.6);
 const LEAVE_SHARE = Number(__ENV.LEAVE_SHARE ?? 0.02);
 const SPREAD_IPS = (__ENV.SPREAD_IPS ?? '1') === '1';
 const MAX_DURATION = __ENV.MAX_DURATION || '45m';
+/** CI's smoke: counted outcomes only (errors, checks, receipts), never a latency or other wall-time threshold. */
+const SMOKE = __ENV.SMOKE === '1';
 /** Inside the exam's 30 s grace: a late submit is still the student's own. */
 const LATE_SUBMIT_MAX = 20;
 
@@ -83,16 +85,20 @@ if (!scenarios[SCENARIO])
 export const options = {
   scenarios: { [SCENARIO]: scenarios[SCENARIO] },
   thresholds: {
-    // RULEBOOK §13: p95 < 500 ms and errors < 0.5 % on the API.
-    'http_req_duration{kind:api}': ['p(95)<500'],
+    // RULEBOOK §13: p95 < 500 ms (not in a smoke run) and errors < 0.5 % on the API.
+    ...(SMOKE
+      ? {}
+      : {
+          'http_req_duration{kind:api}': ['p(95)<500'],
+          // Per endpoint, so the summary shows each one.
+          'http_req_duration{name:login}': ['p(95)<500'],
+          'http_req_duration{name:exams}': ['p(95)<500'],
+          'http_req_duration{name:room}': ['p(95)<500'],
+          'http_req_duration{name:start}': ['p(95)<500'],
+          'http_req_duration{name:checkpoint}': ['p(95)<500'],
+          'http_req_duration{name:submit}': ['p(95)<500'],
+        }),
     'http_req_failed{kind:api}': ['rate<0.005'],
-    // Per endpoint, so the summary shows each one.
-    'http_req_duration{name:login}': ['p(95)<500'],
-    'http_req_duration{name:exams}': ['p(95)<500'],
-    'http_req_duration{name:room}': ['p(95)<500'],
-    'http_req_duration{name:start}': ['p(95)<500'],
-    'http_req_duration{name:checkpoint}': ['p(95)<500'],
-    'http_req_duration{name:submit}': ['p(95)<500'],
     checks: ['rate>0.995'],
     // Zero lost submissions: every student who submitted got a receipt, and the waiting room shows it.
     submit_receipt: ['rate==1'],
