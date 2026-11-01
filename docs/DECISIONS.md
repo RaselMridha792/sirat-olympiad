@@ -2,6 +2,25 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-01 — The audit-log viewer (core; lead's task, plan and review, M13)
+
+1. **Admins only** (lead: not manager), re-read on every call. Read only: `audit_logs` stays append-only.
+2. **The list never shows an IP, an email or the meta.** Opening a row shows them (`GET /admin/audit/:id`), and opening is not audited (as the students' detail, C1).
+3. **Keyset paging on (created_at, id), newest first:** the log grows with every failed login, so there is no OFFSET.
+   - The cursor carries the time to the microsecond. A JS Date keeps milliseconds only, and with it rows written within the same millisecond would be skipped; a test writes such rows and pages through them at four page sizes.
+   - The cursor is opaque, checked against a strict pattern and passed as a bound value, never as SQL.
+4. **Indexes:** `audit_logs (created_at DESC, id DESC)` and `(actor_id, created_at DESC)`, declared in `schema.prisma` (Prisma diffs indexes, so a raw-SQL index would fail the drift check) and generated into `*_core_audit_index`.
+   - `audit_logs` is the foundation's table (announced to the lead). The migration must sort after the newest on main when it merges.
+5. **Filters:**
+   - **Action:** one exact action or a family (`auth.*`, matched with `starts_with`, so `_` is never a LIKE wildcard).
+   - **Account:** an email (any case, looked up on the server; an unknown email matches nothing) or `system` (no actor).
+   - **Dates:** Asia/Dhaka days, both included; a day that does not exist is refused.
+6. **The export** (lead): the list's columns plus the meta, never the IP or an email.
+   - **Redaction:** meta is written by many modules, so every email, Bangladeshi mobile number (with or without 88/+88) and IPv4/IPv6 address inside it is replaced before it reaches the file. Times such as `12:30:45`, ids, codes and invoices stay; unit tests feed each form.
+   - **On the record:** the export's own audit row keeps the filters with the account only as a kind (`email`/`system`), the row count and the reason.
+   - **Limits:** at most 50,000 rows, 5 exports per admin per hour.
+7. **Web:** one `ExportCsvButton` (students and audit); its texts are picked in the client from a fixed table, so no message travels as a prop. `ExportUsersButton` is a thin wrapper.
+
 ## 2026-11-01 — Admin statistics on the admin home (core; lead's task and review)
 
 1. **Counts only** (`GET /admin/stats`, admin and manager): no name, email, phone, id or money sum. A test scans the answer.
