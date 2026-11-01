@@ -850,3 +850,185 @@ describe('admin:2fa-reset (break-glass CLI)', () => {
     expect(cli(['--email', plain.email]).code).toBe(2);
   }, 90_000);
 });
+
+/** The session id an answer's access cookie names. */
+const sidOf = (res: Response) =>
+  (
+    JSON.parse(
+      Buffer.from(
+        (cookieValue(res, ACCESS_COOKIE) ?? '').split('.')[1] ?? '',
+        'base64url',
+      ).toString(),
+    ) as { sid: string }
+  ).sid;
+const proofOf = async (sessionId: string) =>
+  (await prisma.session.findUniqueOrThrow({ where: { id: sessionId } })).twoFactorVerified;
+const hashOf = async (userId: string) =>
+  (await prisma.user.findUniqueOrThrow({ where: { id: userId } })).passwordHash;
+/** A new setup for the session's user: the secret from its otpauth URI. */
+async function setupSecret(cookie: string): Promise<Buffer> {
+  const body = await json(await post('/api/auth/2fa/setup', { password: PASSWORD }, { cookie }));
+  return base32Decode(/secret=([A-Z2-7]+)/.exec(String(body.otpauthUri))![1]!);
+}
+const NEW_PASSWORD = 'Another-quiet-lamp-77';
+
+describe('the proof lives on the session row (review finding 1)', () => {
+  it('a session that skipped the code stays unverified across refreshes once the user is enrolled', async () => {
+    const admin = await person();
+    let token = (await sessions.start({ id: admin.id, role: admin.role }, client)).refreshToken;
+    for (let i = 0; i < 2; i += 1) {
+      const res = await refresh(token);
+      expect(res.status).toBe(204);
+      expect(claimsOf(cookieValue(res, ACCESS_COOKIE) ?? '').tfa).toBe(false);
+      expect(await proofOf(sidOf(res))).toBe(false);
+      expect(await json(await get('/api/admin/users', accessOf(res)))).toMatchObject({
+        code: 'TWO_FACTOR_REQUIRED',
+      });
+      token = cookieValue(res, REFRESH_COOKIE) ?? '';
+    }
+  });
+
+  it('the attack chain: a login before enrolment never becomes a session after it (change-password 401, refresh 401)', async () => {
+    const admin = await person('admin', false);
+    const attacker = await passwordStep(admin.email); // knows the password, logs in before the admin enrols
+    expect(attacker.res.status).toBe(204);
+    const device = access(await sessions.start({ id: admin.id, role: admin.role }, client));
+    const secret = await setupSecret(device);
+    const enabled = await post('/api/auth/2fa/enable', { code: totp(secret) }, { cookie: device });
+    expect(enabled.status).toBe(200);
+    const before = await hashOf(admin.id);
+
+    const changed = await post(
+      '/api/auth/change-password',
+      { currentPassword: PASSWORD, newPassword: NEW_PASSWORD },
+      { cookie: accessOf(attacker.res) },
+    );
+    expect(changed.status).toBe(401);
+    expect(cookieValue(changed, REFRESH_COOKIE)).toBeUndefined();
+    expect((await refresh(cookieValue(attacker.res, REFRESH_COOKIE) ?? '')).status).toBe(401);
+    expect(await hashOf(admin.id)).toBe(before);
+    expect(await liveSessions(admin.id)).toBe(1); // only the one enable started
+  }, 60_000);
+
+  it("a live session that skipped the code cannot change an enrolled user's password (403, nothing changes)", async () => {
+    const admin = await person();
+    const slipped = await sessions.start({ id: admin.id, role: admin.role }, client); // e.g. past enable in a race
+    const before = await hashOf(admin.id);
+    const res = await post(
+      '/api/auth/change-password',
+      { currentPassword: PASSWORD, newPassword: NEW_PASSWORD },
+      { cookie: access(slipped) },
+    );
+    expect(res.status).toBe(403);
+    expect(await json(res)).toMatchObject({ code: 'TWO_FACTOR_REQUIRED' });
+    expect(await hashOf(admin.id)).toBe(before);
+    expect(await liveSessions(admin.id)).toBe(1);
+    expect(await auditRows('auth.password_changed', admin.id)).toHaveLength(0);
+  });
+
+  it("the row's proof survives rotation, and the successor carries it", async () => {
+    const admin = await person();
+    const verified = await sessions.startVerified({ id: admin.id, role: admin.role }, client);
+    expect(await proofOf(verified.user.sessionId)).toBe(true);
+    let token = verified.refreshToken;
+    for (let i = 0; i < 2; i += 1) {
+      const res = await refresh(token);
+      expect(res.status).toBe(204);
+      expect(claimsOf(cookieValue(res, ACCESS_COOKIE) ?? '').tfa).toBe(true);
+      expect(await proofOf(sidOf(res))).toBe(true);
+      token = cookieValue(res, REFRESH_COOKIE) ?? '';
+    }
+  });
+
+  it('change-password from a proved session keeps the proof, on the new row and in its token', async () => {
+    const admin = await person();
+    const verified = await sessions.startVerified({ id: admin.id, role: admin.role }, client);
+    const res = await post(
+      '/api/auth/change-password',
+      { currentPassword: PASSWORD, newPassword: NEW_PASSWORD },
+      { cookie: access(verified) },
+    );
+    expect(res.status).toBe(204);
+    expect(claimsOf(cookieValue(res, ACCESS_COOKIE) ?? '').tfa).toBe(true);
+    expect(await proofOf(sidOf(res))).toBe(true);
+  }, 60_000);
+});
+
+describe('enable has a cap on wrong codes (review finding 2)', () => {
+  it('the 5th wrong code deletes the pending setup (409 TWO_FACTOR_SETUP_REQUIRED); a new setup and a right code clear the count', async () => {
+    const admin = await person('admin', false);
+    const cookie = access(await sessions.start({ id: admin.id, role: admin.role }, client));
+    const attempts = async () =>
+      (await prisma.userTwoFactor.findUnique({ where: { userId: admin.id } }))?.enableAttempts;
+    const enable = (code: string) => post('/api/auth/2fa/enable', { code }, { cookie });
+
+    let secret = await setupSecret(cookie);
+    for (let i = 0; i < 3; i += 1) expect((await enable(wrongCode(secret))).status).toBe(400);
+    expect(await attempts()).toBe(3);
+    secret = await setupSecret(cookie); // a new setup starts from zero
+    expect(await attempts()).toBe(0);
+    for (let i = 0; i < 4; i += 1) expect((await enable(wrongCode(secret))).status).toBe(400);
+    const fifth = await enable(wrongCode(secret));
+    expect(fifth.status).toBe(409);
+    expect(await json(fifth)).toMatchObject({ code: 'TWO_FACTOR_SETUP_REQUIRED' });
+    expect(await attempts()).toBeUndefined(); // the pending row is gone
+    expect(await json(await enable(totp(secret)))).toMatchObject({
+      code: 'TWO_FACTOR_SETUP_REQUIRED',
+    });
+
+    secret = await setupSecret(cookie);
+    for (let i = 0; i < 4; i += 1) expect((await enable(wrongCode(secret))).status).toBe(400);
+    expect((await enable(totp(secret))).status).toBe(200); // the 5th attempt, right
+    const row = await prisma.userTwoFactor.findUniqueOrThrow({ where: { userId: admin.id } });
+    expect(row.enabledAt).not.toBeNull();
+    expect(row.enableAttempts).toBe(0);
+  }, 90_000);
+
+  it('parallel wrong codes: at most 5 are checked', async () => {
+    const admin = await person('admin', false);
+    const cookie = access(await sessions.start({ id: admin.id, role: admin.role }, client));
+    const secret = await setupSecret(cookie);
+    const answers = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        post('/api/auth/2fa/enable', { code: wrongCode(secret) }, { cookie }),
+      ),
+    );
+    expect(answers.map((r) => r.status).filter((s) => s !== 400 && s !== 409)).toEqual([]);
+    expect(await auditRows('auth.2fa_failed', admin.id)).toHaveLength(5);
+    expect(await prisma.userTwoFactor.findUnique({ where: { userId: admin.id } })).toBeNull();
+  }, 60_000);
+});
+
+describe('a challenge checks at most 5 codes, also in parallel (review finding 3)', () => {
+  it('8 parallel wrong codes on one challenge: 5 checked, 3 refused unchecked, then the challenge is gone', async () => {
+    const admin = await person();
+    const { challenge } = await passwordStep(admin.email);
+    const answers = await Promise.all(
+      Array.from({ length: 8 }, () => verify(challenge, { code: wrongCode(admin.secret) })),
+    );
+    expect(answers.map((r) => r.status)).toEqual(Array(8).fill(401));
+    const codes = await Promise.all(answers.map(async (r) => (await json(r)).code));
+    expect(codes.filter((c) => c === 'TWO_FACTOR_CODE_INVALID')).toHaveLength(5);
+    expect(codes.filter((c) => c === 'TWO_FACTOR_CHALLENGE_INVALID')).toHaveLength(3);
+    expect(await auditRows('auth.2fa_failed', admin.id)).toHaveLength(5);
+    const late = await verify(challenge, { code: totp(admin.secret) });
+    expect(await json(late)).toMatchObject({ code: 'TWO_FACTOR_CHALLENGE_INVALID' });
+  });
+});
+
+describe('the reset re-reads the acting admin (review finding 4)', () => {
+  it("an admin demoted since the token was issued is refused, and the target's 2FA stays", async () => {
+    const actor = await person();
+    const cookie = access(await sessions.startVerified({ id: actor.id, role: 'admin' }, client));
+    const target = await person('manager');
+    await prisma.user.update({ where: { id: actor.id }, data: { role: 'manager' } });
+    const res = await post(
+      `/api/admin/users/${target.id}/2fa/reset`,
+      { reason: 'Lost phone', code: totp(actor.secret) },
+      { cookie },
+    );
+    expect(res.status).toBe(403);
+    expect(await prisma.userTwoFactor.findUnique({ where: { userId: target.id } })).not.toBeNull();
+    expect(await auditRows('auth.2fa_reset', actor.id)).toHaveLength(0);
+  });
+});
