@@ -3,7 +3,7 @@
 # root; deploy.sh and git run as the user `deploy`. Not to be run on its own.
 #   setup: a bare "origin" (main and this checkout's HEAD), the clone, commits B-E on branch `rehearsal`, throwaway
 #          secrets, a self-signed certificate for sirat-rh.test, .env.deploy in rehearsal mode
-#   0. preflight refusals: root, .env mode, an exported DATABASE_URL, a dirty tree
+#   0. preflight refusals: root, .env mode, an exported POSTGRES_APP_PASSWORD, a dirty tree
 #   1. --first, then release A          2. release B (a migration) under a request loop
 #   3. the RUNBOOK's scale, create-admin and worker commands: release B's images, no build
 #   4. C, whose API fails at boot: rolled back to B by itself, timed
@@ -133,8 +133,8 @@ in_clone chmod 644 .env
 s=0; deploy "$A" > /dev/null || s=$?
 check ".env not 600: refused" test "$s" -ne 0 -a -n "$(grep -F '.env must be mode 600' "$OUT/last.log")"
 in_clone chmod 600 .env
-s=0; (cd "$CLONE_DIR" && su-exec deploy env HOME=/home/deploy DATABASE_URL=postgresql://x@elsewhere/x bash scripts/deploy.sh "$A") > "$OUT/last.log" 2>&1 || s=$?
-check "an exported DATABASE_URL: refused" test "$s" -ne 0 -a -n "$(grep -F 'DATABASE_URL is exported' "$OUT/last.log")"
+s=0; (cd "$CLONE_DIR" && su-exec deploy env HOME=/home/deploy POSTGRES_APP_PASSWORD=exported-elsewhere bash scripts/deploy.sh "$A") > "$OUT/last.log" 2>&1 || s=$?
+check "an exported POSTGRES_APP_PASSWORD: refused" test "$s" -ne 0 -a -n "$(grep -F 'POSTGRES_APP_PASSWORD is exported' "$OUT/last.log")"
 in_clone sh -c 'echo "local change" >> README.md'
 s=0; deploy "$A" > /dev/null || s=$?
 check "a dirty tree: refused" test "$s" -ne 0 -a -n "$(grep -F 'local changes' "$OUT/last.log")"

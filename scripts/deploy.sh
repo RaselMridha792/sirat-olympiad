@@ -88,7 +88,8 @@ dc_at() { local tag=$1; shift; SIRAT_TAG="$tag" "${DC[@]}" "$@"; }
 for tool in docker git curl flock jq; do command -v "$tool" >/dev/null || fail "missing tool: $tool"; done
 [ -f .env ] || fail "no .env in $ROOT"
 [ "$(stat -c '%a' .env)" = 600 ] || fail ".env must be mode 600 (chmod 600 .env)"
-# Exported values beat the files compose reads: a stray one would point the stack elsewhere.
+# Exported values beat the files compose reads: a stray one would point the stack elsewhere (POSTGRES_APP_PASSWORD would
+# replace PgBouncer's password and the app's DATABASE_URL; DATABASE_URL itself is no longer read since L8).
 for v in DATABASE_URL DIRECT_URL POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB POSTGRES_APP_PASSWORD SIRAT_TAG; do
   [ -z "${!v+x}" ] || fail "$v is exported in this shell: unset it first (compose must read .env and the release file)"
 done
@@ -106,6 +107,17 @@ envval() { # a .env value, for comparisons only (never printed)
   printf '%s' "${v#\"}"
 }
 release_val() { grep -E "^$1=" "$RELEASE_FILE" | tail -1 | cut -d= -f2- || true; }
+# The runtime role's password is PgBouncer's too (L8): checked before --first builds it into PgBouncer, because changing
+# it later is a data-service change. prisma/runtime-role.ts's rule; the message names the rule, never the value.
+apppw=$(envval POSTGRES_APP_PASSWORD)
+if [ -n "$apppw" ]; then
+  [[ $apppw =~ ^[A-Za-z0-9_-]{32,128}$ ]] || fail 'POSTGRES_APP_PASSWORD must be 32-128 letters, digits, "-" or "_" (openssl rand -hex 32)'
+  if grep -qiE '(fake|change.?me|example|placeholder|dummy|sample|password|xxxx)' <<< "$apppw"; then
+    fail 'POSTGRES_APP_PASSWORD looks like a placeholder'
+  fi
+  [ "$apppw" != "$(envval POSTGRES_PASSWORD)" ] || fail 'POSTGRES_APP_PASSWORD must differ from POSTGRES_PASSWORD'
+fi
+unset apppw
 LIVE="$(release_val SIRAT_TAG)"
 PREVIOUS="$(release_val SIRAT_PREVIOUS_TAG)"
 
