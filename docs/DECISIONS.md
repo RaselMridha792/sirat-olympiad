@@ -16,7 +16,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 4. **Own queue** `ambassador-points` (lead: housekeeping is payments' now, so the ownership stays clear).
    - **Shared touches:** `worker.ts` (+1 module) and an optional `AMBASSADOR_QUEUE_NAME` (tests run their own queue).
    - **ops-check:** the queue is in its list as `ambassador`, so a failed run is a `failed_jobs` warning.
-5. **Settings** (`/admin/ambassador-points`, its own resource; payments' `/admin/settings` allow-list is untouched): points per referral (the `ambassador_points_per_referral` setting, added by an insert-only data migration) and the rank thresholds.
+5. **Settings** (`/admin/ambassador-points`, its own resource; payments' `/admin/settings` allow-list is untouched): points per referral (the `ambassador_points_per_referral` setting, a new key in the insert-only config seed `DEFAULT_SETTINGS`, as the settings rule says (A1: the seed keeps the per-key settings); a data migration would break `seed.int-spec`'s fresh-deploy count) and the rank thresholds.
    - **One writer:** a transaction advisory lock, needed because the settings row may not exist yet. The admin sends the values they saw (`expected`); otherwise 409.
    - **Thresholds:** names and minimums are both UNIQUE, so the table is replaced in the transaction rather than edited row by row; nothing references it.
 6. **Adjustments:** a new ledger row `adjust:<uuid>` with the admin as `created_by`, plus an audit row; never an edit. Only for an account with an ambassador profile (approved or revoked).
