@@ -39,6 +39,12 @@ One short entry per non-obvious technical or product decision. Newest first. For
      - fourteen statements `sirat_app` must not run, each in a rolled-back transaction (each fails with 42501).
    - Unit tests keep the script's CREATE ROLE attributes and its timeouts equal to the migrations', and prove that it loads Prisma Client only after the `DIRECT_URL` check (a preload hook fails any load of it, by name or by file). An int test proves that `QUIET_SESSION` reaches the server.
 5. **The boot line** `database role=<name> superuser=<bool>` in the API and the worker makes the RUNBOOK §9 item readable from the logs. In production it warns while the role is a superuser; from L8 a superuser is refused.
+## 2026-11-01 — The minute exam sweep tries each item on its own (exam session; lead's question after a test flake)
+
+1. **Each finalize, score and results build in the sweep is tried on its own.** One that throws (a lock or statement timeout under load, a bad row) is logged with its step and id, and the rest go on. Before, the first exception ended the run, and since the sweep orders by `ends_at`, an attempt that kept failing would have held back every later attempt and the results build, minute after minute.
+2. **The run then fails** (`exam sweep: n item(s) failed`), so the worker logs it and L11's `failed_jobs` check alerts (an ops alert at the first failure, hourly while it repeats). The next minute's sweep tries the item again. No per-attempt state: the log names the id, which an ops alert cannot carry (numbers only).
+3. **A finalize that loses its row to `SKIP LOCKED` is not an error:** the holder wins (a late client submit, another sweep), and the next sweep takes the row if it is still unfinished. Both are now tested: a row held by another transaction is skipped, then finalized by the next sweep; an attempt whose finalize throws does not stop a later one.
+4. **The test flake was the clock, not the finalize.** "Two finalizes, exactly one winner" got 0 winners once, under load: the test waited by this machine's clock, while finalize decides "due" with Postgres's `now()`, and the database container's clock can trail the host's. The test now waits on the database's clock. Worker jobs do not go through the HTTP busy-503 filter (#52), hence the isolation here.
 
 ## 2026-11-01 — Deploys: SHA-tagged images, a release file and deploy.sh (L9; exam session, LAUNCH-PLAN §2, owner Q4 default)
 

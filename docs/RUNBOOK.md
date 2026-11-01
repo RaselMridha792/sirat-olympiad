@@ -270,7 +270,7 @@ Credentials are read inside the postgres container; nothing secret is typed on t
 | `containers` | a service not running or unhealthy on two checks | `$DC ps -a`; `$DC logs --tail=100 <service>`; `$DC up -d --no-deps --no-build <service>` |
 | `workers` | a job queue (email, payments, exam) has no worker on two checks | `$DC ps worker`; `$DC logs --tail=100 worker`; `$DC up -d --no-deps --no-build worker`. Payments are confirmed only by the worker: critical |
 | `queue_backlog` | over 500 waiting, or the oldest over 5 min (warning); a payments or email job waiting 15 min while workers are connected (critical: a stuck worker) | worker logs; restart the worker; the queue Redis memory |
-| `failed_jobs` | jobs failed for good since the last check (a payment verify job: critical) | worker logs by job name; payments: the review list (section 11) |
+| `failed_jobs` | jobs failed for good since the last check (a payment verify job: critical) | worker logs by job name; payments: the review list (section 11). An exam `sweep` job fails when one of its items failed: `$DC logs worker \| grep 'exam sweep item failed'` names the step (finalize, score, build) and the attempt or exam id; every other item went on, and the next minute's sweep tries again |
 | `reconciliation` | the payments reconciliation is more than 3 intervals late | worker running? `$DC logs worker \| grep reconcile` |
 | `queue_redis_memory` | the queue Redis over 300 MB (warning), 400 MB of 512 (critical) | failed jobs piling up; `redis-cli INFO memory` in `redis-queue` |
 | `http_5xx` | over 2% (warning) or 10% (critical) of at least 50 requests in 5 min | `$DC logs --since 10m nginx api`; `/api/ready`; recent deploy? |
