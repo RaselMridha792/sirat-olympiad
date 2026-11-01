@@ -31,6 +31,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
     - **`--rollback` writes the release file as soon as the containers have switched,** before its smoke. The file never names a release that is not running, even when the smoke then fails.
     - **The first release must be the commit `--first` ran on,** because the data services take their settings from that commit's compose file. `--first` names it, and a refusal for a first release repeats it.
     - **An automatic rollback ends with the reason:** the failed checks and the app containers' states, which the rollback's own output would otherwise bury.
+
 ## 2026-11-01 — The audit-log viewer (core; lead's task, plan and review, M13)
 
 1. **Admins only** (lead: not manager), re-read on every call. Read only: `audit_logs` stays append-only.
