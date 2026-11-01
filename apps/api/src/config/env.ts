@@ -108,6 +108,8 @@ export class EnvVars {
   @IsOptional() @Matches(/^[A-Za-z0-9_-]{1,64}$/) EXAM_QUEUE_NAME?: string;
   /** Tests only: a run's own housekeeping queue (the nightly cleanup). Blank: "housekeeping". */
   @IsOptional() @Matches(/^[A-Za-z0-9_-]{1,64}$/) HOUSEKEEPING_QUEUE_NAME?: string;
+  /** Tests only: a run's own ambassador points queue (the referral sweep). Blank: "ambassador-points". */
+  @IsOptional() @Matches(/^[A-Za-z0-9_-]{1,64}$/) AMBASSADOR_QUEUE_NAME?: string;
 }
 
 const MIN_SECRET_LENGTH = 32;
