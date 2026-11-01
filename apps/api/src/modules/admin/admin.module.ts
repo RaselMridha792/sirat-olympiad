@@ -1,9 +1,13 @@
 import { Module } from '@nestjs/common';
+import { AdminStatsController } from './admin-stats.controller';
+import { AdminStatsService } from './admin-stats.service';
 
 /**
- * admin module — SCAFFOLD STUB.
- * Spec: docs/04-FEATURES.md and docs/06-API.md. Rules: docs/RULEBOOK.md (sections 4-9, 18, 19).
- * Add: controller (explicit guard on every route), service, DTOs (class-validator), tests.
+ * Admin overview (core; lead 2026-11-01): the admin home's counts, GET /admin/stats. Reads payments' and exam's
+ * tables, writes none. The audit-log viewer follows here. Contract: docs/06-API.md "Admin statistics".
  */
-@Module({})
+@Module({
+  controllers: [AdminStatsController],
+  providers: [AdminStatsService],
+})
 export class AdminModule {}

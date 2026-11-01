@@ -10,7 +10,8 @@ PASSED=0
 FAILED=0
 result() { if [ "$1" -eq 0 ]; then PASSED=$((PASSED + 1)); echo "  ok    $2"; else FAILED=$((FAILED + 1)); echo "  FAIL  $2"; sed 's/^/        /' "$T/out.log" 2>/dev/null | tail -n 5; fi; }
 
-pw="$(head -c 48 /dev/urandom | base64 | tr -dc A-Za-z0-9 | head -c 24)"
+pw="$(head -c 48 /dev/urandom | base64 | tr -dc A-Za-z0-9)"
+pw="${pw:0:24}"
 printf 'BACKUP_TEST_PG_PASSWORD=%s\n' "$pw" > "$T/compose.env"
 DC=(docker compose -p "$PROJECT" --env-file "$T/compose.env" -f "$ROOT/infra/backup/test/docker-compose.yml")
 cleanup() {
@@ -109,7 +110,7 @@ result "$ok" "a normal run leaves an encrypted copy and its manifest here and on
 ok=1
 [ "$(field "$m" sha256)" = "$(sha256sum "$f" | cut -d' ' -f1)" ] &&
   [ "$(sha256sum "$T/remote/hourly/$(basename "$f")" | cut -d' ' -f1)" = "$(field "$m" sha256)" ] &&
-  head -c 64 "$f" | grep -q '^age-encryption.org/v1' && ok=0
+  [ "$(head -c 21 "$f")" = age-encryption.org/v1 ] && ok=0
 result "$ok" "the manifest's sha256 matches the local and the uploaded copy, which is age-encrypted"
 ok=1
 [ "$(table_rows "$m" users)" = 20000 ] && [ "$(table_rows "$m" Exam)" = 2 ] &&
@@ -146,7 +147,7 @@ cp "$T/lock/last-backup" "$T/status.before"
 status=0; KILL_DUMP=1 run_backup || status=$?
 ok=1
 [ "$status" -ne 0 ] && [ "$(copies)" -eq 1 ] && [ -z "$(find "$T/backups" -name '.work.*')" ] &&
-  [ "$(find "$T/remote/hourly" -type f | wc -l)" -eq 2 ] && last_ping | grep -q '/fail$' && ok=0
+  [ "$(find "$T/remote/hourly" -type f | wc -l)" -eq 2 ] && grep -q '/fail$' <<< "$(last_ping)" && ok=0
 result "$ok" "a dump killed midway leaves no new copy (nor its .work.* after the next run's start), pings /fail"
 result "$(cmp -s "$T/status.before" "$T/lock/last-backup" && echo 0 || echo 1)" "a failed run leaves the status file unchanged"
 
@@ -158,18 +159,18 @@ status=0; OPS_ALERTS="$T/alerts.log" KILL_DUMP=1 run_backup || status=$?
 ok=1
 [ "$status" -ne 0 ] && [ "$(wc -l < "$T/alerts.log")" -eq 1 ] &&
   grep -q 'exec -T api node dist/cli/ops-alert.js --kind ops.backup_failed --meta step=3$' "$T/alerts.log" &&
-  last_ping | grep -q '/fail$' && ok=0
+  grep -q '/fail$' <<< "$(last_ping)" && ok=0
 result "$ok" "a failed run raises ops.backup_failed through the API with the step's number (3 = dump)"
 : > "$T/pings.log"
 : > "$T/alerts.log"
 status=0; OPS_ALERTS="$T/alerts.log" OPS_ALERT_EXIT=1 KILL_DUMP=1 run_backup || status=$?
 ok=1
-[ "$status" -ne 0 ] && grep -q 'the ops alert could not be raised' "$T/out.log" && last_ping | grep -q '/fail$' && ok=0
+[ "$status" -ne 0 ] && grep -q 'the ops alert could not be raised' "$T/out.log" && grep -q '/fail$' <<< "$(last_ping)" && ok=0
 result "$ok" "when ops-alert fails, the run still exits non-zero and the heartbeat still gets /fail"
 : > "$T/pings.log"
 status=0; KILL_DUMP=1 run_backup || status=$?
 ok=1
-[ "$status" -ne 0 ] && grep -q 'the ops alert could not be raised' "$T/out.log" && last_ping | grep -q '/fail$' && ok=0
+[ "$status" -ne 0 ] && grep -q 'the ops alert could not be raised' "$T/out.log" && grep -q '/fail$' <<< "$(last_ping)" && ok=0
 result "$ok" "with no api container at all, the same (the real docker exec fails)"
 
 # 4. A remote that does not exist.
@@ -177,7 +178,7 @@ config "BACKUP_REMOTE=nosuchremote:somewhere"
 : > "$T/pings.log"
 status=0; run_backup || status=$?
 ok=1
-[ "$status" -ne 0 ] && grep -q "FAILED at step 'upload'" "$T/out.log" && last_ping | grep -q '/fail$' && ok=0
+[ "$status" -ne 0 ] && grep -q "FAILED at step 'upload'" "$T/out.log" && grep -q '/fail$' <<< "$(last_ping)" && ok=0
 result "$ok" "a bad remote exits non-zero and pings /fail"
 
 # 5. Another run holding the lock.
@@ -198,7 +199,7 @@ before="$(copies)"
 status=0; run_backup || status=$?
 ok=1
 [ "$status" -ne 0 ] && grep -q 'much smaller than the last one' "$T/out.log" && [ "$(copies)" -eq "$before" ] &&
-  last_ping | grep -q '/fail$' && ok=0
+  grep -q '/fail$' <<< "$(last_ping)" && ok=0
 result "$ok" "a dump much smaller than the last one fails the run"
 status=0; run_backup --accept-smaller || status=$?
 ok=1
@@ -224,19 +225,28 @@ status=0; run_backup --verify || status=$?
 ok=1
 [ "$status" -eq 0 ] && grep -q 'backup: verified' "$T/out.log" && ok=0
 result "$ok" "--verify passes on the newest copy"
+# The age check once failed an intact copy about once in 3000 runs (head died of SIGPIPE under pipefail). The clock
+# stays put, so the later tier tests see the same time. scripts/test/check-early-exit-pipes.sh is the real guard.
+fails=0
+for _ in $(seq 1 100); do
+  SIRAT_BACKUP_ENV="$T/backup.env" PATH="$T/bin:$PATH" PINGS="$T/pings.log" SIRAT_BACKUP_NOW="$CLOCK"     bash "$ROOT/scripts/backup.sh" --verify > "$T/out.log" 2>&1 || fails=$((fails + 1))
+done
+ok=1
+[ "$fails" -eq 0 ] && ok=0
+result "$ok" "--verify passes 100 times in a row on an intact copy"
 cp "$(newest manifest.json)" "$T/manifest.bak"
 sed -i 's/^  "created_at": "[^"]*",$/  "created_at": "",/' "$(newest manifest.json)"
 : > "$T/pings.log"
 status=0; run_backup --verify || status=$?
 ok=1
-[ "$status" -ne 0 ] && grep -q 'no valid created_at' "$T/out.log" && last_ping | grep -q '/fail$' && ok=0
+[ "$status" -ne 0 ] && grep -q 'no valid created_at' "$T/out.log" && grep -q '/fail$' <<< "$(last_ping)" && ok=0
 result "$ok" "--verify fails on a manifest without a valid created_at"
 cp "$T/manifest.bak" "$(newest manifest.json)"
 printf 'x' >> "$(newest dump.age)"
 : > "$T/pings.log"
 status=0; run_backup --verify || status=$?
 ok=1
-[ "$status" -ne 0 ] && grep -q 'does not match its manifest' "$T/out.log" && last_ping | grep -q '/fail$' && ok=0
+[ "$status" -ne 0 ] && grep -q 'does not match its manifest' "$T/out.log" && grep -q '/fail$' <<< "$(last_ping)" && ok=0
 result "$ok" "--verify fails on a changed copy and pings /fail"
 
 # 9. Tier prefixes (owner Q1 lifecycle): the first run of the Dhaka day at or after 03:00 is also the daily copy, and
