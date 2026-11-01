@@ -20,7 +20,7 @@ import type Redis from 'ioredis';
 import { REDIS_CACHE } from '../src/redis/redis.module';
 import { bootCoreApp, call, sessionFor, type CoreApp } from './core-helpers';
 import { makeAttempt, makePublishedExam } from './exam-helpers';
-import { makeUser, testPrisma } from './helpers';
+import { applyReferenceData, makeUser, testPrisma } from './helpers';
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -36,6 +36,9 @@ beforeAll(async () => {
   prisma = testPrisma();
   redis = env.app.get(REDIS_CACHE);
   admin = await sessionFor(env, prisma, { role: 'admin' });
+  // Another suite's truncateAll may have emptied the reference data: Round 1 comes back as a deploy makes it.
+  if (!(await prisma.round.findUnique({ where: { sortOrder: 1 } })))
+    await applyReferenceData(prisma);
   round1 = await prisma.round.findUniqueOrThrow({ where: { sortOrder: 1 }, select: { id: true } });
   await cleanRounds();
 });

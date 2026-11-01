@@ -21,7 +21,7 @@ import type {
 } from '@sirat/shared';
 import { DEFAULT_VIDEO_CRITERIA } from '@sirat/shared';
 import { bootCoreApp, call, sessionFor, type CoreApp } from './core-helpers';
-import { testPrisma } from './helpers';
+import { applyReferenceData, testPrisma } from './helpers';
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -35,6 +35,9 @@ beforeAll(async () => {
   env = await bootCoreApp();
   prisma = testPrisma();
   admin = await sessionFor(env, prisma, { role: 'admin' });
+  // Another suite's truncateAll may have emptied the reference data: Round 1 comes back as a deploy makes it.
+  if (!(await prisma.round.findUnique({ where: { sortOrder: 1 } })))
+    await applyReferenceData(prisma);
   round1 = await prisma.round.findUniqueOrThrow({ where: { sortOrder: 1 }, select: { id: true } });
   await clean();
 });
@@ -379,6 +382,111 @@ describe('scoring', () => {
     expect(open.json.items.map((e) => e.entryId)).toEqual([c.entryId]);
     const counts = await call<JuryRound[]>(env, 'GET', '/jury/rounds', judge1.cookie);
     expect(counts.json[0]).toMatchObject({ scoringOpen: true, pending: 1, evaluated: 2 });
+  });
+});
+
+describe('unassigning a judge', () => {
+  it("takes the judge's scores out of the average at once; the promotion ranks on the rest", async () => {
+    const round = await openVideoRound();
+    const final = await createRound({ name: 'Final', type: 'final' });
+    const a = await contestant(round.id, 'activist');
+    const b = await contestant(round.id, 'activist');
+    const c = await contestant(round.id, 'achiever');
+    const judge1 = await sessionFor(env, prisma, { role: 'jury' });
+    const judge2 = await sessionFor(env, prisma, { role: 'jury' });
+    await assign(round.id, judge1.id, ['activist']);
+    await assign(round.id, judge2.id, ['activist', 'achiever']);
+    await closeRound(round.id);
+    // With both judges, B (70, 100: 85) leads A (80, 40: 60).
+    await score(judge1.cookie, a.entryId, { criteria: scores(8) });
+    await score(judge2.cookie, a.entryId, { criteria: scores(4) });
+    await score(judge1.cookie, b.entryId, { criteria: scores(7) });
+    await score(judge2.cookie, b.entryId, { criteria: scores(10) });
+    await score(judge2.cookie, c.entryId, { criteria: scores(6) });
+    const entryScore = async (id: string) => {
+      const e = await prisma.roundEntry.findUniqueOrThrow({ where: { id } });
+      return [e.status, e.score === null ? null : Number(e.score)];
+    };
+    expect([await entryScore(a.entryId), await entryScore(b.entryId)]).toEqual([
+      ['evaluated', 60],
+      ['evaluated', 85],
+    ]);
+
+    const view = await call<AdminRoundJury>(
+      env,
+      'GET',
+      `/admin/rounds/${round.id}/jury`,
+      admin.cookie,
+    );
+    const of = (judgeId: string, category: Category) =>
+      view.json.assignments.find((x) => x.judge.userId === judgeId && x.category === category)!.id;
+    const removed = await call(
+      env,
+      'DELETE',
+      `/admin/rounds/${round.id}/jury/${of(judge2.id, 'activist')}`,
+      admin.cookie,
+    );
+    expect(removed.status).toBe(204);
+    // Judge 1 alone now: A 80, B 70. The history keeps every row.
+    expect([await entryScore(a.entryId), await entryScore(b.entryId)]).toEqual([
+      ['evaluated', 80],
+      ['evaluated', 70],
+    ]);
+    expect(
+      await prisma.juryScore.count({ where: { entryId: { in: [a.entryId, b.entryId] } } }),
+    ).toBe(4);
+    // Judge 2 still scores achiever: C keeps its score.
+    expect(await entryScore(c.entryId)).toEqual(['evaluated', 60]);
+    const audit = await prisma.auditLog.findFirstOrThrow({
+      where: { action: 'jury.unassigned', entityId: round.id },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(audit.meta).toMatchObject({ judgeId: judge2.id, category: 'activist', recomputed: 2 });
+
+    const p = await call<PromotionPreview>(
+      env,
+      'POST',
+      `/admin/rounds/${round.id}/promotion/preview`,
+      admin.cookie,
+      {
+        topN: 1,
+        category: 'activist',
+      },
+    );
+    expect(p.json).toMatchObject({ promoted: 1, cut: { score: 80 } });
+    await call(env, 'POST', `/admin/rounds/${round.id}/promotion`, admin.cookie, {
+      topN: 1,
+      category: 'activist',
+      expected: p.json.expected,
+    });
+    expect((await prisma.roundEntry.findUniqueOrThrow({ where: { id: a.entryId } })).status).toBe(
+      'promoted',
+    );
+    expect((await prisma.roundEntry.findUniqueOrThrow({ where: { id: b.entryId } })).status).toBe(
+      'eliminated',
+    );
+    expect(await prisma.roundEntry.count({ where: { roundId: final.id, userId: a.id } })).toBe(1);
+
+    // The last judge of a category goes: the entry is sent but unscored again, and blocks that promotion.
+    const removedLast = await call(
+      env,
+      'DELETE',
+      `/admin/rounds/${round.id}/jury/${of(judge2.id, 'achiever')}`,
+      admin.cookie,
+    );
+    expect(removedLast.status).toBe(204);
+    expect(await entryScore(c.entryId)).toEqual(['submitted', null]);
+    const blocked = await call(
+      env,
+      'POST',
+      `/admin/rounds/${round.id}/promotion/preview`,
+      admin.cookie,
+      {
+        topN: 1,
+        category: 'achiever',
+      },
+    );
+    expect(details(blocked.json)).toEqual(['unscored_entries']);
   });
 });
 

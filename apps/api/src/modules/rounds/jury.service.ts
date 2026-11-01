@@ -35,7 +35,7 @@ const ENTRY_CODE = Prisma.sql`'E-' || upper(right(replace(e."id"::text, '-', '')
  *   category and the link, never a name, institution or contact.
  * - A score covers every criterion of the round (0–10); its total is out of 100 (the sum times 10 over the number
  *   of criteria). `jury_scores` is append-only: scoring again adds a row. The entry's score is the average of each
- *   judge's latest total, recomputed under the entry's row lock, with the round's share lock against a promotion.
+ *   judge's latest total among the judges assigned now, recomputed under the entry's row lock, with the round's share lock against a promotion.
  * - Scoring stops once the round's category is promoted. The comment stays with the judges (never the student).
  */
 @Injectable()
@@ -122,11 +122,27 @@ export class JuryService {
         select: { judgeId: true, category: true },
       });
       if (!found) throw new NotFoundException('Assignment not found');
+      // The round's share lock first, as a score takes it (a promotion takes FOR UPDATE), then each entry's lock.
+      await tx.$queryRaw`SELECT 1 FROM "rounds" WHERE "id" = ${roundId}::uuid FOR SHARE`;
       await tx.juryAssignment.delete({ where: { id: assignmentId } });
-      // The judge's scores stay (jury_scores is append-only); the judge only stops seeing the category.
+      // The judge's scores stay (jury_scores is append-only) but stop counting: unassigning is the admin's remedy
+      // for a wrong judge (lead's review of #75). Every entry of this category the judge scored is recomputed now.
+      const touched = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT DISTINCT e."id"::text AS id
+        FROM "jury_scores" s
+        JOIN "round_entries" e ON e."id" = s."entry_id"
+        JOIN "users" u ON u."id" = e."user_id"
+        WHERE e."round_id" = ${roundId}::uuid AND s."judge_id" = ${found.judgeId}::uuid
+          AND u."category"::text = ${found.category} AND e."status"::text IN ('submitted', 'evaluated')
+        ORDER BY 1`;
+      for (const { id } of touched) {
+        await tx.$queryRaw`SELECT 1 FROM "round_entries" WHERE "id" = ${id}::uuid FOR UPDATE`;
+        await recompute(tx, id);
+      }
       await audit(tx, actor, 'jury.unassigned', roundId, {
         judgeId: found.judgeId,
         category: found.category,
+        recomputed: touched.length,
       });
     });
   }
@@ -324,20 +340,44 @@ export class JuryService {
           comment: body.comment ?? null,
         },
       });
-      const [avg] = await tx.$queryRaw<Array<{ score: string; judges: number }>>`
-        SELECT round(avg(t."total"), 2)::text AS score, count(*)::int AS judges FROM (
-          SELECT DISTINCT ON ("judge_id") "total" FROM "jury_scores"
-          WHERE "entry_id" = ${entryId}::uuid ORDER BY "judge_id", "created_at" DESC, "id" DESC
-        ) t`;
-      await tx.roundEntry.update({
-        where: { id: entryId },
-        data: { score: new Prisma.Decimal(avg!.score), status: 'evaluated' },
-      });
+      const { score, judges } = await recompute(tx, entryId);
       // Ids only: the comment is the judges' own record, never in the audit log.
       await audit(tx, actor, 'jury.scored', found.roundId, { entryId });
-      return { entryId, total, score: Number(avg!.score), judges: avg!.judges };
+      return { entryId, total, score: score ?? 0, judges };
     });
   }
+}
+
+/**
+ * The entry's score from the judges **assigned now** to its round and category: the average of each one's latest
+ * total (lead's review of #75: an unassigned judge's scores stay in the history but stop counting). With no such
+ * score left, the entry is back to `submitted` with no score. The caller holds the entry's row lock.
+ */
+async function recompute(
+  tx: Tx,
+  entryId: string,
+): Promise<{ score: number | null; judges: number }> {
+  const [avg] = await tx.$queryRaw<Array<{ score: string | null; judges: number }>>`
+    SELECT round(avg(t."total"), 2)::text AS score, count(*)::int AS judges FROM (
+      SELECT DISTINCT ON (s."judge_id") s."total"
+      FROM "jury_scores" s
+      JOIN "round_entries" e ON e."id" = s."entry_id"
+      JOIN "users" u ON u."id" = e."user_id"
+      JOIN "jury_assignments" a
+        ON a."round_id" = e."round_id" AND a."judge_id" = s."judge_id" AND a."category" = u."category"
+      WHERE s."entry_id" = ${entryId}::uuid
+      ORDER BY s."judge_id", s."created_at" DESC, s."id" DESC
+    ) t`;
+  const judges = avg?.judges ?? 0;
+  const score = judges > 0 && avg?.score ? avg.score : null;
+  await tx.roundEntry.update({
+    where: { id: entryId },
+    data:
+      score === null
+        ? { score: null, status: 'submitted' }
+        : { score: new Prisma.Decimal(score), status: 'evaluated' },
+  });
+  return { score: score === null ? null : Number(score), judges };
 }
 
 function audit(tx: Tx, actor: Actor, action: string, roundId: string, meta: Prisma.InputJsonValue) {
