@@ -33,8 +33,8 @@ _Both variants are drafted; the one the owner does not pick is removed before th
 | `PAYSTATION_PAY_WITH_CHARGE` | `0` |
 
 **Then:**
-1. `$DC up -d --no-deps --no-build api worker`.
-2. Check the boot line: `$DC logs --since 5m api | grep "PayStation env="` must read `env=sandbox`, the sandbox host, `account=rasel-sandbox-vps`, `invoicePrefix=TV`, both URLs and `payWithCharge=0`.
+1. `$DC up -d --no-deps --no-build api worker`. Compose recreates all 4 API replicas (`replicas: 4`), about 10–20 s without the API; nobody else uses the box yet.
+2. Check the boot lines: `$DC logs --since 5m api | grep "PayStation env="` must show one line per replica (4), each reading `env=sandbox`, the sandbox host, `account=rasel-sandbox-vps`, `invoicePrefix=TV`, both URLs and `payWithCharge=0`.
 3. `$DC run --rm --no-deps -T api node dist/cli/paystation-selfcheck.js` must end with `initiate: created`. Write down the unpaid `X…` invoice it leaves in the panel.
 
 **The read-only wrapper:**
@@ -172,7 +172,7 @@ GROUP BY action ORDER BY action;
 ## 7. After the run
 
 1. Close registration in `/admin/settings`.
-2. Turn payments off (`PAYSTATION_ENV` blank), restart `api` and `worker`, and check the boot line again: it must say `PayStation disabled`.
+2. Turn payments off (`PAYSTATION_ENV` blank), restart `api` and `worker`, and check the boot lines again (on the VPS, one per replica): each must say `PayStation disabled`.
 3. Remove the IPN URL from the panel (section 4).
 4. Write each S-row's result into `SANDBOX-CHECKLIST.md` with the date, including the name of `paystation:selfcheck`'s unpaid `X…` invoice if the venue ran it.
 5. The test rows stay as they are. Removing them is the owner's decision, made at the venue's cleanup step, never by hand (foreign keys are RESTRICT, and the audit log is append-only).
