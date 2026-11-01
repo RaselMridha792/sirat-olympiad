@@ -14,7 +14,34 @@ if (existsSync(file)) {
 
 // Integration tests never touch the dev database: tests that boot the AppModule use the *_test database for the
 // app's runtime connection too (prepare-test-db.mjs refuses any other name).
+const TEST_DB_URL = /^postgres(ql)?:\/\/[^/]+\/[a-z0-9_]+_test(\?|$)/;
 const testUrl = process.env.TEST_DATABASE_URL ?? '';
-if (!/^postgres(ql)?:\/\/[^/]+\/[a-z0-9_]+_test(\?|$)/.test(testUrl))
+if (!TEST_DB_URL.test(testUrl))
   throw new Error('TEST_DATABASE_URL must point to a database whose name ends with _test');
 process.env.DATABASE_URL = testUrl;
+
+// With TEST_APP_DATABASE_URL (the runtime role sirat_app on the same *_test database), the app under test connects as
+// that role, as production will after L8, so a missing grant fails here and not in production. The test harness
+// (testPrisma, truncateAll) stays on TEST_DATABASE_URL, the owner. Without it the app runs as the owner, as before;
+// CI must not run that way unnoticed.
+const appUrl = process.env.TEST_APP_DATABASE_URL ?? '';
+if (process.env.CI === 'true' && !appUrl)
+  throw new Error('TEST_APP_DATABASE_URL is required in CI: the app under test runs as sirat_app');
+/** The URL parsed. A malformed one throws without its value: Node's own error would print it, password included. */
+function parsed(name: string, value: string): URL {
+  try {
+    return new URL(value);
+  } catch {
+    throw new Error(`${name} is not a valid URL (value not shown)`);
+  }
+}
+if (appUrl) {
+  const app = parsed('TEST_APP_DATABASE_URL', appUrl);
+  const owner = parsed('TEST_DATABASE_URL', testUrl);
+  // The same host and database: another session's test database on the shared cluster would also accept sirat_app.
+  if (app.username !== 'sirat_app' || app.host !== owner.host || app.pathname !== owner.pathname)
+    throw new Error(
+      'TEST_APP_DATABASE_URL must be sirat_app on the same host and database as TEST_DATABASE_URL',
+    );
+  process.env.DATABASE_URL = appUrl;
+}
