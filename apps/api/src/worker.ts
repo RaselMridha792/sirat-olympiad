@@ -5,6 +5,7 @@ import { NestFactory } from '@nestjs/core';
 import { Logger, LoggerModule } from 'nestjs-pino';
 import { pinoHttpOptions } from './common/logging/pino-http.options';
 import { validateWorkerEnv } from './config/env';
+import { AmbassadorPointsWorkerModule } from './modules/ambassadors/ambassador-points.worker';
 import { ExamWorkerModule } from './modules/attempts/attempts.module';
 import { HousekeepingWorkerModule } from './modules/housekeeping/housekeeping.module';
 import { NotificationsWorkerModule } from './modules/notifications/notifications.module';
@@ -12,8 +13,8 @@ import { PaymentsWorkerModule } from './modules/payments/payments.module';
 
 /**
  * Queue workers (02-SYSTEM-DESIGN): same image as the API, separate `worker` service, so job load never slows the
- * HTTP path. No HTTP server apart from the container health endpoint. Today: email, the exam engine, payment checks
- * and the nightly session cleanup.
+ * HTTP path. No HTTP server apart from the container health endpoint. Today: email, the exam engine, payment checks,
+ * the nightly session cleanup and the ambassadors' referral points.
  */
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { PaymentsWorkerModule } from './modules/payments/payments.module';
     ExamWorkerModule,
     PaymentsWorkerModule,
     HousekeepingWorkerModule,
+    AmbassadorPointsWorkerModule,
   ],
 })
 export class WorkerModule {}

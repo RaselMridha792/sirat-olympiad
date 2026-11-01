@@ -1,17 +1,20 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Search, Users } from 'lucide-react';
+import { Medal, Search, Users } from 'lucide-react';
 import {
   Avatar,
   Badge,
   buttonClasses,
+  Card,
   DataTable,
   EmptyState,
   LinkPagination,
   PageHeader,
   SearchBox,
 } from '@sirat/ui';
+import { AdjustPointsButton } from '@/components/admin/AdjustPointsButton';
 import { AmbassadorButton } from '@/components/admin/AmbassadorButton';
+import { AmbassadorPointsEditor } from '@/components/admin/AmbassadorPointsEditor';
 import { rankTone } from '@/components/status';
 import { getData } from '@/data';
 import { hrefWith, parsePageQuery, totalPages, type SearchParams } from '@/data/query';
@@ -32,8 +35,8 @@ export async function generateMetadata(): Promise<Metadata> {
 /**
  * Admin ambassador list (old admin/ambassadors-list): server-side search by name, email or promo
  * code, and server-side paging. The old page cached the whole list, personal data included, in
- * browser storage, then filtered and paged it on the client. Read-only: approve/edit actions stay
- * hidden until audited admin endpoints exist (owner decision).
+ * browser storage, then filtered and paged it on the client. Approve and revoke (C5a), the points
+ * settings and per-ambassador point adjustments (C5b) go through audited admin endpoints.
  */
 export default async function AdminAmbassadorsPage({
   searchParams,
@@ -48,7 +51,10 @@ export default async function AdminAmbassadorsPage({
     getData(params),
   ]);
   const query = parsePageQuery(params, PAGE_SIZE);
-  const list = await data.admin.listAmbassadors(query);
+  const [list, points] = await Promise.all([
+    data.admin.listAmbassadors(query),
+    data.admin.getAmbassadorPoints(),
+  ]);
   const pages = totalPages(list.total, list.pageSize);
 
   return (
@@ -68,6 +74,32 @@ export default async function AdminAmbassadorsPage({
           />
         }
       />
+
+      <Card className="mb-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0">
+          <h2 className="flex items-center gap-2 text-lg font-bold text-ink">
+            <Medal aria-hidden="true" size={20} className="text-secondary" />
+            {m.points.title}
+          </h2>
+          <p className="mt-1 text-sm text-ink">
+            {m.points.perReferral(formatNumber(locale, points.pointsPerReferral))}
+          </p>
+          <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+            {m.points.ranks}
+          </p>
+          <ul className="mt-1 flex flex-wrap gap-2">
+            {points.thresholds.map((t) => (
+              <li key={t.name}>
+                <Badge tone={rankTone(t.name)}>
+                  {t.name} · {m.points.from(formatNumber(locale, t.minPoints))}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 text-xs text-ink-faint">{m.points.note}</p>
+        </div>
+        <AmbassadorPointsEditor locale={locale} config={points} />
+      </Card>
 
       {list.items.length === 0 ? (
         <EmptyState
@@ -163,11 +195,14 @@ export default async function AdminAmbassadorsPage({
               headerClassName: 'text-right',
               className: 'px-5 py-3 text-right',
               render: (a) => (
-                <AmbassadorButton
-                  locale={locale}
-                  userId={a.userId}
-                  action={a.approvedAt ? 'revoke' : 'approve'}
-                />
+                <div className="flex flex-wrap justify-end gap-1">
+                  <AdjustPointsButton locale={locale} userId={a.userId} />
+                  <AmbassadorButton
+                    locale={locale}
+                    userId={a.userId}
+                    action={a.approvedAt ? 'revoke' : 'approve'}
+                  />
+                </div>
               ),
             },
           ]}

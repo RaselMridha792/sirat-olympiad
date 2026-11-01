@@ -516,3 +516,22 @@ SQL
 - **Indexes:** `sessions(expires_at)`, `sessions(revoked_at)` and `auth_tokens(expires_at)` came with a plain `CREATE INDEX`, fine while the tables were young. A later index on a big `sessions` table must use `CREATE INDEX CONCURRENTLY`, in a migration of its own: Prisma runs each migration in a transaction, and `CONCURRENTLY` cannot run inside one. A plain build would lock writes, and so logins and refreshes, until it finished.
 - **At worker start** the log says `housekeeping scheduler set` (id, pattern, time zone). Every start says so, but Redis keeps one scheduler: `$DC exec -T redis-queue redis-cli ZRANGE bull:housekeeping:repeat 0 -1` lists exactly `session-cleanup`.
 - **After a purge,** a refresh token replayed more than 30 days after its rotation gets 401, like any unknown token. It no longer ends its family or writes `auth.refresh_reuse` (DECISIONS A2.1b #9).
+
+## 17. Ambassador referral points (core C5b-1)
+
+- **What runs:** the worker's `ambassador-points` queue has two schedulers, one run each however many workers start.
+  - `referral-points`: every 5 minutes, the registrations of the last 2 days (the whole table on the very first run).
+  - `referral-points-backfill`: every night at 03:45 Asia/Dhaka, every registration.
+  - Each writes one ledger row `referral_paid:<paymentId>` per paid registration with a referrer, and never one twice (`ON CONFLICT DO NOTHING`). It reads registrations and writes only `point_ledger`.
+- **Points per referral and the ranks** are data, changed by an admin on /admin/ambassadors ("Edit points and ranks"; audited `ambassador_points.changed`). A new value counts for later awards only. 0 pauses the awards; the next run after a value above 0 gives them.
+- **A failed run** is retried 3 times; a job that failed for good is kept 7 days, and `ops-check` reports it as a `failed_jobs` warning (queue `ambassador`). No manual trigger is needed: the next run catches up.
+- **At worker start** the log says `ambassador points schedulers set`. Redis keeps one of each: `$DC exec -T redis-queue redis-cli ZRANGE bull:ambassador-points:repeat 0 -1` lists exactly `referral-points` and `referral-points-backfill`.
+- **Check the awards** (counts only):
+
+```bash
+$DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+select count(*) filter (where event_key like 'referral\_paid:%') as referral_rows, max(created_at) as latest from point_ledger;
+SQL
+```
+
+- **A wrong award** is never edited or deleted (the ledger is append-only): an admin adds a compensating entry with "Adjust points" (audited `points.adjusted`).

@@ -28,6 +28,9 @@ export const DEFAULT_SETTINGS: Readonly<
   // Free book (plan 16): an admin sets the real title and uploads the cover before registration opens (RUNBOOK §9).
   book_title: 'Sirat Leadership Olympiad book',
   book_cover_image_id: Prisma.JsonNull, // book_images.id once an admin uploads a cover
+  // Ambassador points (core C5b-1; owner Q3 default, unanswered): points per paid referral; admins change it on
+  // /admin/ambassadors. The referral sweep uses 10 too if the row is missing.
+  ambassador_points_per_referral: 10,
   // No global submit grace: exams.grace_seconds (per exam) is the only source (DECISIONS, A1 review).
 };
 
