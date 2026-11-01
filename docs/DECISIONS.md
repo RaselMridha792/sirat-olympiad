@@ -27,6 +27,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 9. **Tests:**
    - `ambassador-tasks.int-spec.ts` (10): task life cycle and refusals; assignment eligibility; submit, the queue and one award; three concurrent approvals award once; reject and resubmit with no proof or note in any audit row; own-assignment, archived and revoked refusals; the submit limit; admin only; the CHECKs.
    - web: the area file picks, the problem mapper.
+
 ## 2026-11-01 — Bootstrap and the pre-launch checks (L12; exam session, LAUNCH-PLAN §2 and §7, owner Q4 default)
 
 1. **`bootstrap.sh` is idempotent and safe to repeat:** every step looks before it changes anything, and the owner runs it again after each of their steps. `--dry-run` lists the changes without making them. Settings files come from their examples only when missing and are never overwritten: the owner types the secrets, and the script never prints one.
