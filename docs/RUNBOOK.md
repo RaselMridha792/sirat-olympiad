@@ -669,3 +669,11 @@ SQL
 ```
 
 - **A wrong award** is never edited or deleted (the ledger is append-only): an admin adds a compensating entry with "Adjust points" (audited `points.adjusted`).
+
+## 18. Ambassador teams (core C5b-3)
+
+- **Where:** students and ambassadors on `/dashboard/team`; admins on `/admin/teams` (search, the members with contact, rename).
+- **"Too many tries" when joining:** 10 attempts per 10 minutes per student, 60 per IP. Refused codes count too, so a typo-heavy classroom behind one school IP can meet the IP limit. Both windows end by themselves within 10 minutes; ask the class to wait, not to retry.
+- **"This team is not taking new members":** the team lead is no longer an approved ambassador (revoked or blocked). The members keep the team; there is no dissolve or hand-over in v1.
+- **The lead cannot leave** their own team (by design). A member leaves from the team page.
+- **An unsuitable team name:** an admin renames it on `/admin/teams` with a reason (audited `team.renamed`; the audit row keeps the reason, not the names).

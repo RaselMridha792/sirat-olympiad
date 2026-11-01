@@ -1,4 +1,7 @@
 import type {
+  AdminTeamDetail,
+  AdminTeamRow,
+  MyTeam,
   AdminTaskQuery,
   AdminTaskReviewRow,
   AdminTaskRow,
@@ -74,6 +77,8 @@ export interface DataSource {
     listAnnouncements(query: PageQuery): Promise<Paginated<AnnouncementItem>>;
     /** GET /ambassador/me (role ambassador) */
     getAmbassador(): Promise<AmbassadorOverview>;
+    /** GET /teams/mine (the own team, first names only; null = not in a team) */
+    getMyTeam(): Promise<MyTeam | null>;
     /** GET /book (the free book's title and cover) */
     getBook(): Promise<BookInfo>;
     /** GET /book-order/me (eligible, and the student's own order) */
@@ -110,6 +115,10 @@ export interface DataSource {
     listTasks(query: AdminTaskQuery): Promise<Paginated<AdminTaskRow>>;
     /** GET /admin/task-assignments?page= (submitted proofs waiting for review, oldest first; admin only) */
     listTaskReviews(query: PageQuery): Promise<Paginated<AdminTaskReviewRow>>;
+    /** GET /admin/teams?q=&page= (teams with owner and member count; admin only) */
+    listTeams(query: PageQuery): Promise<Paginated<AdminTeamRow>>;
+    /** GET /admin/teams/:id, with the members' names and emails (null = not found) */
+    getTeam(id: string): Promise<AdminTeamDetail | null>;
     /** GET /admin/announcements?page=&status= (every status, with audience and author) */
     listAnnouncements(query: AdminAnnouncementQuery): Promise<Paginated<AdminAnnouncement>>;
     /** GET /admin/payments?invoice=&trx=&phone=&email=&status=&review=1&page= (admin only) */

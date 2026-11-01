@@ -42,7 +42,8 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `GET /certificates/verify/:code` | Public | |
 | announcements | `GET /announcements` | Role(student, ambassador) | Announcements (below). Built (core C4) |
 | ambassadors | `GET /ambassador/me` | Role(ambassador) | Ambassadors (below). Built (core C5a) |
-| | `POST /ambassador/teams`, `GET /ambassador/tasks`, `POST /ambassador/tasks/:id/submit` | Role(ambassador) | Own data only. Core C5b |
+| | `POST /ambassador/tasks/:assignmentId/submit`, `POST /ambassador/teams` | Role(ambassador) | Own data only, the ambassador re-read. Built (core C5b-2, C5b-3) |
+| teams | `GET /teams/mine`, `POST /teams/join`, `POST /teams/mine/leave` | Role(student, ambassador) | Own team only. Ambassadors (below). Built (core C5b-3) |
 | admin (all `Role(admin)` unless noted) | `GET /admin/users`, `GET /admin/users/:id`, `POST /admin/users/export` | admin | Students list (below). Built (core C1) |
 | | `POST /admin/users/:id/grade-level` | admin | Student profile (below). Built (core C3) |
 | | `PATCH /admin/users/:id`, `POST /admin/users/:id/role` | admin | Audited. Not built (role change and block are later admin writes) |
@@ -56,6 +57,7 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `GET /admin/ambassadors`, `POST /admin/ambassadors/:userId/{approve,revoke}` | admin | Ambassadors (below). Built (core C5a) |
 | | `GET/PUT /admin/ambassador-points`, `POST /admin/points/adjust` | admin | Points per referral and the ranks (single writer), compensating entries; audited. Built (core C5b-1) |
 | | `GET/POST /admin/tasks`, `PATCH /admin/tasks/:id`, `POST /admin/tasks/:id/{archive,restore,assign}`, `GET /admin/task-assignments`, `POST /admin/task-assignments/:id/{approve,reject}` | admin | Ambassador tasks (below), audited; tasks are never deleted. Built (core C5b-2) |
+| | `GET /admin/teams`, `GET /admin/teams/:id`, `PATCH /admin/teams/:id` | admin | Ambassador teams (below); a rename is audited with its reason. Built (core C5b-3) |
 | | `GET /admin/audit`, `GET /admin/audit/:id`, `POST /admin/audit/export` | admin | Audit log (below). Read only; the export is audited. Built (core) |
 
 ## Registration and payment (payments PR 2 and 3; plan: `docs/plans/PAYMENTS-PLAN.md` 6.1–6.7)
@@ -248,7 +250,7 @@ The database refuses out-of-range text and an archive time before creation (`*_c
 | `POST /admin/ambassadors/:userId/approve` (admin, re-read) | `{ reason }` (3–200) | 200 `AmbassadorState`. One transaction locks the student, then creates the profile with a server code (`SR-` + 6 Crockford characters; a collision draws again, at most 3 times) or re-approves the old code, sets `role` to `ambassador` and writes `ambassador.approved` (code, reason). Already approved: 200 and nothing changes. 409 `not_paid_student` (no registration), `blocked`, `wrong_role` (staff); 404. The client never chooses a code (`promoCode` in the body → 400) |
 | `POST /admin/ambassadors/:userId/revoke` (admin) | `{ reason }` | 200: `approved_at` cleared, `role` back to `student`, `ambassador.revoked` audited. Earlier referrals and points stay. 409 `not_ambassador` |
 | `GET /admin/ambassadors` (admin) | `page`, `pageSize` (≤ 50), `q` (name, email or the exact code), `status` (`approved`, `revoked`) | `Paginated<AdminAmbassadorRow>` with `referralCount`, `points` and `rankName` from the rows and `rank_thresholds` |
-| `GET /ambassador/me` (ambassador) | — | `AmbassadorOverview`: code, referral count, the 5 latest referrals (name, institution, date; no contact details), points, rank (current and next threshold); `team` null and `tasks` empty until C5b. The user is re-read, so a revoked ambassador is refused (403) even with a token minted before the revocation. A newly approved student's token still says `student`: the panel answers that 403 by renewing the token once (`/refresh`), so the panel opens at once |
+| `GET /ambassador/me` (ambassador) | — | `AmbassadorOverview`: code, referral count, the 5 latest referrals (name, institution, date; no contact details), points, rank (current and next threshold); `team` (name, member count, whether the caller leads it; null without a team) and `tasks` (C5b-2). The user is re-read, so a revoked ambassador is refused (403) even with a token minted before the revocation. A newly approved student's token still says `student`: the panel answers that 403 by renewing the token once (`/refresh`), so the panel opens at once |
 
 The database refuses a code outside `^[A-Za-z0-9_-]{3,40}$`, and `point_ledger` refuses UPDATE, DELETE and TRUNCATE (except TRUNCATE in a `*_test` database) (`*_core_ambassador_checks`).
 
@@ -277,6 +279,20 @@ The database refuses a code outside `^[A-Za-z0-9_-]{3,40}$`, and `point_ledger` 
 | `POST /ambassador/tasks/:assignmentId/submit` (ambassador, re-read) | `{ proof (1–1,000, plain text) }` | 204. Own assignment only (another's is 404); from `assigned` or `rejected` (409 `not_open`); not for an archived task (409 `archived`); a revoked or blocked ambassador gets 403. 10 per 10 minutes per ambassador (429), on top of the per-user limit |
 
 The database keeps the limits and the status rules (`*_core_ambassador_tasks_checks`): a submitted, approved or rejected assignment has its proof and time; approved exactly when an admin and a time are recorded; rejected has a note.
+
+**Teams (core C5b-3; CORE-PLAN D7, lead's plan and rules).** Shapes `MyTeam`, `AdminTeamRow`, `AdminTeamDetail`, `TeamRenameRequest`, `TEAM_LIMITS`, `TEAM_REFUSALS` (`core.ts`). One team per ambassador, one team per student (the owner is a member), at most 10 members. **Members are minors: the student view carries first names only**, and only the team lead gets the join code. A team whose lead is no longer an approved, unblocked ambassador takes no new members (409 `team_closed`); its members keep it. There is no dissolve in v1. Every write is audited with ids only (`team.created`, `.joined`, `.left`); `team.renamed` keeps the reason, never the names (a minor's free text). Every caller is re-read, so a blocked user or a token with an older role is refused (403).
+
+| Method + path | Request | Answers |
+|---|---|---|
+| `POST /ambassador/teams` (approved ambassador) | `{ name (3–60, unique in any case) }` | 201 `MyTeam` with the new code `TM-` + 6 characters (Crockford base32, unique, case-insensitive). 409 `already_has_team`, `already_in_team` (a member of another team), `name_taken` |
+| `GET /teams/mine` (student, ambassador) | — | `MyTeam`: name, member count, `isOwner`, `joinCode` (the lead only, else null), members by first name with the lead marked. 404 when not in a team |
+| `POST /teams/join` | `{ code }` (`TM-` + 6, any case) | 200 `MyTeam`. 404 unknown code; 409 `team_closed`, `already_in_team`, `team_full`. One row lock per team, so two joins never pass 10. **10 attempts per 10 minutes per user (429, the route tier) and 60 per IP** (a cache-Redis counter; Redis trouble lets the attempt through). Refused codes count too, so guessing a code stays slow |
+| `POST /teams/mine/leave` | — | 204. 409 `not_in_team`; 409 `owner_cannot_leave` (the lead stays with the team) |
+| `GET /admin/teams` (admin, re-read) | `q` (name, 1–60), `page`, `pageSize` (≤ 50) | `Paginated<AdminTeamRow>` newest first: name, lead (id, full name), `open` (the lead still active), member count, times. No join code |
+| `GET /admin/teams/:id` (admin) | — | `AdminTeamDetail`: the row plus the members (id, full name, email, joined), oldest first. 404 unknown id (a malformed id is 400; the web asks for none) |
+| `PATCH /admin/teams/:id` (admin) | `{ name (3–60), reason (3–200), expectedUpdatedAt }` | 200 the row. A row lock: 409 `stale`, `nothing_to_update`, `name_taken`. Moderation for an unsuitable name |
+
+The database keeps the name length and the code format (`*_core_ambassador_teams_checks`); `teams.name`, `teams.join_code` and `teams.owner_id` are unique, and `team_members.user_id` is unique (one team per student).
 
 ## Admin statistics (core; lead 2026-11-01)
 
