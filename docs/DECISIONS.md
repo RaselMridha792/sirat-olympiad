@@ -40,6 +40,173 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - Unit tests keep the script's CREATE ROLE attributes and its timeouts equal to the migrations', and prove that it loads Prisma Client only after the `DIRECT_URL` check (a preload hook fails any load of it, by name or by file). An int test proves that `QUIET_SESSION` reaches the server.
 5. **The boot line** `database role=<name> superuser=<bool>` in the API and the worker makes the RUNBOOK §9 item readable from the logs. In production it warns while the role is a superuser; from L8 a superuser is refused.
 
+## 2026-11-01 — Deploys: SHA-tagged images, a release file and deploy.sh (L9; exam session, LAUNCH-PLAN §2, owner Q4 default)
+
+1. **Images are `sirat-<service>:<sha>`** (`image: sirat-<service>:${SIRAT_TAG:-latest}`). `latest` is the old compose default name, so CI and the shared dev stack see no change. On the VPS, `deploy.sh` writes `SIRAT_TAG` (and the previous one) to `/var/lib/sirat/release.env`, and the RUNBOOK's `$DC` reads it as a second `--env-file`. A command run by hand therefore uses the live images, and with `--no-build` (and `--no-deps` for app services) it never builds or touches a data service.
+2. **A deploy never starts or recreates a data service.**
+   - Each data container's `com.docker.compose.config-hash` label must equal `compose config --hash` for the commit; otherwise it stops with "data-service change pending: apply it as its own step".
+   - `--first` starts them once on a fresh host, and refuses if any data container exists.
+3. **Settings in `.env.deploy`** (git-ignored, mode 600, like `.env.monitor`), with the compose project always explicit. The CI gate reads the exact commit's CI run on main through the GitHub API, with a read-only token.
+4. **Rehearsal mode** (refused for project `sirat`) accepts commits of a local branch and skips the CI gate, and says so in its first line.
+5. **The order:** build while the live release serves; a backup only when the release adds migrations (none for the first release, which has no data); migrate (`config seed done` required); then `up --wait`. A failed backup or migrate stops before the switch, so the live API keeps serving.
+6. **The smoke after the switch decides the rollback.** It checks:
+   - exact 200s through the internal listener;
+   - the public URL as `maintenance.sh status` says;
+   - each API's PayStation boot line against `.env`, compared and never printed;
+   - the worker healthy;
+   - `prisma migrate status` with nothing pending or failed. "Missing from the local migrations directory" is accepted, since after a rollback the database keeps newer migrations.
+
+   A failure goes back to the live release with no build and says loudly that migrations stay applied. A failed first release turns maintenance on instead.
+7. **A rollback by hand warns about an exam window but does not refuse;** a deploy refuses within 30 minutes of one. A rollback is the incident fix.
+8. **Image pruning keeps the last 3 releases** (the live and the previous one always). It removes only `<sha>` tags this script recorded, never `latest` and never a volume.
+9. **The rehearsal runs on this machine's Docker** (the Q4 default without a VM).
+   - Project `sirat-rh`, its own clone in a Docker volume mounted at the daemon's own path for that volume. Compose's relative bind mounts then name a path the daemon has, and file modes are real Linux ones.
+   - The site name is a network alias of nginx, so the tools container reaches `https://sirat-rh.test` with real TLS (the self-signed certificate is trusted there).
+   - The RUNBOOK's create-admin uses a hidden prompt; with no terminal, the rehearsal uses `--password-stdin`.
+10. **CI checks the refusals on its own stack** (the development marker, a second `--first`). The full paths run in the rehearsal.
+11. **Found by the rehearsal:**
+    - **The smoke waits for nginx first.** Recreated containers get new addresses, and Docker may give an old one to another container. nginx re-resolves its upstreams only every 10 s, so right after a healthy `up --wait` the home page could answer 502. The smoke now waits up to 30 s (`DEPLOY_SETTLE_SECONDS`) for three good rounds through the internal listener before it judges.
+    - **`--rollback` writes the release file as soon as the containers have switched,** before its smoke. The file never names a release that is not running, even when the smoke then fails.
+    - **The first release must be the commit `--first` ran on,** because the data services take their settings from that commit's compose file. `--first` names it, and a refusal for a first release repeats it.
+    - **An automatic rollback ends with the reason:** the failed checks and the app containers' states, which the rollback's own output would otherwise bury.
+
+## 2026-11-01 — A busy database answers 503 SERVICE_BUSY, never 500; the registration start retries once (Claude; lead, A2's conditions)
+
+1. **Found:** k6 at 25 starts/s while every CPU thread was busy, with a pool of 5 like production. 180 starts answered 500, all Prisma P2028 (start's interactive transaction ran out of maxWait or timeout); the global filter turned every non-HTTP error into 500.
+2. **The filter** (A2's file, a minimal change; A2's conditions):
+   - non-HTTP errors only: an HttpException, refresh's own 503 included, passes unchanged, without Retry-After;
+   - exactly `isRetryableDbError` plus P2024 becomes `503 SERVICE_BUSY` with `Retry-After: 2`. That set means "nothing was applied, send it again": the transaction rolled back, or no connection was taken;
+   - connection-lost errors (P1001, P1017) stay 500: they can hit during COMMIT with an unknown outcome;
+   - the log is a warn line, "database busy", with class and code only, never the Prisma message.
+3. **Login:** a busy database answers 503 and is never a failed login, because the account lookup fails before the limiter counts.
+4. **The wizard** retries only the start, once: the same body and so the same `startRequestId`, after Retry-After (capped at 5 s) plus up to 1 s of jitter. A start that committed is replayed; one that rolled back starts fresh.
+   - The payment retry, resume and the other calls are not retried automatically (A2: only idempotent calls). They show their error state.
+   - After a second busy answer the wizard shows its "the server is busy" text (bn/en). The `startRequestId` is kept, so pressing the button again is safe too.
+5. **Verified** under the same CPU hog and burst:
+   - before: 180 × 500, 13 × 503 (the 25 s request timeout), 193 students without a checkout;
+   - after: 0 × 500, 77 × 503 `SERVICE_BUSY`, all retried once and then 201, 0 students without a checkout; start p95 21 s → 14.6 s.
+   The k6 script retries a busy start as the wizard does.
+6. **The shared-IP test** (300 starts from one IP, then the 301st refused) no longer depends on wall time. The first start goes alone, its throttler window gets a long TTL, and all 301 count in that one window. It passed with a 61 s pause added.
+7. **Not changed:** the transaction limits (answering 503 fast is better than waiting longer), and `connection_limit` (A2's L14 VPS tuning).
+
+## 2026-11-01 — The audit-log viewer (core; lead's task, plan and review, M13)
+
+1. **Admins only** (lead: not manager), re-read on every call. Read only: `audit_logs` stays append-only.
+2. **The list never shows an IP, an email or the meta.** Opening a row shows them (`GET /admin/audit/:id`), and opening is not audited (as the students' detail, C1).
+3. **Keyset paging on (created_at, id), newest first:** the log grows with every failed login, so there is no OFFSET.
+   - The cursor carries the time to the microsecond. A JS Date keeps milliseconds only, and with it rows written within the same millisecond would be skipped; a test writes such rows and pages through them at four page sizes.
+   - The cursor is opaque, checked against a strict pattern and passed as a bound value, never as SQL.
+4. **Indexes:** `audit_logs (created_at DESC, id DESC)` and `(actor_id, created_at DESC)`, declared in `schema.prisma` (Prisma diffs indexes, so a raw-SQL index would fail the drift check) and generated into `*_core_audit_index`.
+   - `audit_logs` is the foundation's table (announced to the lead). The migration must sort after the newest on main when it merges.
+5. **Filters:**
+   - **Action:** one exact action or a family (`auth.*`, matched with `starts_with`, so `_` is never a LIKE wildcard).
+   - **Account:** an email (any case, looked up on the server; an unknown email matches nothing) or `system` (no actor).
+   - **Dates:** Asia/Dhaka days, both included; a day that does not exist is refused.
+6. **The export** (lead): the list's columns plus the meta, never the IP or an email.
+   - **Redaction:** meta is written by many modules, so every email, Bangladeshi mobile number (with or without 88/+88) and IPv4/IPv6 address inside it is replaced before it reaches the file. Times such as `12:30:45`, ids, codes and invoices stay; unit tests feed each form.
+   - **On the record:** the export's own audit row keeps the filters with the account only as a kind (`email`/`system`), the row count and the reason.
+   - **Limits:** at most 50,000 rows, 5 exports per admin per hour.
+7. **Web:** one `ExportCsvButton` (students and audit); its texts are picked in the client from a fixed table, so no message travels as a prop. `ExportUsersButton` is a thin wrapper.
+
+## 2026-11-01 — The checkout time limit is PayStation's link lifetime: 10 minutes (Claude; S12, plan Q5/D3, lead)
+
+1. **Measured (S12, sandbox, API only, no payment):** an unpaid checkout link works for about 9 minutes. At 10 it shows "Invalid or Expired Token".
+   - v1 keeps answering `processing` for that invoice, so PayStation never tells us "expired".
+   - With the old 60 minutes, "Continue payment" sent a student to a dead page for about 50 minutes.
+2. **The rule was already set** (plan Q5, D3; the owner's): the time limit equals the link lifetime, never shorter. The lead applied it; it is not a new policy.
+   - The seeded `payment_expiry_minutes` is now 10, and an invalid stored value falls back to 10.
+   - After 10 minutes the student sees "Try again", which makes a new invoice.
+3. **Nothing paid is lost:** a payment finished at 9:59 whose IPN comes after our expiry is still settled. The IPN asks for a check inside the 48 h late watch, and the check marks it paid (`late_success`, with its account). `payments-hooks.int-spec` covers exactly that sequence.
+4. **Databases that already exist keep their row,** because the seed is insert-only. Production starts fresh and gets 10. On the shared dev databases, nobody changes the admin setting without asking.
+5. **The "already in progress" message** no longer names a number of minutes (bn and en): an admin can change the setting.
+6. **Re-measure on the client's live account** (plan §13; RUNBOOK §11).
+
+## 2026-11-01 — "Coming soon" from a launch table (Claude; L1, LAUNCH-PLAN §8, lead review)
+
+1. **The table:** `apps/web/src/data/launch.ts` has one row per `/dashboard` and `/admin` page, `live` or `soon`.
+   - At this merge every page is live: only `admin.getStats` was still unwired, and core's #46 serves it.
+   - Each owner flips its own rows.
+   - A new page needs a row: `launch.test.ts` and `check-pages` fail without one.
+2. **Amends "Web data layer over HTTP" #2:** a page the table marks `soon` shows `ComingSoon` instead of the error state its unwired methods would give.
+   - `ComingSoon` is in `packages/ui`: `role="status"`, `data-state="coming-soon"`, neutral tokens, no retry button.
+   - "Soon" comes only from the table, with no try/catch around data calls. A 404, 5xx or timeout still shows the error page.
+   - With the API down, a soon page shows the error page too, because `requireAccess()` fails first.
+3. **The guard:** `if (!isLive('<route>', data, params.mock)) return <ComingSoonPage title={…} />`, after `requireAccess()` and before the first data call. `launch.test.ts` reads each soon page and checks that order.
+4. **Development:** the mock has every method, so every page is live there. `?mock=launch` previews the production view.
+5. **`check-pages` prod is strict per route:**
+   - a live page that shows the error state fails (until now such pages were only counted);
+   - a soon page must show `ComingSoon` with HTTP 200;
+   - a page without a row fails.
+   `api-down` adds the first soon page, when there is one.
+6. **The proof while every page is live:**
+   - **A fixture table in `launch.test.ts`:** a soon row, a live row and a missing row; the mock with and without the preview; the order check on a guarded page, a late guard and a missing one.
+   - **A local run** with one page temporarily marked soon (in the PR).
+7. **The Bangla strings:** Rasel checks them (Q5).
+
+## 2026-11-01 — Nightly session and token cleanup (Claude; L13, LAUNCH-PLAN §9, A2's notes, lead review)
+
+1. **The rule is A2.1b #9 as recorded:**
+   - sessions go 30 days after they expired or were revoked; a rotation revokes;
+   - auth tokens go 7 days after expiry, used or not.
+   - `rotate()` is unchanged. A refresh token replayed after its row was purged gets 401 'invalid'. It no longer ends its family or writes `auth.refresh_reuse`: the accepted loss.
+2. **The schedule:**
+   - its own `housekeeping` queue. Not "maintenance", which L5's maintenance switch already means (lead);
+   - `30 3 * * *` Asia/Dhaka, one scheduler id, 3 attempts, failed jobs kept 7 days;
+   - in ops-check, a failed run is a `failed_jobs` **warning**, not critical (lead): a missed night is not urgent, and the next night catches up.
+3. **How it deletes:**
+   - batches of 1,000 with `FOR UPDATE SKIP LOCKED`, each in its own transaction under `SET LOCAL statement_timeout` (5 s);
+   - at most 50 batches per table and run;
+   - idempotent: a retry deletes only what is left, and two runs at once both finish.
+4. **Counts only:** one log line and one audit row (`housekeeping.session_cleanup`, meta `sessions`, `tokens`, `batches`, `more`). Never an IP, a browser or a token.
+5. **Indexes:** `sessions(expires_at)`, `sessions(revoked_at)`, `auth_tokens(expires_at)`. Plain `CREATE INDEX` inside Prisma's migration transaction: the tables are small before launch, so `CONCURRENTLY` is not needed.
+6. **AuditService** is provided in the worker module itself; it needs only Prisma. Importing the API's AuditModule would bring the alerts and the email queue.
+7. **Tests:** every run gets an explicit `now`, and the rows sit days from each cutoff, so no result depends on timing. They cover:
+   - 31 days deleted and 29 kept, for each branch on its own;
+   - tokens: 8 days deleted, 6 kept;
+   - the batch cap and "more", a second run deleting nothing, and two parallel runs;
+   - the other tables and the append-only logs unchanged, apart from the one audit row;
+   - the HTTP replay → 401 while the live session still refreshes;
+   - two worker inits → one scheduler, and its job runs the cleanup.
+   Mutation checks (cutoff 30 → 28 days, OR → AND, no batch cap) each fail the unit and the integration tests.
+8. **Next:** payments' D6 payload scrub (abandoned attempts after 30 days) joins this job as a follow-up after L1 (lead).
+
+## 2026-11-01 — Admin statistics on the admin home (core; lead's task and review)
+
+1. **Counts only** (`GET /admin/stats`, admin and manager): no name, email, phone, id or money sum. A test scans the answer.
+   - **Roles:** the user is re-read on every call, so a demoted or blocked one gets 403 at once.
+   - **Jury** gets a short welcome on `/admin` and the page makes no call (lead: least privilege; letting jury see the counts later is a one-line role change).
+2. **One snapshot:** every count is read in one `REPEATABLE READ` batch transaction on one connection, so the totals agree with the breakdowns and the queries never take more than one pool connection.
+3. **Cache:** 60 s in the cache Redis (`admin-stats:v1`); `asOf` says when the counts were computed.
+   - **Single flight:** a lock (`SET NX PX`, released only by its holder) makes a burst compute once. The others wait up to 5 s for that result, then compute on their own.
+   - **Redis trouble:** every call reads Postgres, with a warning logged at most every 30 s.
+   - **No invalidation:** counts up to a minute old are fine for an overview.
+4. **Others' tables, read only:** payments' `registrations`, `payments` and `pending_registrations`, and exam's `attempts`. No index was added to them.
+   - The 45-day per-day `GROUP BY` on `registrations.created_at` (Asia/Dhaka days, UTC+6 all year) runs at most once a minute behind the cache.
+5. **Where it lives:** in the scaffold's empty `AdminModule`, which was already in `app.module.ts`, instead of a new module (lead's plan said a new `AdminStatsModule` with one line there). The audit-log viewer joins it next.
+6. **Shape:** `AdminStats` (`dashboard.ts`) keeps the UI port's fields, so the page's cards and charts stay.
+   - `secondRound` and `finalists` are `null` until rounds exist (C6); the page hides their card and pipeline stage.
+   - New fields: `registrationAttempts`, `paymentsByStatus` (without `refunded`, which is never entered), `paymentsNeedingReview` (payments' own "needs review" rule: a `review_reason` is set) and `ambassadors`.
+7. **Tests:** `admin-stats.int-spec.ts` (6) and the `dhakaDays` unit spec.
+   - `admin-stats.int-spec.ts` covers every count as a difference around its own rows (the test database is shared), the Dhaka day edges, the burst computing once, the cache serving the same `asOf`, the Postgres fallback, the roles, and the counts-only scan.
+   - web: `http/stats.test.ts` (picks at every level, shape refusals).
+
+## 2026-11-01 — Exam authoring screens (E5b; exam session, EXAM-PLAN §5, on E1's API)
+
+1. **Times are Bangladesh time whatever the admin's browser clock:** the form converts with a fixed UTC+6 (no daylight saving time in Bangladesh) and sends UTC. A wall-clock time that does not exist (30 February) is refused before sending. Announcements use the browser's clock; exam windows must not move with an admin abroad.
+2. **One settings form for new and edit, on its own pages** (`/admin/exams/new`, `/admin/exams/[id]/edit`), not a dialog on the detail page.
+   - The edit page gets the settings only (`pickSettings`: no questions, so no answer keys), with `updatedAt` as the version it sends back; the e2e checks the page for a question canary.
+   - A published exam shows every field, the frozen ones read-only with why. Only the title and a later close are sent; the latter needs a reason (3–200 characters).
+   - The patch carries only what changed: an unchanged frozen field is never sent, so it cannot be refused.
+3. **The question dialog letters options by their place** (A, B, C...): removing one never leaves a gap, and the correct choice follows its option. Two options that read the same (case and spaces aside) are refused in the browser, though the API would take them.
+4. **What the buttons offer follows the API's rules** (`questionRules`, `stateActions`):
+   - **a draft:** add, edit in place, delete;
+   - **a published exam:** an edit says "Save as version n+1"; add and retire only with a random draw, and retire only while more than the questions per attempt stay active;
+   - **an archive:** nothing.
+
+   The server still decides, and a refusal lists every reason it gave (publish can fail several checks at once).
+5. **No round field** until rounds have an API (core C6): a new exam has none.
+6. **A browser e2e, `e2e:exam-admin`,** run on the exam session's own throwaway database. Like `e2e:exam`, it is a by-hand stack test, not a CI step.
+
 ## 2026-11-01 — Registration surge, local k6 (Claude; payments PR 5, plan step 13; provisional until the VPS)
 
 1. **The scenario** (`loadtests/registration-surge.js`). One iteration is one student, as the browser would do it:

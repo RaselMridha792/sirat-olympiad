@@ -97,6 +97,27 @@ export const AMBASSADOR_REFUSALS = [
 ] as const;
 export type AmbassadorRefusal = (typeof AMBASSADOR_REFUSALS)[number];
 
+// ───────────── Admin statistics (06-API "Admin statistics"; the shape is AdminStats in dashboard.ts) ─────────────
+
+/** payments' RegistrationAttemptStatus (schema.prisma), in the order the admin home lists them. */
+export const REGISTRATION_ATTEMPT_STATUSES = [
+  'open',
+  'completed',
+  'abandoned',
+  'conflict',
+] as const;
+export type RegistrationAttemptStatus = (typeof REGISTRATION_ATTEMPT_STATUSES)[number];
+
+/** The payment statuses the admin home counts: every status except `refunded`, which is never entered. */
+export const STATS_PAYMENT_STATUSES = [
+  'initiated',
+  'pending',
+  'paid',
+  'failed',
+  'expired',
+] as const;
+export type StatsPaymentStatus = (typeof STATS_PAYMENT_STATUSES)[number];
+
 /** POST /admin/ambassadors/:userId/{approve,revoke} answer: the ambassador's state after the change. */
 export interface AmbassadorState {
   userId: string;
@@ -104,3 +125,65 @@ export interface AmbassadorState {
   approvedAt: string | null;
   role: Role;
 }
+
+// ───────────── Audit log viewer (06-API "Audit log"; lead 2026-11-01) ─────────────
+
+/** `action`: one exact action (`auth.login_failed`) or a family (`auth.*`). Lower case, dots, underscores. */
+export const AUDIT_ACTION_PATTERN = /^[a-z][a-z_]*(\.[a-z_]+)*(\.\*)?$/;
+
+/** The filters of the audit list, shared by the list (query string) and the export (JSON body). */
+export interface AdminAuditFilters {
+  action?: string;
+  /** An account's email, or `system` for rows written without an actor. */
+  actor?: string;
+  /** Asia/Dhaka calendar days (YYYY-MM-DD), both included. */
+  from?: string;
+  to?: string;
+}
+
+export interface AdminAuditQuery extends AdminAuditFilters {
+  /** The cursor from the previous page's `next` (older rows). */
+  before?: string;
+  limit?: number;
+}
+
+/** One row of the list: never the IP, an email or the meta (an admin opens the row for those). */
+export interface AdminAuditRow {
+  id: string;
+  createdAt: string;
+  action: string;
+  /** Written without an actor (a job, the gateway, an unknown email). */
+  system: boolean;
+  /** The acting account, or null for a system row. */
+  actor: { name: string; role: Role } | null;
+  entityType: string | null;
+  entityId: string | null;
+}
+
+export interface AdminAuditPage {
+  items: AdminAuditRow[];
+  /** Cursor for the next (older) page; null on the last page. */
+  next: string | null;
+}
+
+/** GET /admin/audit/:id: the row as written. */
+export type AdminAuditDetail = AdminAuditRow & {
+  ip: string | null;
+  actorEmail: string | null;
+  meta: unknown;
+};
+
+export interface AdminAuditExportRequest extends AdminAuditFilters {
+  /** Why the trail leaves the system; kept in the export's own audit row. */
+  reason: string;
+}
+
+export const ADMIN_AUDIT_EXPORT = {
+  /** More matching rows than this: 400 too_many_rows (narrow the filter). */
+  maxRows: 50_000,
+  /** Exports per admin per hour. */
+  perHour: 5,
+  /** The list's page size: default and most. */
+  pageSize: 25,
+  maxPageSize: 50,
+} as const;

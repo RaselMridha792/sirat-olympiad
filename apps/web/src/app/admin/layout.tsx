@@ -5,6 +5,7 @@ import {
   FileText,
   LayoutDashboard,
   Megaphone,
+  ScrollText,
   Settings,
   Trophy,
   Truck,
@@ -25,7 +26,7 @@ import { requireArea } from '@/lib/session';
 /**
  * Sidebar links, shown to the roles that may open them (lib/access.ts). Hiding a link only shapes the UI: each
  * admin page checks access itself and each API endpoint has its own server guard. Screens that are not
- * built yet (jury, audit log) are not linked at all.
+ * built yet (jury) are not linked at all.
  */
 const NAV: ReadonlyArray<{
   key: keyof AdminShellMessages['nav'];
@@ -42,6 +43,7 @@ const NAV: ReadonlyArray<{
   { key: 'settings', href: '/admin/settings', Icon: Settings },
   { key: 'book', href: '/admin/book', Icon: BookOpen },
   { key: 'bookOrders', href: '/admin/book-orders', Icon: Truck },
+  { key: 'audit', href: '/admin/audit', Icon: ScrollText },
 ];
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {

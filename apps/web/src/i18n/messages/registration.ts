@@ -65,7 +65,7 @@ export const registrationMessages = defineMessages({
       PAYMENTS_PAUSED: owner('PAYMENTS_PAUSED').en,
       EMAIL_REGISTERED: owner('EMAIL_REGISTERED').en,
       EMAIL_IN_PROGRESS:
-        'A payment for this email is already in progress. Continue in the browser where you started, or try again after it expires (at most 60 minutes).',
+        'A payment for this email is already in progress. Continue in the browser where you started, or try again a little later, once it has expired.',
       PHONE_REGISTERED: owner('PHONE_REGISTERED').en,
       PROMO_INVALID: 'This promo code is not valid. Check it, or leave the field empty.',
       GRADE_LEVEL_UNKNOWN: 'Choose your class again.',
@@ -196,7 +196,7 @@ export const registrationMessages = defineMessages({
       PAYMENTS_PAUSED: owner('PAYMENTS_PAUSED').bn,
       EMAIL_REGISTERED: owner('EMAIL_REGISTERED').bn,
       EMAIL_IN_PROGRESS:
-        'এই email-এর একটি পেমেন্ট এখন চলছে। যে ব্রাউজারে শুরু করেছিলেন সেখানে চালিয়ে যান, অথবা সময় শেষ হলে (সর্বোচ্চ ৬০ মিনিট) আবার চেষ্টা করুন।',
+        'এই email-এর একটি পেমেন্ট এখন চলছে। যে ব্রাউজারে শুরু করেছিলেন সেখানে চালিয়ে যান, অথবা কিছুক্ষণ পরে, সময় শেষ হলে আবার চেষ্টা করুন।',
       PHONE_REGISTERED: owner('PHONE_REGISTERED').bn,
       PROMO_INVALID: 'এই প্রোমো কোডটি সঠিক নয়। মিলিয়ে দেখুন, অথবা ঘরটি খালি রাখুন।',
       GRADE_LEVEL_UNKNOWN: 'আপনার শ্রেণি আবার বেছে নিন।',

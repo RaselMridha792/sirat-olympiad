@@ -157,6 +157,32 @@ describe('POST /payments/paystation/ipn', () => {
     );
   });
 
+  it('a payment completed at 9:59 whose IPN comes after our 10-minute expiry still settles (late watch)', async () => {
+    const s = await startRegistration(env);
+    const p = await payment(s.paymentId);
+    // The seeded time limit is PayStation's link lifetime (S12): 10 minutes.
+    expect(Math.abs(p.expiresAt.getTime() - p.createdAt.getTime() - 10 * 60_000)).toBeLessThan(
+      5_000,
+    );
+    // Our reconciliation runs just after the expiry while PayStation still says "processing": expired.
+    await env.verifier.verify(s.paymentId, 'reconcile', new Date(p.expiresAt.getTime() + 1_000));
+    expect((await payment(s.paymentId)).status).toBe(PaymentStatus.expired);
+    // The payer had finished at 9:59; PayStation's status now says paid, and its IPN arrives late.
+    checkout(env, s.invoiceNumber).status = 'success';
+    const body = ipnBody(s.invoiceNumber, checkout(env, s.invoiceNumber).trxId);
+    expect((await call('POST', '/payments/paystation/ipn', { body, csrf: false })).status).toBe(
+      200,
+    );
+    // Inside the 48 h late watch the IPN asks for a check, and the check marks it paid: money taken wins.
+    expect((await job(s.paymentId))?.data).toEqual({ paymentId: s.paymentId, reason: 'ipn' });
+    expect(await env.verifier.verify(s.paymentId, 'ipn')).toBe('applied_paid');
+    expect(await payment(s.paymentId)).toMatchObject({
+      status: PaymentStatus.paid,
+      reviewReason: 'late_success',
+    });
+    expect(await env.prisma.user.count({ where: { email: s.email } })).toBe(1);
+  });
+
   it('refuses a body over 16 KB with 413', async () => {
     const body = ipnBody('TUNKNOWN0000000003', 'trx', { pad: 'x'.repeat(17_000) });
     expect((await call('POST', '/payments/paystation/ipn', { body, csrf: false })).status).toBe(
@@ -432,7 +458,7 @@ describe('admin settings', () => {
       ['registration_fee_minor', { value: 100, expected: 40000, reason: 'Below 10 BDT' }, 400],
       ['registration_fee_minor', { value: 45000, expected: 40000 }, 400],
       ['registration_open', { value: 'yes', expected: true }, 400],
-      ['payment_expiry_minutes', { value: 2, expected: 60 }, 400],
+      ['payment_expiry_minutes', { value: 2, expected: 10 }, 400],
       ['currency', { value: 'USD', expected: 'BDT' }, 404],
       ['registration_open', { value: false }, 400],
       ['registration_open', { value: false, expected: true, role: 'admin' }, 400],

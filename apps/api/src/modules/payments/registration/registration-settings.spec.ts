@@ -50,12 +50,12 @@ describe('registration settings', () => {
     expect(isRegistrationOpen(parseRegistrationSettings(rows(over)), now)).toBe(false);
   });
 
-  it('reads an invalid fee as null and an odd expiry as 60 minutes', () => {
+  it('reads an invalid fee as null and an odd expiry as 10 minutes (the link lifetime)', () => {
     const s = parseRegistrationSettings(
       rows({ registration_fee_minor: 1_000_100, payment_expiry_minutes: 0 }),
     );
     expect(s.feeMinor).toBeNull();
-    expect(s.expiryMinutes).toBe(60);
+    expect(s.expiryMinutes).toBe(10);
     expect(parseRegistrationSettings(rows({ payment_expiry_minutes: 90 })).expiryMinutes).toBe(90);
   });
 });

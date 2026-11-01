@@ -1,4 +1,5 @@
 import {
+  ADMIN_AUDIT_EXPORT,
   BD_DISTRICTS,
   type AdminAnnouncement,
   EXAM_VIOLATION_WARNINGS,
@@ -44,6 +45,7 @@ import {
   type MockUser,
   type MockWorld,
 } from './fixtures.ts';
+import { auditMatches, mockAudit } from './audit.ts';
 import { withLeakCanaries } from './leak.ts';
 import { emptyPage, matches, paginate } from './paging.ts';
 
@@ -598,8 +600,9 @@ export function createMockSource(state: MockState | null): DataSource {
         run(
           () => {
             const w = getWorld();
-            const count = (status: 'paid' | 'pending') =>
+            const count = (status: 'paid' | 'pending' | 'failed' | 'expired') =>
               w.users.filter((u) => u.payment?.status === status).length;
+            const ambassadors = w.users.filter((u) => u.role === 'ambassador').length;
             const promoted =
               w.standings.get('rd-1')?.filter((s) => s.entryStatus === 'promoted').length ?? 0;
             return {
@@ -618,6 +621,21 @@ export function createMockSource(state: MockState | null): DataSource {
                 category,
                 count: w.users.filter((u) => u.category === category).length,
               })),
+              registrationAttempts: {
+                open: count('pending'),
+                completed: count('paid'),
+                abandoned: count('failed') + count('expired'),
+                conflict: 0,
+              },
+              paymentsByStatus: {
+                initiated: 0,
+                pending: count('pending'),
+                paid: count('paid'),
+                failed: count('failed'),
+                expired: count('expired'),
+              },
+              paymentsNeedingReview: 1,
+              ambassadors: { approved: ambassadors, revoked: 1, referredStudents: 3 * ambassadors },
             };
           },
           () => ({
@@ -639,6 +657,10 @@ export function createMockSource(state: MockState | null): DataSource {
               category,
               count: 0,
             })),
+            registrationAttempts: { open: 0, completed: 0, abandoned: 0, conflict: 0 },
+            paymentsByStatus: { initiated: 0, pending: 0, paid: 0, failed: 0, expired: 0 },
+            paymentsNeedingReview: 0,
+            ambassadors: { approved: 0, revoked: 0, referredStudents: 0 },
           }),
         ),
 
@@ -1000,6 +1022,30 @@ export function createMockSource(state: MockState | null): DataSource {
               query,
             ),
           () => emptyPage<AdminBookOrderRow>(query),
+        ),
+
+      listAudit: (query) =>
+        run(
+          () => {
+            const rows = mockAudit(getWorld().users).filter((r) => auditMatches(r, query));
+            const start = query.before ? Number(query.before.replace(/^m/, '')) || 0 : 0;
+            const limit = query.limit ?? ADMIN_AUDIT_EXPORT.pageSize;
+            const items = rows
+              .slice(start, start + limit)
+              .map(({ detail: _detail, ...row }) => row);
+            return { items, next: start + limit < rows.length ? `m${start + limit}` : null };
+          },
+          () => ({ items: [], next: null }),
+        ),
+      getAuditEntry: (id) =>
+        run(
+          () => {
+            const row = mockAudit(getWorld().users).find((r) => r.id === id);
+            if (!row) return null;
+            const { detail, ...rest } = row;
+            return { ...rest, ...detail };
+          },
+          () => null,
         ),
     },
   };

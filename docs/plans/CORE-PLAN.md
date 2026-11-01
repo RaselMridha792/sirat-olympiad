@@ -30,7 +30,7 @@ Sources: RULEBOOK §4, §5, §15, §18, §19; `02`–`07`, `10-BUILD-PLAN.md`; D
 
 **Public pages:** the lead's launch-gap list of 22:26 gave A2 "a minimal public entry page and the legal pages"; the lead's message of 22:40 gives them to this plan. A2's `LAUNCH-PLAN.md` then keeps only deploy, TLS, backups, monitoring, the maintenance page and the "coming soon" states. The lead confirms (section 11, risk 1).
 
-**Not in this plan (gaps for the lead):** `GET /admin/stats` (admin home KPIs; the page shows its error state in production), the admin audit-log viewer (M13), user role change and block/unblock (M2 writes beyond C3's grade correction and C5a's ambassador approval).
+`GET /admin/stats` (the admin home) was a gap; the lead gave it to core on 2026-11-01 and it is built (06-API "Admin statistics"). The admin audit-log viewer (M13) was a gap too; the lead gave it to core on 2026-11-01 and it is built (06-API "Audit log"). **Not in this plan (gaps for the lead):** user role change and block/unblock (M2 writes beyond C3's grade correction and C5a's ambassador approval).
 
 ## 1. Owner questions (Rasel): at most five, each with a default
 
