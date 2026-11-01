@@ -162,6 +162,8 @@ export function RegisterWizard({ locale, info }: { locale: Locale; info: WizardI
       return;
     }
     if (problem.text === 'PAYMENT_START_FAILED') setRetryMode(true);
+    // The attempt's form was cleared after 30 days (D6) and the API gave it up: the next press starts a new one.
+    else if (problem.text === 'START_OVER') setRetryMode(false);
     else if (!['network', 'busy', 'START_IN_PROGRESS'].includes(problem.text))
       requestId.current = null;
     setFormError(problemText(m, problem.text));

@@ -43,6 +43,7 @@ const FORM_CODES: ReadonlySet<string> = new Set<CodeKey>([
   'START_IN_PROGRESS',
   'PAYMENT_START_FAILED',
   'TOO_MANY_ATTEMPTS',
+  'START_OVER',
 ]);
 
 /** The API's password policy texts (apps/api/src/modules/auth/password-policy.ts), matched exactly. */
