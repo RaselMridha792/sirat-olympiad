@@ -28,6 +28,7 @@ Options:
 - `RAMP`, `HOLD`: how long to ramp up, and how long to hold the peak.
 - `PAY_SHARE` (default 0.8): the share of students who pay.
 - `PAY_DELAY` (default 3 s): the time on the checkout before paying.
+- A start that answers 503 `SERVICE_BUSY` (a busy database) is sent once more, as the wizard does; `start_busy_retried` and `start_busy_after_retry` count them.
 - `SPREAD_IPS` (default 1): one `X-Forwarded-For` address per student, for k6 talking to the API directly. Through nginx the generator's own address counts instead, and the start limit of 300/min per IP applies to it.
 
 The setup is in `docs/RUNBOOK.md` §0; the local numbers are in `docs/DECISIONS.md` ("Registration surge, local k6").

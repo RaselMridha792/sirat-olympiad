@@ -1,13 +1,19 @@
-import { ArgumentsHost, ConflictException, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ArgumentsHost,
+  ConflictException,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { AllExceptionsFilter } from './all-exceptions.filter';
+import { AllExceptionsFilter, BUSY_RETRY_AFTER_SECONDS } from './all-exceptions.filter';
 
 const EMAIL = 'student1@example.com';
 const HASH = '$argon2id$v=19$m=65536,t=3,p=4$FAKEHASHVALUE';
 
-type FakeRes = { status: jest.Mock; json: jest.Mock };
+type FakeRes = { status: jest.Mock; json: jest.Mock; setHeader: jest.Mock };
 function run(exception: unknown) {
-  const res: FakeRes = { status: jest.fn(), json: jest.fn() };
+  const res: FakeRes = { status: jest.fn(), json: jest.fn(), setHeader: jest.fn() };
   res.status.mockReturnValue(res);
   const req = { id: 'req-123', method: 'POST', path: '/api/users' };
   const host = {
@@ -168,6 +174,60 @@ describe('AllExceptionsFilter', () => {
       statusCode: 400,
       code: 'BAD_REQUEST',
       message: 'Bad request',
+    });
+  });
+  describe('a busy database answers 503 SERVICE_BUSY with Retry-After (non-HTTP errors only)', () => {
+    const known = (code: string, meta?: Record<string, unknown>) =>
+      new Prisma.PrismaClientKnownRequestError(`busy ${EMAIL}`, {
+        code,
+        clientVersion: '6.19.3',
+        meta,
+      });
+
+    it.each([
+      ['P2028 (transaction maxWait or timeout)', known('P2028')],
+      ['P2034 (write conflict or deadlock)', known('P2034')],
+      ['P2024 (no connection from the pool)', known('P2024')],
+      ['P2010 with SQLSTATE 57014 (statement timeout)', known('P2010', { code: '57014' })],
+      [
+        'an unknown request error with SQLSTATE 55P03 (lock timeout)',
+        new Prisma.PrismaClientUnknownRequestError(`55P03 lock ${EMAIL}`, {
+          clientVersion: '6.19.3',
+        }),
+      ],
+    ])('%s', (_name, e) => {
+      const { res, body } = run(e);
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.setHeader).toHaveBeenCalledWith('Retry-After', String(BUSY_RETRY_AFTER_SECONDS));
+      expect(body).toMatchObject({
+        statusCode: 503,
+        code: 'SERVICE_BUSY',
+        message: 'The service is busy. Try again in a moment.',
+        requestId: 'req-123',
+      });
+      expect(error).not.toHaveBeenCalled();
+      expect(warn.mock.calls[0]?.[0]).toMatchObject({ msg: 'database busy', errName: e.name });
+      expect(logged()).not.toContain(EMAIL); // class and code only, never the message
+    });
+
+    it.each([
+      ['P2002 (a real conflict)', known('P2002')],
+      ['P1017 (connection closed: maybe during COMMIT, unknown outcome)', known('P1017')],
+      ['P1001 (cannot reach the database)', known('P1001')],
+      ['a plain Error', new Error('boom')],
+    ])('%s stays 500, with no Retry-After', (_name, e) => {
+      const { res, body } = run(e);
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.setHeader).not.toHaveBeenCalled();
+      expect(body).toMatchObject({ statusCode: 500, message: 'Internal server error' });
+    });
+
+    it("an HttpException 503 (refresh's own 'busy') passes unchanged, with no Retry-After", () => {
+      const { res, body } = run(new ServiceUnavailableException('Try again'));
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.setHeader).not.toHaveBeenCalled();
+      expect(body).toMatchObject({ statusCode: 503, message: 'Try again' });
+      expect(body.code).not.toBe('SERVICE_BUSY');
     });
   });
 });

@@ -23,6 +23,7 @@ import {
   type StepKey,
 } from './registration-form';
 import { problemText, registrationProblem } from './registration-problem';
+import { withBusyRetry } from './start-retry';
 
 export type WizardInfo = Omit<RegistrationInfo, 'open' | 'opensAt' | 'closesAt' | 'fee'> & {
   fee: NonNullable<RegistrationInfo['fee']>;
@@ -122,9 +123,12 @@ export function RegisterWizard({ locale, info }: { locale: Locale; info: WizardI
     setFormError('');
     try {
       requestId.current ??= newStartRequestId();
+      const input = toStartInput(values, requestId.current);
+      // A busy database (503 SERVICE_BUSY) gets one automatic retry of the same start (same startRequestId);
+      // the payment retry is not idempotent, so it never is.
       const started = retryMode
         ? await registrationApi.retry()
-        : await registrationApi.start(toStartInput(values, requestId.current));
+        : await withBusyRetry(() => registrationApi.start(input));
       if (goToCheckout(started.paymentUrl)) return; // stay busy while PayStation loads
       setFormError(m.errors.PAYMENT_START_FAILED);
     } catch (err) {

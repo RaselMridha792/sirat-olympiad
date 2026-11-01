@@ -31,6 +31,24 @@ One short entry per non-obvious technical or product decision. Newest first. For
     - **`--rollback` writes the release file as soon as the containers have switched,** before its smoke. The file never names a release that is not running, even when the smoke then fails.
     - **The first release must be the commit `--first` ran on,** because the data services take their settings from that commit's compose file. `--first` names it, and a refusal for a first release repeats it.
     - **An automatic rollback ends with the reason:** the failed checks and the app containers' states, which the rollback's own output would otherwise bury.
+## 2026-11-01 — A busy database answers 503 SERVICE_BUSY, never 500; the registration start retries once (Claude; lead, A2's conditions)
+
+1. **Found:** k6 at 25 starts/s while every CPU thread was busy, with a pool of 5 like production. 180 starts answered 500, all Prisma P2028 (start's interactive transaction ran out of maxWait or timeout); the global filter turned every non-HTTP error into 500.
+2. **The filter** (A2's file, a minimal change; A2's conditions):
+   - non-HTTP errors only: an HttpException, refresh's own 503 included, passes unchanged, without Retry-After;
+   - exactly `isRetryableDbError` plus P2024 becomes `503 SERVICE_BUSY` with `Retry-After: 2`. That set means "nothing was applied, send it again": the transaction rolled back, or no connection was taken;
+   - connection-lost errors (P1001, P1017) stay 500: they can hit during COMMIT with an unknown outcome;
+   - the log is a warn line, "database busy", with class and code only, never the Prisma message.
+3. **Login:** a busy database answers 503 and is never a failed login, because the account lookup fails before the limiter counts.
+4. **The wizard** retries only the start, once: the same body and so the same `startRequestId`, after Retry-After (capped at 5 s) plus up to 1 s of jitter. A start that committed is replayed; one that rolled back starts fresh.
+   - The payment retry, resume and the other calls are not retried automatically (A2: only idempotent calls). They show their error state.
+   - After a second busy answer the wizard shows its "the server is busy" text (bn/en). The `startRequestId` is kept, so pressing the button again is safe too.
+5. **Verified** under the same CPU hog and burst:
+   - before: 180 × 500, 13 × 503 (the 25 s request timeout), 193 students without a checkout;
+   - after: 0 × 500, 77 × 503 `SERVICE_BUSY`, all retried once and then 201, 0 students without a checkout; start p95 21 s → 14.6 s.
+   The k6 script retries a busy start as the wizard does.
+6. **The shared-IP test** (300 starts from one IP, then the 301st refused) no longer depends on wall time. The first start goes alone, its throttler window gets a long TTL, and all 301 count in that one window. It passed with a 61 s pause added.
+7. **Not changed:** the transaction limits (answering 503 fast is better than waiting longer), and `connection_limit` (A2's L14 VPS tuning).
 
 ## 2026-11-01 — The audit-log viewer (core; lead's task, plan and review, M13)
 
