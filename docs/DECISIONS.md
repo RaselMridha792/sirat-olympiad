@@ -13,6 +13,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 5. **The drill runs on loopback only** (it refuses any port bound beyond 127.0.0.1) and wipes only containers that carry its project label, never project `sirat`.
 6. **The drill never builds:** its images must be of the dump's code (`--tag`). A first local run failed for that reason: the PC's `latest` images predated L2.
 7. **The round trip** (admin A, a dump, admin B; A logs in, B does not; then the beside mode over the running drill) runs from a tools container, with the clone in a Docker volume so compose's relative bind mounts name a path the daemon has (as in L9's rehearsal). CI runs it in the docker job.
+
 ## 2026-11-01 — Bootstrap and the pre-launch checks (L12; exam session, LAUNCH-PLAN §2 and §7, owner Q4 default)
 
 1. **`bootstrap.sh` is idempotent and safe to repeat:** every step looks before it changes anything, and the owner runs it again after each of their steps. `--dry-run` lists the changes without making them. Settings files come from their examples only when missing and are never overwritten: the owner types the secrets, and the script never prints one.
