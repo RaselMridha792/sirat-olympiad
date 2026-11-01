@@ -54,7 +54,7 @@ export function parseRegistrationSettings(
     expiryMinutes:
       typeof expiry === 'number' && Number.isInteger(expiry) && expiry >= 5 && expiry <= 1_440
         ? expiry
-        : 60,
+        : 10, // the seed's default: PayStation's link lifetime (S12)
   };
 }
 

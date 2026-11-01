@@ -109,6 +109,12 @@ describe('ops thresholds (one run)', () => {
     ],
     ['a failed job', { queues: [queue('exam', { failedSinceLastRun: 1 })] }, 'failed_jobs', 'warn'],
     [
+      'a nightly cleanup that failed for good',
+      { queues: [queue('housekeeping', { failedSinceLastRun: 1 })] },
+      'failed_jobs',
+      'warn',
+    ],
+    [
       'a failed payment verify job',
       { queues: [queue('payments', { failedSinceLastRun: 1, failedVerifySinceLastRun: 1 })] },
       'failed_jobs',

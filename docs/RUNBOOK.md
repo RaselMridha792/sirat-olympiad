@@ -64,6 +64,9 @@ pnpm --filter @sirat/api db:fixtures:dev                   # 4. the same three s
 Web session: the dashboards read the real session (`GET /api/auth/me` from the web server; `API_INTERNAL_URL`, default `http://localhost:4000`, compose sets `http://api:4000`), so `pnpm dev:web` needs `pnpm dev:api` running (the stack's API is not published on :4000; with the full stack, use its own web through nginx at http://127.0.0.1:8080). Log in at `/login` as a fixture student; the admin pages need an admin from the create-admin CLI. Without a session a dashboard page goes to `/refresh`, then `/login`; with the API down it shows the error page, never `/login`. Dashboard data comes from the mock in development; `DATA_SOURCE=http pnpm dev:web` reads the local API instead (methods not connected yet show the error state, as in production).
 
 Page checks and e2e (`apps/web/scripts`; Node and a local Chrome or Edge, no other tool):
+- **The launch table** (`apps/web/src/data/launch.ts`) decides which dashboard pages are live:
+  - `check:prod` fails a `live` page that shows the error state, a `soon` page without "coming soon", and any page without a row. Every new page needs a row.
+  - In development, `?mock=launch` shows the `soon` pages as production would.
 - `check:leak` (dev server) and `check:prod` / `check:api-down` (`next start` with `API_INTERNAL_URL`): set `CHECK_STUDENT_EMAIL`/`CHECK_STUDENT_PASSWORD` (a fixture student) and `CHECK_ADMIN_EMAIL`/`CHECK_ADMIN_PASSWORD`; `check:leak` also needs `CHECK_AMBASSADOR_EMAIL`/`CHECK_AMBASSADOR_PASSWORD` (a fixture student an admin approved as an ambassador, only in a throwaway database: CI approves `student2@fixtures.invalid` through the API). CI runs all three (job "Dashboard pages").
 - `pnpm --filter @sirat/web e2e [http://127.0.0.1:8080]` runs against the whole local stack with `E2E_STUDENT_PASSWORD` (the fixture password) and optionally `E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD`; it reads the reset email from Mailpit. The local stack (project `sirat`, same ports) is shared between sessions: announce `up -d --build`, smoke tests and e2e runs before starting and when done. The reset case sets the student's password to the same value again and ends that student's sessions. It refuses a base URL or `MAILPIT_URL` that is not 127.0.0.1, localhost or ::1.
 - `pnpm --filter @sirat/web e2e:exam [http://127.0.0.1:8080]` (exam room): needs `E2E_STUDENT_PASSWORD` and an admin (`E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD`). The admin publishes a 15-minute exam for all categories through the API (`E2E exam <time>`; it stays published, closed after its 15-minute window, because an exam is archived only after its results are published); a fixture student takes it in the browser up to the 6th violation, and every response, the HTML and localStorage are searched for explanations, correct keys, scores and question ids. Same stack rules as `e2e`; loopback URLs only.
@@ -364,6 +367,11 @@ After go-live, confirm in the nginx access log that client addresses are real us
 
 **The free book's courier list:** `GET /api/admin/book-orders/export.csv?status=confirmed` (admin only; audited with the filter and the row count). It holds minors' addresses and phone numbers: hand it to the courier, then delete the downloaded file. Nothing is stored on the server. After the pickup, mark those orders shipped (`POST /api/admin/book-orders/ship`); from then on the student cannot change the address. **Marked shipped by mistake:** it cannot be undone (the trigger `book_orders_locked_after_shipping` locks the order, by design). Do not edit the database: record the case in the courier sheet (the order code, what was wrong, the right address from the student) and handle it by hand with the courier.
 
+**The checkout time limit** (`payment_expiry_minutes`, default 10) equals PayStation's checkout-link lifetime. In the sandbox the link dies after about 10 minutes (S12), and v1 then still says `processing`. A longer limit would offer "Continue payment" on a dead link.
+- **Re-measure it on the client's live account** in the account-switch check (PAYMENTS-PLAN §13): make one unpaid checkout, and open its link every minute until it says "Invalid or Expired Token".
+- If the lifetime differs, set the setting to it in `/admin/settings` (it is audited). Never set it shorter than the lifetime (D3).
+- A payment finished just before the limit is not lost: the IPN, the callback or reconciliation within the 48 h late watch still marks it paid (`late_success`).
+
 **Changing the fee or the registration window:** `PUT /admin/settings/:key` with the value the form showed as `expected` (409 if someone changed it meanwhile); the fee needs a reason. Payments already started keep their amount.
 
 ## 12. Email (Amazon SES)
@@ -474,3 +482,27 @@ HSTS comes from nginx only: 300 s for launch, without `includeSubDomains`. The r
 - **Load it**, outside an exam window: `$DC exec nginx nginx -c /etc/nginx/sirat/nginx.conf -t && $DC exec nginx nginx -c /etc/nginx/sirat/nginx.conf -s reload`. The certs folder is inside the folder mount, so a reload sees the new files.
 - **Renew it:** it lasts 90 days, so put the renewal date in the calendar. Go back to the Origin CA certificate and Full (strict) once the proxy is on again.
 - **HTTP-01 does not work** with `sites/tls` as written: port 80 redirects the token path, and on 443 `location /` sends it to Next. It would need a code change.
+
+## 16. Nightly session and token cleanup (L13)
+
+- **What it deletes:** every night at 03:30 Asia/Dhaka, the worker's `housekeeping` queue runs `session-cleanup`. There is one scheduler, so one run however many workers start.
+  - `sessions` rows that expired, or were revoked, more than 30 days ago. A rotated row counts as revoked. These rows keep IPs and browsers.
+  - `auth_tokens` 7 days after they expired, used or not.
+  - Nothing else: never users, payments, registrations, submissions or the append-only logs.
+- **How:**
+  - batches of 1,000 (`FOR UPDATE SKIP LOCKED`, 5 s each), at most 50 batches per table a night; the rest waits for the next night;
+  - 3 attempts. A job that failed for good is kept 7 days, and `ops-check` reports it as a `failed_jobs` warning.
+- **Check that it ran:** one audit row per run, with counts only.
+
+```bash
+$DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+select created_at, meta from audit_logs where action = 'housekeeping.session_cleanup' order by created_at desc limit 7;
+SQL
+```
+
+- The worker also logs `session cleanup done` with the same counts.
+- `"more": true` means the run reached the cap. That is normal right after a long pause. If it stays true night after night, the cap is too low for the traffic.
+- **No manual trigger:** a run is idempotent, so the next night catches up.
+- **Indexes:** `sessions(expires_at)`, `sessions(revoked_at)` and `auth_tokens(expires_at)` came with a plain `CREATE INDEX`, fine while the tables were young. A later index on a big `sessions` table must use `CREATE INDEX CONCURRENTLY`, in a migration of its own: Prisma runs each migration in a transaction, and `CONCURRENTLY` cannot run inside one. A plain build would lock writes, and so logins and refreshes, until it finished.
+- **At worker start** the log says `housekeeping scheduler set` (id, pattern, time zone). Every start says so, but Redis keeps one scheduler: `$DC exec -T redis-queue redis-cli ZRANGE bull:housekeeping:repeat 0 -1` lists exactly `session-cleanup`.
+- **After a purge,** a refresh token replayed more than 30 days after its rotation gets 401, like any unknown token. It no longer ends its family or writes `auth.refresh_reuse` (DECISIONS A2.1b #9).

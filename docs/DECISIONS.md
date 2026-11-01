@@ -31,6 +31,86 @@ One short entry per non-obvious technical or product decision. Newest first. For
     - **`--rollback` writes the release file as soon as the containers have switched,** before its smoke. The file never names a release that is not running, even when the smoke then fails.
     - **The first release must be the commit `--first` ran on,** because the data services take their settings from that commit's compose file. `--first` names it, and a refusal for a first release repeats it.
     - **An automatic rollback ends with the reason:** the failed checks and the app containers' states, which the rollback's own output would otherwise bury.
+## 2026-11-01 — The audit-log viewer (core; lead's task, plan and review, M13)
+
+1. **Admins only** (lead: not manager), re-read on every call. Read only: `audit_logs` stays append-only.
+2. **The list never shows an IP, an email or the meta.** Opening a row shows them (`GET /admin/audit/:id`), and opening is not audited (as the students' detail, C1).
+3. **Keyset paging on (created_at, id), newest first:** the log grows with every failed login, so there is no OFFSET.
+   - The cursor carries the time to the microsecond. A JS Date keeps milliseconds only, and with it rows written within the same millisecond would be skipped; a test writes such rows and pages through them at four page sizes.
+   - The cursor is opaque, checked against a strict pattern and passed as a bound value, never as SQL.
+4. **Indexes:** `audit_logs (created_at DESC, id DESC)` and `(actor_id, created_at DESC)`, declared in `schema.prisma` (Prisma diffs indexes, so a raw-SQL index would fail the drift check) and generated into `*_core_audit_index`.
+   - `audit_logs` is the foundation's table (announced to the lead). The migration must sort after the newest on main when it merges.
+5. **Filters:**
+   - **Action:** one exact action or a family (`auth.*`, matched with `starts_with`, so `_` is never a LIKE wildcard).
+   - **Account:** an email (any case, looked up on the server; an unknown email matches nothing) or `system` (no actor).
+   - **Dates:** Asia/Dhaka days, both included; a day that does not exist is refused.
+6. **The export** (lead): the list's columns plus the meta, never the IP or an email.
+   - **Redaction:** meta is written by many modules, so every email, Bangladeshi mobile number (with or without 88/+88) and IPv4/IPv6 address inside it is replaced before it reaches the file. Times such as `12:30:45`, ids, codes and invoices stay; unit tests feed each form.
+   - **On the record:** the export's own audit row keeps the filters with the account only as a kind (`email`/`system`), the row count and the reason.
+   - **Limits:** at most 50,000 rows, 5 exports per admin per hour.
+7. **Web:** one `ExportCsvButton` (students and audit); its texts are picked in the client from a fixed table, so no message travels as a prop. `ExportUsersButton` is a thin wrapper.
+
+## 2026-11-01 — The checkout time limit is PayStation's link lifetime: 10 minutes (Claude; S12, plan Q5/D3, lead)
+
+1. **Measured (S12, sandbox, API only, no payment):** an unpaid checkout link works for about 9 minutes. At 10 it shows "Invalid or Expired Token".
+   - v1 keeps answering `processing` for that invoice, so PayStation never tells us "expired".
+   - With the old 60 minutes, "Continue payment" sent a student to a dead page for about 50 minutes.
+2. **The rule was already set** (plan Q5, D3; the owner's): the time limit equals the link lifetime, never shorter. The lead applied it; it is not a new policy.
+   - The seeded `payment_expiry_minutes` is now 10, and an invalid stored value falls back to 10.
+   - After 10 minutes the student sees "Try again", which makes a new invoice.
+3. **Nothing paid is lost:** a payment finished at 9:59 whose IPN comes after our expiry is still settled. The IPN asks for a check inside the 48 h late watch, and the check marks it paid (`late_success`, with its account). `payments-hooks.int-spec` covers exactly that sequence.
+4. **Databases that already exist keep their row,** because the seed is insert-only. Production starts fresh and gets 10. On the shared dev databases, nobody changes the admin setting without asking.
+5. **The "already in progress" message** no longer names a number of minutes (bn and en): an admin can change the setting.
+6. **Re-measure on the client's live account** (plan §13; RUNBOOK §11).
+
+## 2026-11-01 — "Coming soon" from a launch table (Claude; L1, LAUNCH-PLAN §8, lead review)
+
+1. **The table:** `apps/web/src/data/launch.ts` has one row per `/dashboard` and `/admin` page, `live` or `soon`.
+   - At this merge every page is live: only `admin.getStats` was still unwired, and core's #46 serves it.
+   - Each owner flips its own rows.
+   - A new page needs a row: `launch.test.ts` and `check-pages` fail without one.
+2. **Amends "Web data layer over HTTP" #2:** a page the table marks `soon` shows `ComingSoon` instead of the error state its unwired methods would give.
+   - `ComingSoon` is in `packages/ui`: `role="status"`, `data-state="coming-soon"`, neutral tokens, no retry button.
+   - "Soon" comes only from the table, with no try/catch around data calls. A 404, 5xx or timeout still shows the error page.
+   - With the API down, a soon page shows the error page too, because `requireAccess()` fails first.
+3. **The guard:** `if (!isLive('<route>', data, params.mock)) return <ComingSoonPage title={…} />`, after `requireAccess()` and before the first data call. `launch.test.ts` reads each soon page and checks that order.
+4. **Development:** the mock has every method, so every page is live there. `?mock=launch` previews the production view.
+5. **`check-pages` prod is strict per route:**
+   - a live page that shows the error state fails (until now such pages were only counted);
+   - a soon page must show `ComingSoon` with HTTP 200;
+   - a page without a row fails.
+   `api-down` adds the first soon page, when there is one.
+6. **The proof while every page is live:**
+   - **A fixture table in `launch.test.ts`:** a soon row, a live row and a missing row; the mock with and without the preview; the order check on a guarded page, a late guard and a missing one.
+   - **A local run** with one page temporarily marked soon (in the PR).
+7. **The Bangla strings:** Rasel checks them (Q5).
+
+## 2026-11-01 — Nightly session and token cleanup (Claude; L13, LAUNCH-PLAN §9, A2's notes, lead review)
+
+1. **The rule is A2.1b #9 as recorded:**
+   - sessions go 30 days after they expired or were revoked; a rotation revokes;
+   - auth tokens go 7 days after expiry, used or not.
+   - `rotate()` is unchanged. A refresh token replayed after its row was purged gets 401 'invalid'. It no longer ends its family or writes `auth.refresh_reuse`: the accepted loss.
+2. **The schedule:**
+   - its own `housekeeping` queue. Not "maintenance", which L5's maintenance switch already means (lead);
+   - `30 3 * * *` Asia/Dhaka, one scheduler id, 3 attempts, failed jobs kept 7 days;
+   - in ops-check, a failed run is a `failed_jobs` **warning**, not critical (lead): a missed night is not urgent, and the next night catches up.
+3. **How it deletes:**
+   - batches of 1,000 with `FOR UPDATE SKIP LOCKED`, each in its own transaction under `SET LOCAL statement_timeout` (5 s);
+   - at most 50 batches per table and run;
+   - idempotent: a retry deletes only what is left, and two runs at once both finish.
+4. **Counts only:** one log line and one audit row (`housekeeping.session_cleanup`, meta `sessions`, `tokens`, `batches`, `more`). Never an IP, a browser or a token.
+5. **Indexes:** `sessions(expires_at)`, `sessions(revoked_at)`, `auth_tokens(expires_at)`. Plain `CREATE INDEX` inside Prisma's migration transaction: the tables are small before launch, so `CONCURRENTLY` is not needed.
+6. **AuditService** is provided in the worker module itself; it needs only Prisma. Importing the API's AuditModule would bring the alerts and the email queue.
+7. **Tests:** every run gets an explicit `now`, and the rows sit days from each cutoff, so no result depends on timing. They cover:
+   - 31 days deleted and 29 kept, for each branch on its own;
+   - tokens: 8 days deleted, 6 kept;
+   - the batch cap and "more", a second run deleting nothing, and two parallel runs;
+   - the other tables and the append-only logs unchanged, apart from the one audit row;
+   - the HTTP replay → 401 while the live session still refreshes;
+   - two worker inits → one scheduler, and its job runs the cleanup.
+   Mutation checks (cutoff 30 → 28 days, OR → AND, no batch cap) each fail the unit and the integration tests.
+8. **Next:** payments' D6 payload scrub (abandoned attempts after 30 days) joins this job as a follow-up after L1 (lead).
 
 ## 2026-11-01 — Admin statistics on the admin home (core; lead's task and review)
 

@@ -49,6 +49,7 @@ Source of truth: `apps/api/prisma/schema.prisma` (validated; see note at bottom)
 | CHECKs on enum columns compare `col::text` | Enum-literal CHECKs break Prisma enum migrations (catalog test) |
 | Every FK has a covering index | Catalog test |
 | `audit_logs` append-only: UPDATE, DELETE and TRUNCATE refused (triggers) | The security trail cannot be rewritten by an app bug or an injected statement |
+| `audit_logs (created_at DESC, id DESC)` and `(actor_id, created_at DESC)` indexes (`*_core_audit_index`) | The admin audit viewer pages newest first by keyset and filters by actor without scanning the log |
 | Session defaults: `statement_timeout 10s`, `lock_timeout 5s`, `idle_in_transaction_session_timeout 60s` (database level, migration `*_db_session_timeouts`) | No statement outlives the 25 s request timeout; lock waits fail fast; a stuck transaction cannot hold locks or a PgBouncer connection |
 | `registrations.payment_id` must reference a `paid` payment of the same user (trigger `registrations_payment_paid`) | A CHECK cannot look at another table |
 | `exams CHECK (duration_minutes BETWEEN 1 AND 30)` | **Raw SQL migration** (Prisma cannot express it) |
