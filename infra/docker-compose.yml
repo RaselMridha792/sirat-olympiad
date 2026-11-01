@@ -60,15 +60,16 @@ services:
     <<: *logging
     build: { context: .., dockerfile: apps/api/Dockerfile, target: migrate }
     image: sirat-migrate:${SIRAT_TAG:-latest}
-    # Only what `prisma migrate deploy` and the runtime role (DIRECT_URL, the superuser; POSTGRES_APP_PASSWORD) and the
-    # config seed (the app's connection, as sirat_app) read; not the whole .env.
+    # Only what `prisma migrate deploy` and the runtime role read (DIRECT_URL, the superuser; POSTGRES_APP_PASSWORD), and
+    # the config seed: as sirat_app, straight to Postgres, so this one-shot job never needs PgBouncer (a restore or a first
+    # deploy runs it with --no-deps). Not the whole .env.
     environment:
-      DATABASE_URL: *app-database-url
+      DATABASE_URL: 'postgresql://sirat_app:${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD missing - set it in .env (openssl rand -hex 32)}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB missing - run compose with --env-file .env}'
       DIRECT_URL: ${DIRECT_URL:?DIRECT_URL missing - run compose with --env-file .env}
       POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD missing - set it in .env (openssl rand -hex 32)}
     restart: 'no'
     depends_on:
-      pgbouncer: { condition: service_healthy }
+      postgres: { condition: service_healthy }
     deploy: { resources: { limits: { cpus: '1', memory: 1G } } }
 
   api:

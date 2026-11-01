@@ -44,7 +44,7 @@ $DCD up -d --build --no-deps migrate api worker web nginx   # the shared stack (
 **The runtime role sirat_app (L2, L8):**
 - Every stack turn needs `POSTGRES_APP_PASSWORD` in the root `.env`, because PgBouncer, the API, the worker and the seed log in as `sirat_app` (L8).
   - **Without it**, compose stops before it creates or restarts any container, so nothing crash-loops. It prints `required variable POSTGRES_APP_PASSWORD is missing a value: POSTGRES_APP_PASSWORD missing - set it in .env (openssl rand -hex 32)`.
-  - **With a value other than the one the cluster already has** (the dev cluster keeps its first one), the migrate job prints `password already set, kept`, then its seed fails to log in through PgBouncer (password authentication failed for `sirat_app`). The job exits non-zero, so the API and the worker do not start. Put the agreed value in the root `.env`, recreate PgBouncer (next point), then take the turn; if the value is lost, use the reset below.
+  - **With a value other than the one the cluster already has** (the dev cluster keeps its first one), the migrate job prints `password already set, kept`, then its seed fails to log in (password authentication failed for `sirat_app`). The job exits non-zero, so the API and the worker do not start. Put the agreed value in the root `.env`, recreate PgBouncer (next point), then take the turn; if the value is lost, use the reset below.
 - PgBouncer holds the value of the worktree that last created it (the key is part of its settings). A fixed or changed value therefore needs `$DCD up -d --no-deps pgbouncer` before the usual app-only turn. The messages:
   - `SASL authentication failed`: the client's value differs from PgBouncer's;
   - `password authentication failed for user "sirat_app"`: PgBouncer's value differs from the role's, or the role has no login yet (a fresh cluster; Postgres logs `User "sirat_app" has no password assigned`);
@@ -58,7 +58,7 @@ $DCD up -d --build --no-deps migrate api worker web nginx   # the shared stack (
   1. Rasel puts the new value in every worktree's root `.env`, every `TEST_APP_DATABASE_URL` and every `apps/api/.env` `DATABASE_URL` through 16432.
   2. `$DCD exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "ALTER ROLE sirat_app PASSWORD NULL"'` (no value is typed in the command).
   3. `$DCD up -d --no-deps pgbouncer`, so PgBouncer takes the new value.
-  4. One announced stack turn: `runtime-role.ts` sets the new value, and the seed logs in through PgBouncer.
+  4. One announced stack turn: `runtime-role.ts` sets the new value, the seed logs in, and the app logs in through the recreated PgBouncer.
 
 Signing secret: the API refuses to start (in every `NODE_ENV`) when `JWT_ACCESS_SECRET` is blank, shorter than 32 characters, too repetitive, or contains a placeholder word such as `fake`, `example` or `change me`. The error names the rule, never the value. Use a separate value per environment and never reuse the dev value on the VPS.
 
