@@ -116,32 +116,34 @@ model User {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  gradeLevel          GradeLevel?           @relation(fields: [gradeLevelId], references: [id], onDelete: Restrict)
-  referredBy          User?                 @relation("Referrals", fields: [referredById], references: [id], onDelete: Restrict)
-  referrals           User[]                @relation("Referrals")
-  sessions            Session[]
-  authTokens          AuthToken[]
-  payments            Payment[]
-  registration        Registration?
-  attempts            Attempt[]
-  ambassador          AmbassadorProfile?
-  pointEntries        PointLedger[]         @relation("PointOwner")
-  pointEntriesCreated PointLedger[]         @relation("PointCreatedBy")
-  teamsOwned          Team[]
-  teamMember          TeamMember[]
-  taskAssigns         TaskAssignment[]      @relation("TaskAssignee")
-  taskApprovals       TaskAssignment[]      @relation("TaskApprover")
-  tasksCreated        AdminTask[]
-  roundEntries        RoundEntry[]
-  juryScores          JuryScore[]
-  certificates        Certificate[]
-  announcements       Announcement[]
-  registrationAttempt PendingRegistration?  @relation("AttemptUser")
-  referredAttempts    PendingRegistration[] @relation("AttemptReferrer")
-  bookOrder           BookOrder?            @relation("BookOrderOwner")
-  bookOrdersShipped   BookOrder[]           @relation("BookOrderShipper")
-  bookImages          BookImage[]           @relation("BookImageUploader")
-  leaderboardEntries  LeaderboardEntry[]
+  gradeLevel             GradeLevel?             @relation(fields: [gradeLevelId], references: [id], onDelete: Restrict)
+  referredBy             User?                   @relation("Referrals", fields: [referredById], references: [id], onDelete: Restrict)
+  referrals              User[]                  @relation("Referrals")
+  sessions               Session[]
+  authTokens             AuthToken[]
+  payments               Payment[]
+  registration           Registration?
+  attempts               Attempt[]
+  ambassador             AmbassadorProfile?
+  pointEntries           PointLedger[]           @relation("PointOwner")
+  pointEntriesCreated    PointLedger[]           @relation("PointCreatedBy")
+  teamsOwned             Team[]
+  teamMember             TeamMember[]
+  taskAssigns            TaskAssignment[]        @relation("TaskAssignee")
+  taskApprovals          TaskAssignment[]        @relation("TaskApprover")
+  tasksCreated           AdminTask[]
+  roundEntries           RoundEntry[]
+  juryScores             JuryScore[]
+  certificates           Certificate[]
+  announcements          Announcement[]
+  registrationAttempt    PendingRegistration?    @relation("AttemptUser")
+  referredAttempts       PendingRegistration[]   @relation("AttemptReferrer")
+  bookOrder              BookOrder?              @relation("BookOrderOwner")
+  bookOrdersShipped      BookOrder[]             @relation("BookOrderShipper")
+  bookImages             BookImage[]             @relation("BookImageUploader")
+  twoFactor              UserTwoFactor?
+  twoFactorRecoveryCodes TwoFactorRecoveryCode[]
+  leaderboardEntries     LeaderboardEntry[]
 
   @@index([referredById])
   @@index([gradeLevelId])
@@ -736,4 +738,32 @@ model BookOrder {
   @@index([recipientPhone])
   @@index([shippedBy]) // every foreign key has an index (schema invariant)
   @@map("book_orders")
+}
+
+/// Admin two-factor login (TOTP, RFC 6238). The secret is sealed with AES-256-GCM (TOTP_ENCRYPTION_KEY,
+/// `v1:<keyId>:…`), never stored in clear. enabledAt NULL: enrolment started, not confirmed yet. lastStep: the newest
+/// time step accepted, so a code works once.
+model UserTwoFactor {
+  userId           String    @id @map("user_id") @db.Uuid
+  secretCiphertext String    @map("secret_ciphertext")
+  enabledAt        DateTime? @map("enabled_at") @db.Timestamptz
+  lastStep         BigInt?   @map("last_step")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_two_factor")
+}
+
+/// One-time recovery codes for two-factor login: SHA-256 of the normalised code (50 bits of entropy each), used once.
+model TwoFactorRecoveryCode {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  codeHash  String    @unique @map("code_hash")
+  usedAt    DateTime? @map("used_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("two_factor_recovery_codes")
 }
