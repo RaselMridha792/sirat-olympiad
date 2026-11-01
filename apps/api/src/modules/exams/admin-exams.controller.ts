@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -11,9 +12,22 @@ import {
   Put,
   Query,
   Req,
+  Res,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
-import type { AdminExamCard, AdminExamView, AdminQuestion, Paginated } from '@sirat/shared';
-import type { Request } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
+import {
+  QUESTION_IMPORT_LIMITS,
+  type AdminExamCard,
+  type AdminExamView,
+  type AdminQuestion,
+  type Paginated,
+  type QuestionImportPreview,
+  type QuestionImportResult,
+} from '@sirat/shared';
+import type { Request, Response } from 'express';
 import type { AuthUser } from '../auth/access-token.service';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { type Actor, AdminExamsService } from './admin-exams.service';
@@ -22,11 +36,19 @@ import {
   ExamListQueryDto,
   ExamStateChangeDto,
   QuestionDto,
+  QuestionImportQueryDto,
   UpdateExamDto,
   UpdateQuestionDto,
 } from './dto/admin-exam.dto';
 
 const actorOf = (user: AuthUser, req: Request): Actor => ({ id: user.id, ip: req.ip ?? null });
+const IMPORT_TIER = { default: { limit: 20, ttl: 60_000 } };
+
+/** What the upload interceptor hands over (memory storage; nothing is written to disk). */
+interface UploadedCsv {
+  buffer: Buffer;
+  size: number;
+}
 
 /** Exam and question management (06-API "Exam admin"; EXAM-PLAN section 4). Admins only, never managers. */
 @Controller('admin/exams')
@@ -126,6 +148,31 @@ export class AdminExamsController {
     @Req() req: Request,
   ): Promise<void> {
     return this.exams.removeQuestion(id, questionId, actorOf(user, req));
+  }
+
+  /**
+   * The CSV import (E7a). One file, at most 1,000,000 bytes (413 above), kept in memory only; the interceptor runs
+   * after the admin guard, so nothing is read for anyone else. Dry run 200, import 201.
+   */
+  @Throttle(IMPORT_TIER)
+  @Post(':id/questions/import')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: QUESTION_IMPORT_LIMITS.maxBytes, files: 1, fields: 0 },
+    }),
+  )
+  importQuestions(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: QuestionImportQueryDto,
+    @UploadedFile() file: UploadedCsv | undefined,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<QuestionImportPreview | QuestionImportResult> {
+    if (!file) throw new BadRequestException(['file is required']);
+    const dryRun = query.dryRun === 'true';
+    if (dryRun) res.status(200);
+    return this.exams.importQuestions(id, file.buffer, dryRun, actorOf(user, req));
   }
 
   @Get(':id/questions/:questionId/versions')

@@ -320,3 +320,78 @@ export const EXAM_ADMIN_REFUSALS = [
   'round_not_found',
 ] as const;
 export type ExamAdminRefusal = (typeof EXAM_ADMIN_REFUSALS)[number];
+
+/*
+ * CSV question import (E7a): POST /admin/exams/:id/questions/import?dryRun=true|false, multipart field `file`.
+ * All rows or none: one problem anywhere and nothing is written.
+ */
+
+export const QUESTION_IMPORT_LIMITS = {
+  /** Bytes of the file (UTF-8; a BOM is allowed). Above it the API answers 413. */
+  maxBytes: 1_000_000,
+  /** Data rows, after the header and without blank rows. */
+  maxRows: 500,
+  /** Problems listed in one answer; `truncated` says there were more. */
+  maxErrors: 200,
+} as const;
+
+/** The header row, in this order (letters and names compared without case). */
+export const QUESTION_IMPORT_COLUMNS = [
+  'text',
+  'A',
+  'B',
+  'C',
+  'D',
+  'E',
+  'F',
+  'correct',
+  'explanation',
+  'keep_order',
+] as const;
+
+/** Where a problem is: a column of the header, `row` for the whole row, `file` for the whole file. */
+export type QuestionImportField = (typeof QUESTION_IMPORT_COLUMNS)[number] | 'row' | 'file';
+
+/**
+ * C0 control characters and DEL, except tab and line feed. None belongs in a question, and Postgres refuses U+0000 in
+ * text and jsonb (a 500 instead of a row error). The CSV import refuses them; QuestionDto is meant to use it too.
+ */
+export const CONTROL_CHARACTERS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
+
+export const QUESTION_IMPORT_CODES = [
+  'not_utf8',
+  'empty',
+  'too_many_rows',
+  'bad_quote',
+  'unterminated_quote',
+  'header',
+  'column_count',
+  'required',
+  'too_long',
+  'gap',
+  'correct_key_missing',
+  'invalid_boolean',
+  'control_character',
+  'duplicate_in_file',
+  'duplicate_in_exam',
+] as const;
+export type QuestionImportCode = (typeof QUESTION_IMPORT_CODES)[number];
+
+/** `row` counts records as a spreadsheet shows them: the header is row 1. 0 means the whole file. */
+export interface QuestionImportError {
+  row: number;
+  field: QuestionImportField;
+  code: QuestionImportCode;
+}
+
+/** Dry run, 200. Nothing is written; `errors` empty means the import would succeed now. */
+export interface QuestionImportPreview {
+  rows: number;
+  errors: QuestionImportError[];
+  truncated: boolean;
+}
+
+/** Import, 201. With any problem: 400 `QUESTION_IMPORT_INVALID`, the errors in `details`, nothing written. */
+export interface QuestionImportResult {
+  created: number;
+}
