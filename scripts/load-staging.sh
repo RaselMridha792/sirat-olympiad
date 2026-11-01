@@ -323,6 +323,10 @@ case "$cmd" in
     done
     # compose needs the settings file to read the project; it exists from the first step of up.
     if [ -f "$STAGING_ENV_FILE" ] || [ "$DRY" = 1 ]; then dc down -v --remove-orphans; fi
+    # The fake's image was built here for this staging; no release image is ever removed.
+    if registration_mode; then
+      run docker image rm -f "sirat-fake-paystation:$(envval SIRAT_TAG "$STAGING_DIR/release.env")" > /dev/null 2>&1 || true
+    fi
     run rm -rf "$STAGING_DIR"
     say "down: project $P and its data removed"
     ;;
