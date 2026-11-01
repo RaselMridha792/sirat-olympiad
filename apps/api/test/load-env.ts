@@ -22,12 +22,18 @@ process.env.DATABASE_URL = testUrl;
 
 // With TEST_APP_DATABASE_URL (the runtime role sirat_app on the same *_test database), the app under test connects as
 // that role, as production will after L8, so a missing grant fails here and not in production. The test harness
-// (testPrisma, truncateAll) stays on TEST_DATABASE_URL, the owner. Without it the app runs as the owner, as before.
+// (testPrisma, truncateAll) stays on TEST_DATABASE_URL, the owner. Without it the app runs as the owner, as before;
+// CI must not run that way unnoticed.
 const appUrl = process.env.TEST_APP_DATABASE_URL ?? '';
+if (process.env.CI === 'true' && !appUrl)
+  throw new Error('TEST_APP_DATABASE_URL is required in CI: the app under test runs as sirat_app');
 if (appUrl) {
-  if (!TEST_DB_URL.test(appUrl) || new URL(appUrl).username !== 'sirat_app')
+  const app = new URL(appUrl);
+  const owner = new URL(testUrl);
+  // The same host and database: another session's test database on the shared cluster would also accept sirat_app.
+  if (app.username !== 'sirat_app' || app.host !== owner.host || app.pathname !== owner.pathname)
     throw new Error(
-      'TEST_APP_DATABASE_URL must be sirat_app on a database whose name ends with _test',
+      'TEST_APP_DATABASE_URL must be sirat_app on the same host and database as TEST_DATABASE_URL',
     );
   process.env.DATABASE_URL = appUrl;
 }
