@@ -16,7 +16,7 @@ import type { Request, Response } from 'express';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from './access-token.service';
-import { CurrentUser, Public } from './auth.decorators';
+import { CurrentUser, Public, TwoFactorOptional } from './auth.decorators';
 import { AuthService, TooManyAttemptsException } from './auth.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { EmailOnlyDto } from './dto/email-only.dto';
@@ -105,6 +105,7 @@ export class AuthController {
   }
 
   /** Ends the session family on this device. The access token alone stays valid until it expires (<= 15 min). */
+  @TwoFactorOptional() // an admin who has not enrolled yet can still log out
   @Post('logout')
   @HttpCode(204)
   async logout(
@@ -203,6 +204,7 @@ export class AuthController {
   }
 
   /** The session user, read fresh from the database (role included). A blocked user is logged out. */
+  @TwoFactorOptional() // the web reads the 2FA state here to send an admin to enrolment
   @Get('me')
   async me(@CurrentUser() user: AuthUser): Promise<SessionUser> {
     const row = await this.prisma.user.findUnique({

@@ -15,6 +15,8 @@ import { LoginLimiter } from './login-limiter';
 import { PasswordService } from './password.service';
 import { SessionCookies } from './session-cookies';
 import { SessionService } from './session.service';
+import { TwoFactorChallenges } from './two-factor/two-factor-challenges';
+import { TwoFactorConfig } from './two-factor/two-factor.config';
 
 /**
  * Auth (A2). So far: access tokens (verified by the global AuthGuard, registered in AppModule), argon2id passwords,
@@ -42,6 +44,8 @@ import { SessionService } from './session.service';
     SessionCookies,
     AuthService,
     EmailTokenService,
+    TwoFactorConfig,
+    TwoFactorChallenges,
     {
       provide: EmailSendLimiter,
       inject: [REDIS_CACHE, ConfigService],
@@ -73,6 +77,7 @@ import { SessionService } from './session.service';
         }),
     },
   ],
-  exports: [AccessTokenService, PasswordService, SessionService],
+  // TwoFactorConfig: the global AuthGuard (AppModule) enforces 2FA with it.
+  exports: [AccessTokenService, PasswordService, SessionService, TwoFactorConfig],
 })
 export class AuthModule {}
