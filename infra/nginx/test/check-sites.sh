@@ -63,23 +63,23 @@ for _ in $(seq 1 30); do
   dk exec "$name" wget -qO- http://127.0.0.1:8081/healthz >/dev/null 2>&1 && break
   sleep 1
 done
-p80=$(dk port "$name" 80/tcp | head -1 | sed 's/.*://')
-p443=$(dk port "$name" 443/tcp | head -1 | sed 's/.*://')
+p80=$(dk port "$name" 80/tcp | sed -n '1s/.*://p')
+p443=$(dk port "$name" 443/tcp | sed -n '1s/.*://p')
 https() { curl -sk --max-time 10 --resolve "$host:$p443:127.0.0.1" "$@"; }
 
 headers=$(https -D - -o /dev/null "https://$host:$p443/healthz")
-echo "$headers" | grep -q '^HTTP/[0-9.]* 200' && pass "https /healthz answers 200" || fail "https /healthz answers 200"
+grep -q '^HTTP/[0-9.]* 200' <<< "$headers" && pass "https /healthz answers 200" || fail "https /healthz answers 200"
 [ "$(echo "$headers" | grep -ci '^strict-transport-security: max-age=300')" = 1 ] &&
   pass "exactly one HSTS header (max-age=300)" || fail "exactly one HSTS header (max-age=300)"
 for h in X-Content-Type-Options Referrer-Policy Content-Security-Policy-Report-Only; do
-  echo "$headers" | grep -qi "^$h:" && pass "$h on https" || fail "$h on https"
+  grep -qi "^$h:" <<< "$headers" && pass "$h on https" || fail "$h on https"
 done
 
 # The API is not running here, so nginx answers with its own JSON 502 (a named location with its own add_header).
 q="q$RANDOM$RANDOM$RANDOM"
 r="r$RANDOM$RANDOM$RANDOM"
 error=$(https -D - -H "Referer: https://$host/admin/users?q=$r" "https://$host:$p443/api/health?q=$q")
-echo "$error" | grep -q 'BAD_GATEWAY' && pass "nginx's own 502 is JSON" || fail "nginx's own 502 is JSON"
+grep -q 'BAD_GATEWAY' <<< "$error" && pass "nginx's own 502 is JSON" || fail "nginx's own 502 is JSON"
 once=0
 for h in Strict-Transport-Security X-Content-Type-Options Referrer-Policy Content-Security-Policy-Report-Only; do
   [ "$(echo "$error" | grep -ci "^$h:")" = 1 ] || once=1
@@ -88,10 +88,10 @@ done
   fail "nginx's own errors carry each security header exactly once"
 
 redirect=$(curl -s --max-time 10 -D - -o /dev/null -H "Host: $host" "http://127.0.0.1:$p80/some/page?x=1")
-echo "$redirect" | grep -q '^HTTP/[0-9.]* 301' &&
-  echo "$redirect" | grep -qi "^location: https://$host/some/page?x=1" &&
+grep -q '^HTTP/[0-9.]* 301' <<< "$redirect" &&
+  grep -qi "^location: https://$host/some/page?x=1" <<< "$redirect" &&
   pass "http redirects the site's own name to https://$host" || fail "http redirects the site's own name to https://$host"
-if curl -s --max-time 10 -D - -o /dev/null -H 'Host: 203.0.113.10' "http://127.0.0.1:$p80/" | grep -qi '^location:'; then
+if grep -qi '^location:' <<< "$(curl -s --max-time 10 -D - -o /dev/null -H 'Host: 203.0.113.10' "http://127.0.0.1:$p80/")"; then
   fail "http on the bare IP does not show the host name"
 else
   pass "http on the bare IP does not show the host name"
@@ -110,9 +110,9 @@ dk port "$name" 8081/tcp >/dev/null 2>&1 &&
 
 sleep 1
 logs=$(dk logs "$name" 2>&1)
-echo "$logs" | grep -q '"GET /api/health HTTP' && pass "the request is in the access log, path only" ||
+grep -q '"GET /api/health HTTP' <<< "$logs" && pass "the request is in the access log, path only" ||
   fail "the request is in the access log, path only"
-if echo "$logs" | grep -q -e "$q" -e "$r"; then
+if grep -q -e "$q" -e "$r" <<< "$logs"; then
   fail "no query string or Referer in nginx's logs"
 else
   pass "no query string or Referer in nginx's logs"
@@ -135,9 +135,9 @@ status=$(dk exec "$name-disk" sh -c "head -c 524288 /dev/zero > /tmp/body && cur
   fail "a full temp disk answers 500 (the crit path ran; got $status)"
 sleep 1
 disklogs=$(dk logs "$name-disk" 2>&1)
-echo "$disklogs" | grep -q '"POST /api/auth/login HTTP' && pass "the full-disk request is in the access log, path only" ||
+grep -q '"POST /api/auth/login HTTP' <<< "$disklogs" && pass "the full-disk request is in the access log, path only" ||
   fail "the full-disk request is in the access log, path only"
-if echo "$disklogs" | grep -q -e "$q2" -e "$r2"; then
+if grep -q -e "$q2" -e "$r2" <<< "$disklogs"; then
   fail "no query string or Referer in nginx's logs at crit level"
 else
   pass "no query string or Referer in nginx's logs at crit level"
