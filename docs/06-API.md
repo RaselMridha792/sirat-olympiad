@@ -56,7 +56,7 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `GET /admin/ambassadors`, `POST /admin/ambassadors/:userId/{approve,revoke}` | admin | Ambassadors (below). Built (core C5a) |
 | | `CRUD /admin/tasks`, `/admin/rank-thresholds` | admin | Core C5b |
 | | `POST /admin/points/adjust` | admin | Compensating ledger entry |
-| | `GET /admin/audit` | admin | |
+| | `GET /admin/audit`, `GET /admin/audit/:id`, `POST /admin/audit/export` | admin | Audit log (below). Read only; the export is audited. Built (core) |
 
 ## Registration and payment (payments PR 2 and 3; plan: `docs/plans/PAYMENTS-PLAN.md` 6.1–6.7)
 
@@ -268,6 +268,18 @@ The database refuses a code outside `^[A-Za-z0-9_-]{3,40}$`, and `point_ledger` 
 | `ambassadors` | profiles with `approved_at` set, and cleared; students with `referred_by_id` |
 
 All counts come from one `REPEATABLE READ` snapshot, so the totals agree with the breakdowns. The answer is cached in the cache Redis for 60 s (`asOf` is when it was computed); a single-flight lock makes a burst of admins compute once (the others wait up to 5 s for that result). If Redis does not answer, every call reads Postgres. No new index on the other teams' tables: the 45-day `GROUP BY` on `registrations` runs at most once a minute.
+
+## Audit log (core; lead 2026-11-01, M13)
+
+Admins only (re-read: a demoted or blocked admin gets 403; manager, jury, students and ambassadors get 403). Read only: `audit_logs` is append-only. Shapes `AdminAuditRow`, `AdminAuditPage`, `AdminAuditDetail`, `ADMIN_AUDIT_EXPORT`, `AUDIT_ACTION_PATTERN` (`core.ts`).
+
+| Method + path | Request | Answers |
+|---|---|---|
+| `GET /admin/audit` | `action` (one exact action, or a family such as `auth.*`), `actor` (an account's email, any case, or `system` for rows without an actor), `from`/`to` (Asia/Dhaka dates, both included), `before` (the previous page's `next`), `limit` (1–50, default 25) | `AdminAuditPage`: rows newest first, each with id, time, action, `system`, actor (name and role) or null, entity type and id. **Never the IP, an email or the meta.** An email that belongs to no account matches nothing. 400 `bad_date` (no such day), `bad_range` (from after to), `bad_cursor` |
+| `GET /admin/audit/:id` | — | `AdminAuditDetail`: the row plus `ip`, `actorEmail` and `meta`, as written. Opening a row is not audited (as the students' detail, C1). 404; 400 for an id that is not a UUID |
+| `POST /admin/audit/export` | the list's filters and `reason` (3–200) | 200 `text/csv` (`no-store`, `attachment`), BOM, CRLF, formula cells escaped: time (Dhaka), action, actor name and role, system, entity type and id, meta. **No IP and no email**; inside the meta every email, Bangladeshi mobile number and IP address is replaced. The export's own row (`audit.exported`: filter kinds with the actor only as `email`/`system`, row count, reason) is written before anything is sent; if it cannot be written, 503 and no file. 400 `too_many_rows` above 50,000; 429 after 5 exports in an hour per admin |
+
+**Paging** is keyset on `(created_at, id)` to the microsecond (the cursor is opaque, checked and never used as SQL), on the index `audit_logs (created_at DESC, id DESC)`; the actor filter uses `audit_logs (actor_id, created_at DESC)` (migration `*_core_audit_index`). A busy log never needs OFFSET.
 
 ## DTO and security rules
 
