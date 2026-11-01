@@ -42,6 +42,7 @@ export const unavailableSource: DataSource = {
     listAttempts: fail,
     getAttempt: fail,
     listAmbassadors: fail,
+    getAmbassadorPoints: fail,
     listAnnouncements: fail,
     listPayments: fail,
     getPayment: fail,

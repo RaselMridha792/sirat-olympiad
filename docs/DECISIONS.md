@@ -2,6 +2,29 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-01 — Ambassador points: the referral sweep, the settings and adjustments (core C5b-1; lead's plan and review)
+
+1. **Who writes points:** a worker job, never payments' settle (their code is not touched).
+   - One statement inserts `referral_paid:<paymentId>` per paid registration with a referrer, `ON CONFLICT (event_key) DO NOTHING`: repeats, two workers and the back-fill never award twice.
+   - It reads payments' `registrations` and `users` only.
+2. **Bounded** (lead): every 5 minutes over the last 2 days of registrations; nightly at 03:45 Asia/Dhaka over all of them.
+   - The very first run looks at the whole table, so the launch-day referrals do not wait for the night. "First" means no `referral_paid:` row exists yet, found by a range on the UNIQUE index, not a LIKE scan.
+   - The 5-minute run still reads the registrations table without an index on `created_at` (payments' table, none added); at 50,000 rows that is a few milliseconds, and the expensive part, the join and the conflict probes, is bounded.
+3. **What counts:** a referral of an ambassador revoked since still counts (payments took the code while it was valid; earlier points stay).
+   - The amount is the setting when the row is written; earlier rows never change.
+   - 0 awards nothing, and a later value back-fills.
+4. **Own queue** `ambassador-points` (lead: housekeeping is payments' now, so the ownership stays clear).
+   - **Shared touches:** `worker.ts` (+1 module) and an optional `AMBASSADOR_QUEUE_NAME` (tests run their own queue).
+   - **ops-check:** the queue is in its list as `ambassador`, so a failed run is a `failed_jobs` warning.
+5. **Settings** (`/admin/ambassador-points`, its own resource; payments' `/admin/settings` allow-list is untouched): points per referral (the `ambassador_points_per_referral` setting, a new key in the insert-only config seed `DEFAULT_SETTINGS`, as the settings rule says (A1: the seed keeps the per-key settings); a data migration would break `seed.int-spec`'s fresh-deploy count) and the rank thresholds.
+   - **One writer:** a transaction advisory lock, needed because the settings row may not exist yet. The admin sends the values they saw (`expected`); otherwise 409.
+   - **Thresholds:** names and minimums are both UNIQUE, so the table is replaced in the transaction rather than edited row by row; nothing references it.
+6. **Adjustments:** a new ledger row `adjust:<uuid>` with the admin as `created_by`, plus an audit row; never an edit. Only for an account with an ambassador profile (approved or revoked).
+7. **Values:** the core plan's Q3 defaults (10 per referral, Bronze 0 / Silver 100 / Gold 250), unanswered by the owner and editable by admins, so an answer changes data, not code.
+8. **Tests:**
+   - `ambassador-points.int-spec.ts` (11): awards and amounts, repeats, three concurrent runs, revoked referrers, the 0 setting, the 2-day window and the back-fill, the two schedulers from two workers, settings changes with `expected` and their audit, two admins at once (one 409), threshold refusals, adjustments up and down with `created_by`, refusals, admin only.
+   - unit: the first run, the bound window value, the setting fallback; the ops queue rule; web: the data pick, the problem mapper, the threshold rule.
+
 ## 2026-11-01 — The minute exam sweep tries each item on its own (exam session; lead's question after a test flake)
 
 1. **Each finalize, score and results build in the sweep is tried on its own.** One that throws (a lock or statement timeout under load, a bad row) is logged with its step and id, and the rest go on. Before, the first exception ended the run, and since the sweep orders by `ends_at`, an attempt that kept failing would have held back every later attempt and the results build, minute after minute.

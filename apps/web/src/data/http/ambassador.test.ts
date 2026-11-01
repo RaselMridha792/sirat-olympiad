@@ -84,3 +84,30 @@ test('admin.listAmbassadors passes on only the row fields', async () => {
   const page = await source.admin.listAmbassadors({ page: 1, pageSize: 20, q: 'SR-7K3QXD' });
   assert.deepEqual(page.items, [row]);
 });
+
+test('admin.getAmbassadorPoints reads GET /admin/ambassador-points and passes on only the named fields', async () => {
+  const config = {
+    pointsPerReferral: 10,
+    thresholds: [
+      { name: 'Bronze', minPoints: 0 },
+      { name: 'Silver', minPoints: 100 },
+    ],
+  };
+  const extra = {
+    ...config,
+    updatedBy: 'admin@example.com',
+    thresholds: config.thresholds.map((t) => ({ ...t, id: 'x' })),
+  };
+  const ok = createHttpSource(
+    fakeApi({ '/admin/ambassador-points': { status: 200, body: extra } }),
+  );
+  assert.deepEqual(await ok.admin.getAmbassadorPoints(), config);
+  for (const body of [
+    { ...config, pointsPerReferral: '10' },
+    { ...config, thresholds: [{ name: 'Bronze' }] },
+    { pointsPerReferral: 10 },
+  ]) {
+    const source = createHttpSource(fakeApi({ '/admin/ambassador-points': { status: 200, body } }));
+    await assert.rejects(source.admin.getAmbassadorPoints(), DataRequestError);
+  }
+});

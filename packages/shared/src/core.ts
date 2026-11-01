@@ -126,6 +126,55 @@ export interface AmbassadorState {
   role: Role;
 }
 
+// ───────────── Ambassador points (core C5b; 06-API "Ambassadors") ─────────────
+
+export interface RankThresholdInput {
+  name: string;
+  minPoints: number;
+}
+
+/** GET /admin/ambassador-points: what the referral sweep and the ranks use now (owner Q3 defaults until answered). */
+export interface AmbassadorPointsConfig {
+  pointsPerReferral: number;
+  /** Lowest first; the first starts at 0. */
+  thresholds: RankThresholdInput[];
+}
+
+/** PUT /admin/ambassador-points: the new values, the values the admin saw (`expected`) and a reason. */
+export interface AmbassadorPointsUpdate extends AmbassadorPointsConfig {
+  expected: AmbassadorPointsConfig;
+  reason: string;
+}
+
+/** POST /admin/points/adjust: a compensating ledger entry (points are never edited or deleted). */
+export interface PointsAdjustRequest {
+  userId: string;
+  /** Positive or negative, never 0. */
+  amount: number;
+  reason: string;
+}
+
+export interface PointsAdjustResult {
+  userId: string;
+  /** The ambassador's points after the entry. */
+  points: number;
+}
+
+export const AMBASSADOR_POINTS_LIMITS = {
+  maxPerReferral: 1_000,
+  maxThresholds: 10,
+  maxMinPoints: 1_000_000,
+  maxAdjust: 10_000,
+  nameMin: 2,
+  nameMax: 30,
+  reasonMin: 3,
+  reasonMax: 200,
+} as const;
+
+/** Refusal codes in ApiError.details for the points settings and adjustments. */
+export const AMBASSADOR_POINTS_REFUSALS = ['stale', 'bad_thresholds', 'not_ambassador'] as const;
+export type AmbassadorPointsRefusal = (typeof AMBASSADOR_POINTS_REFUSALS)[number];
+
 // ───────────── Audit log viewer (06-API "Audit log"; lead 2026-11-01) ─────────────
 
 /** `action`: one exact action (`auth.login_failed`) or a family (`auth.*`). Lower case, dots, underscores. */

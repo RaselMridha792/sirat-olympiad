@@ -1,4 +1,9 @@
-import type { AdminAmbassadorRow, AmbassadorOverview, Paginated } from '@sirat/shared';
+import type {
+  AdminAmbassadorRow,
+  AmbassadorOverview,
+  AmbassadorPointsConfig,
+  Paginated,
+} from '@sirat/shared';
 import type { DataSource } from '../source.ts';
 import { DataRequestError, getJson, isRecord, withQuery, type ApiGet } from './request.ts';
 
@@ -118,8 +123,24 @@ export function studentAmbassador(get: ApiGet): Pick<DataSource['student'], 'get
   };
 }
 
-export function adminAmbassadors(get: ApiGet): Pick<DataSource['admin'], 'listAmbassadors'> {
+const isPointsConfig = (v: unknown): v is AmbassadorPointsConfig =>
+  isRecord(v) &&
+  count(v.pointsPerReferral) &&
+  Array.isArray(v.thresholds) &&
+  v.thresholds.every((t) => isRecord(t) && text(t.name) && count(t.minPoints));
+
+export function adminAmbassadors(
+  get: ApiGet,
+): Pick<DataSource['admin'], 'listAmbassadors' | 'getAmbassadorPoints'> {
   return {
+    /** GET /admin/ambassador-points (admin): what the referral sweep and the ranks use now. */
+    async getAmbassadorPoints() {
+      const c = await getJson(get, '/admin/ambassador-points', isPointsConfig);
+      return {
+        pointsPerReferral: c.pointsPerReferral,
+        thresholds: c.thresholds.map((t) => ({ name: t.name, minPoints: t.minPoints })),
+      };
+    },
     /** GET /admin/ambassadors (admin): counts and points derived on the server. */
     async listAmbassadors(query) {
       const page = await getJson(
