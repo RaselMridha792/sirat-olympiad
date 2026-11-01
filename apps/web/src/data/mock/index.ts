@@ -867,6 +867,18 @@ export function createMockSource(state: MockState | null): DataSource {
           () => null,
         ),
 
+      getAmbassadorPoints: () =>
+        run(
+          () => ({
+            pointsPerReferral: 10,
+            thresholds: [
+              { name: 'Bronze', minPoints: 0 },
+              { name: 'Silver', minPoints: 100 },
+              { name: 'Gold', minPoints: 250 },
+            ],
+          }),
+          () => ({ pointsPerReferral: 10, thresholds: [{ name: 'Bronze', minPoints: 0 }] }),
+        ),
       listAmbassadors: (query) =>
         run(
           () =>
