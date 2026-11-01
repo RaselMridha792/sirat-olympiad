@@ -66,7 +66,7 @@ USERS=300 DURATION=3 bash loadtests/exam-local.sh timeup
 
 It prints each check as `ok` or `FAIL` and keeps the logs, the k6 summary, the PC's CPU and each container's peak CPU in the folder it names. `KEEP_IMAGES=1` keeps the built images for the next run. The local numbers are in `docs/DECISIONS.md` ("Exam simulation, local k6").
 
-## On the VPS (`scripts/load-staging.sh`, RUNBOOK §18)
+## On the VPS (`scripts/load-staging.sh`, RUNBOOK §19)
 
 RULEBOOK §13: at 1.5–2× the expected peak, with a 30-minute exam, k6 from other machines. The target is a staging stack, `sirat-staging`, which `scripts/load-staging.sh` builds from the deployed release's images:
 - its own volumes and throwaway settings, payments on the fake;

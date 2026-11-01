@@ -4,7 +4,7 @@
 # until `load-staging.sh window` lets the listed generator machines in for a limited time.
 services:
   nginx:
-    ports: !override ['0.0.0.0:${STAGING_PORT:-8088}:80']
+    ports: !override ['${STAGING_BIND:-0.0.0.0}:${STAGING_PORT:-8088}:80']
     volumes:
       - ./nginx/sites/plain:/etc/nginx/templates:ro
 

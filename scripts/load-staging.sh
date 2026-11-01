@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The load-test staging stack on the VPS (E6's kit; RULEBOOK §13, LAUNCH-PLAN L14; RUNBOOK section 18). Project
+# The load-test staging stack on the VPS (E6's kit; RULEBOOK §13, LAUNCH-PLAN L14; RUNBOOK section 19). Project
 # sirat-staging, from the deployed release's images (never a build), with its own volumes, throwaway settings and
 # payments on the fake. Never project sirat, never the production database or its secrets. Run from the clone.
 #
