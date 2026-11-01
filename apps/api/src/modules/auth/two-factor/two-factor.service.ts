@@ -38,6 +38,8 @@ import { matchTotp, newTotpSecret, otpauthUri } from './totp';
 
 /** The issuer authenticator apps show next to the account (the email). */
 export const TOTP_ISSUER = 'Sirat Olympiad';
+/** Codes one pending setup may have checked by enable; the 5th wrong one deletes it (the DB CHECK holds 0-5). */
+export const ENABLE_MAX_ATTEMPTS = 5;
 
 /** A second factor as the client sends it: exactly one of the two (the DTO makes sure). */
 export interface SecondFactorInput {
@@ -237,7 +239,7 @@ export class TwoFactorService {
     const written = await this.prisma.$executeRaw`
       INSERT INTO "user_two_factor" ("user_id", "secret_ciphertext") VALUES (${user.id}::uuid, ${sealed})
       ON CONFLICT ("user_id") DO UPDATE
-        SET "secret_ciphertext" = EXCLUDED."secret_ciphertext", "updated_at" = now()
+        SET "secret_ciphertext" = EXCLUDED."secret_ciphertext", "enable_attempts" = 0, "updated_at" = now()
         WHERE "user_two_factor"."enabled_at" IS NULL`;
     if (written !== 1) throw alreadyEnabled();
     await this.audit.record({ action: 'auth.2fa_setup_started', actorId: user.id, ip: client.ip });
@@ -248,8 +250,11 @@ export class TwoFactorService {
   /**
    * POST /auth/2fa/enable: a code from the pending secret confirms it (and is its first used step). Creates 10
    * recovery codes (only their hashes are stored; the codes are returned once), ends every session of the user, and
-   * starts a new one for this device with `tfa` true. Not under the login limits: the caller holds the secret it is
-   * confirming, so there is nothing to guess.
+   * starts a new one for this device with the proof. Not under the login limits (the caller holds the secret it is
+   * confirming), but a stolen session must not guess at the pending secret either: each attempt is reserved on the
+   * pending row before its code is checked, and the 5th wrong code deletes the row (409 TWO_FACTOR_SETUP_REQUIRED),
+   * so setup, which asks for the password, must run again. A column, not Redis: the count dies with the row, a new
+   * setup resets it in the same statement, and the cache Redis may evict keys.
    */
   async enable(
     actor: AuthUser,
@@ -270,6 +275,20 @@ export class TwoFactorService {
     const pending = user.twoFactor;
     if (pending?.enabledAt) throw alreadyEnabled();
     if (!pending) throw setupRequired();
+    // Reserve this attempt first (atomic, conditional): parallel guesses cannot pass the cap.
+    const reserved = await this.prisma.$queryRaw<{ attempt: number }[]>`
+      UPDATE "user_two_factor"
+      SET "enable_attempts" = "enable_attempts" + 1, "updated_at" = now()
+      WHERE "user_id" = ${user.id}::uuid AND "enabled_at" IS NULL
+        AND "secret_ciphertext" = ${pending.secretCiphertext}
+        AND "enable_attempts" < ${ENABLE_MAX_ATTEMPTS}
+      RETURNING "enable_attempts" AS "attempt"`;
+    const attempt = reserved[0]?.attempt;
+    if (attempt === undefined) {
+      // Used up (by parallel attempts), or replaced by a new setup meanwhile (then it stays).
+      await this.dropPending(user.id, { enableAttempts: { gte: ENABLE_MAX_ATTEMPTS } });
+      throw setupRequired();
+    }
     const proof = await this.prove(
       box,
       user.id,
@@ -277,21 +296,25 @@ export class TwoFactorService {
       { code },
     );
     if (proof?.kind !== 'totp') {
+      const usedUp = attempt >= ENABLE_MAX_ATTEMPTS;
       await this.audit.record({
         action: 'auth.2fa_failed',
         actorId: user.id,
         ip: client.ip,
-        meta: { purpose: 'enable', method: 'totp', locked: false },
+        meta: { purpose: 'enable', method: 'totp', locked: false, setupUsedUp: usedUp },
       });
-      throw codeInvalid();
+      if (!usedUp) throw codeInvalid();
+      await this.dropPending(user.id, { secretCiphertext: pending.secretCiphertext });
+      throw setupRequired();
     }
 
     const recoveryCodes = newRecoveryCodes();
     const ended = await this.prisma.$transaction(async (tx) => {
       // Only the secret this code proved: a setup that replaced it meanwhile wins, and so does a parallel enable.
+      // The right code clears the attempt count.
       const { count } = await tx.userTwoFactor.updateMany({
         where: { userId: user.id, enabledAt: null, secretCiphertext: pending.secretCiphertext },
-        data: { enabledAt: new Date(), lastStep: BigInt(proof.step) },
+        data: { enabledAt: new Date(), lastStep: BigInt(proof.step), enableAttempts: 0 },
       });
       if (count !== 1) return null;
       await this.replaceRecoveryCodes(tx, user.id, recoveryCodes);
@@ -541,6 +564,11 @@ export class TwoFactorService {
       UPDATE "two_factor_recovery_codes" SET "used_at" = now()
       WHERE "id" = ${proof.codeId}::uuid AND "user_id" = ${userId}::uuid AND "used_at" IS NULL`;
     return updated === 1;
+  }
+
+  /** Deletes the user's PENDING factor (never a confirmed one) when it also matches `where`. */
+  private async dropPending(userId: string, where: Prisma.UserTwoFactorWhereInput): Promise<void> {
+    await this.prisma.userTwoFactor.deleteMany({ where: { ...where, userId, enabledAt: null } });
   }
 
   private async replaceRecoveryCodes(
