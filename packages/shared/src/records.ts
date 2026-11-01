@@ -155,7 +155,9 @@ export interface AdminTaskRecord {
   title: string;
   description: string;
   points: number;
+  archivedAt: string | null;
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface TaskAssignmentRecord {
@@ -163,6 +165,9 @@ export interface TaskAssignmentRecord {
   taskId: string;
   userId: string;
   status: TaskStatus;
+  proofText: string | null;
+  submittedAt: string | null;
+  reviewNote: string | null;
   approvedAt: string | null;
 }
 
@@ -269,8 +274,25 @@ export const RECORD_FIELDS = {
   },
   RankThreshold: { id: 'req', name: 'req', minPoints: 'req' },
   Team: { id: 'req', name: 'req', ownerId: 'req', createdAt: 'req' },
-  AdminTask: { id: 'req', title: 'req', description: 'req', points: 'req', createdAt: 'req' },
-  TaskAssignment: { id: 'req', taskId: 'req', userId: 'req', status: 'req', approvedAt: 'opt' },
+  AdminTask: {
+    id: 'req',
+    title: 'req',
+    description: 'req',
+    points: 'req',
+    archivedAt: 'opt',
+    createdAt: 'req',
+    updatedAt: 'req',
+  },
+  TaskAssignment: {
+    id: 'req',
+    taskId: 'req',
+    userId: 'req',
+    status: 'req',
+    proofText: 'opt',
+    submittedAt: 'opt',
+    reviewNote: 'opt',
+    approvedAt: 'opt',
+  },
   Announcement: {
     id: 'req',
     title: 'req',

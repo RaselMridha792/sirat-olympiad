@@ -427,7 +427,7 @@ describe('ambassador program and rounds', () => {
     const admin = await makeUser(prisma);
     const amb = await makeUser(prisma);
     const task = await prisma.adminTask.create({
-      data: { title: 't', description: 'd', points: 5, createdById: admin.id },
+      data: { title: 'Task', description: 'd', points: 5, createdById: admin.id },
     });
     await prisma.taskAssignment.create({ data: { taskId: task.id, userId: amb.id } });
     await expect(
