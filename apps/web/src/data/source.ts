@@ -1,5 +1,8 @@
 import type {
   AmbassadorPointsConfig,
+  AdminAuditDetail,
+  AdminAuditPage,
+  AdminAuditQuery,
   AdminAnnouncement,
   AdminAnnouncementQuery,
   AdminAmbassadorRow,
@@ -112,5 +115,9 @@ export interface DataSource {
     getBook(): Promise<AdminBookInfo>;
     /** GET /admin/book-orders?page=&pageSize=&status=&district=&phone=&email= */
     listBookOrders(query: AdminBookOrderQuery): Promise<Paginated<AdminBookOrderRow>>;
+    /** GET /admin/audit?action=&actor=&from=&to=&before=&limit= (keyset pages, newest first; admin only) */
+    listAudit(query: AdminAuditQuery): Promise<AdminAuditPage>;
+    /** GET /admin/audit/:id, with the IP, the actor's email and the meta (null = not found) */
+    getAuditEntry(id: string): Promise<AdminAuditDetail | null>;
   };
 }
