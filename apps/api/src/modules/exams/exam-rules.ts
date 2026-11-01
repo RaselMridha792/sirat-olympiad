@@ -38,8 +38,11 @@ export interface PublishInput extends WindowInput {
   questions: Array<{ text: string; options: unknown; correctKey: string }>;
 }
 
-/** Normalised for the duplicate check: case, surrounding and repeated spaces do not make a question different. */
-const normaliseText = (s: string): string =>
+/**
+ * Normalised for the duplicate check: case, surrounding and repeated spaces do not make a question different. The
+ * CSV import (question-import.ts) uses the same rule.
+ */
+export const normaliseText = (s: string): string =>
   s.normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
 
 /** Why a draft cannot be published now; empty when it can (EXAM-PLAN 4.2, owner Q2). */
