@@ -135,6 +135,7 @@ Then: deploy, second deploy, forced rollback and a reboot, rehearsed and timed.
 - `APP_URL` must be https in production unless its host is local. `nginx -t` runs both site files with a throwaway certificate, in CI and in `refresh-cloudflare-ips.sh`.
 
 **Now, L4 "real IPs and shared IPs" (2–2.5 h, after L3).**
+- **Built** (DECISIONS "Real IPs and shared IPs"): the /64 key, the raised zones, the API tiers, `scripts/loadtest-generators.sh` and `infra/nginx/test/check-real-ips.sh`.
 - **Test harness:** its own Docker network, stub upstreams and a fake "Cloudflare" peer; no shared stack and no fixed ports. It runs in the CI docker job and checks that:
   - the restore works from a trusted peer, and a spoofed header from anyone else is ignored;
   - one IP's 429 does not touch another IP;
