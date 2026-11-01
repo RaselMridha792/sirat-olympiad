@@ -1,7 +1,8 @@
 # The exam load test only (loadtests/exam-local.sh, project sirat-exam-load; never project sirat). The stack as on the
-# server (PgBouncer, API replicas, production mode) with small sizes and its own throwaway settings. Only Postgres is
-# published, on 127.0.0.1, for the load fixtures run from the host; it carries the test marker they require. k6 joins the
-# project's network and talks to the API replicas directly (nginx's per-IP limits would only see the one generator).
+# server (PgBouncer, API replicas, production mode) with small sizes and its own throwaway settings. Nothing is
+# published: the load fixtures run in a container on Postgres's own network (Postgres carries the test marker they
+# require), and k6 joins the project's network and talks to the API replicas directly (nginx's per-IP limits would
+# only see the one generator).
 services:
   # The run's own settings, never the clone's .env: exam-local.sh sets LOAD_ENV_FILE, and compose refuses without it.
   api:
@@ -13,7 +14,6 @@ services:
     env_file: !override ['${LOAD_ENV_FILE:?LOAD_ENV_FILE is set by loadtests/exam-local.sh}']
 
   postgres:
-    ports: ['127.0.0.1:${LOAD_PG_PORT:-54533}:5432']
     command:
       - postgres
       - -c
