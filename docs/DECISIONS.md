@@ -22,6 +22,11 @@ One short entry per non-obvious technical or product decision. Newest first. For
 5. **Tests:** `infra/nginx/test/check-real-ips.sh`, in CI's docker job. It runs on its own network with stub upstreams and a copy of the tracked config, with lower rates.
    - It checks the restore from a trusted peer only; the key for every place `::` can stand; that one client's 429 leaves another alone, in both zones; that two addresses in one /64 share a bucket; that the internal listener cannot be reached; and the generators' on, status, off and usage refusals (a range, more than 12 hours, an IPv6 generator).
    - Mutation checks, each failing its check: a wrong zero fill in the key, the api zone keyed per address, the auth zone as one bucket, no generators include.
+6. **Timing tests:** five integration tests that failed under CPU load now assert behaviour instead of wall time. Each passed 6/6 idle and 5/5 with every core busy, and a deliberate break in the product code fails each new assertion.
+   - redis-throttler: the storage's own timeout log line and the fail-open result, with a 3 s limit only as a backstop.
+   - auth-refresh-timeout: the lock is held until the 503 arrives, or released once the rotation is seen waiting on it (`pg_blocking_pids`); the 503 is recognised by its message.
+   - app-throttle and security-alerts stretch the Redis call timeouts in their own file only (the timeout itself is redis-throttler's test). "Never blocks" holds the email path and asserts the call returned while it is held, and the inbox check waits for the email queue to drain.
+   - email: the permanent-failure probe reads the job again once it is failed, because a copy read before the check could still show 0 attempts.
 
 ## 2026-11-01 — The fake PayStation as a container for load and staging stacks (Claude; payments, exam's load kit, lead)
 
