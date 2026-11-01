@@ -2,6 +2,21 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-01 — The registration form's retention: abandoned and dead attempts (Claude; D6, PAYMENTS-PLAN 4.3, lead)
+
+1. **D6 as written:** an abandoned attempt's stored form (`payload`, with the argon2id password hash) is cleared 30 days after its last change.
+2. **Extended (lead; Rasel, please see):** an **open attempt that is dead** is cleared too. Dead means it was last changed over 30 days ago, has no payment initiated, pending, paid or refunded, and every checkout of it expired over 30 days ago, far past the 48 h late watch.
+   - Such a student never came back. Without this, their password hash and form would stay forever, which is what D6 exists to prevent.
+3. **Kept:** **conflict** attempts are an admin case, so the job never clears them. An admin clears one by hand once the case is closed (RUNBOOK §16).
+   - Completed attempts are cleared at settlement, as before.
+   - The row, name, email and phone stay for payment lookups, and so do the payments and their events. `updated_at` is not changed.
+4. **Money is never lost:** a payment that succeeds on an attempt whose form was cleared is marked paid and set aside as `attempt_invalid`, with no account. `attempt-scrub.int-spec` runs exactly that.
+5. **How:** its own scheduler on the housekeeping queue, `attempt-scrub` at **04:00** Dhaka.
+   - The other nightly jobs are spread out: session-cleanup at 03:30, core's ambassador back-fill at 03:45.
+   - It uses the session cleanup's batch loop, now shared (`batch-drain.ts`): 1,000 rows per batch, `FOR UPDATE SKIP LOCKED`, `SET LOCAL statement_timeout`, a cap, idempotent.
+   - Counts-only log and audit (`housekeeping.attempt_scrub`). A failed run shows in ops-check as a warning on the same queue.
+   - No migration: `@@index([status, updatedAt])` and the payments foreign-key index serve the scans.
+
 ## 2026-11-01 — A busy database answers 503 SERVICE_BUSY, never 500; the registration start retries once (Claude; lead, A2's conditions)
 
 1. **Found:** k6 at 25 starts/s while every CPU thread was busy, with a pool of 5 like production. 180 starts answered 500, all Prisma P2028 (start's interactive transaction ran out of maxWait or timeout); the global filter turned every non-HTTP error into 500.

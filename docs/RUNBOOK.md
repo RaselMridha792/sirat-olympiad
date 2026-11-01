@@ -491,5 +491,24 @@ SQL
 - `"more": true` means the run reached the cap. That is normal right after a long pause. If it stays true night after night, the cap is too low for the traffic.
 - **No manual trigger:** a run is idempotent, so the next night catches up.
 - **Indexes:** `sessions(expires_at)`, `sessions(revoked_at)` and `auth_tokens(expires_at)` came with a plain `CREATE INDEX`, fine while the tables were young. A later index on a big `sessions` table must use `CREATE INDEX CONCURRENTLY`, in a migration of its own: Prisma runs each migration in a transaction, and `CONCURRENTLY` cannot run inside one. A plain build would lock writes, and so logins and refreshes, until it finished.
-- **At worker start** the log says `housekeeping scheduler set` (id, pattern, time zone). Every start says so, but Redis keeps one scheduler: `$DC exec -T redis-queue redis-cli ZRANGE bull:housekeeping:repeat 0 -1` lists exactly `session-cleanup`.
+- **At worker start** the log says `housekeeping scheduler set` (id, pattern, time zone) once per job. Every start says so, but Redis keeps one scheduler per job: `$DC exec -T redis-queue redis-cli ZRANGE bull:housekeeping:repeat 0 -1` lists exactly `attempt-scrub` and `session-cleanup`.
 - **After a purge,** a refresh token replayed more than 30 days after its rotation gets 401, like any unknown token. It no longer ends its family or writes `auth.refresh_reuse` (DECISIONS A2.1b #9).
+
+**The registration form's retention (D6, the same queue).** Every night at 04:00 Asia/Dhaka, `attempt-scrub` clears `pending_registrations.payload`: the stored form, with its argon2id password hash.
+- **Which attempts:**
+  - **abandoned** ones (cancelled, or replaced by a new start), 30 days after their last change;
+  - **open but dead** ones: last changed over 30 days ago, no payment initiated, pending, paid or refunded, and every checkout expired over 30 days ago.
+- **Never:**
+  - completed attempts (cleared at settlement);
+  - **conflict** attempts (an admin case, section 11);
+  - the row itself, the name, email and phone (payment lookups), payments and their events.
+- **A payment that still succeeds later is not lost:** it is marked paid and appears in the review list as `attempt_invalid` (section 11).
+- **Check that it ran:** one audit row per run, `housekeeping.attempt_scrub`, with counts only (`abandoned`, `dead`, `batches`, `more`), and the worker's log line `attempt scrub done`.
+- **A conflict keeps its form** until an admin has closed the case: there is no "resolved" status, so the job never clears it.
+  - Once the case is closed (the student has an account, or was refunded), clear that one attempt's form by hand, and note it with the case:
+    ```bash
+    $DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+    update pending_registrations set payload = null where id = '<attempt id>' and status = 'conflict' returning id;
+    SQL
+    ```
+  - Never delete the row or its payments.
