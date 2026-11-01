@@ -36,10 +36,11 @@ const EMAIL_LINK_TIER = { default: { limit: 300, ttl: 60_000 } };
 const FORGOT_TIER = { default: { limit: 120, ttl: 60_000 } };
 /**
  * Renewal is anonymous too (the access cookie has expired), so it counts per client IP (an IPv6 client by its /64).
- * Set at nginx's per-IP api zone (200 r/s, 12,000 a minute, LAUNCH-PLAN L4): behind nginx the API never refuses a
- * renewal first, even for a school or a mobile operator's address shared by thousands.
+ * Above what nginx's per-IP api zone lets through in a minute (200 r/s plus a burst of 2,000, about 14,000; LAUNCH-PLAN
+ * L4): behind nginx the API never refuses a renewal first, even for a school or a mobile operator's address shared by
+ * thousands. The API's window is fixed, so the margin covers a burst followed by the full rate.
  */
-const REFRESH_TIER = { default: { limit: 12_000, ttl: 60_000 } };
+const REFRESH_TIER = { default: { limit: 15_000, ttl: 60_000 } };
 
 const clientInfo = (req: Request): ClientInfo => ({
   ip: req.ip ?? null,
