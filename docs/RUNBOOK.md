@@ -14,7 +14,7 @@ export DCD="docker compose -p sirat --env-file .env -f infra/docker-compose.yml 
 
 ```bash
 cp .env.example .env                    # fill real local passwords; never commit
-cp apps/api/.env.example apps/api/.env  # host-side dev env (same POSTGRES_PASSWORD)
+cp apps/api/.env.example apps/api/.env  # host-side dev env (same POSTGRES_PASSWORD and POSTGRES_APP_PASSWORD)
 openssl rand -base64 48                 # paste a fresh output into JWT_ACCESS_SECRET of each file (blank in the examples)
 pnpm install
 pnpm --filter @sirat/shared build
@@ -22,6 +22,7 @@ pnpm db:generate
 
 $DCD up -d postgres pgbouncer redis-cache redis-queue mailpit   # data services on 127.0.0.1:15432/16432/16379/16380; Mailpit UI http://127.0.0.1:18025
 pnpm db:migrate                                         # prisma migrate dev (host, via DIRECT_URL)
+$DCD up -d --build --no-deps migrate                    # a fresh cluster only: gives sirat_app its login (log: runtime role ready)
 pnpm --filter @sirat/api db:seed                        # idempotent config seed
 ALLOW_DEV_FIXTURES=yes-this-is-not-production pnpm --filter @sirat/api db:fixtures:dev   # DEV ONLY (see below)
 pnpm dev:api                                            # http://localhost:4000/api/health
@@ -43,12 +44,21 @@ $DCD up -d --build --no-deps migrate api worker web nginx   # the shared stack (
 **The runtime role sirat_app (L2, L8):**
 - Every stack turn needs `POSTGRES_APP_PASSWORD` in the root `.env`, because PgBouncer, the API, the worker and the seed log in as `sirat_app` (L8).
   - **Without it**, compose stops before it creates or restarts any container, so nothing crash-loops. It prints `required variable POSTGRES_APP_PASSWORD is missing a value: POSTGRES_APP_PASSWORD missing - set it in .env (openssl rand -hex 32)`.
-  - **With a value other than the one the cluster already has** (the dev cluster keeps its first one), the migrate job prints `password already set, kept`, then its seed fails to log in through PgBouncer (password authentication failed for `sirat_app`). The job exits non-zero, so the API and the worker do not start. Put the agreed value in the root `.env`; if it is lost, use the reset below.
+  - **With a value other than the one the cluster already has** (the dev cluster keeps its first one), the migrate job prints `password already set, kept`, then its seed fails to log in through PgBouncer (password authentication failed for `sirat_app`). The job exits non-zero, so the API and the worker do not start. Put the agreed value in the root `.env`, recreate PgBouncer (next point), then take the turn; if the value is lost, use the reset below.
+- PgBouncer holds the value of the worktree that last created it (the key is part of its settings). A fixed or changed value therefore needs `$DCD up -d --no-deps pgbouncer` before the usual app-only turn. The messages:
+  - `SASL authentication failed`: the client's value differs from PgBouncer's;
+  - `password authentication failed for user "sirat_app"`: PgBouncer's value differs from the role's, or the role has no login yet (a fresh cluster; Postgres logs `User "sirat_app" has no password assigned`);
+  - `FATAL: bouncer config error`: a user other than `sirat_app` went through PgBouncer, such as a host URL with `sirat@…:16432`. Use `sirat_app` on 16432, or the owner on 15432.
+- **The L8 switch on the shared stack** (once, in the window the lead and Rasel pick): every worktree's root `.env` has the value, and every `apps/api/.env` `DATABASE_URL` through 16432 uses `sirat_app` (or the owner on 15432). Then `$DCD up -d --no-deps pgbouncer` comes last. Apps with L8 already work through the old PgBouncer, so nothing breaks before that step, and turns before the window stay app-only even though the compose file changed.
 - `pnpm dev:api` through the stack's PgBouncer (`127.0.0.1:16432`) logs in as `sirat_app` too (`apps/api/.env.example`). To run as the owner instead, point `DATABASE_URL` straight at Postgres (`127.0.0.1:15432`).
 - `POSTGRES_APP_PASSWORD` in the root `.env` (`openssl rand -hex 32`) is the same value in every worktree that takes stack turns: one Postgres cluster has one role. The first stack turn after L2 gives the role its login (the migrate log says `runtime role ready: sirat_app (login and password set)`); later turns keep it.
 - `TEST_APP_DATABASE_URL` in `apps/api/.env` (`postgresql://sirat_app:<the same value>@127.0.0.1:15432/<the session's *_test database>`, the same host and database as `TEST_DATABASE_URL`) makes the integration tests run the app as `sirat_app`, as CI does. Without it the tests run the app as the owner and skip the `sirat_app` checks; with it but no login yet, `test:int` stops with a message.
 - Rasel types both values. Sessions never read or print them.
-- Changing the dev value (only to rotate it or when it is lost; with the lead's or Rasel's go-ahead, because every worktree's root `.env` and every `TEST_APP_DATABASE_URL` change with it): `$DCD exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "ALTER ROLE sirat_app PASSWORD NULL"'`, then one announced stack turn sets the new value from the root `.env`. No value is typed in the command.
+- Changing the dev value (only to rotate it or when it is lost), with the lead's or Rasel's go-ahead. New database connections of the running stack fail from step 2 until step 4 ends.
+  1. Rasel puts the new value in every worktree's root `.env`, every `TEST_APP_DATABASE_URL` and every `apps/api/.env` `DATABASE_URL` through 16432.
+  2. `$DCD exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "ALTER ROLE sirat_app PASSWORD NULL"'` (no value is typed in the command).
+  3. `$DCD up -d --no-deps pgbouncer`, so PgBouncer takes the new value.
+  4. One announced stack turn: `runtime-role.ts` sets the new value, and the seed logs in through PgBouncer.
 
 Signing secret: the API refuses to start (in every `NODE_ENV`) when `JWT_ACCESS_SECRET` is blank, shorter than 32 characters, too repetitive, or contains a placeholder word such as `fake`, `example` or `change me`. The error names the rule, never the value. Use a separate value per environment and never reuse the dev value on the VPS.
 
@@ -130,7 +140,7 @@ scripts/deploy.sh --first         # once, on a fresh host, with the clone at the
 - **A deploy:**
   1. **Preflight:**
      - a lock (`/var/lib/sirat/deploy.lock`; the monitor holds back `/fail` meanwhile); not root; `.env` mode 600; a clean tree;
-     - nothing exported that compose would take over the files (`DATABASE_URL`, `DIRECT_URL`, `POSTGRES_*`, `SIRAT_TAG`, `COMPOSE_*`);
+     - nothing exported that compose would take over the files (`POSTGRES_*`, `DIRECT_URL`, `SIRAT_TAG`, `COMPOSE_*`; `DATABASE_URL` too, which compose no longer reads since L8);
      - free disk; the commit on `origin/main` with a passed CI run; no exam window open within 30 minutes either side;
      - the data services running and healthy, no development marker on Postgres, and the data services exactly as this commit's compose file describes them. Otherwise it stops with "data-service change pending: apply it as its own step": a deploy never starts or recreates a data service.
   2. Builds `sirat-{migrate,api,worker,web}:<sha>` while the live release serves.
@@ -156,7 +166,12 @@ Every DB session (migrations and psql included) starts with `statement_timeout 1
 3. Mark it rolled back, with the failed release's image (the live one does not have the migration): `SIRAT_TAG=<failed sha> $DC run --rm --no-deps migrate node_modules/.bin/prisma migrate resolve --rolled-back <migration_name>`.
 4. Fix forward: a corrected migration in a new commit, then deploy that. **No deploys during a live exam window**, except a critical fix agreed with the owner.
 
-**The runtime role step failed** (the output's last line starts with `runtime role:`): every migration is applied and nothing needs `migrate resolve`. Fix what the line names (`POSTGRES_APP_PASSWORD` must be 32–128 letters, digits, `-` or `_`: `openssl rand -hex 32`; or the database error code; `55P03` means another migrate run held the database for over 30 s), then run the deploy again (`scripts/deploy.sh "$sha"`). The live API keeps serving meanwhile.
+**The runtime role step failed** (the output's last line starts with `runtime role:`): every migration is applied and nothing needs `migrate resolve`. The live API keeps serving meanwhile.
+- **A problem with `POSTGRES_APP_PASSWORD`** (the shape, `openssl rand -hex 32`; a placeholder; the superuser's value; missing). `deploy.sh` refuses a malformed value before `--first`, so this is rare. The value is also PgBouncer's password, so changing it is a data-service change that `deploy.sh` refuses to make:
+  - before the first release: fix `.env`, run `$DC up -d --no-deps --no-build pgbouncer`, then the deploy;
+  - with a live release (also a planned rotation): under maintenance (section 4), fix `.env`, then `$DC up -d --no-deps --no-build pgbouncer`, `$DC run --rm --no-deps migrate` and `$DC up -d --no-deps --no-build api worker`.
+- **`55P03`** (another migrate run held the database for over 30 s) or another database code: run the deploy again (`scripts/deploy.sh "$sha"`).
+- **`sirat_app cannot read N table(s) and lacks M default privilege(s)`**: the same commit can never pass. Deploy a new commit with a reviewed repair migration: the runtime_role migration's two `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT … TO sirat_app` statements, plus `GRANT SELECT, INSERT, UPDATE, DELETE` on the tables it cannot read. The script takes UPDATE and DELETE back on the append-only ones.
 
 ## 3. Scale API replicas
 
@@ -278,6 +293,7 @@ Credentials are read inside the postgres container; nothing secret is typed on t
 | `reconciliation` | the payments reconciliation is more than 3 intervals late | worker running? `$DC logs worker \| grep reconcile` |
 | `queue_redis_memory` | the queue Redis over 300 MB (warning), 400 MB of 512 (critical) | failed jobs piling up; `redis-cli INFO memory` in `redis-queue` |
 | `http_5xx` | over 2% (warning) or 10% (critical) of at least 50 requests in 5 min | `$DC logs --since 10m nginx api`; `/api/ready`; recent deploy? |
+| `password authentication failed for user "sirat_app"` (pgbouncer log) | the role's password no longer matches PgBouncer's (any role may change its own; an injected `ALTER ROLE`): every new database connection fails, while PgBouncer stays healthy | `$DC run --rm --no-deps migrate` sets the `.env` value again; then `/api/ready`. If the `.env` value itself changed, section 2 |
 | `database busy` (api log, warn) | the database refused for a passing reason (Prisma P2028/P2034/P2024 or a lock or statement timeout): the request answered **503 `SERVICE_BUSY`** with `Retry-After: 2`, nothing was applied, and the registration wizard retried once by itself | a few under a surge are expected. Many, or for minutes: the API is CPU-bound or the pool is too small (`docker stats`; `connection_limit` in `DATABASE_URL`; scale API replicas, section 3). A plain `unhandled error` (500) is a different thing: read its class |
 | `app_errors` | API 5xx or web render errors in the logs | `$DC logs --since 10m api web` |
 | `api_p95` | the API's p95 over 1 s | "Site slow" below |

@@ -261,6 +261,7 @@ The superuser password also sits in every app container through `env_file`. The 
   - Without `TEST_APP_DATABASE_URL`, a session's tests run the app as the superuser, as today; payments, exam and core each turn the key on when ready.
 
 **Now, L8 "switch to the role" (1–1.5 h, before the first VPS deploy).**
+- **Built** (DECISIONS "The app connects as sirat_app"): compose builds `DATABASE_URL` from `POSTGRES_APP_PASSWORD`, so the root `.env` has none; `restore.sh` is L7's.
 - **Connections:**
   - PgBouncer knows only `sirat_app`;
   - `DATABASE_URL` uses it for the API, the worker, the seed and the CLI;
