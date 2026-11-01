@@ -1,0 +1,49 @@
+# The L9 deploy rehearsal only (scripts/test/run-deploy-rehearsal.sh, project sirat-rh; never the VPS, never project
+# sirat). nginx on loopback 18080/18443 with the site's name as a network alias, no data ports, a Postgres sized for a
+# laptop and without the development marker (deploy.sh must accept it), two API replicas, and Mailpit for the worker.
+services:
+  nginx:
+    ports: !override ['127.0.0.1:18080:80', '127.0.0.1:18443:443']
+    networks:
+      default:
+        aliases: [sirat-rh.test]
+
+  api:
+    deploy:
+      replicas: 2
+
+  worker:
+    environment:
+      EMAIL_PROVIDER: mailpit
+      MAILPIT_URL: http://mailpit:8025
+
+  mailpit:
+    image: axllent/mailpit:v1.32.0
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', '/mailpit', 'readyz']
+      interval: 15s
+    deploy: { resources: { limits: { cpus: '0.5', memory: 128M } } }
+
+  postgres:
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=1GB
+      - -c
+      - maintenance_work_mem=128MB
+      - -c
+      - work_mem=8MB
+    deploy: { resources: { limits: { cpus: '2', memory: 2G } } }
+
+  redis-cache:
+    command: ['redis-server', '/usr/local/etc/redis/redis-cache.conf', '--maxmemory', '256mb']
+    deploy: { resources: { limits: { cpus: '0.5', memory: 512M } } }
+
+  redis-queue:
+    command: ['redis-server', '/usr/local/etc/redis/redis-queue.conf', '--maxmemory', '256mb']
+    deploy: { resources: { limits: { cpus: '0.5', memory: 512M } } }
