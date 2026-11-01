@@ -385,7 +385,7 @@ scripts/prelaunch-check.sh
 **Students wait on "Signing you in again…" and the API log shows 503s on `/api/auth/refresh`:** the database was too slow for a session renewal to commit within `REFRESH_ROTATION_BUDGET_MS` (8 s), or its 5 s `lock_timeout` cut a wait. Each renewal was rolled back: nobody is logged out, the old cookies still work, and the browsers retry with a growing pause. Look at database load and connections; do not raise the budget during an exam (at most 10 s, and only with `$DC up -d api`).
 
 **Dashboards show the error page (not the login page):** the web cannot read the session: `GET /api/auth/me` timed out (5 s), was rate limited or the API is down. The web log has one `ServerApiError` line per failure (class and status only). Check `/api/ready` and the API's 429s. A 429 behind this page always comes from the API, because the web asks `/auth/me` server-side, not through nginx: either the user's own limit on `/auth/me` (`API_LIMIT_PER_USER_PER_MINUTE`, 120 per route) or, for a cookie that does not verify, the client IP's 600.
-**Clients get 429:** a JSON body with code `TOO_MANY_REQUESTS` and `Retry-After: 1` comes from nginx `limit_req`; a JSON body from the API (`ThrottlerException`) comes from a signed-in user's own limit (120 per route), the per-IP default for anonymous requests (600) or a route tier (forgot-password 120, resend/reset/verify 300, refresh 3,000). Many nginx 429s for one school or mobile operator come from its per-IP zones (`auth` 20 r/s, `api` 30 r/s; DECISIONS "Per-user API limits"). If a whole school is limited by the API, check that real client IPs are restored (section 10).
+**Clients get 429:** a JSON body with code `TOO_MANY_REQUESTS` and `Retry-After: 1` comes from nginx `limit_req`; a JSON body from the API (`ThrottlerException`) comes from a signed-in user's own limit (120 per route), the per-IP default for anonymous requests (600) or a route tier (forgot-password 120, resend/reset/verify 300, refresh 15,000). Many nginx 429s for one school or mobile operator come from its per-client zones (`auth` 100 r/s, burst 1,000; `api` 200 r/s, burst 2,000; per IPv4 address or IPv6 /64; DECISIONS "Real IPs and shared IPs"). If a whole school is limited by the API, check that real client IPs are restored (section 10).
 **"Security alert" email or `security.login.*` audit rows:** `login.account_limit` means one account failed 50 times within an hour (only IPs that failed are refused; the student can still log in from another network or reset the password); `login.distributed` means failures on one account from more than 20 IPs within an hour (nothing is blocked). Look the account id up in `audit_logs`; if it repeats across many accounts, consider Cloudflare Turnstile on login (DECISIONS). Alert emails pause 10 minutes per kind and stop at the hourly cap of their category; the audit log has every event.
 
 **Alert emails (L10):**
@@ -478,6 +478,17 @@ The container mounts the whole `infra/nginx` folder, so it sees the new file at 
 ```
 The script refuses (exit non-zero, live file untouched) when a download fails, returns anything that is not a CIDR, or has fewer than 10 IPv4 / 5 IPv6 ranges. Never edit `infra/nginx/cloudflare-realip.conf` by hand and never paste the old one-liner: it wrote an empty list when the download failed, which made every student behind a Cloudflare edge share one rate-limit bucket.
 After go-live, confirm in the nginx access log that client addresses are real users, not Cloudflare edges. If Cloudflare reaches the origin over IPv6 while the compose network has none, Docker replaces the source address and real-IP restore cannot work: keep the origin A-record-only.
+
+**Load-test generators (k6 on the VPS, L4).** nginx takes `CF-Connecting-IP` from Cloudflare only. For a k6 run it can also take it from up to four generator machines, for a few hours:
+```bash
+scripts/loadtest-generators.sh on 198.51.100.7,198.51.100.8 --hours 3  # IPv4 addresses the generators connect from, at most 4, 1 to 12 hours (default 2)
+scripts/loadtest-generators.sh status                                  # on/off, the addresses, the expiry (EXPIRED: turn it off)
+scripts/loadtest-generators.sh off                                     # right after the run; idempotent
+```
+- Each generator connects straight to the server on 443, with SNI and Host set to the public host (k6 `hosts` maps the domain to the server's address), and sends `CF-Connecting-IP: <simulated client address>`.
+- Each change runs `nginx -t` before the reload, and a failure puts the previous state back (exit 1).
+- Each change returns once nginx's new workers run (`applied`). Old workers keep their open keep-alive connections, and with them the old trust, until those close: stop k6 before `off`.
+- Nothing turns it off at the expiry, so run `off`. The file is `infra/nginx/loadtest-realip.local.conf` (git-ignored); while it exists, `deploy.sh` still sees a clean clone.
 
 ## 11. Payments: the review list, refunds and manual reconciliation (PayStation has no refund API)
 

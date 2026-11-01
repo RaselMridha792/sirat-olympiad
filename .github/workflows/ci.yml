@@ -268,6 +268,8 @@ jobs:
           $DCD config --quiet
       - name: Nginx on the pinned image - both sites pass nginx -t; the TLS site, its headers and its logs
         run: infra/nginx/test/check-sites.sh
+      - name: Nginx real IPs (L4) - restored from trusted peers only, one bucket per IPv4 address or IPv6 /64, the load-test generators
+        run: infra/nginx/test/check-real-ips.sh
       - name: Build and start the whole stack (dev override sizes Postgres for the runner)
         run: $DCD up -d --build
       - name: Every long-running service becomes healthy; migrate exits 0 after the seed

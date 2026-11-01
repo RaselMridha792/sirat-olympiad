@@ -22,6 +22,19 @@ import type { PrismaService } from '../src/prisma/prisma.service';
 import { QUEUE_REDIS_OPTIONS } from '../src/redis/redis.module';
 import { testPrisma } from './helpers';
 
+// The limiter withholds an email when Redis has not answered within 300 ms (by design: no Redis, no email). On a
+// loaded machine a reply can take longer, and an alert these tests expect in the inbox was held back. The file proves
+// the audit-first order, the limits and the content, not that timeout, so every withTimeout here waits 20 times
+// longer (a dead client still fails at once: the limiter and the queue check its status first).
+jest.mock('../src/common/with-timeout', () => {
+  const actual = jest.requireActual<typeof import('../src/common/with-timeout')>(
+    '../src/common/with-timeout',
+  );
+  return {
+    withTimeout: <T>(promise: Promise<T>, ms: number) => actual.withTimeout(promise, ms * 20),
+  };
+});
+
 const MAILPIT = process.env.MAILPIT_URL ?? 'http://127.0.0.1:18025';
 const QUEUE = `email-test-${randomUUID()}`;
 const run = randomUUID().slice(0, 8);
@@ -32,6 +45,7 @@ const audit = new AuditService(prisma as unknown as PrismaService);
 let queueRedis: Redis;
 let cacheRedis: Redis;
 let emails: EmailQueue;
+let raw: Queue;
 let worker: EmailWorker;
 const background = new BackgroundTasks();
 
@@ -40,6 +54,7 @@ beforeAll(async () => {
   cacheRedis = new Redis(process.env.REDIS_CACHE_URL as string, { maxRetriesPerRequest: 1 });
   await Promise.all([queueRedis.ping(), cacheRedis.ping()]);
   emails = new EmailQueue(queueRedis, QUEUE);
+  raw = new Queue(QUEUE, { connection: queueRedis });
   const config = { get: () => process.env.REDIS_QUEUE_URL } as unknown as ConfigService<
     EnvVars,
     true
@@ -52,7 +67,6 @@ afterAll(async () => {
   await background.idle();
   await worker.onApplicationShutdown();
   await emails.onApplicationShutdown();
-  const raw = new Queue(QUEUE, { connection: queueRedis });
   await raw.obliterate({ force: true });
   await raw.close();
   const keys = await cacheRedis.keys(`alertmail-test:${run}:*`);
@@ -81,12 +95,46 @@ function alertsWith(
     limiter,
     opts.inbox === false ? undefined : inbox,
   );
-  return { alerts, inbox };
+  return { alerts, inbox, limiter };
+}
+
+/**
+ * Holds the email path at its first step (the limiter) until `release()`: a caller that waited for the email could
+ * not return while it is held. A backstop releases it after 10 s, so such a caller fails the test instead of hanging.
+ */
+function holdEmailPath(limiter: AlertEmailLimiter) {
+  const state = { entered: false, released: false };
+  let open!: () => void;
+  const opened = new Promise<void>((resolve) => (open = resolve));
+  const backstop = setTimeout(() => release(), 10_000);
+  function release() {
+    clearTimeout(backstop);
+    state.released = true;
+    open();
+  }
+  const allow = limiter.allow.bind(limiter);
+  jest.spyOn(limiter, 'allow').mockImplementation(async (kind, category) => {
+    state.entered = true;
+    await opened;
+    return allow(kind, category);
+  });
+  return { state, release };
+}
+
+/** Resolves once the worker has handled every queued email (a job leaves the queue after Mailpit accepted it). */
+async function queueDrained(): Promise<void> {
+  const until = Date.now() + 20_000;
+  for (;;) {
+    const counts = await raw.getJobCounts('waiting', 'active', 'delayed', 'prioritized', 'paused');
+    if (Object.values(counts).every((c) => c === 0)) return;
+    if (Date.now() > until) throw new Error(`email queue not drained: ${JSON.stringify(counts)}`);
+    await sleep(50);
+  }
 }
 
 async function inboxOf(to: string) {
-  await background.idle();
-  await sleep(1_500); // the worker delivers to Mailpit
+  await background.idle(); // every alert's email path has finished: queued, or held back
+  await queueDrained(); // and everything queued is in Mailpit, duplicates included
   const res = await fetch(`${MAILPIT}/api/v1/search?query=${encodeURIComponent(`to:"${to}"`)}`);
   return ((await res.json()) as { messages: { ID: string; Subject: string }[] }).messages;
 }
@@ -196,11 +244,18 @@ describe('SecurityAlerts', () => {
     const deadQueue = new EmailQueue(dead, `${QUEUE}-dead`);
     try {
       for (const opts of [{ queue: deadQueue }, { cache: dead }]) {
-        const { alerts, inbox } = alertsWith(10, opts);
+        const { alerts, inbox, limiter } = alertsWith(10, opts);
+        const held = holdEmailPath(limiter);
         const actorId = randomUUID();
-        const started = Date.now();
-        await expect(alerts.raise('login.account_limit', event(actorId))).resolves.toBeUndefined();
-        expect(Date.now() - started).toBeLessThan(500); // the email part never waits in the caller
+        try {
+          await expect(
+            alerts.raise('login.account_limit', event(actorId)),
+          ).resolves.toBeUndefined();
+          // The email part never waits in the caller: the call returned while its email was still held.
+          expect(held.state).toEqual({ entered: true, released: false });
+        } finally {
+          held.release(); // the dead queue or dead limiter now fails in the background
+        }
         expect(
           await prisma.auditLog.count({
             where: { action: 'security.login.account_limit', actorId },
