@@ -29,6 +29,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 10. **Tests:**
     - `ambassador-teams.int-spec.ts` (9): create and the code; join in any case, first names only, leave, the lead may not; 12 joins at once stop at 10; a revoked lead closes the team; the per-user and per-IP limits with refusals counted; admin list, detail and rename with no names in the audit row; admins only; the CHECKs and the uniques.
     - web: the area file picks (first names, the code for the lead only, a malformed id never sent), the problem mapper.
+
 ## 2026-11-01 — Restores never overwrite, and the drill never reads the real settings (L7; exam session, LAUNCH-PLAN §5)
 
 1. **No `--clean` over a live schema.**
