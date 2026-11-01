@@ -10,11 +10,15 @@ import {
 import { Prisma, type Exam, type Question } from '@prisma/client';
 import {
   EXAM_LIMITS,
+  QUESTION_IMPORT_LIMITS,
   type AdminExamCard,
   type AdminExamView,
   type AdminQuestion,
+  type AdminQuestionInput,
   type ExamAdminRefusal,
   type Paginated,
+  type QuestionImportPreview,
+  type QuestionImportResult,
   type QuestionOption,
 } from '@sirat/shared';
 import { errorLogFields } from '../../common/all-exceptions.filter';
@@ -34,6 +38,7 @@ import {
   windowProblems,
 } from './exam-rules';
 import { ExamCache } from './exam-cache';
+import { examDuplicates, readQuestionFile } from './question-import';
 
 export type Tx = Prisma.TransactionClient;
 
@@ -368,6 +373,70 @@ export class AdminExamsService {
     await this.afterWrite(examId, { questionId });
   }
 
+  /**
+   * The CSV import (E7a): draft exams only, all rows or none. The dry run checks the same things under the same lock
+   * and writes nothing. One audit row with the count and the file's sha256, never its content.
+   */
+  async importQuestions(
+    examId: string,
+    bytes: Uint8Array,
+    dryRun: boolean,
+    actor: Actor,
+  ): Promise<QuestionImportPreview | QuestionImportResult> {
+    const file = readQuestionFile(bytes);
+    const max = QUESTION_IMPORT_LIMITS.maxErrors;
+    const result = await this.run(async (tx) => {
+      await assertAdmin(tx, actor.id);
+      const exam = await lockExam(tx, examId);
+      if (exam.status === 'archived') throw refuse('exam_archived');
+      // Published, even with a random draw: the import narrows EXAM-PLAN 4.1 to drafts (the E7a handover), since a
+      // bulk add would reshape every remaining draw at once.
+      if (exam.status === 'published') throw refuse('pool_fixed');
+      const active = await tx.question.findMany({
+        where: { examId, isActive: true },
+        select: { text: true },
+      });
+      const errors = [
+        ...file.errors,
+        ...examDuplicates(
+          file.rows,
+          active.map((q) => q.text),
+        ),
+      ].sort((a, b) => a.row - b.row);
+      if (dryRun)
+        return {
+          rows: file.rowCount,
+          errors: errors.slice(0, max),
+          truncated: errors.length > max,
+        };
+      if (errors.length)
+        throw new BadRequestException({
+          message: errors.slice(0, max),
+          code: 'QUESTION_IMPORT_INVALID',
+        });
+      const last = await tx.question.aggregate({
+        where: { examId, isActive: true },
+        _max: { position: true },
+      });
+      const after = last._max.position ?? 0;
+      await tx.question.createMany({
+        data: file.rows.map((r, i) => ({
+          examId,
+          lineageId: randomUUID(),
+          position: after + i + 1,
+          ...questionData(r.question),
+        })),
+      });
+      await audit(tx, actor, 'question.imported', examId, {
+        count: file.rows.length,
+        sha256: file.sha256,
+      });
+      return { created: file.rows.length };
+    });
+    if (!dryRun) await this.afterWrite(examId);
+    return result;
+  }
+
   async versions(examId: string, questionId: string): Promise<AdminQuestion[]> {
     const question = await findQuestion(this.prisma, examId, questionId);
     const rows = await this.prisma.question.findMany({
@@ -453,7 +522,7 @@ function assertQuestion(dto: QuestionDto): void {
   if (problems.length) throw invalid(...problems);
 }
 
-function questionData(dto: QuestionDto) {
+function questionData(dto: AdminQuestionInput) {
   return {
     text: dto.text,
     options: dto.options.map((o) => ({ key: o.key, text: o.text })),
