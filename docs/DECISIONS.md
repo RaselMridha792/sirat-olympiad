@@ -20,6 +20,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - It uses the session cleanup's batch loop, now shared (`batch-drain.ts`): 1,000 rows per batch, `FOR UPDATE SKIP LOCKED`, `SET LOCAL statement_timeout`, a cap, idempotent.
    - Counts-only log and audit (`housekeeping.attempt_scrub`). A failed run shows in ops-check as a warning on the same queue.
    - No migration: `@@index([status, updatedAt])` and the payments foreign-key index serve the scans.
+
 ## 2026-11-01 — The minute exam sweep tries each item on its own (exam session; lead's question after a test flake)
 
 1. **Each finalize, score and results build in the sweep is tried on its own.** One that throws (a lock or statement timeout under load, a bad row) is logged with its step and id, and the rest go on. Before, the first exception ended the run, and since the sweep orders by `ends_at`, an attempt that kept failing would have held back every later attempt and the results build, minute after minute.
