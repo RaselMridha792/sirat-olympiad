@@ -17,6 +17,48 @@ One short entry per non-obvious technical or product decision. Newest first. For
 5. **Left to others:**
    - `restore.sh` is L7's (exam): on a fresh cluster, `runtime-role.ts --ensure` runs before `pg_restore`, and the migrate job runs after it.
    - On the shared dev stack the switch needs one window that the lead and Rasel pick, after the first stack turn since L2 has given the role its login. First every root `.env` gets the value and every `apps/api/.env` `DATABASE_URL` through 16432 moves to `sirat_app` (or the owner on 15432); then `$DCD up -d --no-deps pgbouncer` comes last. Apps with L8 already work through the old PgBouncer (checked), so nothing breaks before it (RUNBOOK section 0).
+## 2026-11-01 — The fake PayStation as a container for load and staging stacks (Claude; payments, exam's load kit, lead)
+
+1. **Its own image, never in the api image:** `apps/api/test/fake-paystation/Dockerfile` builds from that folder alone.
+   - It bundles the two source files with the workspace's esbuild version, and the final image holds one JS file on node:22-slim, running as `node`.
+   - The root `.dockerignore` still keeps `apps/api/test` out of every other image, and CI's image-contents check is unchanged.
+2. **An overlay, not a change to the main file:** `infra/fake-paystation.compose.yml` adds `fake-paystation` (internal port 18090, nothing published, read-only, a healthcheck on `GET /__fake/health`).
+   - It points api and worker at it: `PAYSTATION_ENV=fake`, placeholder credentials, the IPN straight to `http://api:4000`.
+   - The environment beats `env_file`, so real PayStation credentials in a server's `.env` are never used by such a stack.
+3. **`NODE_ENV=development` for api and worker in that stack:** the API refuses `PAYSTATION_ENV=fake` under `production`, a money safeguard that stays as it is.
+   - In the API, `development` only means debug logs (the overlay pins `LOG_LEVEL=info`), no https or Secure-cookie check, no superuser check, and no security-alert emails.
+   - It is the same image and the same code paths.
+   - The rejected alternative was a flag that allows the fake under `production`: one wrong line in the real `.env` would then mark registrations paid without money.
+4. **The fake gained** `FAKE_PAYSTATION_HOST` (0.0.0.0 in a container), `FAKE_PAYSTATION_PUBLIC_URL` (the base of its checkout links) and `GET /__fake/health`.
+5. **CI** (the stack job, last step): it builds the image, restarts api and worker on the fake, and checks that everything is healthy, that no port is published, that the health route answers by service name, and that `/api/registrations/info` through nginx shows the fee, i.e. the api accepted the fake.
+
+## 2026-11-01 — Ambassador teams (core C5b-3; lead's plan and rules)
+
+1. **Shape (CORE-PLAN D7):**
+   - One team per ambassador (`teams.owner_id` UNIQUE) and one team per student (`team_members.user_id` UNIQUE; the lead is a member).
+   - At most 10 members, counted under a row lock on the team, so two joins at once never pass 10.
+2. **Members are minors** (lead):
+   - The student view carries first names only (the first word of the name), never a last name or an email.
+   - Only the lead sees the join code.
+   - Admins see full names and emails in a team's detail.
+   - Audit rows keep ids only; `team.renamed` keeps the reason, never the old or new name.
+3. **The join code** is `TM-` + 6 Crockford characters (32^6, about 1.07 billion codes), CITEXT UNIQUE, with a CHECK for the format. It looks unlike a promo code, so a student does not mix them up. A collision runs the creation again (P2002).
+4. **The join throttle** (lead):
+   - 10 attempts per 10 minutes per user (the route's tier) and 60 per IP (a cache-Redis counter in the service, fail-open like the throttler).
+   - Every attempt counts before anything is looked up, refusals (404, 409) included.
+   - Guessing therefore stays slow: with 1,000 teams, one IP needs about a million tries, some 3,000 hours, on average.
+5. **A revoked or blocked lead** (lead): the team takes no new members (409 `team_closed`) and its members keep it; the admin list shows it as closed. No dissolve or hand-over in v1 (a later admin action if asked).
+6. **Leaving** (lead): members may leave; the lead may not (409 `owner_cannot_leave`), so a team always has its lead.
+7. **Admin rename** (lead): moderation for an unsuitable name, with a reason (3–200) and `expectedUpdatedAt` under a row lock, audited.
+8. **Schema** (one generated and one CHECKs migration): `teams.join_code` (CITEXT, UNIQUE); `teams.name` becomes CITEXT, so names are unique in any case; CHECKs for the name length (3–60) and the code format.
+9. **Web:**
+   - `/dashboard/team` for students and ambassadors: join with a code, the team with first names, leave; an ambassador without a team can start one and copy its code.
+   - The ambassador panel links to it.
+   - `/admin/teams` (admin only): search, the members, rename.
+   - A nav entry in both shells, the access and launch rows.
+10. **Tests:**
+    - `ambassador-teams.int-spec.ts` (9): create and the code; join in any case, first names only, leave, the lead may not; 12 joins at once stop at 10; a revoked lead closes the team; the per-user and per-IP limits with refusals counted; admin list, detail and rename with no names in the audit row; admins only; the CHECKs and the uniques.
+    - web: the area file picks (first names, the code for the lead only, a malformed id never sent), the problem mapper.
 
 ## 2026-11-01 — The registration form's retention: abandoned and dead attempts (Claude; D6, PAYMENTS-PLAN 4.3, lead)
 

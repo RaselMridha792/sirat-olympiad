@@ -99,6 +99,10 @@ Load test of registration and payment (`loadtests/registration-surge.js`, paymen
 - Then `prisma migrate deploy` and `pnpm --filter @sirat/api db:seed` with that environment, open registration in that database only (`update settings set value = 'true'::jsonb where key = 'registration_open'`), start the fake with `FAKE_PAYSTATION_IPN_URL=http://127.0.0.1:<api port>/api/payments/paystation/ipn`, then `node --env-file=.env dist/main.js` and `dist/worker.js`, and run `k6 run -e BASE_URL=http://127.0.0.1:<api port> loadtests/registration-surge.js` (options: `loadtests/README.md`).
 - Afterwards: `docker stop sirat-pay-load-pg sirat-pay-load-redis sirat-pay-load-mail` (`--rm` removes them and their data).
 - On the VPS (DoD #17): a staging stack with the fake, k6 from another machine through nginx. Through nginx the generator's single address meets the start limit (300/min per IP): keep `RATE` at 4 or less per generator machine, or use more machines.
+- **The fake as a container** (load and staging stacks, never production): `infra/fake-paystation.compose.yml` adds `fake-paystation`, built from `apps/api/test/fake-paystation/Dockerfile`. It listens on port 18090 inside the project, with nothing published, and points the api and the worker at it.
+  - Add it with `docker compose --env-file .env -f infra/docker-compose.yml -f infra/fake-paystation.compose.yml up -d --build`. exam's load overlay stacks on top.
+  - That project runs api and worker with `NODE_ENV=development`, because the API refuses the fake under `production` (DECISIONS).
+  - Its checkout links use `FAKE_PAYSTATION_PUBLIC_URL` (default `http://fake-paystation:18090`, for k6 inside the project), and the payer comes back through `FAKE_PAYSTATION_CALLBACK_BASE` (default `http://nginx`).
 
 ## 1. Status and logs
 
@@ -685,3 +689,11 @@ SQL
 ```
 
 - **A wrong award** is never edited or deleted (the ledger is append-only): an admin adds a compensating entry with "Adjust points" (audited `points.adjusted`).
+
+## 18. Ambassador teams (core C5b-3)
+
+- **Where:** students and ambassadors on `/dashboard/team`; admins on `/admin/teams` (search, the members with contact, rename).
+- **"Too many tries" when joining:** 10 attempts per 10 minutes per student, 60 per IP. Refused codes count too, so a typo-heavy classroom behind one school IP can meet the IP limit. Both windows end by themselves within 10 minutes; ask the class to wait, not to retry.
+- **"This team is not taking new members":** the team lead is no longer an approved ambassador (revoked or blocked). The members keep the team; there is no dissolve or hand-over in v1.
+- **The lead cannot leave** their own team (by design). A member leaves from the team page.
+- **An unsuitable team name:** an admin renames it on `/admin/teams` with a reason (audited `team.renamed`; the audit row keeps the reason, not the names).
