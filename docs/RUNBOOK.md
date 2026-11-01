@@ -259,7 +259,9 @@ scripts/maintenance.sh off && scripts/healthcheck.sh https://<domain>
   6. clears `sessions` and `auth_tokens` (everyone logs in again);
   7. runs migrate, which puts back the database timeouts and `sirat_app`'s restrictions, CONNECT and login;
   8. checks `statement_timeout` 10s in a new session, `sirat_app`'s grants and CONNECT, and the migrations;
-  9. flushes the cache, starts the app and checks it through the internal listener.
+  9. flushes the cache, starts the app and checks it through the internal listener: three good rounds in a row of
+     `/api/ready` and the home page, within 30 s (the restarted containers may have new addresses, which nginx
+     picks up within 10 s; the same settle as `deploy.sh`).
 
   Maintenance stays on for a person to check.
 - **By hand, after a restore:**

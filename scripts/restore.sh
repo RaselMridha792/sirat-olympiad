@@ -139,8 +139,20 @@ say "checks: statement_timeout 10s in a new session, sirat_app's grants and CONN
 # ---- 9. the cache, the app, the internal listener ----
 dc exec -T redis-cache redis-cli FLUSHALL > /dev/null
 dc up -d --no-deps --no-build --wait --wait-timeout 300 api worker web > /dev/null
-ready=$(dc exec -T nginx curl -s -m 10 -w ' %{http_code}' http://127.0.0.1:8081/api/ready)
-[ "$ready" = '{"status":"ready"} 200' ] || fail "the API does not answer through the internal listener"
+# The restarted containers may have new addresses, and nginx keeps a resolved one for up to 10 s (resolver valid=10s):
+# as deploy.sh's settle, three good rounds in a row (the API and the home page) before judging, at most 30 s.
+inner() { dc exec -T nginx curl -s -m 10 -o /dev/null -w '%{http_code}' "http://127.0.0.1:8081$1" || true; }
+end=$((SECONDS + ${RESTORE_SETTLE_SECONDS:-30}))
+good=0
+while :; do
+  ready=$(dc exec -T nginx curl -s -m 10 -w ' %{http_code}' http://127.0.0.1:8081/api/ready || true)
+  home=$(inner /)
+  if [ "$ready" = '{"status":"ready"} 200' ] && [ "$home" = 200 ]; then good=$((good + 1)); else good=0; fi
+  if [ "$good" -ge 3 ] || [ "$SECONDS" -ge "$end" ]; then break; fi
+  sleep 2
+done
+[ "$good" -ge 3 ] ||
+  fail "the app does not answer through the internal listener: /api/ready ${ready##* }, the home page $home"
 
 say "RESTORED project $PROJECT from $(basename "$FILE"): ${restore_seconds} s for pg_restore, $((SECONDS - started)) s in all"
 cat << EOF

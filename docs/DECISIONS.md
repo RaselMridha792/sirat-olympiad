@@ -13,6 +13,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 5. **The drill runs on loopback only** (it refuses any port bound beyond 127.0.0.1) and wipes only containers that carry its project label, never project `sirat`.
 6. **The drill never builds:** its images must be of the dump's code (`--tag`). A first local run failed for that reason: the PC's `latest` images predated L2.
 7. **The round trip** (admin A, a dump, admin B; A logs in, B does not; then the beside mode over the running drill) runs from a tools container, with the clone in a Docker volume so compose's relative bind mounts name a path the daemon has (as in L9's rehearsal). CI runs it in the docker job.
+8. **The app check after a restore settles first,** as `deploy.sh` does: three good rounds in a row of `/api/ready` and the home page through the internal listener, within 30 s. The restarted api and web may get new addresses (the migrate run takes one meanwhile), and nginx keeps a resolved address for up to 10 s. CI's first run failed on a single check there; the local run had passed only because the PC was slower.
 
 ## 2026-11-01 — Ambassador tasks (core C5b-2; lead's plan, defaults and rules)
 
