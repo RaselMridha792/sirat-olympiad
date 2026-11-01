@@ -85,6 +85,10 @@ Load test of registration and payment (`loadtests/registration-surge.js`, paymen
 - Then `prisma migrate deploy` and `pnpm --filter @sirat/api db:seed` with that environment, open registration in that database only (`update settings set value = 'true'::jsonb where key = 'registration_open'`), start the fake with `FAKE_PAYSTATION_IPN_URL=http://127.0.0.1:<api port>/api/payments/paystation/ipn`, then `node --env-file=.env dist/main.js` and `dist/worker.js`, and run `k6 run -e BASE_URL=http://127.0.0.1:<api port> loadtests/registration-surge.js` (options: `loadtests/README.md`).
 - Afterwards: `docker stop sirat-pay-load-pg sirat-pay-load-redis sirat-pay-load-mail` (`--rm` removes them and their data).
 - On the VPS (DoD #17): a staging stack with the fake, k6 from another machine through nginx. Through nginx the generator's single address meets the start limit (300/min per IP): keep `RATE` at 4 or less per generator machine, or use more machines.
+- **The fake as a container** (load and staging stacks, never production): `infra/fake-paystation.compose.yml` adds `fake-paystation`, built from `apps/api/test/fake-paystation/Dockerfile`. It listens on port 18090 inside the project, with nothing published, and points the api and the worker at it.
+  - Add it with `docker compose --env-file .env -f infra/docker-compose.yml -f infra/fake-paystation.compose.yml up -d --build`. exam's load overlay stacks on top.
+  - That project runs api and worker with `NODE_ENV=development`, because the API refuses the fake under `production` (DECISIONS).
+  - Its checkout links use `FAKE_PAYSTATION_PUBLIC_URL` (default `http://fake-paystation:18090`, for k6 inside the project), and the payer comes back through `FAKE_PAYSTATION_CALLBACK_BASE` (default `http://nginx`).
 
 ## 1. Status and logs
 

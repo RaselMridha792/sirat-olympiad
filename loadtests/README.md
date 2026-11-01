@@ -31,4 +31,4 @@ Options:
 - A start that answers 503 `SERVICE_BUSY` (a busy database) is sent once more, as the wizard does; `start_busy_retried` and `start_busy_after_retry` count them.
 - `SPREAD_IPS` (default 1): one `X-Forwarded-For` address per student, for k6 talking to the API directly. Through nginx the generator's own address counts instead, and the start limit of 300/min per IP applies to it.
 
-The setup is in `docs/RUNBOOK.md` §0; the local numbers are in `docs/DECISIONS.md` ("Registration surge, local k6").
+As a container for a load or staging stack: `infra/fake-paystation.compose.yml` (k6 inside the project, base URL `http://nginx`). The setup is in `docs/RUNBOOK.md` §0; the local numbers are in `docs/DECISIONS.md` ("Registration surge, local k6").

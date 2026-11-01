@@ -2,6 +2,21 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-01 — The fake PayStation as a container for load and staging stacks (Claude; payments, exam's load kit, lead)
+
+1. **Its own image, never in the api image:** `apps/api/test/fake-paystation/Dockerfile` builds from that folder alone.
+   - It bundles the two source files with the workspace's esbuild version, and the final image holds one JS file on node:22-slim, running as `node`.
+   - The root `.dockerignore` still keeps `apps/api/test` out of every other image, and CI's image-contents check is unchanged.
+2. **An overlay, not a change to the main file:** `infra/fake-paystation.compose.yml` adds `fake-paystation` (internal port 18090, nothing published, read-only, a healthcheck on `GET /__fake/health`).
+   - It points api and worker at it: `PAYSTATION_ENV=fake`, placeholder credentials, the IPN straight to `http://api:4000`.
+   - The environment beats `env_file`, so real PayStation credentials in a server's `.env` are never used by such a stack.
+3. **`NODE_ENV=development` for api and worker in that stack:** the API refuses `PAYSTATION_ENV=fake` under `production`, a money safeguard that stays as it is.
+   - In the API, `development` only means debug logs (the overlay pins `LOG_LEVEL=info`), no https or Secure-cookie check, no superuser check, and no security-alert emails.
+   - It is the same image and the same code paths.
+   - The rejected alternative was a flag that allows the fake under `production`: one wrong line in the real `.env` would then mark registrations paid without money.
+4. **The fake gained** `FAKE_PAYSTATION_HOST` (0.0.0.0 in a container), `FAKE_PAYSTATION_PUBLIC_URL` (the base of its checkout links) and `GET /__fake/health`.
+5. **CI** (the stack job, last step): it builds the image, restarts api and worker on the fake, and checks that everything is healthy, that no port is published, that the health route answers by service name, and that `/api/registrations/info` through nginx shows the fee, i.e. the api accepted the fake.
+
 ## 2026-11-01 — The registration form's retention: abandoned and dead attempts (Claude; D6, PAYMENTS-PLAN 4.3, lead)
 
 1. **D6 as written:** an abandoned attempt's stored form (`payload`, with the argon2id password hash) is cleared 30 days after its last change.
