@@ -13,6 +13,7 @@ import { studentProfile } from './profile.ts';
 import type { ApiGet } from './request.ts';
 import { adminStats } from './stats.ts';
 import { adminTasks } from './tasks.ts';
+import { adminTeams, studentTeam } from './teams.ts';
 import { adminUsers } from './users.ts';
 
 /**
@@ -32,6 +33,7 @@ export function createHttpSource(get: ApiGet): DataSource {
       ...studentAnnouncements(get),
       ...studentHome(get),
       ...studentAmbassador(get),
+      ...studentTeam(get),
     },
     leaderboard: {
       ...unavailableSource.leaderboard,
@@ -49,6 +51,7 @@ export function createHttpSource(get: ApiGet): DataSource {
       ...adminStats(get),
       ...adminAudit(get),
       ...adminTasks(get),
+      ...adminTeams(get),
     },
   };
 }
