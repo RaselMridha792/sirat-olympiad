@@ -288,6 +288,7 @@ scripts/prelaunch-check.sh
   - the four backup units;
   - the monitor's two cron lines (`/etc/cron.d/sirat-monitor`, output in the journal under `sirat-monitor`);
   - one sudo rule: `deploy` may run `systemctl start sirat-backup.service`, and nothing else (checked with `visudo -cf`).
+- **The deploy key is a root key:** `deploy` is in the docker group, which is root-equivalent, so the sudo rule limits sudo, not real power. Keep deploy's SSH keys on few machines, each with a passphrase. When a person leaves, remove their line from `/home/deploy/.ssh/authorized_keys` (and from the `--authorized-keys` file bootstrap is run with) the same day.
 - **Tests:** `bash scripts/test/run-bootstrap-test.sh` (an Ubuntu 24.04 container; CI runs it). It covers the dry run, the no-lockout rule, the whole setup, a second run that changes nothing, and an edited `.env` that is kept. Its first full run on a real host is the VPS (owner question Q4 without a VM), timed against the one-hour target.
 
 ## 7. Exam-day incident steps

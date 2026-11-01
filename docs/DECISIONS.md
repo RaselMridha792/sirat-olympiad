@@ -8,6 +8,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 2. **No lockout:** root and password logins go off only once `deploy` has an authorized key, and `sshd -t` checks the change first (it is removed if refused).
 3. **The firewall is UFW plus a DOCKER-USER guard** (`sirat-docker-user.service`): Docker's published ports bypass UFW, so from outside only connections to 80 and 443 may reach a container. A stray `ports:` in compose then cannot expose a data service. The provider's panel firewall stays on the owner's list.
 4. **One sudo rule, exactly `deploy ALL=(root) NOPASSWD: /usr/bin/systemctl start sirat-backup.service`** (lead), checked with `visudo -cf` before it is installed. A test asserts that `sudo -l` shows nothing else.
+   - **The rule limits sudo, not real power** (lead): `deploy` is in the docker group, which is root-equivalent (it can mount the host into a container). So deploy's SSH key is a root credential: it is kept on few machines, with a passphrase, and removed from `authorized_keys` the day a person leaves.
 5. **UTC on the server;** the monitor's digest cron runs at 02:00 UTC (08:00 Asia/Dhaka), because Ubuntu's cron has no per-line timezone.
 6. **GitHub's SSH host key is pinned in deploy's `known_hosts`** (checked against GitHub's published fingerprint), not trusted on first use.
 7. **The backup timers start only once `/etc/sirat/backup.env` names a remote,** so an unconfigured host does not alert every hour.
