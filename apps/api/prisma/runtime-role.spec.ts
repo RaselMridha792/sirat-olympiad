@@ -11,6 +11,7 @@ import {
   passwordStep,
   quietUrl,
   readyLine,
+  report,
   scramVerifier,
 } from './runtime-role';
 
@@ -108,7 +109,49 @@ describe('runtime-role: the role', () => {
   });
 });
 
+describe('runtime-role: what a run prints and how it exits', () => {
+  const base = { cleared: 0, grants: null, step: 'set' as const, hadLogin: false };
+
+  it('stops the job when sirat_app lost rights (1), even when the key is missing too, after the warning', () => {
+    const run = report({
+      ...base,
+      cleared: 2,
+      grants: 'sirat_app cannot read 1 table(s)',
+      step: 'missing',
+    });
+    expect(run.code).toBe(1);
+    expect(run.lines).toEqual([
+      { stream: 'warn', text: 'runtime role: cleared 2 role-level setting(s) of sirat_app' },
+      { stream: 'error', text: 'runtime role: sirat_app cannot read 1 table(s)' },
+    ]);
+  });
+
+  it('stops the job when the key is missing outside the development cluster (2)', () => {
+    const run = report({ ...base, step: 'missing' });
+    expect(run.code).toBe(2);
+    expect(run.lines).toEqual([
+      {
+        stream: 'error',
+        text: 'runtime role: POSTGRES_APP_PASSWORD is required: the app connects as sirat_app (LAUNCH-PLAN L8)',
+      },
+    ]);
+  });
+
+  it('prints the ready line otherwise (0)', () => {
+    expect(report(base)).toEqual({
+      lines: [{ stream: 'log', text: 'runtime role ready: sirat_app (login and password set)' }],
+      code: 0,
+    });
+  });
+});
+
 describe('runtime-role: the password rules', () => {
+  it("refuses the superuser's password, naming only the rule", () => {
+    const value = '0123456789abcdef0123456789abcdef';
+    expect(passwordProblem(value, value)).toMatch(/must differ from the superuser's password/);
+    expect(passwordProblem(value, `${value}0`)).toBeNull();
+  });
+
   it('accepts a long URL-safe value and refuses short, unsafe or placeholder ones, naming only the rule', () => {
     expect(passwordProblem('a'.repeat(31) + 'Z')).toBeNull();
     expect(passwordProblem('0123456789abcdef0123456789abcdef')).toBeNull();

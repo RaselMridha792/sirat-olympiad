@@ -70,12 +70,17 @@ const ADVISORY_LOCK = 72_707_370; // any fixed key; Prisma's migrate lock is 727
 const PASSWORD_SHAPE = /^[A-Za-z0-9_-]{32,128}$/;
 const PLACEHOLDER = /(fake|change.?me|example|placeholder|dummy|sample|password|xxxx)/i;
 
-/** What to say about POSTGRES_APP_PASSWORD, or null when it is usable. Names the rule, never the value. */
-export function passwordProblem(password: string): string | null {
+/**
+ * What to say about POSTGRES_APP_PASSWORD, or null when it is usable. Names the rule, never the value. It must differ
+ * from the superuser's password: the app containers hold it, and they must never hold the superuser's (L8).
+ */
+export function passwordProblem(password: string, superuserPassword = ''): string | null {
   if (!PASSWORD_SHAPE.test(password)) {
     return 'POSTGRES_APP_PASSWORD must be 32-128 letters, digits, "-" or "_" (e.g. openssl rand -hex 32)';
   }
   if (PLACEHOLDER.test(password)) return 'POSTGRES_APP_PASSWORD looks like a placeholder';
+  if (password === superuserPassword)
+    return "POSTGRES_APP_PASSWORD must differ from the superuser's password";
   return null;
 }
 
@@ -215,29 +220,72 @@ export async function applyDatabaseTimeouts(db: Db): Promise<number> {
   return applied;
 }
 
-/** The default privileges the migration gives sirat_app: SELECT, INSERT, UPDATE, DELETE on tables; USAGE, SELECT on sequences. */
-const DEFAULT_PRIVILEGES = 6;
-
 /**
- * What sirat_app is missing to run the app, or null. The script adds no rights (a later migration may narrow them), so a
- * right the role lost stops the migrate job instead of the app. `DROP OWNED BY CURRENT_USER`, which every role may run
- * on itself, removes its default privileges (its table rights stay: the owner granted them), so every table a later
- * migration creates would lack its rights. Counts only; the repair is a reviewed migration.
+ * What sirat_app is missing to run the app, or null. The script adds no rights, so a right the role lost stops the
+ * migrate job instead of the app. `DROP OWNED BY CURRENT_USER`, which every role may run on itself, removes its default
+ * privileges (its table rights stay: the owner granted them), so every table a later migration creates would lack its
+ * rights. Checked: SELECT on every public table, and the migration's exact default privileges (SELECT, INSERT, UPDATE,
+ * DELETE on tables; USAGE, SELECT on sequences) as granted by the role that owns the schema's migration log, not entries
+ * sirat_app could store under its own name. A later migration may narrow write rights; narrowing SELECT or the default
+ * privileges needs this check changed in the same PR. Counts only; the repair is a reviewed migration.
  */
 export async function grantProblems(db: Db): Promise<string | null> {
   // By oid, not by name: PostgreSQL may test the privilege before the schema filter, and a name lookup outside public
   // (pg_catalog's tables) would fail.
-  const [row] = await db.$queryRaw<{ unreadable: number; defaults: number }[]>`
+  const [row] = await db.$queryRaw<{ unreadable: number; missingDefaults: number }[]>`
     SELECT
       (SELECT count(*)::int FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
          WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND c.relname <> '_prisma_migrations'
            AND NOT has_table_privilege(${RUNTIME_ROLE}, c.oid, 'SELECT')) AS "unreadable",
-      (SELECT count(*)::int FROM pg_default_acl d JOIN pg_namespace n ON n.oid = d.defaclnamespace, aclexplode(d.defaclacl) a
-         WHERE n.nspname = 'public' AND a.grantee = (SELECT oid FROM pg_roles WHERE rolname = ${RUNTIME_ROLE})) AS "defaults"`;
+      (SELECT count(*)::int
+         FROM (VALUES ('r', 'SELECT'), ('r', 'INSERT'), ('r', 'UPDATE'), ('r', 'DELETE'), ('S', 'USAGE'), ('S', 'SELECT'))
+           AS want(type, privilege)
+         WHERE NOT EXISTS (
+           SELECT 1 FROM pg_default_acl d JOIN pg_namespace n ON n.oid = d.defaclnamespace, aclexplode(d.defaclacl) a
+           WHERE n.nspname = 'public' AND d.defaclobjtype::text = want.type AND a.privilege_type = want.privilege
+             AND a.grantee = (SELECT oid FROM pg_roles WHERE rolname = ${RUNTIME_ROLE})
+             AND d.defaclrole = (SELECT relowner FROM pg_class WHERE oid = to_regclass('public._prisma_migrations'))
+         )) AS "missingDefaults"`;
   const unreadable = row?.unreadable ?? 0;
-  const missingDefaults = Math.max(0, DEFAULT_PRIVILEGES - (row?.defaults ?? 0));
+  const missingDefaults = row?.missingDefaults ?? 0;
   if (unreadable === 0 && missingDefaults === 0) return null;
   return `${RUNTIME_ROLE} cannot read ${unreadable} table(s) and lacks ${missingDefaults} default privilege(s); restore them with a reviewed migration (docs/05-DATABASE.md "Roles")`;
+}
+
+/** What one run ended with (main's transaction). */
+export interface RunOutcome {
+  cleared: number;
+  grants: string | null;
+  step: PasswordStep;
+  hadLogin: boolean;
+}
+
+/** The lines to print and the exit code for a run: lost rights stop the job (1), then a missing key (2). */
+export function report(outcome: RunOutcome): {
+  lines: { stream: 'log' | 'warn' | 'error'; text: string }[];
+  code: number;
+} {
+  const lines: { stream: 'log' | 'warn' | 'error'; text: string }[] = [];
+  if (outcome.cleared > 0) {
+    lines.push({
+      stream: 'warn',
+      text: `runtime role: cleared ${outcome.cleared} role-level setting(s) of ${RUNTIME_ROLE}`,
+    });
+  }
+  if (outcome.grants) {
+    return {
+      lines: [...lines, { stream: 'error', text: `runtime role: ${outcome.grants}` }],
+      code: 1,
+    };
+  }
+  if (outcome.step === 'missing') {
+    const text = `runtime role: POSTGRES_APP_PASSWORD is required: the app connects as ${RUNTIME_ROLE} (LAUNCH-PLAN L8)`;
+    return { lines: [...lines, { stream: 'error', text }], code: 2 };
+  }
+  return {
+    lines: [...lines, { stream: 'log', text: readyLine(outcome.step, outcome.hadLogin) }],
+    code: 0,
+  };
 }
 
 /**
@@ -266,7 +314,8 @@ async function main(): Promise<number> {
   }
   const ensureOnly = process.argv.includes('--ensure');
   const password = process.env.POSTGRES_APP_PASSWORD ?? '';
-  const problem = password && !ensureOnly ? passwordProblem(password) : null;
+  const superuserPassword = decodeURIComponent(new URL(url).password);
+  const problem = password && !ensureOnly ? passwordProblem(password, superuserPassword) : null;
   if (problem) {
     console.error(`runtime role: ${problem}`);
     return 2;
@@ -300,27 +349,19 @@ async function main(): Promise<number> {
         const development = state?.development ?? false;
         const step = passwordStep({ password, development, hasPassword });
         if (step === 'set') await setLogin(tx, scramVerifier(password));
-        return { cleared, grants, step, hadLogin: hasPassword && (state?.canLogin ?? false) };
+        const outcome: RunOutcome = {
+          cleared,
+          grants,
+          step,
+          hadLogin: hasPassword && (state?.canLogin ?? false),
+        };
+        return outcome;
       },
       { maxWait: 10_000, timeout: 60_000 },
     );
-    if (outcome.cleared > 0) {
-      console.warn(
-        `runtime role: cleared ${outcome.cleared} role-level setting(s) of ${RUNTIME_ROLE}`,
-      );
-    }
-    if (outcome.grants) {
-      console.error(`runtime role: ${outcome.grants}`);
-      return 1;
-    }
-    if (outcome.step === 'missing') {
-      console.error(
-        `runtime role: POSTGRES_APP_PASSWORD is required: the app connects as ${RUNTIME_ROLE} (LAUNCH-PLAN L8)`,
-      );
-      return 2;
-    }
-    console.log(readyLine(outcome.step, outcome.hadLogin));
-    return 0;
+    const { lines, code } = report(outcome);
+    for (const { stream, text } of lines) console[stream](text);
+    return code;
   } finally {
     await db.$disconnect();
   }
