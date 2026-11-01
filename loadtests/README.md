@@ -32,3 +32,38 @@ Options:
 - `SPREAD_IPS` (default 1): one `X-Forwarded-For` address per student, for k6 talking to the API directly. Through nginx the generator's own address counts instead, and the start limit of 300/min per IP applies to it.
 
 The setup is in `docs/RUNBOOK.md` §0; the local numbers are in `docs/DECISIONS.md` ("Registration surge, local k6").
+
+## `exam-simulation.js` (exam engine, E6)
+
+Students take the exam as the exam room does:
+- log in, open the dashboard's exam list and the waiting room;
+- start the attempt;
+- answer locally and send a checkpoint every 60–120 s (the server refuses one sooner than 20 s after the last);
+- submit with a client request id (sent once more with the same id after a 5xx), then open the waiting room, which must show the receipt.
+
+A share of the students (`LEAVE_SHARE`, default 2 %) close the tab instead: the worker's sweep submits their last checkpoint once the time and the grace are over.
+
+Scenarios (`SCENARIO`):
+- `steady` (default): every student starts within `RAMP` seconds and works `MIN_WORK` (0.6) to 110 % of the exam time. Past 100 % means time up: the submit goes 0–20 s after the timer, inside the 30 s grace.
+- `surge`: the window-open surge. Starts ramp to `RATE` per second within 60 s and stay there until every student has started.
+- `timeup`: the time-up burst. Every student starts less than the exam time before the window ends, so every timer ends at `window_end` and all submits land within about 20 s.
+
+Data: `apps/api/prisma/fixtures/loadtest-fixtures.ts` (the dev fixtures' four guards). `--users N` makes `load1..loadN@loadtest.invalid`, verified, each with a paid registration. `--exam` makes a new published exam per run (one attempt per student per exam). `--report <examId>` counts attempts, submissions and the database's writes. The password is `FIXTURE_PASSWORD`, hashed with the API's own argon2 parameters.
+
+Pass:
+- the k6 thresholds: p95 < 500 ms and errors < 0.5 % on the API, per endpoint too; checks > 99.5 %; every submit got a receipt and the waiting room shows it;
+- zero lost submissions: every attempt k6 started is submitted and scored; the students' own submissions equal the receipts k6 received; the sweep submitted exactly the students who left;
+- no growing queue: nothing left in progress or unscored once the sweep (every minute) has run;
+- no database writes while the students only checkpoint (steady: between the last start and the first possible submit).
+
+Locally (throwaway containers, this checkout's API and worker, k6 in a container; nothing shared is touched):
+
+```bash
+bash loadtests/exam-local.sh                     # steady: 300 students, a 3-minute exam
+USERS=500 RATE=10 bash loadtests/exam-local.sh surge
+USERS=300 DURATION=3 bash loadtests/exam-local.sh timeup
+```
+
+It prints each check as `ok` or `FAIL` and keeps the logs, the k6 summary and the PC's CPU in the folder it names. The local numbers are in `docs/DECISIONS.md` ("Exam simulation, local k6").
+
+On the VPS (RULEBOOK §13): k6 from another machine, against a staging stack (its own compose project and database), at 1.5–2× the expected peak, with a 30-minute exam. Through nginx, `SPREAD_IPS` has no effect: the generator's own address counts.
