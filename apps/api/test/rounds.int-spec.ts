@@ -4,7 +4,10 @@
  * category, ties at the cut included) and from a video round's jury averages, one run per round and category, the
  * preview's `expected`, nothing overwritten, the student's own round, admins only.
  */
-import type { Category, PrismaClient } from '@prisma/client';
+import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { join } from 'node:path';
+import { PrismaClient, type Category } from '@prisma/client';
 import type {
   AdminRound,
   AdminStats,
@@ -53,14 +56,8 @@ async function cleanRounds() {
   await prisma.$executeRaw`
     UPDATE "exams" SET "status" = 'archived'
     WHERE "round_id" = ${round1.id}::uuid AND "status"::text = 'published'`;
-  await prisma.$executeRaw`
-    DELETE FROM "jury_scores" WHERE "entry_id" IN (
-      SELECT e."id" FROM "round_entries" e JOIN "rounds" r ON r."id" = e."round_id" WHERE r."sort_order" > 1)`;
-  await prisma.$executeRaw`
-    DELETE FROM "round_entries"
-    WHERE "round_id" IN (SELECT "id" FROM "rounds" WHERE "sort_order" > 1)
-       OR "status"::text IN ('promoted', 'eliminated')`;
-  await prisma.$executeRaw`DELETE FROM "promotion_runs"`;
+  // promotion_runs is append-only: TRUNCATE is its one way out, and only in a *_test database (truncateAll's too).
+  await prisma.$executeRawUnsafe('TRUNCATE "jury_scores", "round_entries", "promotion_runs"');
   await prisma.$executeRaw`DELETE FROM "rounds" WHERE "sort_order" > 1`;
 }
 
@@ -621,6 +618,73 @@ describe('access and the database rules', () => {
     await prisma.user.update({ where: { id: blockedAdmin.id }, data: { isBlocked: true } });
     expect((await call(env, 'GET', '/admin/rounds', blockedAdmin.cookie)).status).toBe(403);
   });
+
+  it('keeps promotion runs append-only: UPDATE, DELETE and, outside a *_test database, TRUNCATE refused', async () => {
+    const round2 = (await videoRound()).json;
+    const run = await prisma.promotionRun.create({
+      data: {
+        fromRoundId: round1.id,
+        toRoundId: round2.id,
+        category: 'activist',
+        topN: 1,
+        sourceKind: 'jury',
+        promotedCount: 0,
+        eliminatedCount: 0,
+        createdById: admin.id,
+      },
+    });
+    await expect(
+      prisma.promotionRun.update({ where: { id: run.id }, data: { topN: 2 } }),
+    ).rejects.toThrow(/append-only: UPDATE/);
+    await expect(prisma.promotionRun.delete({ where: { id: run.id } })).rejects.toThrow(
+      /append-only: DELETE/,
+    );
+    await expect(prisma.$executeRaw`UPDATE "promotion_runs" SET "top_n" = 2`).rejects.toThrow(
+      /append-only: UPDATE/,
+    );
+    await expect(prisma.$executeRaw`DELETE FROM "promotion_runs"`).rejects.toThrow(
+      /append-only: DELETE/,
+    );
+    // Here (a *_test database) TRUNCATE passes: cleanRounds and truncateAll use it. The migration's own SQL in a
+    // scratch database whose name only nearly ends in "_test" refuses it, so the name match is exact.
+    const base = new URL(process.env.TEST_DATABASE_URL as string);
+    const name = `sirat_scratch_${randomUUID().slice(0, 8)}xtest`;
+    const scratchUrl = new URL(base.toString());
+    scratchUrl.pathname = `/${name}`;
+    scratchUrl.search = '';
+    const adminUrl = new URL(base.toString());
+    adminUrl.pathname = '/postgres';
+    const owner = new PrismaClient({ datasourceUrl: adminUrl.toString() });
+    let scratch: PrismaClient | undefined;
+    try {
+      await owner.$executeRawUnsafe(`CREATE DATABASE "${name}"`); // generated above: a safe identifier
+      scratch = new PrismaClient({ datasourceUrl: scratchUrl.toString() });
+      await scratch.$executeRawUnsafe('CREATE TABLE "promotion_runs" ("id" int, "top_n" int)');
+      await scratch.$executeRawUnsafe('INSERT INTO "promotion_runs" VALUES (1, 1)');
+      const migration = join(
+        __dirname,
+        '../prisma/migrations/20261101050002_core_rounds_append_only/migration.sql',
+      );
+      execFileSync(
+        'prisma',
+        ['db', 'execute', '--file', migration, '--url', scratchUrl.toString()],
+        {
+          stdio: 'pipe',
+          shell: process.platform === 'win32',
+        },
+      );
+      for (const [sql, op] of [
+        ['TRUNCATE "promotion_runs"', 'TRUNCATE'],
+        ['UPDATE "promotion_runs" SET "top_n" = 2', 'UPDATE'],
+        ['DELETE FROM "promotion_runs"', 'DELETE'],
+      ] as const)
+        await expect(scratch.$executeRawUnsafe(sql)).rejects.toThrow(`append-only: ${op}`);
+    } finally {
+      await scratch?.$disconnect();
+      await owner.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
+      await owner.$disconnect();
+    }
+  }, 120_000);
 
   it('keeps the limits in the database too', async () => {
     const refused = async (sql: Promise<unknown>, name: string) => {
