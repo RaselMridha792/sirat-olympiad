@@ -370,6 +370,10 @@ jobs:
       - name: Backups are encrypted, checked and uploaded; a killed dump, a bad remote or a shrunken dump fails (L6)
         # Its own compose project (sirat-backup-test), a throwaway age key and an rclone local remote; see the script.
         run: bash scripts/test/run-backup-test.sh
+      - name: Restore round trip into a fresh cluster (L7) - A dumped, B after; A logs in, B does not; then the beside mode
+        # Its own projects (sirat-drill-src, sirat-drill) on the images the stack step built from this commit (:latest),
+        # ports on 127.0.0.1 only; the drill's api and worker read only its throwaway settings.
+        run: bash scripts/test/run-restore-roundtrip.sh
       - name: Server checks - monitor.sh on faked commands (L11)
         run: bash scripts/test/run-monitor-test.sh
       - name: Server checks - a monitor.sh dry run against this stack (ops-check runs in the api container, L11)
