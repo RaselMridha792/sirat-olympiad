@@ -10,7 +10,74 @@ Nothing runs until the lead gives the turn and Rasel is at the browser. Sandbox 
 
 ## 1. Setup (the venue)
 
-_Written after the owner's answer._
+_Both variants are drafted; the one the owner does not pick is removed before the PR._
+
+### 1A. The VPS (`https://72-60-211-71.sslip.io`)
+
+**The server:**
+- SSH as the deploy user only; root and password logins are off.
+- The clone is at `/srv/sirat` and the compose project is `sirat`; `$DC` as in RUNBOOK.
+- Email goes to a private Mailpit. Payments are off until this run.
+
+**`.env` (Rasel types the values; file mode 600):**
+
+| Name | Value |
+|---|---|
+| `PAYSTATION_ENV` | `sandbox`. Allowed with `NODE_ENV=production`; only `live` requires production, and `fake` is refused there |
+| `PAYSTATION_BASE_URL` | blank: the allow-list picks `https://sandbox.paystation.com.bd` |
+| `PAYSTATION_MERCHANT_ID`, `PAYSTATION_PASSWORD` | Rasel's sandbox account; the id exactly as issued, with its "-" |
+| `PAYSTATION_ACCOUNT_LABEL` | `rasel-sandbox-vps` |
+| `PAYSTATION_INVOICE_PREFIX` | `TV` |
+| `PAYSTATION_CALLBACK_URL` | `https://72-60-211-71.sslip.io/api/payments/paystation/callback` |
+| `PAYSTATION_IPN_URL` | `https://72-60-211-71.sslip.io/api/payments/paystation/ipn` |
+| `PAYSTATION_PAY_WITH_CHARGE` | `0` |
+
+**Then:**
+1. `$DC up -d --no-deps --no-build api worker`.
+2. Check the boot line: `$DC logs --since 5m api | grep "PayStation env="` must read `env=sandbox`, the sandbox host, `account=rasel-sandbox-vps`, `invoicePrefix=TV`, both URLs and `payWithCharge=0`.
+3. `$DC run --rm --no-deps -T api node dist/cli/paystation-selfcheck.js` must end with `initiate: created`. Write down the unpaid `X…` invoice it leaves in the panel.
+
+**The read-only wrapper:**
+
+```sh
+RO_PSQL() { $DC exec -T -e PGOPTIONS="-c default_transaction_read_only=on" postgres \
+  sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 "$@"' sh "$@"; }
+# e.g.: RO_PSQL -v label=rasel-sandbox-vps < query1.sql
+```
+
+**Registration:** Rasel's admin opens it in `/admin/settings`: `registration_open` on, `registration_opens_at` now, `registration_closes_at` about 2 hours later, so it closes by itself.
+
+**Cleanup (owner):** the production database starts again from an empty volume at the launch deploy, confirmed by the owner then. Until that deploy, the rows stay.
+
+### 1B. The PAYMENTS-PLAN §8.1 tunnel (this worktree)
+
+**The services:**
+- This worktree's own API and worker on 4100, with database `sirat_pay` and Redis DB 1, plus `next dev` on 4101 (`API_INTERNAL_URL=http://localhost:4100`, `DATA_SOURCE=http`).
+- A quick tunnel (e.g. `cloudflared`) to `http://127.0.0.1:4100`, running only while Rasel watches the test.
+
+**The environment:** values in the shell, never in `apps/api/.env`.
+
+| Name | Value |
+|---|---|
+| `PAYSTATION_ENV` | `sandbox` |
+| `PAYSTATION_ACCOUNT_LABEL` | `rasel-sandbox` |
+| `PAYSTATION_INVOICE_PREFIX` | `T` |
+| `PAYSTATION_CALLBACK_URL` | `http://localhost:4101/api/payments/paystation/callback` |
+| `PAYSTATION_IPN_URL` | the tunnel URL + `/api/payments/paystation/ipn` |
+| `PAYSTATION_PAY_WITH_CHARGE` | `0` |
+
+The credentials come from the existing `apps/api/.env` lines; they are not copied, printed or rewritten.
+
+**The read-only wrapper:**
+
+```sh
+RO_PSQL() { docker exec -i -e PGOPTIONS="-c default_transaction_read_only=on" sirat-postgres-1 \
+  sh -c 'psql -U "$POSTGRES_USER" -d sirat_pay -v ON_ERROR_STOP=1 "$@"' sh "$@"; }
+```
+
+**Registration:** opened by the local check admin on `sirat_pay` in `/admin/settings`, with the same 2-hour window.
+
+**What this venue cannot answer:** the IPN through our real nginx and TLS, and S29/S30 for a real domain. These stay open until the production domain.
 
 ## 2. Test data
 
