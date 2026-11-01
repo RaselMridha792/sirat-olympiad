@@ -30,7 +30,8 @@ printf 'MAILPIT_URL=http://mailpit:8025\nSIRAT_TAG=%s\n' "$TAG" >> "$OUT/src.env
 unset pw
 export DRILL_ENV_FILE="$OUT/src.env"
 SDC=(docker compose -p "$S" --env-file "$OUT/src.env" -f infra/docker-compose.yml -f infra/backup/drill.compose.yml)
-"${SDC[@]}" up -d --no-build --wait postgres redis-cache redis-queue > /dev/null
+# PgBouncer too: the create-admin CLI runs in the api image, which reaches Postgres as sirat_app through it (L8).
+"${SDC[@]}" up -d --no-build --wait postgres pgbouncer redis-cache redis-queue > /dev/null
 out=$("${SDC[@]}" run --rm --no-deps -T migrate 2>&1) || { echo "$out" | tail -n 20; exit 1; }
 admin() { # admin <letter> <password>
   printf '%s\n' "$2" | "${SDC[@]}" run --rm --no-deps -T api node dist/cli/create-admin.js --password-stdin \
