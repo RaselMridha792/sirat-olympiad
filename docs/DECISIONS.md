@@ -27,6 +27,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - `jury.int-spec.ts`: the video (inside the window, changed, shown back, no link in the audit row, the refusals); assignment; scoring (blind, only the judge's categories, after the close, the average of the latest totals, bad scores, 404s, stopped by the promotion, the counts); the total out of 100 with four criteria; jury only, a demoted and a blocked judge; the CHECKs and append-only, with the migration's SQL in a `…xtest` scratch database.
    - `video-url.spec.ts`: the allowed links and 14 refusals (look-alike hosts, a user name, a port, a backslash, javascript, protocol-relative).
    - web: the area file, the refusal helper, the total and the window helpers.
+
 ## 2026-11-01 — A CI exam smoke that counts outcomes, never time (E6 follow-up; exam session, lead's conditions)
 
 1. **Every PR runs 20 students through a 1-minute exam** in the docker job: `loadtests/exam-local.sh` with `SMOKE=1 NO_BUILD=1 LOAD_TAG=latest`.
