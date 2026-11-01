@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# bootstrap.sh's tests (bootstrap.test.sh) in a throwaway ubuntu:24.04 container: no Docker socket, no network ports,
-# removed at the end. It clones this checkout's HEAD, so commit first. About 2 minutes (apt).
-# Usage: bash scripts/test/run-bootstrap-test.sh   (CI's checks job runs it)
+# bootstrap.sh's tests (bootstrap.test.sh) in a throwaway Ubuntu container (ubuntu:24.04, or BOOTSTRAP_TEST_IMAGE, e.g.
+# ubuntu:26.04 as on the VPS): no Docker socket, no network ports, removed at the end. It clones this checkout's HEAD,
+# so commit first. About 2 minutes (apt).
+# Usage: [BOOTSTRAP_TEST_IMAGE=ubuntu:26.04] bash scripts/test/run-bootstrap-test.sh   (CI's checks job runs it)
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 dk() { MSYS_NO_PATHCONV=1 docker "$@"; }
@@ -14,4 +15,4 @@ dk run --rm \
   -v "$(hostpath "$PWD"):/src:ro" \
   -v "$(hostpath "$tmp"):/work" \
   -e SRC=/src -e WORK=/work \
-  ubuntu:24.04 bash /src/scripts/test/bootstrap.test.sh
+  "${BOOTSTRAP_TEST_IMAGE:-ubuntu:24.04}" bash /src/scripts/test/bootstrap.test.sh

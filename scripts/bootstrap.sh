@@ -49,7 +49,8 @@ while [ "$#" -gt 0 ]; do
 done
 [[ "$SWAP_GB" =~ ^[0-9]+$ ]] || { echo "bootstrap: --swap-gb must be a whole number" >&2; exit 2; }
 [ "$(id -u)" = 0 ] || { echo "bootstrap: run as root" >&2; exit 1; }
-grep -q '^VERSION_ID="24.04"' /etc/os-release 2> /dev/null || echo "bootstrap: WARNING: written for Ubuntu 24.04"
+grep -qE '^VERSION_ID="(24|26)\.04"' /etc/os-release 2> /dev/null ||
+  echo "bootstrap: WARNING: written for Ubuntu 24.04 and 26.04 LTS"
 
 CHANGES=0
 LEFT=()
@@ -137,7 +138,11 @@ fi
 
 # ---------------- time, memory, updates ----------------
 step "time: UTC with chrony (the monitor's 02:00 UTC digest is 08:00 Asia/Dhaka)"
-if [ "$(timedatectl show -p Timezone --value 2> /dev/null || true)" = UTC ]; then ok "timezone UTC"; else change "set the timezone to UTC" timedatectl set-timezone UTC; fi
+# Etc/UTC is the same zone under its other name (cloud images ship it).
+case "$(timedatectl show -p Timezone --value 2> /dev/null || true)" in
+  UTC | Etc/UTC) ok "timezone UTC" ;;
+  *) change "set the timezone to UTC" timedatectl set-timezone UTC ;;
+esac
 if systemctl is-enabled --quiet chrony 2> /dev/null; then ok "chrony enabled"; else change "enable chrony" systemctl enable --now chrony; fi
 
 step "memory: swap and overcommit (Redis needs vm.overcommit_memory=1)"
@@ -184,17 +189,35 @@ PermitRootLogin no
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 PubkeyAuthentication yes'
-  before=$(cat /etc/ssh/sshd_config.d/50-sirat.conf 2> /dev/null || true)
-  put /etc/ssh/sshd_config.d/50-sirat.conf 644 root:root "$SSHD_CONF"
-  if [ "$DRY" = 0 ] && [ "$before" != "$SSHD_CONF" ]; then
+  # sshd keeps the first value it reads, and it reads the drop-ins in lexical order: the file must sort first, or a
+  # cloud image's 50-cloud-init.conf (PasswordAuthentication yes) wins. The name used before this rule is removed.
+  DROPIN=/etc/ssh/sshd_config.d/00-sirat.conf
+  OLD_DROPIN=/etc/ssh/sshd_config.d/50-sirat.conf
+  before=$(cat "$DROPIN" 2> /dev/null || true)
+  [ ! -e "$OLD_DROPIN" ] || { change "remove the old $OLD_DROPIN" rm -f "$OLD_DROPIN"; before=changed; }
+  put "$DROPIN" 644 root:root "$SSHD_CONF"
+  if [ "$DRY" = 0 ]; then
     mkdir -p /run/sshd
-    if sshd -t; then
-      change "reload ssh" systemctl reload ssh
-    else
-      rm -f /etc/ssh/sshd_config.d/50-sirat.conf
-      echo "bootstrap: sshd -t refused the new settings; they were removed" >&2
-      exit 1
+    if [ "$before" != "$SSHD_CONF" ]; then
+      if sshd -t; then
+        change "reload ssh" systemctl reload ssh
+      else
+        rm -f "$DROPIN"
+        echo "bootstrap: sshd -t refused the new settings; they were removed" >&2
+        exit 1
+      fi
     fi
+    # What sshd really does, whatever else sits in sshd_config.d: every run checks it, not only the one that wrote.
+    effective=$(sshd -T 2> /dev/null || true)
+    for want in 'passwordauthentication no' 'permitrootlogin no' 'kbdinteractiveauthentication no'; do
+      if ! grep -qx "$want" <<< "$effective"; then
+        rm -f "$DROPIN"
+        systemctl reload ssh || true
+        echo "bootstrap: sshd -T does not show '$want' in effect (an earlier file in /etc/ssh/sshd_config.d overrides it); $DROPIN was removed and ssh reloaded" >&2
+        exit 1
+      fi
+    done
+    ok "sshd -T: no passwords, no root login, no keyboard-interactive login"
   fi
 else
   left "SSH stays as it is until $USER_NAME has keys: run again with --authorized-keys <file> (no lockout)"
