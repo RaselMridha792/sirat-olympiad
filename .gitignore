@@ -22,6 +22,10 @@ infra/nginx/certs/*
 # The maintenance flag (scripts/maintenance.sh); the folder stays in git so compose's folder mount always has it.
 infra/nginx/maintenance/*
 !infra/nginx/maintenance/.gitkeep
+# Load-test generators nginx trusts for a k6 run (scripts/loadtest-generators.sh), and that script's temporary files:
+# server-local and short-lived, never in git (a stray one would also stop deploy.sh, which wants a clean clone).
+infra/nginx/loadtest-realip.local.conf
+infra/nginx/.loadtest-realip.local.conf.*
 *.pem
 *.key
 *.dump

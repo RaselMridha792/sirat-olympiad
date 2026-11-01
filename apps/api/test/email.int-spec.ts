@@ -129,9 +129,10 @@ describe('email pipeline (queue Redis + worker + Mailpit)', () => {
     startWorker({ name: 'stub', send });
     const key = `verify-email.${run}c`;
     await producer.enqueue('verify-email', key, mail(`${run}c`));
+    // Loaded again once it is failed: a job read before its move to failed would keep attemptsMade 0.
     const job = await waitFor(async () => {
       const j = await raw.getJob(key);
-      return j && (await j.isFailed()) ? j : undefined;
+      return j && (await j.isFailed()) ? raw.getJob(key) : undefined;
     });
     expect(job.attemptsMade).toBe(1);
     expect(job.failedReason).toBe('Mailpit answered 400');
