@@ -14,7 +14,16 @@ if (!url) {
   console.error('TEST_DATABASE_URL is not set (see apps/api/.env.example).');
   process.exit(1);
 }
-const testUrl = new URL(url);
+/** The URL parsed. A malformed one stops here without its value: Node's own error would print it, password included. */
+function parseUrl(name, value) {
+  try {
+    return new URL(value);
+  } catch {
+    console.error(`${name} is not a valid URL (value not shown).`);
+    process.exit(1);
+  }
+}
+const testUrl = parseUrl('TEST_DATABASE_URL', url);
 const dbName = testUrl.pathname.replace(/^\//, '');
 if (!/^[a-z0-9_]+_test$/.test(dbName)) {
   console.error(`Refusing: the test database name must end with _test (got "${dbName}").`);
@@ -91,3 +100,40 @@ try {
 }
 
 execFileSync('prisma', ['migrate', 'deploy'], { ...prismaOpts, stdio: 'inherit' });
+
+// The runtime role (LAUNCH-PLAN L2). Its password is never set here: one Postgres cluster serves every session, and the
+// first stack turn after L2 (prisma/runtime-role.ts in the migrate job) sets it; CI runs that script with its own
+// throwaway password. Here we only check that the app's connection will work, and say what to do if not.
+const appUrl = process.env.TEST_APP_DATABASE_URL;
+const appTarget = appUrl ? parseUrl('TEST_APP_DATABASE_URL', appUrl) : null;
+if (!appTarget) {
+  console.log(
+    'TEST_APP_DATABASE_URL is not set: the app under test runs as the owner, and the sirat_app checks are skipped (RUNBOOK section 0).',
+  );
+} else if (appTarget.username !== 'sirat_app') {
+  console.error('Refusing: TEST_APP_DATABASE_URL must log in as sirat_app.');
+  process.exit(1);
+} else if (appTarget.host !== testUrl.host || appTarget.pathname !== testUrl.pathname) {
+  // A test that prepares a scratch database passes its own TEST_DATABASE_URL, so the app's database is not this one.
+  // The test run itself refuses a TEST_APP_DATABASE_URL on another database (test/load-env.ts).
+  console.log(
+    'TEST_APP_DATABASE_URL names another database than TEST_DATABASE_URL: its login is not checked here.',
+  );
+} else {
+  const app = new PrismaClient({ datasourceUrl: appUrl });
+  try {
+    await app.$queryRaw`SELECT 1`;
+  } catch (error) {
+    // The Prisma code only (P1000 refused login, P1001 server not reached, P1003 no such database), never the URL.
+    const code = error?.errorCode ?? error?.code ?? error?.name ?? 'unknown';
+    console.error(
+      `TEST_APP_DATABASE_URL: sirat_app cannot log in (${code}). Its password is set once per cluster by ` +
+        'prisma/runtime-role.ts (the migrate job of the first stack turn after L2, from POSTGRES_APP_PASSWORD in the ' +
+        'root .env); the value in apps/api/.env must be the same. Without TEST_APP_DATABASE_URL the tests run the ' +
+        'app as the owner.',
+    );
+    process.exit(1);
+  } finally {
+    await app.$disconnect();
+  }
+}

@@ -40,6 +40,12 @@ $DCD up -d --build --no-deps migrate api worker web nginx   # the shared stack (
 - With the lead's or Rasel's go-ahead (the stack is shared), recreate it once from a checkout that has the change: `$DCD up -d --no-deps nginx`. The same applies if a smoke turn recreated nginx from a worktree without the change and that worktree merges main later.
 - The e2e's CSP step needs nginx's site (http://127.0.0.1:8080). Against a bare Next, or an nginx without the change, it fails on purpose.
 
+**The runtime role sirat_app (L2):**
+- `POSTGRES_APP_PASSWORD` in the root `.env` (`openssl rand -hex 32`) is the same value in every worktree that takes stack turns: one Postgres cluster has one role. The first stack turn after L2 gives the role its login (the migrate log says `runtime role ready: sirat_app (login and password set)`); later turns keep it.
+- `TEST_APP_DATABASE_URL` in `apps/api/.env` (`postgresql://sirat_app:<the same value>@127.0.0.1:15432/<the session's *_test database>`, the same host and database as `TEST_DATABASE_URL`) makes the integration tests run the app as `sirat_app`, as CI does. Without it the tests run the app as the owner and skip the `sirat_app` checks; with it but no login yet, `test:int` stops with a message.
+- Rasel types both values. Sessions never read or print them.
+- Changing the dev value (only to rotate it or when it is lost; with the lead's or Rasel's go-ahead, because every worktree's root `.env` and every `TEST_APP_DATABASE_URL` change with it): `$DCD exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "ALTER ROLE sirat_app PASSWORD NULL"'`, then one announced stack turn sets the new value from the root `.env`. No value is typed in the command.
+
 Signing secret: the API refuses to start (in every `NODE_ENV`) when `JWT_ACCESS_SECRET` is blank, shorter than 32 characters, too repetitive, or contains a placeholder word such as `fake`, `example` or `change me`. The error names the rule, never the value. Use a separate value per environment and never reuse the dev value on the VPS.
 
 Fixtures: 3 verified students with paid registrations, `student1@fixtures.invalid` … `student3@fixtures.invalid`, password = your `FIXTURE_PASSWORD` in `apps/api/.env`. They refuse to run unless `NODE_ENV` is development/test, the confirmation is set for that run, the URL is local with no `host`/`hostaddr` parameter, and the connected Postgres server carries `sirat.environment=development` (only the dev override sets it; after pulling this change once, recreate the dev Postgres with `$DCD up -d postgres`, data is kept). PowerShell: `$env:ALLOW_DEV_FIXTURES='yes-this-is-not-production'; pnpm --filter @sirat/api db:fixtures:dev`. Each student has a distinct phone (`01700000001`…`01700000003`) and a paid 400 BDT payment that went initiated → pending → paid, like a real one.
@@ -125,7 +131,7 @@ scripts/deploy.sh --first         # once, on a fresh host, with the clone at the
      - the data services running and healthy, no development marker on Postgres, and the data services exactly as this commit's compose file describes them. Otherwise it stops with "data-service change pending: apply it as its own step": a deploy never starts or recreates a data service.
   2. Builds `sirat-{migrate,api,worker,web}:<sha>` while the live release serves.
   3. When the release adds migrations, a backup first (`sudo -n systemctl start sirat-backup.service`). A failed backup stops the deploy before migrate.
-  4. `run --rm --no-deps migrate`. It must print `config seed done`; otherwise the deploy stops and the live API keeps serving ("Migration failed" below).
+  4. `run --rm --no-deps migrate`. It must print `config seed done`; otherwise the deploy stops and the live API keeps serving ("Migration failed" below, or "The runtime role step failed" when the last line starts with `runtime role:`).
   5. `up -d --no-deps --no-build --wait api worker web`. nginx is reloaded only when `infra/nginx` changed, or recreated when a site template or entrypoint hook changed.
   6. **Smoke:**
      - exact 200s through nginx's internal listener;
@@ -145,6 +151,8 @@ Every DB session (migrations and psql included) starts with `statement_timeout 1
 2. Confirm the failed migration left no changes. Prisma runs each migration file as one transaction on Postgres, unless the file has its own `BEGIN`/`COMMIT` or statements that cannot run in a transaction; check those by hand.
 3. Mark it rolled back, with the failed release's image (the live one does not have the migration): `SIRAT_TAG=<failed sha> $DC run --rm --no-deps migrate node_modules/.bin/prisma migrate resolve --rolled-back <migration_name>`.
 4. Fix forward: a corrected migration in a new commit, then deploy that. **No deploys during a live exam window**, except a critical fix agreed with the owner.
+
+**The runtime role step failed** (the output's last line starts with `runtime role:`): every migration is applied and nothing needs `migrate resolve`. Fix what the line names (`POSTGRES_APP_PASSWORD` must be 32–128 letters, digits, `-` or `_`: `openssl rand -hex 32`; or the database error code; `55P03` means another migrate run held the database for over 30 s), then run the deploy again (`scripts/deploy.sh "$sha"`). The live API keeps serving meanwhile.
 
 ## 3. Scale API replicas
 
@@ -242,6 +250,7 @@ $DC exec -T nginx wget -qO- http://127.0.0.1:8081/api/ready   # {"status":"ready
 scripts/maintenance.sh off && scripts/healthcheck.sh https://<domain>
 ```
 While the API is stopped, PayStation's IPN gets nginx's JSON 502 and is retried; reconciliation catches anything missed once the worker is back.
+The migrate step also puts back what the restore can lose: `sirat_app`'s restrictions (`--clean` re-creates the tables under the default privileges) and the database timeouts (`prisma/runtime-role.ts`).
 After a restore drill, also check the free book's cover: `GET /api/book/cover/<id>` (the id is `settings.book_cover_image_id`) returns the image. Covers live in Postgres (`book_images`), so the dump carries them; there is no file directory to restore.
 
 Credentials are read inside the postgres container; nothing secret is typed on the host. Hardening (L7): restore into a fresh database instead of `--clean` over the live schema, and a scripted drill. Before every exam: a fresh backup and a **restore drill on another machine**.
