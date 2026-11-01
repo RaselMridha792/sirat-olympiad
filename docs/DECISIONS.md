@@ -39,6 +39,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
      - fourteen statements `sirat_app` must not run, each in a rolled-back transaction (each fails with 42501).
    - Unit tests keep the script's CREATE ROLE attributes and its timeouts equal to the migrations', and prove that it loads Prisma Client only after the `DIRECT_URL` check (a preload hook fails any load of it, by name or by file). An int test proves that `QUIET_SESSION` reaches the server.
 5. **The boot line** `database role=<name> superuser=<bool>` in the API and the worker makes the RUNBOOK §9 item readable from the logs. In production it warns while the role is a superuser; from L8 a superuser is refused.
+
 ## 2026-11-01 — The minute exam sweep tries each item on its own (exam session; lead's question after a test flake)
 
 1. **Each finalize, score and results build in the sweep is tried on its own.** One that throws (a lock or statement timeout under load, a bad row) is logged with its step and id, and the rest go on. Before, the first exception ended the run, and since the sweep orders by `ends_at`, an attempt that kept failing would have held back every later attempt and the results build, minute after minute.
