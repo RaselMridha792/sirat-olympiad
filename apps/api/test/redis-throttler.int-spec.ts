@@ -1,6 +1,7 @@
 /** The rate limiter's Lua script against a real Redis: counting, blocking, expiry, and fail-open on outage. */
 import { randomUUID } from 'node:crypto';
 import net from 'node:net';
+import { Logger } from '@nestjs/common';
 import Redis from 'ioredis';
 import {
   RedisThrottlerStorage,
@@ -191,27 +192,39 @@ describe('RedisThrottlerStorage', () => {
     const proxy = await pausableProxy();
     const client = new Redis({ ...CACHE_REDIS_OPTIONS, host: '127.0.0.1', port: proxy.port });
     client.on('error', () => undefined);
+    const warn = jest.spyOn(Logger.prototype, 'warn');
     try {
       await client.ping();
       const limiter = new RedisThrottlerStorage(client, prefix);
       expect((await limiter.increment(randomUUID(), 60_000, 5, 0, 'default')).totalHits).toBe(1);
 
       proxy.pause();
-      let started = Date.now();
+      const started = Date.now();
       expect(await limiter.increment(randomUUID(), 60_000, 5, 0, 'default')).toMatchObject({
         totalHits: 0,
+        isBlocked: false,
       });
       const waited = Date.now() - started;
+      // Failed open because the command timed out (the storage's own log line), not because the client went away.
+      expect(warn).toHaveBeenCalledWith(
+        `rate limiter unavailable, allowing requests: timed out after ${THROTTLE_REDIS_TIMEOUT_MS} ms`,
+      );
       expect(waited).toBeGreaterThanOrEqual(THROTTLE_REDIS_TIMEOUT_MS - 20);
-      expect(waited).toBeLessThan(THROTTLE_REDIS_TIMEOUT_MS + 300);
+      // Backstop only (the hang is cut at all): a loaded machine runs the timer late, so no tight upper bound.
+      expect(waited).toBeLessThan(10 * THROTTLE_REDIS_TIMEOUT_MS);
 
-      started = Date.now(); // breaker open: no second 300 ms wait
+      // Breaker open: the client is still connected, yet the next hit fails open without sending anything to Redis,
+      // so it cannot wait for the timeout a second time.
+      expect(client.status).toBe('ready');
+      const send = jest.spyOn(client, 'sendCommand');
       expect(await limiter.increment(randomUUID(), 60_000, 5, 0, 'default')).toMatchObject({
         totalHits: 0,
+        isBlocked: false,
       });
-      expect(Date.now() - started).toBeLessThan(50);
+      expect(send).not.toHaveBeenCalled();
       expect(THROTTLE_BREAKER_MS).toBeGreaterThan(0);
     } finally {
+      warn.mockRestore();
       client.disconnect();
       await proxy.close();
     }
