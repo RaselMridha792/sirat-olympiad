@@ -58,7 +58,8 @@ TOKEN="$(cfg DEPLOY_GITHUB_TOKEN)"
 MIN_FREE_GB="$(cfg DEPLOY_MIN_FREE_GB 10)"
 KEEP="$(cfg DEPLOY_KEEP_RELEASES 3)"
 WAIT="$(cfg DEPLOY_WAIT_SECONDS 240)"
-for n in "$MIN_FREE_GB" "$KEEP" "$WAIT"; do [[ "$n" =~ ^[0-9]+$ ]] || fail "a number setting is not a whole number"; done
+SETTLE="$(cfg DEPLOY_SETTLE_SECONDS 30)"
+for n in "$MIN_FREE_GB" "$KEEP" "$WAIT" "$SETTLE"; do [[ "$n" =~ ^[0-9]+$ ]] || fail "a number setting is not a whole number"; done
 [ "$KEEP" -ge 2 ] || fail "DEPLOY_KEEP_RELEASES must be at least 2 (a rollback needs the previous images)"
 case "$REHEARSAL" in
   0) ;;
@@ -200,8 +201,23 @@ PUBLIC_PENDING=0
 # Each failed check prints its line now and is kept, so an automatic rollback can repeat it at the end.
 SMOKE_FAILS=()
 bad() { echo "deploy: smoke: $*" >&2; SMOKE_FAILS+=("$*"); ok=0; } # ok: smoke's own variable
+# Recreated containers get new addresses (Docker may even give an old one to another container), and nginx re-resolves
+# its upstreams only every 10 s (resolver valid=10s): right after a switch it can still send requests to the old ones and
+# answer 502. Found by the rehearsal. Wait until the internal listener answers three rounds in a row, then judge.
+settle() {
+  local end=$((SECONDS + SETTLE)) good=0 ready home
+  while [ "$good" -lt 3 ]; do
+    ready=$(inner /api/ready)
+    home=$(inner /)
+    if [ "$ready" = '200 {"status":"ready"}' ] && [ "${home%% *}" = 200 ]; then good=$((good + 1)); else good=0; fi
+    [ "$good" -ge 3 ] && break
+    [ "$SECONDS" -lt "$end" ] || break # the checks below report what is still wrong
+    sleep 2
+  done
+}
 smoke() { # smoke <tag>
   local tag=$1 ok=1 out cid line want
+  settle
   out=$(inner /api/ready); [ "$out" = '200 {"status":"ready"}' ] || bad "/api/ready through the internal listener: ${out%% *}"
   out=$(inner /api/health); [ "${out%% *}" = 200 ] || bad "/api/health through the internal listener: ${out%% *}"
   out=$(inner /); [ "${out%% *}" = 200 ] || bad "the home page through the internal listener: ${out%% *}"
@@ -294,11 +310,12 @@ if [ "$MODE" = rollback ]; then
   say "rolling back from ${LIVE:-none} to $PREVIOUS (no build)"
   from=$(git rev-parse HEAD)
   switch_to "$PREVIOUS" || fail "the app containers of $PREVIOUS did not become healthy: see $(basename "$0") output and \$DC ps"
-  nginx_follow "$from" "$PREVIOUS"
-  smoke "$PREVIOUS" || fail "rollback smoke failed on $PREVIOUS"
+  # The containers run PREVIOUS now: the release file says so before the smoke, so it never names what is not running.
   before=$(awk -v t="$PREVIOUS" '($3 == "deployed" || $3 == "rolled-back-to") && $2 != t {p = $2} $2 == t && ($3 == "deployed" || $3 == "rolled-back-to") {exit} END {print p}' "$LOG_FILE")
   write_release "$PREVIOUS" "$before"
   record "$PREVIOUS" rolled-back-to
+  nginx_follow "$from" "$PREVIOUS"
+  smoke "$PREVIOUS" || fail "rolled back to $PREVIOUS (the release file says so), but its smoke failed: act now (RUNBOOK section 2)"
   say "ROLLED BACK to $PREVIOUS. Migrations stay applied: the database keeps the newer schema."
   [ "$PUBLIC_PENDING" = 0 ] || say "public check pending until maintenance is off"
   exit 0

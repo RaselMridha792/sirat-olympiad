@@ -26,6 +26,11 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - The site name is a network alias of nginx, so the tools container reaches `https://sirat-rh.test` with real TLS (the self-signed certificate is trusted there).
    - The RUNBOOK's create-admin uses a hidden prompt; with no terminal, the rehearsal uses `--password-stdin`.
 10. **CI checks the refusals on its own stack** (the development marker, a second `--first`). The full paths run in the rehearsal.
+11. **Found by the rehearsal:**
+    - **The smoke waits for nginx first.** Recreated containers get new addresses, and Docker may give an old one to another container. nginx re-resolves its upstreams only every 10 s, so right after a healthy `up --wait` the home page could answer 502. The smoke now waits up to 30 s (`DEPLOY_SETTLE_SECONDS`) for three good rounds through the internal listener before it judges.
+    - **`--rollback` writes the release file as soon as the containers have switched,** before its smoke. The file never names a release that is not running, even when the smoke then fails.
+    - **The first release must be the commit `--first` ran on,** because the data services take their settings from that commit's compose file. `--first` names it, and a refusal for a first release repeats it.
+    - **An automatic rollback ends with the reason:** the failed checks and the app containers' states, which the rollback's own output would otherwise bury.
 
 ## 2026-11-01 — Admin statistics on the admin home (core; lead's task and review)
 
