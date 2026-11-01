@@ -11,17 +11,17 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - `auth`: 100 r/s, burst 1,000; `api`: 200 r/s, burst 2,000; nodelay, and the same burst on every use of a zone;
    - no per-IP `limit_conn`, which would refuse a school.
 3. **The API's per-IP tiers:**
-   - refresh rises to 12,000 a minute, the api zone's rate per minute, so behind nginx the API never refuses a renewal first;
+   - refresh rises to 15,000 a minute, above what the api zone lets through in a minute (200 r/s plus the burst of 2,000, about 14,000; the API's window is fixed), so behind nginx the API never refuses a renewal first;
    - the 600 default stays: it covers only anonymous calls, since a signed-in call counts per user and the registration routes have their own tiers;
    - forgot-password (120) and the email links (300) stay on purpose, for email volume, until a global link-email cap below the SES quota exists;
    - the login limiter's 100 failures a minute per IP stays (owner).
 4. **Load-test generators:** `scripts/loadtest-generators.sh on <ip>[,<ip>…] [--hours N] | off | status`. Exam's load kit codes against this contract.
-   - nginx trusts up to four generator addresses for at most 12 hours, through a git-ignored file it includes by wildcard;
-   - every change runs `nginx -t` before the reload, and any failure puts the previous state back;
+   - nginx trusts up to four generator IPv4 addresses (the server listens on IPv4 only, so an IPv6 one could never match; the simulated client addresses may be IPv6), through a git-ignored file it includes by wildcard. The file carries an expiry of at most 12 hours, which `status` reports; nothing removes it, so `off` must be run;
+   - every change runs `nginx -t` before the reload. A failed `on` puts the previous state back; a failed `off` leaves the file removed, the safe state for every later reload;
    - a k6 generator connects straight to the server on 443 (SNI and Host set to the public host) and sends `CF-Connecting-IP`, so a few machines can play many clients and shared addresses.
 5. **Tests:** `infra/nginx/test/check-real-ips.sh`, in CI's docker job. It runs on its own network with stub upstreams and a copy of the tracked config, with lower rates.
-   - It checks the restore from a trusted peer only; the key for every place `::` can stand; that one client's 429 leaves another alone; that two addresses in one /64 share a bucket; that the internal listener cannot be reached; and the generators' on, status, off and usage refusals.
-   - Mutation checks, each failing its check: a wrong zero fill in the key, the api zone keyed per address, no generators include.
+   - It checks the restore from a trusted peer only; the key for every place `::` can stand; that one client's 429 leaves another alone, in both zones; that two addresses in one /64 share a bucket; that the internal listener cannot be reached; and the generators' on, status, off and usage refusals (a range, more than 12 hours, an IPv6 generator).
+   - Mutation checks, each failing its check: a wrong zero fill in the key, the api zone keyed per address, the auth zone as one bucket, no generators include.
 
 ## 2026-11-01 — The fake PayStation as a container for load and staging stacks (Claude; payments, exam's load kit, lead)
 
@@ -857,10 +857,10 @@ One short entry per non-obvious technical or product decision. Newest first. For
    A route's own `@Throttle()` tier still wins.
 3. **Per client IP, for routes used without a session.** Thousands of students can share one IP: a school, or a Bangladeshi mobile operator's carrier-grade NAT.
    - **login:** no request limit at the API (unchanged). The login limiter counts only failures (10 per account+IP pair, 50 per account per hour, 100 per IP per minute), and nginx's auth zone caps the rate. Tested: 500 different accounts log in from one IP within a minute, none refused.
-   - **refresh:** 12,000 per minute since L4 (was 3,000), the rate of nginx's api zone (200 r/s), so behind nginx the API never refuses a renewal first. The refresh token is 256-bit, and reuse is detected.
+   - **refresh:** 15,000 per minute since L4 (was 3,000), above what nginx's api zone lets through in a minute (about 14,000), so behind nginx the API never refuses a renewal first. The refresh token is 256-bit, and reuse is detected.
    - **resend-verification, reset-password, verify-email:** 300 per minute each (were 60 and 30). Unverified students may all ask for a new link at once; reset and verify take 256-bit single-use tokens, refused before argon2.
    - **forgot-password:** 120 per minute (was 60). It sends email too, and it needs far less headroom than resend.
-   - **Email volume:** the per-address caps (1 a minute, 5 an hour) limit each inbox, not the total, and nginx's auth zone allows about 1,400 a minute per IP. So one IP can trigger at most 420 link emails a minute (forgot 120 + resend 300), up from 120.
+   - **Email volume:** the per-address caps (1 a minute, 5 an hour) limit each inbox, not the total, and nginx's auth zone allows about 1,400 a minute per IP (about 7,000 since L4). So one IP can trigger at most 420 link emails a minute (forgot 120 + resend 300), up from 120.
    - **Follow-up:** a global cap on link emails sent, set below the SES daily quota and raising an alert when reached. It needs the quota figure from the owner.
    - **every other anonymous route:** 600 per minute (the module default, unchanged).
 4. **Registration routes (payments, later)** need their own tiers sized for shared IPs. The public payment status poll `GET /registrations/current` (every 2–10 s for up to 2 min) would share 600 per minute per IP, which is about 20 people paying at once behind one IP.
