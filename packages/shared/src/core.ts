@@ -546,3 +546,133 @@ export interface MyRound {
   videoUrl: string | null;
   videoSubmittedAt: string | null;
 }
+
+// ───────────── Video and jury (core C6b) ─────────────
+
+/**
+ * Hosts a student's video link may point to (owner Q4b default: YouTube and Google Drive). The server refuses any
+ * other; the jury's page makes a link only for these (lead), and never embeds a video in v1.
+ */
+export const VIDEO_HOSTS = [
+  'youtube.com',
+  'www.youtube.com',
+  'm.youtube.com',
+  'youtu.be',
+  'drive.google.com',
+] as const;
+
+export const JURY_LIMITS = {
+  videoUrlMax: 500,
+  commentMax: 1000,
+  /** Jury-role accounts offered in the admin's assignment form. */
+  candidatesMax: 200,
+} as const;
+
+/**
+ * An https link whose host is exactly one of VIDEO_HOSTS: the only kind a student may send. The host part allows
+ * letters, digits, dots and hyphens only, so a user name (`@`), a port (`:`), a backslash or a space never gets
+ * through; after the host only a path, query or fragment without spaces may follow.
+ */
+const VIDEO_URL = /^https:\/\/([A-Za-z0-9.-]+)(?:[/?#]\S*)?$/;
+
+export function isAllowedVideoUrl(value: string): boolean {
+  if (value.length > JURY_LIMITS.videoUrlMax) return false;
+  const host = VIDEO_URL.exec(value)?.[1]?.toLowerCase();
+  return host !== undefined && (VIDEO_HOSTS as readonly string[]).includes(host);
+}
+
+/** Refusal codes in ApiError.details for the video and the jury. */
+export const JURY_REFUSALS = [
+  'not_video_round',
+  'window_not_open',
+  'window_closed',
+  'entry_closed',
+  'bad_video_url',
+  'not_jury',
+  'window_open',
+  'already_promoted',
+  'bad_scores',
+] as const;
+export type JuryRefusal = (typeof JURY_REFUSALS)[number];
+
+/** PUT /rounds/:id/video. */
+export interface VideoSubmitRequest {
+  url: string;
+}
+
+/** One judge's share of a video round, for admins. */
+export interface JuryAssignmentRow {
+  id: string;
+  judge: { userId: string; name: string; email: string };
+  category: Category;
+  createdAt: string;
+}
+
+/** GET /admin/rounds/:id/jury: the round's judges and the jury-role accounts that can be added. */
+export interface AdminRoundJury {
+  round: Pick<RoundRecord, 'id' | 'name'>;
+  assignments: JuryAssignmentRow[];
+  candidates: Array<{ userId: string; name: string; email: string }>;
+}
+
+/** POST /admin/rounds/:id/jury: one judge for one or more categories (one row each). */
+export interface JuryAssignRequest {
+  judgeId: string;
+  categories: Category[];
+}
+
+export interface JuryAssignResult {
+  assigned: number;
+  alreadyAssigned: number;
+}
+
+/** GET /jury/rounds: the video rounds a judge scores in, with their own counts. */
+export interface JuryRound {
+  id: string;
+  name: string;
+  closesAt: string | null;
+  /** The window has closed: the videos no longer change and scoring is open (until a category is promoted). */
+  scoringOpen: boolean;
+  criteria: RoundCriterion[];
+  categories: Category[];
+  /** Sent videos in the judge's categories that this judge has not scored, and has. */
+  pending: number;
+  evaluated: number;
+}
+
+/** GET /jury/entries: blind (lead, Q4c default): an entry number, the category and the link; never a name. */
+export interface JuryEntryRow {
+  entryId: string;
+  /** A short number to talk about an entry, e.g. "E-3FA9C1D2". */
+  code: string;
+  category: Category;
+  videoUrl: string;
+  videoSubmittedAt: string;
+  /** This judge's latest score of the entry. */
+  myScore: {
+    criteria: Record<string, number>;
+    total: number;
+    comment: string | null;
+    scoredAt: string;
+  } | null;
+}
+
+export interface JuryEntryQuery extends PageQuery {
+  round: string;
+  status?: 'pending' | 'evaluated';
+}
+
+/** POST /jury/entries/:entryId/scores: every criterion of the round, 0–10 each. */
+export interface JuryScoreRequest {
+  criteria: Record<string, number>;
+  comment?: string;
+}
+
+export interface JuryScoreResult {
+  entryId: string;
+  /** This score out of 100: the sum scaled by the number of criteria (with ten, the plain sum). */
+  total: number;
+  /** The entry's score: the average of each judge's latest total. */
+  score: number;
+  judges: number;
+}

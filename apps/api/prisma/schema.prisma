@@ -143,6 +143,8 @@ model User {
   bookImages          BookImage[]           @relation("BookImageUploader")
   leaderboardEntries  LeaderboardEntry[]
   promotionRuns       PromotionRun[]
+  juryAssignments     JuryAssignment[]      @relation("JuryAssignmentJudge")
+  juryAssignmentsMade JuryAssignment[]      @relation("JuryAssignmentCreatedBy")
   keyCorrections      AnswerKeyCorrection[]
 
   @@index([referredById])
@@ -494,8 +496,9 @@ model Round {
   exams     Exam[]
   entries   RoundEntry[]
 
-  promotionsFrom PromotionRun[] @relation("PromotionFrom")
-  promotionsTo   PromotionRun[] @relation("PromotionTo")
+  promotionsFrom  PromotionRun[]   @relation("PromotionFrom")
+  promotionsTo    PromotionRun[]   @relation("PromotionTo")
+  juryAssignments JuryAssignment[]
 
   @@unique([sortOrder])
   @@map("rounds")
@@ -555,7 +558,27 @@ model PromotionRun {
   @@map("promotion_runs")
 }
 
-/// Append-only jury scoring history: who scored, 10 criteria, server-computed total.
+/// A judge's share of a video round (core C6b): the judge sees and scores the sent videos of these categories only,
+/// without the students' names. "All categories" is one row per category.
+model JuryAssignment {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  roundId     String   @map("round_id") @db.Uuid
+  judgeId     String   @map("judge_id") @db.Uuid
+  category    Category
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  round       Round    @relation(fields: [roundId], references: [id], onDelete: Restrict)
+  judge       User     @relation("JuryAssignmentJudge", fields: [judgeId], references: [id], onDelete: Restrict)
+  createdBy   User     @relation("JuryAssignmentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@unique([roundId, judgeId, category])
+  @@index([judgeId])
+  @@index([createdById])
+  @@map("jury_assignments")
+}
+
+/// Append-only jury scoring history (core C6b): who scored, the criteria scores, the total out of 100 the server
+/// computed. A judge scores again with a new row; the entry's score is the average of each judge's latest total.
 model JuryScore {
   id        String     @id @default(uuid(7)) @db.Uuid
   entryId   String     @map("entry_id") @db.Uuid

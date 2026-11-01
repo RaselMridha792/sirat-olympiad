@@ -51,3 +51,24 @@ export async function currentRoundOf(db: Db, userId: string): Promise<MyRound | 
     first && { round: toRound(first), entryStatus: null, videoUrl: null, videoSubmittedAt: null }
   );
 }
+
+/** The student's own entry in one round, as GET /rounds/me shows it; null without an entry there. */
+export async function myRoundIn(db: Db, userId: string, roundId: string): Promise<MyRound | null> {
+  const entry = await db.roundEntry.findUnique({
+    where: { userId_roundId: { userId, roundId } },
+    select: {
+      status: true,
+      videoUrl: true,
+      videoSubmittedAt: true,
+      round: { select: ROUND_SELECT },
+    },
+  });
+  return (
+    entry && {
+      round: toRound(entry.round),
+      entryStatus: entry.status,
+      videoUrl: entry.videoUrl,
+      videoSubmittedAt: entry.videoSubmittedAt?.toISOString() ?? null,
+    }
+  );
+}

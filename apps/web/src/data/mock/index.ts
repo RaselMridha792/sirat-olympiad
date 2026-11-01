@@ -3,6 +3,7 @@ import {
   CATEGORIES,
   DEFAULT_VIDEO_CRITERIA,
   type AdminRound,
+  type JuryEntryRow,
   BD_DISTRICTS,
   type AdminAnnouncement,
   type AdminTaskReviewRow,
@@ -928,6 +929,73 @@ export function createMockSource(state: MockState | null): DataSource {
             return (e && examAttempts(w, e).find((a) => a.attemptId === attemptId)) ?? null;
           },
           () => null,
+        ),
+
+      getRoundJury: (id) =>
+        run(
+          () => {
+            const w = getWorld();
+            const round = w.rounds.find((r) => r.id === id && r.type === 'video');
+            if (!round) return null;
+            const judges = w.users.filter((u) => u.role === 'jury').slice(0, 3);
+            return {
+              round: { id: round.id, name: round.name },
+              assignments: judges.slice(0, 2).flatMap((u, i) =>
+                (i === 0 ? CATEGORIES : (['activist'] as const)).map((category) => ({
+                  id: `ja-${u.id}-${category}`,
+                  judge: { userId: u.id, name: u.name, email: u.email },
+                  category,
+                  createdAt: round.opensAt ?? '2026-10-01T00:00:00.000Z',
+                })),
+              ),
+              candidates: judges.map((u) => ({ userId: u.id, name: u.name, email: u.email })),
+            };
+          },
+          () => null,
+        ),
+
+      listJuryRounds: () =>
+        run(
+          () =>
+            getWorld()
+              .rounds.filter((r) => r.type === 'video')
+              .map((r) => ({
+                id: r.id,
+                name: r.name,
+                closesAt: r.closesAt,
+                scoringOpen: true,
+                criteria: DEFAULT_VIDEO_CRITERIA.map((c) => ({ ...c })),
+                categories: [...CATEGORIES],
+                pending: 12,
+                evaluated: 5,
+              })),
+          () => [],
+        ),
+
+      listJuryEntries: (query) =>
+        run(
+          () => {
+            const scored = query.status === 'evaluated';
+            const rows = Array.from({ length: scored ? 5 : 12 }, (_, i) => ({
+              entryId: `00000000-0000-7000-8000-${String(i + (scored ? 100 : 0)).padStart(12, '0')}`,
+              code: `E-${(0x3fa9c1d2 + i * 7919 + (scored ? 99 : 0)).toString(16).toUpperCase().slice(-8)}`,
+              category: CATEGORIES[i % CATEGORIES.length]!,
+              videoUrl: `https://youtu.be/mock${i}`,
+              videoSubmittedAt: `2026-11-1${i % 9}T08:00:00.000Z`,
+              myScore: scored
+                ? {
+                    criteria: Object.fromEntries(
+                      DEFAULT_VIDEO_CRITERIA.map((c) => [c.key, 6 + (i % 4)]),
+                    ),
+                    total: (6 + (i % 4)) * 10,
+                    comment: i === 0 ? 'Clear message, good sound.' : null,
+                    scoredAt: '2026-11-20T10:00:00.000Z',
+                  }
+                : null,
+            }));
+            return paginate(rows, query);
+          },
+          () => emptyPage<JuryEntryRow>(query),
         ),
 
       listRounds: () =>

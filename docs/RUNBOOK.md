@@ -766,3 +766,19 @@ select r.sort_order, r.name, e.status, count(*) from round_entries e join rounds
 select r.name as from_round, p.category, p.top_n, p.promoted_count, p.eliminated_count, p.created_at from promotion_runs p join rounds r on r.id = p.from_round_id order by p.created_at;
 SQL
 ```
+
+## 21. Video round and jury (core C6b)
+
+- **Students** send their video link on "My round" (`/dashboard/round`) while the video round is open: an https link to YouTube or Google Drive only. They can change it until the close; after the close it stays.
+- **Judges** are jury-role accounts (created like the other staff accounts). On `/admin/rounds`, an admin opens the video round's "Jury" dialog, picks a judge and ticks the categories. Removing a judge (for example a wrong or compromised account) keeps their scores in the history but takes them out of every entry's score at once; an entry with no other score is "to score" again.
+- **Scoring starts when the round closes.** A judge sees "To score" and "Scored" on `/admin/jury`, with entry numbers only (no names). Every criterion gets 0–10; the total is out of 100. Scoring an entry again adds a new score: the judge's latest one counts, and the entry's score is the average of the judges' latest totals.
+- **Before promoting from the video round** (§20), every sent video needs at least one score ("Some sent videos have no jury score yet"). Once a category is promoted, its entries take no more scores.
+- **"Link not allowed"** on the jury page means the stored link is not on the allow-list. The server refuses such links, so this should not happen; report it rather than opening the link.
+- **Check the progress** (counts only, no names):
+
+```bash
+$DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+select r.name, e.status, count(*), count(e.video_url) as with_video from round_entries e join rounds r on r.id = e.round_id where r.type = 'video' group by 1, 2 order by 1, 2;
+select r.name, a.category, count(distinct a.judge_id) as judges from jury_assignments a join rounds r on r.id = a.round_id group by 1, 2 order by 1, 2;
+SQL
+```
