@@ -438,8 +438,9 @@ jobs:
           if grep -v '=healthy$' <<< "$states"; then
             $FAKE logs --tail=100 fake-paystation api; echo "::error::fake-paystation, api or worker not healthy"; exit 1
           fi
-          # Internal only: no published port.
-          if $FAKE port fake-paystation 18090 2>/dev/null; then echo "::error::the fake publishes a port"; exit 1; fi
+          # Internal only: no published port (`compose port` prints ":0" and exits 0 then, so read the bindings).
+          binds=$(docker inspect -f '{{json .HostConfig.PortBindings}}' "$($FAKE ps -q fake-paystation)")
+          if [ "$binds" != "{}" ] && [ "$binds" != "null" ]; then echo "::error::the fake publishes a port: $binds"; exit 1; fi
           # It answers inside the project, by its service name.
           $FAKE exec -T api node -e "fetch('http://fake-paystation:18090/__fake/health').then((r) => r.json()).then((b) => process.exit(b.ok ? 0 : 1), () => process.exit(1))"
           # The api accepted PAYSTATION_ENV=fake: payments are configured, so the info shows the fee (it caches 30 s).
