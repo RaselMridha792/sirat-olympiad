@@ -53,7 +53,9 @@ Signing secret: the API refuses to start (in every `NODE_ENV`) when `JWT_ACCESS_
 - **Host-side `pnpm dev:api`:** the same line in `apps/api/.env` turns 2FA on for that API. Without it 2FA is off there: nothing is enforced, and the 2FA routes answer 503 (development only).
 - **Enrolments follow the key:** it decrypts the stored secrets. An admin who enrolled under one key gets no code accepted under another (a recovery code or `admin:2fa-reset` still works, §21). So dev enrolments must be redone after a stack turn from a worktree with a different key, unless every worktree uses the same value.
 - **Tests:** the integration tests ignore the key in `apps/api/.env` (`test/load-env.ts`). Only the 2FA suites set their own throwaway key; every other suite runs with 2FA off.
-- **Admins on the stack:** with the key set, an admin from `admin:create` logs in but gets 403 `TWO_FACTOR_REQUIRED` on the admin pages until they enrol (§21).
+- **Admins on the stack:** with the key set, an admin from `admin:create` logs in but gets 403 `TWO_FACTOR_REQUIRED` on the admin pages until they enrol on `/admin/security` (§21).
+- **The e2e scripts' admins:** run `E2E_ADMIN_EMAIL=... E2E_ADMIN_PASSWORD=... pnpm --filter @sirat/web e2e:2fa-enrol` once for each admin or manager they sign in with. It enrols the account through the API and keeps its secret in `apps/web/.e2e-totp.json` (git-ignored, mode 600, never printed). The scripts then pass the code step by themselves (`scripts/lib/totp.mjs`).
+- **The 2FA browser test:** `E2E_2FA_EMAIL=... E2E_2FA_PASSWORD=... pnpm --filter @sirat/web e2e:2fa`, with a throwaway admin that has no 2FA. It covers enrolment, the code step, a recovery code, a refresh and turning it off, and leaves the account as it found it.
 
 Fixtures: 3 verified students with paid registrations, `student1@fixtures.invalid` … `student3@fixtures.invalid`, password = your `FIXTURE_PASSWORD` in `apps/api/.env`. They refuse to run unless `NODE_ENV` is development/test, the confirmation is set for that run, the URL is local with no `host`/`hostaddr` parameter, and the connected Postgres server carries `sirat.environment=development` (only the dev override sets it; after pulling this change once, recreate the dev Postgres with `$DCD up -d postgres`, data is kept). PowerShell: `$env:ALLOW_DEV_FIXTURES='yes-this-is-not-production'; pnpm --filter @sirat/api db:fixtures:dev`. Each student has a distinct phone (`01700000001`…`01700000003`) and a paid 400 BDT payment that went initiated → pending → paid, like a real one.
 
@@ -777,10 +779,12 @@ SQL
 Admins and managers sign in with a password and a 6-digit code from an authenticator app (DECISIONS "Admin two-factor login"; 06-API "Two-factor login"). Production requires `TOTP_ENCRYPTION_KEY` in `.env`; the api logs `two-factor=on` at boot.
 
 - **The key** decrypts every stored secret. Keep a copy with the other server secrets; the database backup does not contain it. A restore onto a new server needs the same key. Without it every enrolled admin needs the CLI reset below.
-- **Enrolment** (until the web's enrolment page lands, through the API with the admin's session):
-  1. After login, the admin pages answer 403 `TWO_FACTOR_REQUIRED`.
-  2. `POST /api/auth/2fa/setup {password}` returns a QR code and an `otpauth://` link: scan it in the authenticator app.
-  3. `POST /api/auth/2fa/enable {code}` returns 10 recovery codes, shown once: store them offline. Every other session of the admin ends.
+- **Enrolment** on `/admin/security`, where an admin or manager without a proved code is sent from every admin page (the API answers the others 403 `TWO_FACTOR_REQUIRED`):
+  1. The password, then the QR code: scan it in the authenticator app, or type the key shown under it.
+  2. The app's first 6-digit code turns it on. Every other session of the admin ends.
+  3. 10 recovery codes are shown once: store them offline (print or write them down).
+
+  The same page makes new recovery codes and turns 2FA off (for a new phone). Through the API: `POST /api/auth/2fa/setup {password}`, then `POST /api/auth/2fa/enable {code}`.
 - **Rotating the key:** set `TOTP_ENCRYPTION_KEY_PREVIOUS` to the old value and `TOTP_ENCRYPTION_KEY` to a new one, then recreate api. Each secret is re-sealed with the new key at its owner's next right code. Remove the previous key only once every enrolled admin has signed in since.
 
 **Lost authenticator, recovery codes at hand:** sign in with a recovery code at the code step. Each code works once, and an alert email goes to the operator. Then turn 2FA off (`POST /api/auth/2fa/disable {password, recoveryCode}`) and enrol the new phone, or ask for new codes.
