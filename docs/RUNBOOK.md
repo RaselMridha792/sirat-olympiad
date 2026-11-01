@@ -258,25 +258,97 @@ bash scripts/test/run-backup-test.sh               # the tests (own compose proj
   That keeps 7 daily and 4 weekly copies (RULEBOOK §6) plus 2 days of hourly ones.
 - **"The dump is much smaller than the last one":** the run stops when a dump is under half the size of the last one, because a sudden drop usually means lost data. After a deliberate big delete (the first run of the session and token cleanup job, a test-data wipe), check that the drop is expected, then run `sudo /srv/sirat/scripts/backup.sh --accept-smaller` once by hand. It logs that it was used; the timer never passes it, and the next timed runs compare with that copy.
 
-**Restore** (until L7): maintenance on, stop the app (nginx keeps running and shows the page), restore a decrypted dump (refuses a truncated dump; one transaction), migrate, start the app, check it through the internal listener, then maintenance off.
+**Restore (L7):** `scripts/restore.sh`, as the deploy user from the clone. It never overwrites a database: a rebuilt server restores into the empty database of a fresh volume, and a server still up restores beside the live database, then swaps the names.
 
 ```bash
-scripts/maintenance.sh on                 # section 4; visitors get the maintenance page
-$DC stop web api worker                   # the worker too: no job writes during the restore
-scripts/restore.sh <decrypted>.dump  # DESTRUCTIVE, asks for YES (truncated-dump refusal VERIFIED; full restore not yet rehearsed)
-$DC run --rm --no-deps migrate && $DC exec redis-cache redis-cli FLUSHALL && $DC up -d --no-deps --no-build api worker web
-$DC exec -T nginx wget -qO- http://127.0.0.1:8081/api/ready   # {"status":"ready"}
+age -d -i <key file> sirat-<stamp>.dump.age > sirat.dump   # a key holder, never on the server; sha256 against the manifest first
+scripts/restore.sh sirat.dump --project sirat                # a rebuilt server: the EMPTY database of a fresh volume
+scripts/restore.sh sirat.dump --project sirat --mode beside  # the server is up: into <db>_restore_<stamp>, then swapped;
+                                                             # the old database stays as <db>_old_<stamp>
+$DC exec -T nginx wget -qO- http://127.0.0.1:8081/api/ready   # {"status":"ready"} (the script checks it too)
 scripts/maintenance.sh off && scripts/healthcheck.sh https://<domain>
 ```
-While the API is stopped, PayStation's IPN gets nginx's JSON 502 and is retried; reconciliation catches anything missed once the worker is back.
-The migrate step also puts back what the restore can lose: `sirat_app`'s restrictions (`--clean` re-creates the tables under the default privileges) and the database timeouts (`prisma/runtime-role.ts`).
-After a restore drill, also check the free book's cover: `GET /api/book/cover/<id>` (the id is `settings.book_cover_image_id`) returns the image. Covers live in Postgres (`book_images`), so the dump carries them; there is no file directory to restore.
 
-Credentials are read inside the postgres container; nothing secret is typed on the host. Hardening (L7): restore into a fresh database instead of `--clean` over the live schema, and a scripted drill. Before every exam: a fresh backup and a **restore drill on another machine**.
+- **What the script does:**
+  1. reads the whole archive (a truncated dump stops it before anything changes);
+  2. says the project, the database and the server marker, and asks for the project name to be typed (a server marked as development is refused without `--allow-dev`);
+  3. maintenance on; stops web, api and worker, while nginx shows the maintenance page;
+  4. makes sure `sirat_app` exists: roles are not in a dump (`prisma/runtime-role.ts --ensure`);
+  5. restores in one transaction, without `--clean`;
+  6. clears `sessions` and `auth_tokens` (everyone logs in again);
+  7. runs migrate, which puts back the database timeouts and `sirat_app`'s restrictions, CONNECT and login;
+  8. checks `statement_timeout` 10s in a new session, `sirat_app`'s grants and CONNECT, and the migrations;
+  9. flushes the cache, starts the app and checks it through the internal listener: three good rounds in a row of
+     `/api/ready` and the home page, within 30 s (the restarted containers may have new addresses, which nginx
+     picks up within 10 s; the same settle as `deploy.sh`).
+
+  Maintenance stays on for a person to check.
+- **By hand, after a restore:**
+  - rotate `JWT_ACCESS_SECRET` in `.env` and recreate api and worker;
+  - compare the payments since the dump time minus 1 h with a PayStation export (section 11);
+  - with `--mode beside`, drop `<db>_old_<stamp>` once nothing more is needed from it.
+
+  While the API is stopped, PayStation's IPN gets nginx's JSON 502 and is retried; reconciliation catches anything missed once the worker is back. After a restore, also check the free book's cover: `GET /api/book/cover/<id>` (the id is `settings.book_cover_image_id`). Covers live in Postgres (`book_images`), so the dump carries them.
+- **The drill** (`scripts/restore-drill.sh`), on another machine than the server, before every exam and before registration opens:
+
+  ```bash
+  scripts/restore-drill.sh --age sirat-<stamp>.dump.age --manifest sirat-<stamp>.manifest.json --identity <key file> [--tag <sha>]
+  ```
+
+  - **The copy:** its sha256 is checked against the manifest, then it is decrypted into an owner-only directory.
+  - **The drill project** `sirat-drill`: its own volumes, throwaway secrets, payments off, email only to Mailpit, nginx and Mailpit on 127.0.0.1 only. It refuses a port bound beyond 127.0.0.1.
+  - **The restore** with `restore.sh`, then the checks:
+    - every table's row count against the manifest;
+    - the triggers;
+    - `sirat_app`'s grants and default privileges;
+    - `statement_timeout` 10s;
+    - the audit log refusing a delete;
+    - one login as `sirat_app`.
+  - **The wipe:** `down -v`, only after checking each container's project label; it never touches project `sirat`. It prints the measured time.
+  - The images must be of the dump's release (`--tag`); the drill never builds.
+- **The drill never reads the clone's `.env`:** the drill's api and worker take their settings only from the drill's own throwaway file (`infra/backup/drill.compose.yml` replaces compose's `env_file: ../.env` with it). The script refuses to start unless both resolve the drill's own secret, compared and never printed. On a server, the clone's `.env` holds the production secrets.
+- **Tests:** `bash scripts/test/run-restore-roundtrip.sh` (CI's docker job runs it):
+  - a source in its own project gets admin A, then a dump is taken, then admin B is created;
+  - the drill restores the dump: A logs in (204), B does not (401);
+  - then `--mode beside` restores over the running drill, keeps the old database, and the logins answer the same.
+
+Credentials are read inside the postgres container; nothing secret is typed on the host.
 
 ## 6. Rebuild on a fresh VPS (< 1 hour)
 
-`scripts/bootstrap.sh` (scaffold prints the steps; implement and rehearse). Needs: repo, `.env`, latest backup.
+`scripts/bootstrap.sh` (L12), as root on a fresh Ubuntu 24.04 host. It is idempotent: every step looks first, and a run with nothing left to do prints `0 change(s) made`. Run it again after each owner step below.
+
+```bash
+# On the new host, as root (copy the script over, or take it from any checkout).
+bash bootstrap.sh --dry-run --authorized-keys keys.pub   # what it would change; changes nothing
+bash bootstrap.sh --authorized-keys keys.pub             # keys.pub: the owner's and one backup person's public keys
+# It ends with what is left for the owner:
+#   - deploy's public key on GitHub as a READ-ONLY deploy key; run bootstrap again (it clones /srv/sirat)
+#   - the values in /srv/sirat/.env, .env.deploy (the GitHub token), .env.monitor (the heartbeat URL) and
+#     /etc/sirat/backup.env (section 5); run bootstrap again (it enables the backup timers once the remote is set)
+#   - the provider's firewall panel: only 22, 80 and 443
+# Then, as deploy (sudo -iu deploy; cd /srv/sirat):
+git fetch origin && git checkout --detach <sha on main>   # the commit to deploy first
+scripts/deploy.sh --first && scripts/deploy.sh <sha>       # section 2 (the origin certificate first: section 15)
+# A rebuild after a loss: restore the newest backup before opening (section 5). Then the checks:
+scripts/prelaunch-check.sh
+```
+
+- **What it sets up:**
+  - Docker from Docker's own apt repository;
+  - UTC with chrony (the monitor's 02:00 UTC digest is 08:00 Asia/Dhaka);
+  - swap and `vm.overcommit_memory=1`; security updates without automatic reboot;
+  - the `deploy` user, in the docker group, with SSH keys only. Root and password logins go off only once deploy has keys (no lockout), and `sshd -t` checks the change first;
+  - UFW for the host, plus `sirat-docker-user.service`: Docker's published ports bypass UFW, so from outside only 80 and 443 may reach a container;
+  - fail2ban for SSH;
+  - the clone in `/srv/sirat` through a read-only deploy key, with GitHub's host key pinned;
+  - `/var/lib/sirat`;
+  - `.env`, `.env.deploy`, `.env.monitor` and `/etc/sirat/backup.env` from their examples, mode 600, never overwritten;
+  - the four backup units;
+  - the monitor's two cron lines (`/etc/cron.d/sirat-monitor`, output in the journal under `sirat-monitor`);
+  - one sudo rule: `deploy` may run `systemctl start sirat-backup.service`, and nothing else (checked with `visudo -cf`).
+- **The deploy key is a root key:** `deploy` is in the docker group, which is root-equivalent, so the sudo rule limits sudo, not real power. Keep deploy's SSH keys on few machines, each with a passphrase. When a person leaves, remove their line from `/home/deploy/.ssh/authorized_keys` (and from the `--authorized-keys` file bootstrap is run with) the same day.
+- **Tests:** `bash scripts/test/run-bootstrap-test.sh` (an Ubuntu 24.04 container; CI runs it). It covers the dry run, the no-lockout rule, the whole setup, a second run that changes nothing, and an edited `.env` that is kept. Its first full run on a real host is the VPS (owner question Q4 without a VM), timed against the one-hour target.
 
 ## 7. Exam-day incident steps
 
@@ -333,7 +405,46 @@ Credentials are read inside the postgres container; nothing secret is typed on t
 
 Client: — · PayStation support: — · Email provider: Amazon SES (AWS account / support plan: —) · Hostinger support: — · Cloudflare: — · Owner (Rasel Mridha): —
 
-## 9. Pre-exam checklist (T-7 → T-0)
+## 9. Pre-launch checklist (T-7 → T-0)
+
+**This launch (registration and payment, 15 Nov; LAUNCH-PLAN section 12):**
+- **Sat 7 Nov:** on the VPS, in the order of section 6: bootstrap, the origin certificate, `deploy.sh --first`, Cloudflare and the firewall, the first release, the first admins, an outside port scan.
+- **Sun 8 – Mon 9:** on the VPS:
+  - the rehearsals: deploy, a second deploy, a forced rollback, a reboot, maintenance on and off;
+  - the backup timers, the first off-server copy, a failure alert;
+  - the outside monitors and a fake alert;
+  - the real-IP check on the three mobile operators.
+- **Tue 10 – Wed 11:**
+  - a restore drill on another machine;
+  - k6 with simulated shared IPs;
+  - the live merchant and one real payment.
+- **Thu 12, the release candidate:** `scripts/prelaunch-check.sh` with every line PASS (registration still closed) and the MANUAL lines done. It is the last day for non-critical deploys.
+- **Fri 13:** the freeze, from 00:00 (48 h). Rehearse the kill switches in order, each checked through the internal listener:
+  1. `registration_open=false`;
+  2. maintenance on (section 4);
+  3. `deploy.sh --rollback` (section 2).
+
+  After maintenance off, the public smoke must pass.
+- **Sat 14:** Rasel's go/no-go. A fresh backup minutes before opening; then registration opens through the audited admin setting, and someone watches the alerts.
+
+**The checks:**
+- [ ] `scripts/prelaunch-check.sh` on the VPS (`--registration closed` until opening, `open` after): every line PASS, never a value printed. It checks:
+  - only nginx publishes ports;
+  - `.env` mode 600, `APP_URL` https, `COOKIE_SECURE` not false;
+  - the runtime role (not the database owner); no development marker; no Mailpit;
+  - every app container on the recorded release; migrations up to date; the worker healthy;
+  - each API's PayStation boot line (live, the client's account and prefix, https callback and IPN);
+  - no fixture users, no test invoices, no published exam, the fee 40000, `registration_open` as intended;
+  - an off-server backup under 26 h old; SES; the page CSP;
+  - real client IPs through Cloudflare; the Cloudflare list under 90 days old;
+  - disk, swap and the clock.
+
+  Its MANUAL lines are the items below.
+- [ ] Cloudflare settings and TLS (section 15); the page CSP; an outside port scan shows only 22, 80 and 443.
+- [ ] Deploy, rollback and maintenance rehearsed on the VPS (sections 2 and 4).
+- [ ] An off-server backup and a passed restore drill (section 5); the runtime role (below).
+- [ ] The outside monitors, and a fake alert received (section 7).
+- [ ] The contacts filled in (section 8); the release SHA green on `main`.
 
 See `RULEBOOK.md` section 13: load test at 1.5–2× peak, backup + restore drill, 48 h code freeze, patches before freeze, monitoring + fake alert, Cloudflare verified, email deliverability, real small PayStation payment, rollback rehearsed, owner watching dashboards.
 
@@ -534,8 +645,27 @@ SQL
 - `"more": true` means the run reached the cap. That is normal right after a long pause. If it stays true night after night, the cap is too low for the traffic.
 - **No manual trigger:** a run is idempotent, so the next night catches up.
 - **Indexes:** `sessions(expires_at)`, `sessions(revoked_at)` and `auth_tokens(expires_at)` came with a plain `CREATE INDEX`, fine while the tables were young. A later index on a big `sessions` table must use `CREATE INDEX CONCURRENTLY`, in a migration of its own: Prisma runs each migration in a transaction, and `CONCURRENTLY` cannot run inside one. A plain build would lock writes, and so logins and refreshes, until it finished.
-- **At worker start** the log says `housekeeping scheduler set` (id, pattern, time zone). Every start says so, but Redis keeps one scheduler: `$DC exec -T redis-queue redis-cli ZRANGE bull:housekeeping:repeat 0 -1` lists exactly `session-cleanup`.
+- **At worker start** the log says `housekeeping scheduler set` (id, pattern, time zone) once per job. Every start says so, but Redis keeps one scheduler per job: `$DC exec -T redis-queue redis-cli ZRANGE bull:housekeeping:repeat 0 -1` lists exactly `attempt-scrub` and `session-cleanup`.
 - **After a purge,** a refresh token replayed more than 30 days after its rotation gets 401, like any unknown token. It no longer ends its family or writes `auth.refresh_reuse` (DECISIONS A2.1b #9).
+
+**The registration form's retention (D6, the same queue).** Every night at 04:00 Asia/Dhaka, `attempt-scrub` clears `pending_registrations.payload`: the stored form, with its argon2id password hash.
+- **Which attempts:**
+  - **abandoned** ones (cancelled, or replaced by a new start), 30 days after their last change;
+  - **open but dead** ones: last changed over 30 days ago, no payment initiated, pending, paid or refunded, and every checkout expired over 30 days ago.
+- **Never:**
+  - completed attempts (cleared at settlement);
+  - **conflict** attempts (an admin case, section 11);
+  - the row itself, the name, email and phone (payment lookups), payments and their events.
+- **A payment that still succeeds later is not lost:** it is marked paid and appears in the review list as `attempt_invalid` (section 11).
+- **Check that it ran:** one audit row per run, `housekeeping.attempt_scrub`, with counts only (`abandoned`, `dead`, `batches`, `more`), and the worker's log line `attempt scrub done`.
+- **A conflict keeps its form** until an admin has closed the case: there is no "resolved" status, so the job never clears it.
+  - Once the case is closed (the student has an account, or was refunded), clear that one attempt's form by hand, and note it with the case:
+    ```bash
+    $DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+    update pending_registrations set payload = null where id = '<attempt id>' and status = 'conflict' returning id;
+    SQL
+    ```
+  - Never delete the row or its payments.
 
 ## 17. Ambassador referral points (core C5b-1)
 

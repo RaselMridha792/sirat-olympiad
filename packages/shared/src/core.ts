@@ -236,3 +236,84 @@ export const ADMIN_AUDIT_EXPORT = {
   pageSize: 25,
   maxPageSize: 50,
 } as const;
+
+// ───────────── Ambassador tasks (core C5b-2; 06-API "Ambassadors") ─────────────
+
+export const TASK_LIMITS = {
+  titleMin: 3,
+  titleMax: 120,
+  descriptionMax: 2_000,
+  pointsMax: 1_000,
+  proofMax: 1_000,
+  noteMin: 3,
+  noteMax: 500,
+  /** Ambassadors per assign call. */
+  assignMax: 50,
+  /** Proof submissions per ambassador per 10 minutes (on top of the per-user API limit). */
+  submitsPer10Min: 10,
+} as const;
+
+/** Refusal codes in ApiError.details for tasks and their review. */
+export const TASK_REFUSALS = [
+  'stale',
+  'archived',
+  'not_archived',
+  'nothing_to_update',
+  'not_ambassador',
+  'not_open',
+  'not_submitted',
+] as const;
+export type TaskRefusal = (typeof TASK_REFUSALS)[number];
+
+export interface AdminTaskInput {
+  title: string;
+  description: string;
+  points: number;
+}
+
+/** PATCH /admin/tasks/:id: any of the fields, and the version the admin saw. */
+export type AdminTaskPatch = Partial<AdminTaskInput> & { expectedUpdatedAt: string };
+
+export const TASK_LIST_STATUSES = ['active', 'archived'] as const;
+export type TaskListStatus = (typeof TASK_LIST_STATUSES)[number];
+
+export interface AdminTaskQuery extends PageQuery {
+  status?: TaskListStatus;
+}
+
+/** One task in the admin list, with its assignments counted by status. */
+export interface AdminTaskRow {
+  id: string;
+  title: string;
+  description: string;
+  points: number;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  counts: Record<'assigned' | 'submitted' | 'approved' | 'rejected', number>;
+}
+
+/** POST /admin/tasks/:id/assign answer: new assignments, and ambassadors who had it already. */
+export interface TaskAssignResult {
+  assigned: number;
+  alreadyAssigned: number;
+}
+
+/** One submitted proof waiting for review (admins only). The proof is shown as plain text, never as a link. */
+export interface AdminTaskReviewRow {
+  assignmentId: string;
+  taskId: string;
+  taskTitle: string;
+  points: number;
+  ambassador: { userId: string; name: string };
+  proof: string;
+  submittedAt: string;
+}
+
+/** POST /admin/task-assignments/:id/{approve,reject} answer. */
+export interface TaskReviewResult {
+  assignmentId: string;
+  status: 'approved' | 'rejected';
+  /** The ambassador's points after an approval. */
+  points: number | null;
+}

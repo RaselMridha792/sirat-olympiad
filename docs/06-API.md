@@ -55,7 +55,7 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `GET/POST /admin/announcements`, `PATCH /admin/announcements/:id`, `POST /admin/announcements/:id/{archive,restore}` | admin | Announcements (below). Built (core C4) |
 | | `GET /admin/ambassadors`, `POST /admin/ambassadors/:userId/{approve,revoke}` | admin | Ambassadors (below). Built (core C5a) |
 | | `GET/PUT /admin/ambassador-points`, `POST /admin/points/adjust` | admin | Points per referral and the ranks (single writer), compensating entries; audited. Built (core C5b-1) |
-| | `CRUD /admin/tasks` | admin | Core C5b-2 |
+| | `GET/POST /admin/tasks`, `PATCH /admin/tasks/:id`, `POST /admin/tasks/:id/{archive,restore,assign}`, `GET /admin/task-assignments`, `POST /admin/task-assignments/:id/{approve,reject}` | admin | Ambassador tasks (below), audited; tasks are never deleted. Built (core C5b-2) |
 | | `GET /admin/audit`, `GET /admin/audit/:id`, `POST /admin/audit/export` | admin | Audit log (below). Read only; the export is audited. Built (core) |
 
 ## Registration and payment (payments PR 2 and 3; plan: `docs/plans/PAYMENTS-PLAN.md` 6.1–6.7)
@@ -261,6 +261,22 @@ The database refuses a code outside `^[A-Za-z0-9_-]{3,40}$`, and `point_ledger` 
 | `POST /admin/points/adjust` (admin) | `{ userId, amount (±1–10,000, not 0), reason (3–200) }` | 200 `{ userId, points }` (the total after). A new ledger row `adjust:<uuid>` with the admin as `created_by`; nothing earlier changes. 404 unknown user; 409 `not_ambassador` without an ambassador profile (a revoked one has a profile). Audit `points.adjusted` |
 
 **The referral sweep** (worker, queue `ambassador-points`): every 5 minutes (scheduler `referral-points`) one statement inserts a ledger row `referral_paid:<paymentId>` for each paid registration with a referrer, `ON CONFLICT (event_key) DO NOTHING`, over the registrations of the last 2 days (the whole table on the very first run); every night at 03:45 Asia/Dhaka (`referral-points-backfill`) over every registration. Run twice or by two workers at once, it adds nothing twice. A referral counts even if the ambassador was revoked later; the amount is the setting at sweep time, and 0 awards nothing (a later value back-fills). It reads payments' `registrations` and `users`, and writes only the ledger.
+
+**Tasks (core C5b-2; lead's plan and rules).** Shapes `AdminTaskRow`, `AdminTaskReviewRow`, `TaskAssignResult`, `TaskReviewResult`, `TASK_LIMITS`, `TASK_REFUSALS` (`core.ts`); the panel's `tasks` in `AmbassadorOverview`. All admin routes re-read the admin; every write is audited with ids and statuses only (`task.created`, `.updated`, `.archived`, `.restored`, `.assigned`, `.approved`, `.rejected`, `.submitted`). **The proof is a minor's free text: it is never logged and never written to an audit row** (lead).
+
+| Method + path | Request | Answers |
+|---|---|---|
+| `GET /admin/tasks` | `status` (`active` default, `archived`), `page`, `pageSize` (≤ 50) | `Paginated<AdminTaskRow>` newest first, with the assignments counted per status |
+| `POST /admin/tasks` | `{ title (3–120, one line), description (1–2,000, line breaks kept), points (0–1,000) }` | 201 the task |
+| `PATCH /admin/tasks/:id` | any of the fields, `expectedUpdatedAt` | 200; 409 `stale`, `archived`, `nothing_to_update`. A new points value counts for later approvals only |
+| `POST /admin/tasks/:id/{archive,restore}` | — | 200; 409 `archived` / `not_archived`. An archived task leaves the panels and takes no proof or assignment |
+| `POST /admin/tasks/:id/assign` | `{ userIds (1–50, unique) }` | 200 `{ assigned, alreadyAssigned }`. Approved, unblocked ambassadors only, all or nothing: 409 `not_ambassador`; 409 `archived` |
+| `GET /admin/task-assignments` | `page`, `pageSize` | `Paginated<AdminTaskReviewRow>`: submitted proofs, oldest first (admins only; the web shows the proof as plain text, never as a link) |
+| `POST /admin/task-assignments/:id/approve` | — | 200 `{ assignmentId, status: 'approved', points }` (the ambassador's total). One transaction with a row lock: the ledger row `task:<assignmentId>` with the task's points, `task_id` and `created_by`, `ON CONFLICT DO NOTHING`. **Final**; a mistake is corrected with "Adjust points". 409 `not_submitted` |
+| `POST /admin/task-assignments/:id/reject` | `{ note (3–500) }` | 200; the ambassador sees the note and may submit again. 409 `not_submitted` |
+| `POST /ambassador/tasks/:assignmentId/submit` (ambassador, re-read) | `{ proof (1–1,000, plain text) }` | 204. Own assignment only (another's is 404); from `assigned` or `rejected` (409 `not_open`); not for an archived task (409 `archived`); a revoked or blocked ambassador gets 403. 10 per 10 minutes per ambassador (429), on top of the per-user limit |
+
+The database keeps the limits and the status rules (`*_core_ambassador_tasks_checks`): a submitted, approved or rejected assignment has its proof and time; approved exactly when an admin and a time are recorded; rejected has a note.
 
 ## Admin statistics (core; lead 2026-11-01)
 

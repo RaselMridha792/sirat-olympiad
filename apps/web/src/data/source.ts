@@ -1,4 +1,7 @@
 import type {
+  AdminTaskQuery,
+  AdminTaskReviewRow,
+  AdminTaskRow,
   AmbassadorPointsConfig,
   AdminAuditDetail,
   AdminAuditPage,
@@ -103,6 +106,10 @@ export interface DataSource {
     listAmbassadors(query: PageQuery): Promise<Paginated<AdminAmbassadorRow>>;
     /** GET /admin/ambassador-points (points per paid referral and the rank thresholds; admin only) */
     getAmbassadorPoints(): Promise<AmbassadorPointsConfig>;
+    /** GET /admin/tasks?status=&page= (ambassador tasks with counts per status; admin only) */
+    listTasks(query: AdminTaskQuery): Promise<Paginated<AdminTaskRow>>;
+    /** GET /admin/task-assignments?page= (submitted proofs waiting for review, oldest first; admin only) */
+    listTaskReviews(query: PageQuery): Promise<Paginated<AdminTaskReviewRow>>;
     /** GET /admin/announcements?page=&status= (every status, with audience and author) */
     listAnnouncements(query: AdminAnnouncementQuery): Promise<Paginated<AdminAnnouncement>>;
     /** GET /admin/payments?invoice=&trx=&phone=&email=&status=&review=1&page= (admin only) */

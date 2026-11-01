@@ -17,6 +17,77 @@ One short entry per non-obvious technical or product decision. Newest first. For
 5. **Left to others:**
    - `restore.sh` is L7's (exam): on a fresh cluster, `runtime-role.ts --ensure` runs before `pg_restore`, and the migrate job runs after it.
    - On the shared dev stack the switch needs one window that the lead and Rasel pick, after the first stack turn since L2 has given the role its login. First every root `.env` gets the value and every `apps/api/.env` `DATABASE_URL` through 16432 moves to `sirat_app` (or the owner on 15432); then `$DCD up -d --no-deps pgbouncer` comes last. Apps with L8 already work through the old PgBouncer (checked), so nothing breaks before it (RUNBOOK section 0).
+## 2026-11-01 — The registration form's retention: abandoned and dead attempts (Claude; D6, PAYMENTS-PLAN 4.3, lead)
+
+1. **D6 as written:** an abandoned attempt's stored form (`payload`, with the argon2id password hash) is cleared 30 days after its last change.
+2. **Extended (lead; Rasel, please see):** an **open attempt that is dead** is cleared too. Dead means it was last changed over 30 days ago, has no payment initiated, pending, paid or refunded, and every checkout of it expired over 30 days ago, far past the 48 h late watch.
+   - Such a student never came back. Without this, their password hash and form would stay forever, which is what D6 exists to prevent.
+3. **Kept:** **conflict** attempts are an admin case, so the job never clears them. An admin clears one by hand once the case is closed (RUNBOOK §16).
+   - Completed attempts are cleared at settlement, as before.
+   - The row, name, email and phone stay for payment lookups, and so do the payments and their events. `updated_at` is not changed.
+4. **Money is never lost:** a payment that succeeds on an attempt whose form was cleared is marked paid and set aside as `attempt_invalid`, with no account. `attempt-scrub.int-spec` runs exactly that.
+5. **A student who comes back** with a cookie the browser kept (it should drop it after 7 days, but the server does not check the cookie's age):
+   - the result page offers no retry or resume for a cleared attempt;
+   - retry or resume answers 409 `START_OVER` (bn/en: "This registration has expired. Please fill in the form again.") and gives the attempt up, so no payment ever starts on it;
+   - the same form sent again asks for a new request id (`START_REQUEST_REUSED`), and the new start registers normally.
+6. **How:** its own scheduler on the housekeeping queue, `attempt-scrub` at **04:00** Dhaka.
+   - The other nightly jobs are spread out: session-cleanup at 03:30, core's ambassador back-fill at 03:45.
+   - It uses the session cleanup's batch loop, now shared (`batch-drain.ts`): 1,000 rows per batch, `FOR UPDATE SKIP LOCKED`, `SET LOCAL statement_timeout`, a cap, idempotent.
+   - Counts-only log and audit (`housekeeping.attempt_scrub`). A failed run shows in ops-check as a warning on the same queue.
+   - No migration: `@@index([status, updatedAt])` and the payments foreign-key index serve the scans.
+
+## 2026-11-01 — Restores never overwrite, and the drill never reads the real settings (L7; exam session, LAUNCH-PLAN §5)
+
+1. **No `--clean` over a live schema.**
+   - **A rebuilt server** restores into the empty database of a fresh volume; the script refuses a database that has tables.
+   - **A server still up** restores into `<db>_restore_<stamp>`, which is checked, then the names are swapped. The old database stays as `<db>_old_<stamp>`, for payments newer than the dump. PgBouncer is restarted so no pooled connection keeps pointing at the old database.
+2. **Roles are not in a dump,** so `sirat_app` is made first (`runtime-role.ts --ensure`, L2). The normal migrate run then puts back what a fresh database lacks: the database timeouts, CONNECT, and the role's restrictions and login. The script checks them.
+3. **Sessions and tokens are cleared after a restore,** so everyone logs in again. The JWT secret's rotation and the comparison with PayStation's export stay manual steps, which the script prints.
+4. **The drill never reads the clone's `.env`:** compose's `env_file: ../.env` would have given the drill's api and worker the server's real settings (production secrets, live PayStation, SES). `infra/backup/drill.compose.yml` replaces it with the drill's throwaway file through `DRILL_ENV_FILE`, which compose refuses to run without. `restore-drill.sh` also refuses to start unless both services resolve the drill's own secret, compared and never printed. Found while writing the drill; the lead asked for it in RUNBOOK §5 and here.
+5. **The drill runs on loopback only** (it refuses any port bound beyond 127.0.0.1) and wipes only containers that carry its project label, never project `sirat`.
+6. **The drill never builds:** its images must be of the dump's code (`--tag`). A first local run failed for that reason: the PC's `latest` images predated L2.
+7. **The round trip** (admin A, a dump, admin B; A logs in, B does not; then the beside mode over the running drill) runs from a tools container, with the clone in a Docker volume so compose's relative bind mounts name a path the daemon has (as in L9's rehearsal). CI runs it in the docker job.
+8. **The app check after a restore settles first,** as `deploy.sh` does: three good rounds in a row of `/api/ready` and the home page through the internal listener, within 30 s. The restarted api and web may get new addresses (the migrate run takes one meanwhile), and nginx keeps a resolved address for up to 10 s. CI's first run failed on a single check there; the local run had passed only because the PC was slower.
+
+## 2026-11-01 — Ambassador tasks (core C5b-2; lead's plan, defaults and rules)
+
+1. **Approval is final** (lead's default): one transaction with a row lock writes the ledger row `task:<assignmentId>` (task points, `task_id`, `created_by`) `ON CONFLICT DO NOTHING` and sets `approved`. A double click or three admins at once award once; a mistake is corrected with "Adjust points" (C5b-1), so the ledger stays append-only.
+2. **Rejection** keeps the assignment open: the ambassador sees the note and may submit again.
+3. **Proof is plain text only, no uploads** (lead): a pasted link is shown as text and never made clickable (a later change would be deliberate, with an allow-list).
+   - **A minor's free text:** the proof is never logged and never written to an audit row. Audit rows keep ids and statuses only; the admin's note is not audited either.
+   - The panel never sends the proof back; only admins see it, in the review queue.
+4. **Submits are rate-limited** (lead): 10 per 10 minutes per ambassador on the route, on top of the per-user API limit, because a rejected task can be submitted again.
+5. **Who:**
+   - **Tasks:** admins create, edit (`expectedUpdatedAt`), archive and restore them; never deleted.
+   - **Assignment:** approved, unblocked ambassadors only, all or nothing; an existing assignment is skipped (UNIQUE).
+   - **Submitting:** an ambassador submits only their own assignment (another's is 404), and is re-read like the panel (a revoked one gets 403).
+6. **Points** come from the task when it is approved, so an edit counts for later approvals only.
+7. **Schema** (one generated and one CHECKs migration):
+   - `admin_tasks.archived_at`; `task_assignments.proof_text`, `submitted_at`, `review_note`, and an index `(status, submitted_at)` for the queue.
+   - CHECKs for the limits and the status rules (enum columns compared as `::text`).
+   - `db-constraints.int-spec` got a longer task title (`'t'` → `'Task'`) for the new title CHECK.
+8. **Web:**
+   - `/admin/tasks`: Active, Archived and To review.
+   - "Assign task" on /admin/ambassadors rows: the active tasks, ids and titles only.
+   - "Send proof" on the ambassador panel, with the reject note shown.
+   - `AmbassadorOverview.tasks[].id` is now the assignment (for submitting), with `reviewNote` and `submittedAt`.
+9. **Tests:**
+   - `ambassador-tasks.int-spec.ts` (10): task life cycle and refusals; assignment eligibility; submit, the queue and one award; three concurrent approvals award once; reject and resubmit with no proof or note in any audit row; own-assignment, archived and revoked refusals; the submit limit; admin only; the CHECKs.
+   - web: the area file picks, the problem mapper.
+
+## 2026-11-01 — Bootstrap and the pre-launch checks (L12; exam session, LAUNCH-PLAN §2 and §7, owner Q4 default)
+
+1. **`bootstrap.sh` is idempotent and safe to repeat:** every step looks before it changes anything, and the owner runs it again after each of their steps. `--dry-run` lists the changes without making them. Settings files come from their examples only when missing and are never overwritten: the owner types the secrets, and the script never prints one.
+2. **No lockout:** root and password logins go off only once `deploy` has an authorized key, and `sshd -t` checks the change first (it is removed if refused).
+3. **The firewall is UFW plus a DOCKER-USER guard** (`sirat-docker-user.service`): Docker's published ports bypass UFW, so from outside only connections to 80 and 443 may reach a container. A stray `ports:` in compose then cannot expose a data service. The provider's panel firewall stays on the owner's list.
+4. **One sudo rule, exactly `deploy ALL=(root) NOPASSWD: /usr/bin/systemctl start sirat-backup.service`** (lead), checked with `visudo -cf` before it is installed. A test asserts that `sudo -l` shows nothing else.
+   - **The rule limits sudo, not real power** (lead): `deploy` is in the docker group, which is root-equivalent (it can mount the host into a container). So deploy's SSH key is a root credential: it is kept on few machines, with a passphrase, and removed from `authorized_keys` the day a person leaves.
+5. **UTC on the server;** the monitor's digest cron runs at 02:00 UTC (08:00 Asia/Dhaka), because Ubuntu's cron has no per-line timezone.
+6. **GitHub's SSH host key is pinned in deploy's `known_hosts`** (checked against GitHub's published fingerprint), not trusted on first use.
+7. **The backup timers start only once `/etc/sirat/backup.env` names a remote,** so an unconfigured host does not alert every hour.
+8. **The test is an Ubuntu 24.04 container** (no VM, Q4's default). Real: apt, users, keys, `sshd -t`, `visudo`, `sudo -l`, git. Faked: systemd, the clock, UFW and swap, which a container cannot run. The first full run on a real host is the VPS.
+9. **`prelaunch-check.sh` prints PASS, FAIL, N/A or MANUAL lines and never a value.** `--local` marks the VPS-only checks N/A; CI runs it against its development stack and asserts what must pass, what must fail, and that no `.env` value reaches the output.
+10. **`check-early-exit-pipes.sh` no longer takes `||` for a pipe** (it flagged `x || grep -q`, found while writing bootstrap). shellcheck now runs in CI on every script, at warning level.
 
 ## 2026-11-01 — The runtime database role sirat_app (Claude; LAUNCH-PLAN L2, OPEN-QUESTIONS #27)
 
@@ -134,6 +205,8 @@ One short entry per non-obvious technical or product decision. Newest first. For
    The k6 script retries a busy start as the wizard does.
 6. **The shared-IP test** (300 starts from one IP, then the 301st refused) no longer depends on wall time. The first start goes alone, its throttler window gets a long TTL, and all 301 count in that one window. It passed with a 61 s pause added.
 7. **Not changed:** the transaction limits (answering 503 fast is better than waiting longer), and `connection_limit` (A2's L14 VPS tuning).
+8. **The shared-IP budget (lead; for the VPS k6 run and A2's L14):** a busy 503 still counts against the IP's start limit (300 a minute), and the wizard's one retry counts again. So a school behind one IP could reach 429 sooner during a database-busy burst.
+   - The shared-IP test now accepts 201 or 503 `SERVICE_BUSY` for the first 300 starts, and still requires the 301st to be refused with 429.
 
 ## 2026-11-01 — The audit-log viewer (core; lead's task, plan and review, M13)
 
