@@ -89,14 +89,22 @@ s=0; run || s=$?
 check "exits 0 (apt installed the packages)" test "$s" = 0
 check "deploy exists, in the docker group" grep -qx docker <<< "$(id -nG deploy | tr ' ' '\n')"
 check "deploy has no password (its login is locked)" bash -c '[ "$(passwd -S deploy | cut -d" " -f2)" = L ]'
-check "SSH is left alone" test ! -e /etc/ssh/sshd_config.d/50-sirat.conf
+check "SSH is left alone" bash -c '[ ! -e /etc/ssh/sshd_config.d/00-sirat.conf ] && [ ! -e /etc/ssh/sshd_config.d/50-sirat.conf ]'
+check "Etc/UTC counts as UTC: the timezone is left alone" bash -c '! grep -q "timedatectl set-timezone" /fake/state/calls'
 check "and it says why" said "SSH stays as it is until deploy has keys"
 
-echo "3. with keys"
+echo "3. with keys, on a cloud image that allows passwords"
+# A cloud image's drop-in, read before 50-sirat.conf ('c' < 's'): sshd keeps the first value it reads. And the
+# drop-in an earlier bootstrap wrote under its old name.
+printf 'PasswordAuthentication yes\n' > /etc/ssh/sshd_config.d/50-cloud-init.conf
+printf 'PermitRootLogin no\n' > /etc/ssh/sshd_config.d/50-sirat.conf
 s=0; run --authorized-keys "$WORK/keys" || s=$?
 check "exits 0" test "$s" = 0
 check "authorized_keys holds the key (600, .ssh 700)" bash -c "[ \"\$(cat /home/deploy/.ssh/authorized_keys)\" = \"\$(cat $WORK/keys)\" ] && [ \"\$(stat -c %a /home/deploy/.ssh/authorized_keys)\" = 600 ] && [ \"\$(stat -c %a /home/deploy/.ssh)\" = 700 ]"
-check "sshd: no root login, no passwords" bash -c 'grep -qx "PermitRootLogin no" /etc/ssh/sshd_config.d/50-sirat.conf && grep -qx "PasswordAuthentication no" /etc/ssh/sshd_config.d/50-sirat.conf'
+check "sshd: no root login, no passwords, in 00-sirat.conf (read first)" bash -c 'grep -qx "PermitRootLogin no" /etc/ssh/sshd_config.d/00-sirat.conf && grep -qx "PasswordAuthentication no" /etc/ssh/sshd_config.d/00-sirat.conf'
+check "the old 50-sirat.conf is gone" test ! -e /etc/ssh/sshd_config.d/50-sirat.conf
+check "sshd -T: no passwords despite 50-cloud-init.conf, no root, no keyboard-interactive" bash -c 'mkdir -p /run/sshd && t=$(sshd -T) && grep -qx "passwordauthentication no" <<< "$t" && grep -qx "permitrootlogin no" <<< "$t" && grep -qx "kbdinteractiveauthentication no" <<< "$t"'
+check "and bootstrap checked it" said "sshd -T: no passwords, no root login, no keyboard-interactive login"
 check "sshd -t accepts it" bash -c 'mkdir -p /run/sshd && sshd -t'
 check "ssh was reloaded" grep -qx "systemctl reload ssh" /fake/state/calls
 check "the sudo rule is exactly one command" bash -c '[ "$(grep -v "^#" /etc/sudoers.d/sirat-deploy)" = "deploy ALL=(root) NOPASSWD: /usr/bin/systemctl start sirat-backup.service" ]'
@@ -116,11 +124,22 @@ check "the backup timers wait for a remote" bash -c '! grep -q "enable --now sir
 check "the monitor's two cron lines" bash -c 'grep -qx "\*/5 \* \* \* \* deploy /srv/sirat/scripts/monitor.sh 2>&1 | logger -t sirat-monitor" /etc/cron.d/sirat-monitor && grep -qx "0 2 \* \* \* deploy /srv/sirat/scripts/monitor.sh --digest 2>&1 | logger -t sirat-monitor" /etc/cron.d/sirat-monitor'
 check "overcommit and swap" bash -c 'grep -qx "vm.overcommit_memory = 1" /etc/sysctl.d/90-sirat.conf && grep -q "^/swapfile " /etc/fstab'
 check "updates without an automatic reboot" grep -qx 'Unattended-Upgrade::Automatic-Reboot "false";' /etc/apt/apt.conf.d/52sirat-unattended
-check "UTC, chrony, fail2ban and the DOCKER-USER guard enabled" bash -c '[ "$(cat /fake/state/tz)" = UTC ] && for u in chrony fail2ban sirat-docker-user; do grep -qx "$u" /fake/state/enabled || exit 1; done'
+check "chrony, fail2ban and the DOCKER-USER guard enabled" bash -c 'for u in chrony fail2ban sirat-docker-user; do grep -qx "$u" /fake/state/enabled || exit 1; done'
 check "the DOCKER-USER guard lets only 80 and 443 through" bash -c 'grep -q "ctorigdstport 80 -j RETURN" /usr/local/sbin/sirat-docker-user && grep -q "ctorigdstport 443 -j RETURN" /usr/local/sbin/sirat-docker-user && grep -q -- "-j DROP" /usr/local/sbin/sirat-docker-user && [ -x /usr/local/sbin/sirat-docker-user ]'
 check "UFW: deny incoming, allow ssh, 80, 443" bash -c 'grep -q "ufw default deny incoming" /fake/state/calls && grep -q "ufw allow 443/tcp" /fake/state/calls'
 check "it lists what is left for the owner" bash -c 'grep -q "left for the owner:" '"$WORK/out.log"' && grep -q "provider.s firewall panel" '"$WORK/out.log"
 check "no secret value in the output" bash -c '! grep -qiE "password=|secret=.+|token=.+|PRIVATE KEY" '"$WORK/out.log"
+
+echo "3b. an earlier drop-in that wins over bootstrap's: no silent password login"
+printf 'PasswordAuthentication yes\n' > /etc/ssh/sshd_config.d/00-aaa.conf
+: > /fake/state/calls
+s=0; run --authorized-keys "$WORK/keys" || s=$?
+check "exits 1" test "$s" = 1
+check "says which setting sshd -T does not show" said "sshd -T does not show 'passwordauthentication no' in effect"
+check "removes its drop-in and reloads ssh" bash -c '[ ! -e /etc/ssh/sshd_config.d/00-sirat.conf ] && grep -qx "systemctl reload ssh" /fake/state/calls'
+rm -f /etc/ssh/sshd_config.d/00-aaa.conf
+s=0; run --authorized-keys "$WORK/keys" || s=$?
+check "once that file is gone, the next run writes it again and passes" bash -c "[ $s = 0 ] && [ -e /etc/ssh/sshd_config.d/00-sirat.conf ]"
 
 echo "4. a second run"
 echo 'JWT_ACCESS_SECRET=typed-by-the-owner' >> /srv/sirat/.env
@@ -135,6 +154,11 @@ s=0; run || s=$?
 check "both timers enabled" bash -c "[ $s = 0 ] && grep -qx sirat-backup.timer /fake/state/enabled && grep -qx sirat-backup-verify.timer /fake/state/enabled"
 s=0; run || s=$?
 check "and the run after that changes nothing" bash -c "[ $s = 0 ] && grep -qx 'bootstrap: 0 change(s) made' $WORK/out.log"
+
+echo "6. a zone other than UTC is set to UTC"
+echo Asia/Dhaka > /fake/state/tz
+s=0; run --authorized-keys "$WORK/keys" || s=$?
+check "set to UTC" bash -c "[ $s = 0 ] && [ \"\$(cat /fake/state/tz)\" = UTC ]"
 
 if [ "$failures" -gt 0 ]; then
   echo "bootstrap's last output:"

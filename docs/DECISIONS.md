@@ -20,6 +20,11 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - `prelaunch-check.sh` fails while any file exists, and every k6 run ends with `off`.
    - Nothing else enforces the expiry: nginx keeps trusting the file until `off`.
 8. **The registration staging's cookies are not Secure** (`COOKIE_SECURE=false`, only there): payments' k6 script uses k6's cookie jar, which does not send Secure cookies over plain http, so the result page could never read its registration. The first rehearsal failed exactly there (`current 200`: 0 of 1,275). The API allows it because that staging runs in development mode; the exam staging stays in production mode with Secure cookies, which the exam simulation keeps itself.
+## 2026-11-01 — bootstrap's sshd drop-in sorts first, and sshd -T proves it (L12 fix; exam session, found by the lead on the VPS)
+
+1. **sshd keeps the first value it reads, and it reads `/etc/ssh/sshd_config.d/*.conf` in lexical order.** The VPS image ships `50-cloud-init.conf` with `PasswordAuthentication yes`, which sorted before bootstrap's `50-sirat.conf` ('c' < 's'), so password logins would have stayed on. The drop-in is now `00-sirat.conf`, and the old name is removed.
+2. **Every run checks the effective settings with `sshd -T`:** `passwordauthentication no`, `permitrootlogin no`, `kbdinteractiveauthentication no`. If a file that sorts even earlier overrides them, bootstrap removes its drop-in, reloads ssh and exits 1 (the previous state, so no lockout), and names the setting.
+3. **Ubuntu 26.04 LTS is accepted** next to 24.04 (the VPS runs 26.04.1). The bootstrap test runs on either image (`BOOTSTRAP_TEST_IMAGE`). **`Etc/UTC` counts as UTC**, so a cloud image's zone is no longer re-set.
 
 ## 2026-11-01 — Real IPs and shared IPs (Claude; LAUNCH-PLAN L4)
 

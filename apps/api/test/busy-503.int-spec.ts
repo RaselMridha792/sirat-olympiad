@@ -85,6 +85,29 @@ describe('POST /registrations/start meets a busy database', () => {
   });
 });
 
+describe("the payments tests' start helper (startRegistration) on a loaded dev database", () => {
+  it('sends a busy start again with the same startRequestId and registers once', async () => {
+    const tx = jest
+      .spyOn(prisma, '$transaction')
+      .mockRejectedValueOnce(busy('P2028'))
+      .mockRejectedValueOnce(busy('P2024'));
+    const started = await startRegistration(env);
+    expect(tx).toHaveBeenCalledTimes(3); // two busy answers, then the start that commits
+    expect(await env.prisma.pendingRegistration.count({ where: { email: started.email } })).toBe(1);
+    expect(
+      await env.prisma.payment.count({ where: { pendingRegistrationId: started.attemptId } }),
+    ).toBe(1);
+  }, 30_000);
+
+  it('still fails on a 500: only SERVICE_BUSY is sent again', async () => {
+    const tx = jest
+      .spyOn(prisma, '$transaction')
+      .mockRejectedValueOnce(new Error('not a busy error'));
+    await expect(startRegistration(env)).rejects.toThrow(/start answered 500/);
+    expect(tx).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('POST /auth/login meets a busy database', () => {
   it('answers 503 and never counts as a failed login: no lock after more busy tries than the limit', async () => {
     const password = 'Calm-harbour-river-7';
