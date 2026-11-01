@@ -11,6 +11,8 @@ import { AuditService } from './audit.service';
 export type SecurityAlertKind =
   | 'login.account_limit' // an account reached its hourly failure limit
   | 'login.distributed' // more distinct IPs than the threshold failed on one account within the hour
+  | 'two_factor.recovery_used' // a 2FA recovery code was used (the login's code step, or turning 2FA off)
+  | 'two_factor.reset' // an account's 2FA was reset by another admin or the break-glass CLI
   | 'payments.disabled_in_production' // PAYSTATION_ENV is blank on a production server (lead, 2026-10-31)
   | 'payments.fee_invalid' // settings.registration_fee_minor is not a valid fee: no payment can start
   | 'payments.credentials_rejected' // PayStation answered "1001": payments paused (lead, 2026-10-31)
@@ -43,6 +45,8 @@ export type AlertCategory = (typeof ALERT_CATEGORIES)[number];
 export const ALERT_CATEGORY: Record<SecurityAlertKind, AlertCategory> = {
   'login.account_limit': 'security',
   'login.distributed': 'security',
+  'two_factor.recovery_used': 'security',
+  'two_factor.reset': 'security',
   'payments.disabled_in_production': 'payments',
   'payments.fee_invalid': 'payments',
   'payments.credentials_rejected': 'payments',
@@ -88,6 +92,8 @@ export const ALERTS_IN_PRODUCTION = Symbol('ALERTS_IN_PRODUCTION');
 const TITLES: Record<SecurityAlertKind, string> = {
   'login.account_limit': 'An account reached its hourly limit of failed logins',
   'login.distributed': 'Failed logins on one account from many IP addresses',
+  'two_factor.recovery_used': 'A two-factor recovery code was used',
+  'two_factor.reset': "An account's two-factor login was reset",
   'payments.disabled_in_production': 'Payments are disabled: PAYSTATION_ENV is blank in production',
   'payments.fee_invalid':
     'Registration payments stopped: the registration fee setting is not valid',
@@ -128,9 +134,10 @@ export function securityAlertMessage(
   at: Date,
 ): EmailMessage {
   // A login alert without an account keeps its line (owner-approved, #7): it tells the operator that someone is
-  // trying an email that has no account. Payments and ops alerts without one carry their own details instead.
+  // trying an email that has no account. Other alerts without one (the break-glass 2FA reset, payments, ops) carry
+  // their own details instead.
   const account =
-    event.actorId ?? (ALERT_CATEGORY[kind] === 'security' ? 'no account with that email' : null);
+    event.actorId ?? (kind.startsWith('login.') ? 'no account with that email' : null);
   const lines = [
     TITLES[kind],
     '',
