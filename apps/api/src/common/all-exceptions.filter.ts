@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import type { ApiError } from '@sirat/shared';
+import { isBusyDbError } from './db-errors';
 
 /**
  * Errors raised by body-parser / raw-body (the `http-errors` shape): client mistakes such as a body over the
@@ -25,6 +26,9 @@ const CLIENT_ERROR_MESSAGES: Readonly<Record<number, string>> = {
 
 /** An application error code an HttpException may carry in its body (`{ code, message }`), e.g. EMAIL_REGISTERED. */
 const APP_CODE = /^[A-Z][A-Z0-9_]{2,40}$/;
+
+/** Seconds a client waits before sending a request again that met a busy database (503 SERVICE_BUSY). */
+export const BUSY_RETRY_AFTER_SECONDS = 2;
 
 /** Only these Prisma `meta` keys are logged: they name the model/constraint/column, never values. */
 const SAFE_PRISMA_META_KEYS = ['modelName', 'target', 'constraint', 'field_name'] as const;
@@ -89,6 +93,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
         method: req.method,
         path: req.path,
         status,
+      });
+    } else if (isBusyDbError(exception)) {
+      // The database refused for a passing reason and nothing was applied (db-errors.ts): the same request can be
+      // sent again. Non-HTTP errors only: an HttpException (refresh's own 503 included) is answered as it is above.
+      status = HttpStatus.SERVICE_UNAVAILABLE;
+      appCode = 'SERVICE_BUSY';
+      message = 'The service is busy. Try again in a moment.';
+      res.setHeader('Retry-After', String(BUSY_RETRY_AFTER_SECONDS));
+      this.logger.warn({
+        msg: 'database busy',
+        ...errorLogFields(exception),
+        method: req.method,
+        path: req.path,
       });
     } else {
       this.logger.error({
