@@ -80,11 +80,12 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 
-# req <peer> <CF-Connecting-IP or -> <path>: "<status> <body>" of one request to nginx from that peer.
+# req <peer> <CF-Connecting-IP or -> <path> [post]: "<status> <body>" of one request to nginx from that peer.
 req() {
   local peer=$1 client=$2 path=$3 out code
   local -a header=()
   [ "$client" = - ] || header=(--header "CF-Connecting-IP: $client")
+  [ "${4:-}" != post ] || header+=(--header 'Content-Type: application/json' --post-data '{}')
   if out=$(dk exec "$run-$peer" wget -q -T 5 -O- "${header[@]}" "http://$nginx_ip$path" 2>&1); then
     printf '200 %s' "$out"
   else
@@ -124,11 +125,15 @@ done <<'EOF'
 EOF
 
 # ---- the buckets (rates lowered in the copy: 1 a minute, burst 2, so the fourth request in a row is refused) ----
-burst() { # burst <peer> <client>: the status of the fourth request in a row
-  local i last=''
-  for i in 1 2 3 4; do last=$(req "$1" "$2" /api/bucket); done
+burst() { # burst <peer> <client> [path] [post]: the status of the fourth request in a row
+  local last=''
+  for _ in 1 2 3 4; do last=$(req "$1" "$2" "${3:-/api/bucket}" "${4:-}"); done
   printf '%s' "${last%% *}"
 }
+check "the auth zone: a client that logs in too often gets 429" \
+  is "$(burst trusted 198.51.100.21 /api/auth/login post)" 429
+check "the auth zone: another client is not touched by that 429" \
+  is "$(req trusted 198.51.100.22 /api/auth/login post)" "200 real=198.51.100.22"
 check "a client that sends too much gets 429" is "$(burst trusted 198.51.100.1)" 429
 check "another IPv4 client is not touched by that 429" is "$(req trusted 198.51.100.2 /api/bucket)" "200 real=198.51.100.2"
 check "an IPv6 client that sends too much gets 429" is "$(burst trusted 2001:db8:7:7::a)" 429
@@ -158,6 +163,9 @@ check "a range is refused as usage (exit 2)" is "$code" 2
 code=0
 gen on "$generator_ip" --hours 13 > /dev/null 2>&1 || code=$?
 check "more than 12 hours is refused as usage (exit 2)" is "$code" 2
+code=0
+gen on 2001:db8::7 > /dev/null 2>&1 || code=$?
+check "an IPv6 generator is refused as usage (exit 2: the server listens on IPv4)" is "$code" 2
 
 echo
 if [ "$failures" -gt 0 ]; then

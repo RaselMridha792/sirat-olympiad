@@ -4,7 +4,7 @@
 # on 443 (SNI and Host = the public host) and sends `CF-Connecting-IP: <simulated client address>`, so a few machines
 # can play many clients and shared IPs. The header from anyone else stays ignored.
 #
-#   scripts/loadtest-generators.sh on <ip>[,<ip>...] [--hours N]   trust these generators: single IPv4 or IPv6
+#   scripts/loadtest-generators.sh on <ip>[,<ip>...] [--hours N]   trust these generators: single IPv4
 #                                                                   addresses, at most 4, for N hours (default 2, max 12)
 #   scripts/loadtest-generators.sh off                              trust none again (idempotent)
 #   scripts/loadtest-generators.sh status                           on or off, the addresses and the expiry
@@ -49,31 +49,12 @@ else
   in_nginx() { "${DC[@]}" exec -T nginx "$@"; }
 fi
 
-# ---- addresses: one IPv4 or IPv6 address each; no prefix length, zone, brackets, IPv4 tail or host name ----
+# ---- addresses: one IPv4 address each (the server listens on IPv4 only, so nginx never sees an IPv6 peer; the
+# simulated client addresses in CF-Connecting-IP may still be IPv6); no prefix length or host name ----
 is_ipv4() {
   local octet='(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])'
   local re="^${octet}\.${octet}\.${octet}\.${octet}\$"
   [[ $1 =~ $re ]]
-}
-is_ipv6() {
-  local h='[0-9A-Fa-f]{1,4}' head tail colons groups=0
-  local full="^${h}(:${h}){7}\$" part="^${h}(:${h})*\$"
-  if [[ $1 =~ $full ]]; then return 0; fi
-  [[ $1 == *::* ]] || return 1
-  head=${1%%::*}
-  tail=${1#*::}
-  # Each side of the one "::" is empty or whole groups (a second "::" leaves an empty group in the tail).
-  if [ -n "$head" ]; then
-    [[ $head =~ $part ]] || return 1
-    colons=${head//[^:]/}
-    groups=$((groups + ${#colons} + 1))
-  fi
-  if [ -n "$tail" ]; then
-    [[ $tail =~ $part ]] || return 1
-    colons=${tail//[^:]/}
-    groups=$((groups + ${#colons} + 1))
-  fi
-  [ "$groups" -le 7 ]
 }
 
 # ---- the state: the file and what nginx's include also matches ----
@@ -144,17 +125,19 @@ nginx_sees() { # nginx_sees present|absent: the container shows what the clone n
   done
   return 1
 }
-apply() { # nginx -t, then a reload; on a failure the previous state comes back and nothing is reloaded
-  local out
+apply() { # apply on|off: nginx -t, then a reload. On a failure, `on` puts the previous state back; `off` leaves the
+  # file removed (the safe state for every later reload), and the running nginx keeps the old list until a reload works.
+  local mode=$1 out after
+  if [ "$mode" = on ]; then after='the previous state is back'; else after="the file stays removed, but nginx trusts the generators until a reload works: run off again"; fi
   if ! out=$(in_nginx "${NGINX[@]}" -t 2>&1); then
-    restore
+    if [ "$mode" = on ]; then restore; fi
     printf '%s\n' "$out" >&2
-    fail "nginx -t failed (above): the previous state is back, nginx was not reloaded"
+    fail "nginx -t failed (above): $after"
   fi
   if ! out=$(in_nginx "${NGINX[@]}" -s reload 2>&1); then
-    restore
+    if [ "$mode" = on ]; then restore; fi
     printf '%s\n' "$out" >&2
-    fail "the reload failed (above): the previous state is back"
+    fail "the reload failed (above): $after"
   fi
 }
 
@@ -173,7 +156,7 @@ cmd_on() { # cmd_on <hours> <address>...
     restore
     fail "the nginx container does not show the new $FILE (does it mount this clone?): the previous state is back"
   fi
-  apply
+  apply on
   status_line
   warn_others
 }
@@ -182,15 +165,13 @@ cmd_off() {
   preflight
   if [ -f "$FILE" ]; then
     had=1
-    cp "$FILE" "$work/previous"
     rm -f "$FILE"
   fi
   if ! nginx_sees absent; then
-    restore
-    fail "the nginx container still shows $SEEN_AS (does it mount this clone?): the previous state is back"
+    fail "the nginx container still shows $SEEN_AS (does it mount this clone?): the file stays removed here"
   fi
   # Reloaded even without a file: an earlier `off` may have removed it and then failed to reload.
-  apply
+  apply off
   if [ "$had" = 1 ]; then say off; else say "off (already)"; fi
   warn_others
 }
@@ -228,7 +209,8 @@ case "${1:-}" in
     [ "${#addresses[@]}" -le "$MAX_ADDRESSES" ] || usage "at most $MAX_ADDRESSES addresses"
     declare -A listed=()
     for address in "${addresses[@]}"; do
-      is_ipv4 "$address" || is_ipv6 "$address" || usage "not a single IPv4 or IPv6 address: $address"
+      is_ipv4 "$address" ||
+        usage "not a single IPv4 address: $address (the server listens on IPv4: list the address the generator connects from)"
       [ -z "${listed[${address,,}]:-}" ] || usage "listed twice: $address"
       listed[${address,,}]=1
     done
