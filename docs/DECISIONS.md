@@ -21,6 +21,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 7. **Tests:** `admin-stats.int-spec.ts` (6) and the `dhakaDays` unit spec.
    - `admin-stats.int-spec.ts` covers every count as a difference around its own rows (the test database is shared), the Dhaka day edges, the burst computing once, the cache serving the same `asOf`, the Postgres fallback, the roles, and the counts-only scan.
    - web: `http/stats.test.ts` (picks at every level, shape refusals).
+
 ## 2026-11-01 — Registration surge, local k6 (Claude; payments PR 5, plan step 13; provisional until the VPS)
 
 1. **The scenario** (`loadtests/registration-surge.js`). One iteration is one student, as the browser would do it:
