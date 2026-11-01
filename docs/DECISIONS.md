@@ -20,6 +20,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - It uses the session cleanup's batch loop, now shared (`batch-drain.ts`): 1,000 rows per batch, `FOR UPDATE SKIP LOCKED`, `SET LOCAL statement_timeout`, a cap, idempotent.
    - Counts-only log and audit (`housekeeping.attempt_scrub`). A failed run shows in ops-check as a warning on the same queue.
    - No migration: `@@index([status, updatedAt])` and the payments foreign-key index serve the scans.
+
 ## 2026-11-01 — Bootstrap and the pre-launch checks (L12; exam session, LAUNCH-PLAN §2 and §7, owner Q4 default)
 
 1. **`bootstrap.sh` is idempotent and safe to repeat:** every step looks before it changes anything, and the owner runs it again after each of their steps. `--dry-run` lists the changes without making them. Settings files come from their examples only when missing and are never overwritten: the owner types the secrets, and the script never prints one.
