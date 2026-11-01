@@ -1,4 +1,14 @@
-import { BookOpen, Gift, Home, Megaphone, Trophy, User, Users, UsersRound } from 'lucide-react';
+import {
+  BookOpen,
+  Flag,
+  Gift,
+  Home,
+  Megaphone,
+  Trophy,
+  User,
+  Users,
+  UsersRound,
+} from 'lucide-react';
 import { initialOf, type NavItem } from '@sirat/ui';
 import { LogoutButton } from '@/components/auth/LogoutButton';
 import { I18nProvider } from '@/components/I18nProvider';
@@ -38,6 +48,7 @@ export default async function StudentLayout({ children }: { children: React.Reac
       label: m.nav.announcements,
       icon: <Megaphone size={20} aria-hidden />,
     },
+    { href: '/dashboard/round', label: m.nav.round, icon: <Flag size={20} aria-hidden /> },
     { href: '/dashboard/team', label: m.nav.team, icon: <UsersRound size={20} aria-hidden /> },
     ...(canOpen('/dashboard/ambassador', user.role)
       ? [
