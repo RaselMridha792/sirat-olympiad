@@ -16,6 +16,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - The rejected alternative was a flag that allows the fake under `production`: one wrong line in the real `.env` would then mark registrations paid without money.
 4. **The fake gained** `FAKE_PAYSTATION_HOST` (0.0.0.0 in a container), `FAKE_PAYSTATION_PUBLIC_URL` (the base of its checkout links) and `GET /__fake/health`.
 5. **CI** (the stack job, last step): it builds the image, restarts api and worker on the fake, and checks that everything is healthy, that no port is published, that the health route answers by service name, and that `/api/registrations/info` through nginx shows the fee, i.e. the api accepted the fake.
+
 ## 2026-11-01 — Ambassador teams (core C5b-3; lead's plan and rules)
 
 1. **Shape (CORE-PLAN D7):**
