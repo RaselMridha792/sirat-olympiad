@@ -26,6 +26,7 @@ export const LAUNCH = {
   '/dashboard/leaderboard': 'live',
   '/dashboard/profile': 'live',
   '/dashboard/profile/edit': 'live',
+  '/dashboard/team': 'live',
   '/admin': 'live',
   '/admin/ambassadors': 'live',
   '/admin/announcements': 'live',
@@ -40,6 +41,7 @@ export const LAUNCH = {
   '/admin/payments': 'live',
   '/admin/settings': 'live',
   '/admin/tasks': 'live',
+  '/admin/teams': 'live',
   '/admin/users': 'live',
 } as const satisfies LaunchTable;
 

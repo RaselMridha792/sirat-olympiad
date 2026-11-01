@@ -31,7 +31,7 @@ Options:
 - A start that answers 503 `SERVICE_BUSY` (a busy database) is sent once more, as the wizard does; `start_busy_retried` and `start_busy_after_retry` count them.
 - `SPREAD_IPS` (default 1): one `X-Forwarded-For` address per student, for k6 talking to the API directly. Through nginx the generator's own address counts instead, and the start limit of 300/min per IP applies to it.
 
-The setup is in `docs/RUNBOOK.md` §0; the local numbers are in `docs/DECISIONS.md` ("Registration surge, local k6").
+As a container for a load or staging stack: `infra/fake-paystation.compose.yml` (k6 inside the project, base URL `http://nginx`). Such a stack runs api and worker with `NODE_ENV=development` (logs pinned to info), because the API refuses the fake under `production`. Its numbers are therefore a development-mode API's: the VPS run with the real gateway path decides DoD #17. The setup is in `docs/RUNBOOK.md` §0; the local numbers are in `docs/DECISIONS.md` ("Registration surge, local k6").
 
 ## `exam-simulation.js` (exam engine, E6)
 
@@ -39,7 +39,7 @@ Students take the exam as the exam room does:
 - log in, open the dashboard's exam list and the waiting room;
 - start the attempt;
 - answer locally and send a checkpoint every 60–120 s (the server refuses one sooner than 20 s after the last);
-- submit with a client request id (sent once more with the same id after a 5xx), then open the waiting room, which must show the receipt.
+- submit with a client request id (sent again with the same id after no answer, a 429 or a 5xx, on the exam room's backoff of 2, 4, 8, 16 and 30 s), then open the waiting room, which must show the receipt.
 
 A share of the students (`LEAVE_SHARE`, default 2 %) close the tab instead: the worker's sweep submits their last checkpoint once the time and the grace are over.
 

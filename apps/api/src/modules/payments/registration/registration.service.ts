@@ -239,9 +239,9 @@ export class RegistrationService {
       amountMinor: latest?.amountMinor ?? null,
       currency: latest?.currency ?? null,
       expiresAt: latest?.expiresAt.toISOString() ?? null,
-      canResume: attempt.status === RegistrationAttemptStatus.open && canResume(latest, now),
+      canResume: usable(attempt) && canResume(latest, now),
       canRetry:
-        attempt.status === RegistrationAttemptStatus.open &&
+        usable(attempt) &&
         !!latest &&
         (latest.status === PaymentStatus.failed || latest.status === PaymentStatus.expired) &&
         isRegistrationOpen(settings, now),
@@ -256,6 +256,7 @@ export class RegistrationService {
         'NO_REGISTRATION',
         'No registration in progress in this browser',
       );
+    if (scrubbed(attempt)) await this.startOver(attempt);
     const latest = attempt.payments[0] ?? null;
     if (attempt.status !== RegistrationAttemptStatus.open || !canResume(latest, now))
       throw error(ConflictException, 'NOTHING_TO_RESUME', 'There is no payment to continue');
@@ -288,6 +289,7 @@ export class RegistrationService {
         'NO_REGISTRATION',
         'No registration in progress in this browser',
       );
+    if (scrubbed(attempt)) await this.startOver(attempt);
     const latest = attempt.payments[0];
     if (latest && isActive(latest.status))
       throw error(ConflictException, 'RETRY_NOT_ALLOWED', 'A payment is still in progress');
@@ -484,6 +486,27 @@ export class RegistrationService {
     });
   }
 
+  /**
+   * An open attempt whose stored form the nightly scrub cleared (PAYMENTS-PLAN 4.3, D6; housekeeping/attempt-scrub.ts)
+   * can never become an account, and a new payment on it would be money with no account to give. It is given up, and
+   * the student is asked to fill in the form again (a new attempt). Never a 500.
+   */
+  private async startOver(attempt: PendingRegistration): Promise<never> {
+    await this.prisma.pendingRegistration.updateMany({
+      where: {
+        id: attempt.id,
+        status: RegistrationAttemptStatus.open,
+        payload: { equals: Prisma.DbNull },
+      },
+      data: { status: RegistrationAttemptStatus.abandoned },
+    });
+    throw error(
+      ConflictException,
+      'START_OVER',
+      'This registration has expired. Please fill in the form again.',
+    );
+  }
+
   private async replay(
     attempt: AttemptWithLatest,
     email: string,
@@ -497,6 +520,10 @@ export class RegistrationService {
         'EMAIL_REGISTERED',
         text('EMAIL_REGISTERED', 'Already registered. Please log in.'),
       );
+    // The nightly scrub cleared this attempt's form (D6): it can never become an account. A new request id lets the
+    // same form start a new attempt (start gives the old one up).
+    if (attempt.payload === null)
+      throw error(BadRequestException, 'START_REQUEST_REUSED', 'Start the form again');
     const latest = attempt.payments[0];
     if (!latest || latest.status === PaymentStatus.initiated)
       throw error(
@@ -774,6 +801,16 @@ const paymentView = (p: PaymentRow): PaymentView => ({
   createdAt: p.createdAt.toISOString(),
   paidAt: p.paidAt?.toISOString() ?? null,
 });
+
+/** An open attempt whose stored form the nightly scrub cleared (D6): it can never become an account. */
+function scrubbed(attempt: { status: RegistrationAttemptStatus; payload: unknown }): boolean {
+  return attempt.status === RegistrationAttemptStatus.open && attempt.payload === null;
+}
+
+/** An open attempt that can still become an account: a payment on it may start or continue. */
+function usable(attempt: { status: RegistrationAttemptStatus; payload: unknown }): boolean {
+  return attempt.status === RegistrationAttemptStatus.open && attempt.payload !== null;
+}
 
 function canResume(latest: Payment | null | undefined, now: Date): boolean {
   return (

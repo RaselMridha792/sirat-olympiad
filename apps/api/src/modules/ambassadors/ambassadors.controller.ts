@@ -13,7 +13,11 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import {
+  TEAM_LIMITS,
   TASK_LIMITS,
+  type AdminTeamDetail,
+  type AdminTeamRow,
+  type MyTeam,
   type AdminTaskReviewRow,
   type AdminTaskRow,
   type TaskAssignResult,
@@ -32,6 +36,8 @@ import type { AuthUser } from '../auth/access-token.service';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { AmbassadorPointsService } from './ambassador-points.service';
 import { AmbassadorTasksService } from './ambassador-tasks.service';
+import { TeamsService } from './teams.service';
+import { AdminTeamQueryDto, CreateTeamDto, JoinTeamDto, RenameTeamDto } from './dto/teams.dto';
 import { type Actor, AmbassadorsService } from './ambassadors.service';
 import { AdjustPointsDto, UpdateAmbassadorPointsDto } from './dto/ambassador-points.dto';
 import {
@@ -49,6 +55,8 @@ const actorOf = (user: AuthUser, req: Request): Actor => ({ id: user.id, ip: req
 
 /** Proof submissions per ambassador (lead: a rejected task can be submitted again, so it is bounded). */
 const SUBMIT_TIER = { default: { limit: TASK_LIMITS.submitsPer10Min, ttl: 10 * 60 * 1000 } };
+/** Team joins per user in 10 minutes; the service adds a per-IP count (refusals count too: the codes are short). */
+const JOIN_TIER = { default: { limit: TEAM_LIMITS.joinsPerUser, ttl: 10 * 60 * 1000 } };
 
 /** The ambassador's own panel (06-API "Ambassadors"). No id: the user comes from the session. */
 @Controller('ambassador')
@@ -57,7 +65,18 @@ export class AmbassadorController {
   constructor(
     private readonly ambassadors: AmbassadorsService,
     private readonly tasks: AmbassadorTasksService,
+    private readonly teams: TeamsService,
   ) {}
+
+  /** One team per ambassador; the owner becomes its first member. */
+  @Post('teams')
+  createTeam(
+    @Body() body: CreateTeamDto,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ): Promise<MyTeam> {
+    return this.teams.create(body.name, actorOf(user, req));
+  }
 
   @Get('me')
   me(@CurrentUser() user: AuthUser): Promise<AmbassadorOverview> {
@@ -238,5 +257,67 @@ export class AdminTasksController {
     @Req() req: Request,
   ): Promise<TaskReviewResult> {
     return this.tasks.reject(id, body.note, actorOf(user, req));
+  }
+}
+
+/** A student's or an ambassador's own team (06-API "Ambassadors", core C5b-3). No id: the user comes from the session. */
+@Controller('teams')
+@Roles('student', 'ambassador')
+export class TeamsController {
+  constructor(private readonly teams: TeamsService) {}
+
+  @Get('mine')
+  mine(@CurrentUser() user: AuthUser): Promise<MyTeam> {
+    return this.teams.mine(user.id);
+  }
+
+  @Throttle(JOIN_TIER)
+  @Post('join')
+  @HttpCode(200)
+  join(
+    @Body() body: JoinTeamDto,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ): Promise<MyTeam> {
+    return this.teams.join(body.code, actorOf(user, req));
+  }
+
+  @Post('mine/leave')
+  @HttpCode(204)
+  leave(@CurrentUser() user: AuthUser, @Req() req: Request): Promise<void> {
+    return this.teams.leave(actorOf(user, req));
+  }
+}
+
+/** Teams for admins: list, detail with members, and rename (moderation, audited with a reason). */
+@Controller('admin/teams')
+@Roles('admin')
+export class AdminTeamsController {
+  constructor(private readonly teams: TeamsService) {}
+
+  @Get()
+  list(
+    @Query() query: AdminTeamQueryDto,
+    @CurrentUser() user: AuthUser,
+  ): Promise<Paginated<AdminTeamRow>> {
+    return this.teams.list(user.id, query);
+  }
+
+  @Get(':id')
+  get(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthUser,
+  ): Promise<AdminTeamDetail> {
+    return this.teams.get(user.id, id);
+  }
+
+  @Patch(':id')
+  rename(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: RenameTeamDto,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ): Promise<AdminTeamRow> {
+    return this.teams.rename(id, body, actorOf(user, req));
   }
 }

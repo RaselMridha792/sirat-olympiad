@@ -2,6 +2,104 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-01 — Exam simulation, local k6 (E6; exam session, EXAM-PLAN 6.2; provisional until the VPS)
+
+1. **The scenario** (`loadtests/exam-simulation.js`). One iteration is one student, as the exam room does it:
+   - login, the exam list and the waiting room;
+   - start; a checkpoint every 60–120 s;
+   - the submit with the room's backoff (2, 4, 8, 16, 30 s, the same request id), then the room must show the receipt.
+
+   2 % close the tab instead, so the sweep is part of every run. Three shapes: `steady` (every start within 30 s), `surge` (starts ramp to a rate within 60 s) and `timeup` (every timer ends at `window_end`).
+2. **What passes:**
+   - the k6 thresholds: API p95 < 500 ms and errors < 0.5 %, per endpoint too; every submit gets a receipt, and the room shows it;
+   - zero lost submissions: every attempt submitted and scored; the students' own submissions equal the receipts k6 received; the sweep submitted exactly the students who left;
+   - no Postgres writes while the students only checkpoint.
+3. **Where:** its own compose project `sirat-exam-load` (`infra/docker-compose.yml` + `loadtests/exam-load.compose.yml`).
+   - PgBouncer, 2 API replicas in production mode (1 core each, as in the base file), throwaway settings; k6 on the project's network, straight to the replicas. Nothing touched `sirat` or `sirat_exam`.
+   - **The first try** ran the API on the Windows host, with k6 in a container. 19 requests failed with `dial: i/o timeout`: Docker Desktop's host forwarding held new connections for 30 s at a time. Node closes idle keep-alive after 5 s, so every checkpoint opens a new connection. The PC's CPU was at 25 % then, and the API logged no error. Nothing in the local run crosses that boundary now.
+   - **The students** come from a guarded fixture (`loadtest-fixtures.ts`): the dev fixtures' four guards, the payments rule shape, and the API's own argon2 parameters, so a login never re-hashes. A mutation check proved the test catches library defaults.
+   - **k6 keeps the session cookies itself.** They carry `Secure` in production, and k6's cookie jar does not send them over plain http.
+4. **Results** (a 3-minute exam, 30 questions; p95 in ms; PC CPU over the run; peak CPU of one container, in % of one core):
+
+   | Run | API p95 | login | start | checkpoint | submit | Errors | Lost | Checkpoint writes | PC CPU (median / p90) | Peak api / postgres |
+   |---|---|---|---|---|---|---|---|---|---|---|
+   | steady 300 | 83 | 189 | 116 | 5 | 21 | 0 of 2,149 | 0 (293 receipts, 7 by the sweep) | 0 | 10 / 18 % | 28 / 10 % |
+   | surge 300 at 5/s | 39 | 59 | 39 | 8 | 33 | 0 of 2,127 | 0 (293, 6) | — | 20 / 41 % | 24 / 13 % |
+   | surge 500 at 10/s | **2,070** | **3,650** | **3,250** | 19 | 31 | 0 of 3,585 | 0 (486, 13) | — | 41 / **100 %** | 130 / 54 % |
+   | timeup 300 | 51 | 74 | 60 | 7 | 45 | 0 of 2,031 | 0 (296, 4) | — | 22 / 38 % | 26 / 20 % |
+
+5. **Reading the numbers:**
+   - **Correctness held in every run:** no lost submission, no error, and every student who left was submitted by the sweep. Checkpoints wrote nothing to Postgres.
+   - **The time-up burst is cheap.** 296 submits landed within about 20 s of `window_end` with a p95 of 45 ms, because a submit is one small insert and the scoring runs in the worker.
+   - **The surge is the expensive phase.** Each student costs an argon2 login plus the layout draw and the attempt's insert.
+   - **The per-core rate:** at 5 starts/s, each replica used about a quarter of a core for 2.5 starts/s, so roughly 10 starts/s per API core.
+   - **Why 10/s missed:** the run kept checkpoints and submits fast (p95 19 and 31 ms) but missed on login and start. Its API spike came with the whole PC at a p90 of 100 % CPU (k6's 500 VUs, the stack and the other sessions on one machine). The shared PC was the limit, not the API's quota.
+6. **For the VPS run** (RULEBOOK §13):
+   - **The load:** k6 from other machines through nginx, against a staging stack (`scripts/load-staging.sh`, RUNBOOK §18), at 1.5–2× the expected peak: about 5,700–7,600 concurrent attempts (OPEN-QUESTIONS #24). Use a 30-minute exam with the surge at 10 starts/s.
+   - **Recommendation:** keep 4 API replicas over the 8 vCPUs, with no start jitter (D12) unless the VPS surge misses 500 ms. If it misses, raise the replicas first. Only then consider jitter (0–30 s before the client's start), which costs students time inside their window.
+
+## 2026-11-01 — The fake PayStation as a container for load and staging stacks (Claude; payments, exam's load kit, lead)
+
+1. **Its own image, never in the api image:** `apps/api/test/fake-paystation/Dockerfile` builds from that folder alone.
+   - It bundles the two source files with the workspace's esbuild version, and the final image holds one JS file on node:22-slim, running as `node`.
+   - The root `.dockerignore` still keeps `apps/api/test` out of every other image, and CI's image-contents check is unchanged.
+2. **An overlay, not a change to the main file:** `infra/fake-paystation.compose.yml` adds `fake-paystation` (internal port 18090, nothing published, read-only, a healthcheck on `GET /__fake/health`).
+   - It points api and worker at it: `PAYSTATION_ENV=fake`, placeholder credentials, the IPN straight to `http://api:4000`.
+   - The environment beats `env_file`, so real PayStation credentials in a server's `.env` are never used by such a stack.
+3. **`NODE_ENV=development` for api and worker in that stack:** the API refuses `PAYSTATION_ENV=fake` under `production`, a money safeguard that stays as it is.
+   - In the API, `development` only means debug logs (the overlay pins `LOG_LEVEL=info`), no https or Secure-cookie check, no superuser check, and no security-alert emails.
+   - It is the same image and the same code paths.
+   - The rejected alternative was a flag that allows the fake under `production`: one wrong line in the real `.env` would then mark registrations paid without money.
+4. **The fake gained** `FAKE_PAYSTATION_HOST` (0.0.0.0 in a container), `FAKE_PAYSTATION_PUBLIC_URL` (the base of its checkout links) and `GET /__fake/health`.
+5. **CI** (the stack job, last step): it builds the image, restarts api and worker on the fake, and checks that everything is healthy, that no port is published, that the health route answers by service name, and that `/api/registrations/info` through nginx shows the fee, i.e. the api accepted the fake.
+
+## 2026-11-01 — Ambassador teams (core C5b-3; lead's plan and rules)
+
+1. **Shape (CORE-PLAN D7):**
+   - One team per ambassador (`teams.owner_id` UNIQUE) and one team per student (`team_members.user_id` UNIQUE; the lead is a member).
+   - At most 10 members, counted under a row lock on the team, so two joins at once never pass 10.
+2. **Members are minors** (lead):
+   - The student view carries first names only (the first word of the name), never a last name or an email.
+   - Only the lead sees the join code.
+   - Admins see full names and emails in a team's detail.
+   - Audit rows keep ids only; `team.renamed` keeps the reason, never the old or new name.
+3. **The join code** is `TM-` + 6 Crockford characters (32^6, about 1.07 billion codes), CITEXT UNIQUE, with a CHECK for the format. It looks unlike a promo code, so a student does not mix them up. A collision runs the creation again (P2002).
+4. **The join throttle** (lead):
+   - 10 attempts per 10 minutes per user (the route's tier) and 60 per IP (a cache-Redis counter in the service, fail-open like the throttler).
+   - Every attempt counts before anything is looked up, refusals (404, 409) included.
+   - Guessing therefore stays slow: with 1,000 teams, one IP needs about a million tries, some 3,000 hours, on average.
+5. **A revoked or blocked lead** (lead): the team takes no new members (409 `team_closed`) and its members keep it; the admin list shows it as closed. No dissolve or hand-over in v1 (a later admin action if asked).
+6. **Leaving** (lead): members may leave; the lead may not (409 `owner_cannot_leave`), so a team always has its lead.
+7. **Admin rename** (lead): moderation for an unsuitable name, with a reason (3–200) and `expectedUpdatedAt` under a row lock, audited.
+8. **Schema** (one generated and one CHECKs migration): `teams.join_code` (CITEXT, UNIQUE); `teams.name` becomes CITEXT, so names are unique in any case; CHECKs for the name length (3–60) and the code format.
+9. **Web:**
+   - `/dashboard/team` for students and ambassadors: join with a code, the team with first names, leave; an ambassador without a team can start one and copy its code.
+   - The ambassador panel links to it.
+   - `/admin/teams` (admin only): search, the members, rename.
+   - A nav entry in both shells, the access and launch rows.
+10. **Tests:**
+    - `ambassador-teams.int-spec.ts` (9): create and the code; join in any case, first names only, leave, the lead may not; 12 joins at once stop at 10; a revoked lead closes the team; the per-user and per-IP limits with refusals counted; admin list, detail and rename with no names in the audit row; admins only; the CHECKs and the uniques.
+    - web: the area file picks (first names, the code for the lead only, a malformed id never sent), the problem mapper.
+
+## 2026-11-01 — The registration form's retention: abandoned and dead attempts (Claude; D6, PAYMENTS-PLAN 4.3, lead)
+
+1. **D6 as written:** an abandoned attempt's stored form (`payload`, with the argon2id password hash) is cleared 30 days after its last change.
+2. **Extended (lead; Rasel, please see):** an **open attempt that is dead** is cleared too. Dead means it was last changed over 30 days ago, has no payment initiated, pending, paid or refunded, and every checkout of it expired over 30 days ago, far past the 48 h late watch.
+   - Such a student never came back. Without this, their password hash and form would stay forever, which is what D6 exists to prevent.
+3. **Kept:** **conflict** attempts are an admin case, so the job never clears them. An admin clears one by hand once the case is closed (RUNBOOK §16).
+   - Completed attempts are cleared at settlement, as before.
+   - The row, name, email and phone stay for payment lookups, and so do the payments and their events. `updated_at` is not changed.
+4. **Money is never lost:** a payment that succeeds on an attempt whose form was cleared is marked paid and set aside as `attempt_invalid`, with no account. `attempt-scrub.int-spec` runs exactly that.
+5. **A student who comes back** with a cookie the browser kept (it should drop it after 7 days, but the server does not check the cookie's age):
+   - the result page offers no retry or resume for a cleared attempt;
+   - retry or resume answers 409 `START_OVER` (bn/en: "This registration has expired. Please fill in the form again.") and gives the attempt up, so no payment ever starts on it;
+   - the same form sent again asks for a new request id (`START_REQUEST_REUSED`), and the new start registers normally.
+6. **How:** its own scheduler on the housekeeping queue, `attempt-scrub` at **04:00** Dhaka.
+   - The other nightly jobs are spread out: session-cleanup at 03:30, core's ambassador back-fill at 03:45.
+   - It uses the session cleanup's batch loop, now shared (`batch-drain.ts`): 1,000 rows per batch, `FOR UPDATE SKIP LOCKED`, `SET LOCAL statement_timeout`, a cap, idempotent.
+   - Counts-only log and audit (`housekeeping.attempt_scrub`). A failed run shows in ops-check as a warning on the same queue.
+   - No migration: `@@index([status, updatedAt])` and the payments foreign-key index serve the scans.
+
 ## 2026-11-01 — Restores never overwrite, and the drill never reads the real settings (L7; exam session, LAUNCH-PLAN §5)
 
 1. **No `--clean` over a live schema.**
@@ -171,6 +269,8 @@ One short entry per non-obvious technical or product decision. Newest first. For
    The k6 script retries a busy start as the wizard does.
 6. **The shared-IP test** (300 starts from one IP, then the 301st refused) no longer depends on wall time. The first start goes alone, its throttler window gets a long TTL, and all 301 count in that one window. It passed with a 61 s pause added.
 7. **Not changed:** the transaction limits (answering 503 fast is better than waiting longer), and `connection_limit` (A2's L14 VPS tuning).
+8. **The shared-IP budget (lead; for the VPS k6 run and A2's L14):** a busy 503 still counts against the IP's start limit (300 a minute), and the wizard's one retry counts again. So a school behind one IP could reach 429 sooner during a database-busy burst.
+   - The shared-IP test now accepts 201 or 503 `SERVICE_BUSY` for the first 300 starts, and still requires the 301st to be refused with 429.
 
 ## 2026-11-01 — The audit-log viewer (core; lead's task, plan and review, M13)
 

@@ -66,8 +66,9 @@ const scenarios = {
     maxVUs: USERS,
     stages: [
       { target: RATE, duration: '60s' },
-      // After the ramp (about RATE * 30 starts), the rest at RATE per second.
-      { target: RATE, duration: `${Math.max(1, Math.ceil((USERS - RATE * 30) / RATE))}s` },
+      // After the ramp (about RATE * 30 starts), the rest at RATE per second, plus a second: the arrival rate's
+      // rounding otherwise left one student out (499 of 500). Iterations past USERS return at once.
+      { target: RATE, duration: `${Math.max(1, Math.ceil((USERS - RATE * 30) / RATE) + 1)}s` },
     ],
     gracefulStop: MAX_DURATION,
   },
