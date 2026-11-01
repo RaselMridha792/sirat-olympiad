@@ -145,6 +145,7 @@ model User {
   promotionRuns       PromotionRun[]
   juryAssignments     JuryAssignment[]      @relation("JuryAssignmentJudge")
   juryAssignmentsMade JuryAssignment[]      @relation("JuryAssignmentCreatedBy")
+  certificatesRevoked Certificate[]         @relation("CertificateRevokedBy")
 
   @@index([referredById])
   @@index([gradeLevelId])
@@ -496,6 +497,7 @@ model Round {
   promotionsFrom  PromotionRun[]   @relation("PromotionFrom")
   promotionsTo    PromotionRun[]   @relation("PromotionTo")
   juryAssignments JuryAssignment[]
+  certificates    Certificate[]
 
   @@unique([sortOrder])
   @@map("rounds")
@@ -592,18 +594,31 @@ model JuryScore {
   @@map("jury_scores")
 }
 
+/// A certificate (core C6c): issued by the worker from database state, one per (user, type, round); revoked, never
+/// deleted. The name is copied at issue time, so a later profile edit does not change a certificate.
 model Certificate {
-  id               String   @id @default(uuid(7)) @db.Uuid
-  userId           String   @map("user_id") @db.Uuid
-  type             String // participation | promotion | winner ...
-  serial           String   @unique
-  verificationCode String   @unique @map("verification_code")
-  issuedAt         DateTime @default(now()) @map("issued_at") @db.Timestamptz
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-  user             User     @relation(fields: [userId], references: [id])
+  id                String    @id @default(uuid(7)) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  type              String // participation | promotion | winner (CHECK in raw SQL)
+  roundId           String    @map("round_id") @db.Uuid
+  serial            String    @unique
+  /// Random, for the public check; the only way to look a certificate up without a session.
+  verificationCode  String    @unique @map("verification_code")
+  nameOnCertificate String    @map("name_on_certificate")
+  issuedAt          DateTime  @default(now()) @map("issued_at") @db.Timestamptz
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz
+  revokedById       String?   @map("revoked_by_id") @db.Uuid
+  revokeReason      String?   @map("revoke_reason")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  user              User      @relation(fields: [userId], references: [id])
+  round             Round     @relation(fields: [roundId], references: [id], onDelete: Restrict)
+  revokedBy         User?     @relation("CertificateRevokedBy", fields: [revokedById], references: [id], onDelete: Restrict)
 
+  @@unique([userId, type, roundId])
   @@index([userId])
+  @@index([roundId, type])
+  @@index([revokedById])
   @@map("certificates")
 }
 

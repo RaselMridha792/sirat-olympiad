@@ -1,9 +1,20 @@
 import { Module } from '@nestjs/common';
+import { CertificateIssuer } from './certificate-issuer';
+import {
+  AdminCertificatesController,
+  CertificateCheckController,
+  MyCertificatesController,
+} from './certificates.controller';
+import { CertificatesQueue } from './certificates.queue';
+import { CertificatesService } from './certificates.service';
 
 /**
- * certificates module — SCAFFOLD STUB.
- * Spec: docs/04-FEATURES.md and docs/06-API.md. Rules: docs/RULEBOOK.md (sections 4-9, 18, 19).
- * Add: controller (explicit guard on every route), service, DTOs (class-validator), tests.
+ * Certificates (core C6c-1): the admin's issue run (a queue job: certificates.worker.ts in the worker), the list and
+ * the revoke; the student's own list; the public check (name and award only). The PDF follows in C6c-2.
+ * Plan: docs/plans/CORE-PLAN.md section 7; contract: docs/06-API.md "Certificates".
  */
-@Module({})
+@Module({
+  controllers: [MyCertificatesController, CertificateCheckController, AdminCertificatesController],
+  providers: [CertificatesService, CertificateIssuer, CertificatesQueue],
+})
 export class CertificatesModule {}
