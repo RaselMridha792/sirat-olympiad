@@ -191,6 +191,9 @@ export type Started = {
   phone: string;
 };
 
+/** Busy answers the start helper sends again (a loaded shared dev Postgres; lead, 2026-11-01). */
+export const START_BUSY_RETRIES = 4;
+
 /** POST /registrations/start through HTTP; returns the new payment (pending, with a fake checkout). */
 export async function startRegistration(
   env: PaymentsApp,
@@ -209,7 +212,19 @@ export async function startRegistration(
     gradeLevelId: env.gradeLevelId,
     ...over,
   };
-  const res = await call('POST', '/registrations/start', { body });
+  let res = await call('POST', '/registrations/start', { body });
+  // A busy database answers 503 SERVICE_BUSY and applied nothing (#52): like the wizard, send the same start (same
+  // startRequestId) again after Retry-After, a few times. Any other answer, a 500 included, still fails the test.
+  for (let retry = 1; res.status === 503 && retry <= START_BUSY_RETRIES; retry += 1) {
+    const answer = (await res
+      .clone()
+      .json()
+      .catch(() => null)) as { code?: unknown } | null;
+    if (answer?.code !== 'SERVICE_BUSY') break;
+    const after = Number(res.headers.get('retry-after'));
+    await new Promise((r) => setTimeout(r, Math.min(after > 0 ? after : 1, 5) * 1000));
+    res = await call('POST', '/registrations/start', { body });
+  }
   if (res.status !== 201) throw new Error(`start answered ${res.status}: ${await res.text()}`);
   const out = (await res.json()) as { invoiceNumber: string };
   const payment = await env.prisma.payment.findUniqueOrThrow({
