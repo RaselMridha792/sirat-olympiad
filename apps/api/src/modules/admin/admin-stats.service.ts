@@ -103,6 +103,7 @@ export class AdminStatsService {
       revoked,
       referred,
       daily,
+      rounds,
     ] = await this.prisma.$transaction(
       [
         this.prisma.registration.count(),
@@ -137,6 +138,12 @@ export class AdminStatsService {
           FROM "registrations"
           WHERE "created_at" >= ${start}
           GROUP BY 1`,
+        // Entries in Round 2 and in the final round (core C6a); null while that round does not exist.
+        this.prisma.$queryRaw<{ second: number | null; finalists: number | null }[]>`
+          SELECT (SELECT count(e."id")::int FROM "rounds" r LEFT JOIN "round_entries" e ON e."round_id" = r."id"
+                  WHERE r."sort_order" = 2 GROUP BY r."id") AS "second",
+                 (SELECT count(e."id")::int FROM "rounds" r LEFT JOIN "round_entries" e ON e."round_id" = r."id"
+                  WHERE r."type"::text = 'final' GROUP BY r."id") AS "finalists"`,
       ],
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
@@ -158,8 +165,8 @@ export class AdminStatsService {
         pendingPayments: paymentsByStatus.initiated + paymentsByStatus.pending,
         activeAttempts: exam.in_progress,
         submittedAttempts: exam.submitted + exam.expired + exam.scored,
-        secondRound: null,
-        finalists: null,
+        secondRound: rounds[0]?.second ?? null,
+        finalists: rounds[0]?.finalists ?? null,
       },
       registrationsDaily: days.map((date) => ({ date, count: perDay.get(date) ?? 0 })),
       byCategory: CATEGORIES.map((category) => ({

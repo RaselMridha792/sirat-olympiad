@@ -1,4 +1,6 @@
 import type {
+  AdminRound,
+  MyRound,
   AdminTeamDetail,
   AdminTeamRow,
   MyTeam,
@@ -79,6 +81,8 @@ export interface DataSource {
     getAmbassador(): Promise<AmbassadorOverview>;
     /** GET /teams/mine (the own team, first names only; null = not in a team) */
     getMyTeam(): Promise<MyTeam | null>;
+    /** GET /rounds/me (the current round and the own entry; null = there is no round at all) */
+    getMyRound(): Promise<MyRound | null>;
     /** GET /book (the free book's title and cover) */
     getBook(): Promise<BookInfo>;
     /** GET /book-order/me (eligible, and the student's own order) */
@@ -119,6 +123,8 @@ export interface DataSource {
     listTeams(query: PageQuery): Promise<Paginated<AdminTeamRow>>;
     /** GET /admin/teams/:id, with the members' names and emails (null = not found) */
     getTeam(id: string): Promise<AdminTeamDetail | null>;
+    /** GET /admin/rounds (every round in order, with entries by status and the promotions; admin only) */
+    listRounds(): Promise<AdminRound[]>;
     /** GET /admin/announcements?page=&status= (every status, with audience and author) */
     listAnnouncements(query: AdminAnnouncementQuery): Promise<Paginated<AdminAnnouncement>>;
     /** GET /admin/payments?invoice=&trx=&phone=&email=&status=&review=1&page= (admin only) */

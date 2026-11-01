@@ -16,6 +16,7 @@ import {
   type StudentProfile,
 } from '@sirat/shared';
 import { PrismaService } from '../../prisma/prisma.service';
+import { currentRoundOf } from '../rounds/current-round';
 import type { Actor } from './admin-users.service';
 import type { CorrectGradeDto, UpdateProfileDto } from './dto/profile.dto';
 
@@ -51,7 +52,10 @@ const PROFILE_SELECT = {
 
 type ProfileData = Prisma.UserGetPayload<{ select: typeof PROFILE_SELECT }>;
 
-function toProfile(u: ProfileData): StudentProfile {
+function toProfile(
+  u: ProfileData,
+  round: { round: { id: string; name: string } } | null,
+): StudentProfile {
   return {
     name: u.name,
     email: u.email,
@@ -64,7 +68,7 @@ function toProfile(u: ProfileData): StudentProfile {
     emailVerifiedAt: u.emailVerifiedAt?.toISOString() ?? null,
     createdAt: u.createdAt.toISOString(),
     gradeLevel: u.gradeLevel,
-    currentRound: null, // rounds come with core C6
+    currentRound: round && { id: round.round.id, name: round.round.name },
   };
 }
 
@@ -85,7 +89,7 @@ export class ProfileService {
       select: PROFILE_SELECT,
     });
     if (!user || user.isBlocked) throw new ForbiddenException(['account_blocked']);
-    return toProfile(user);
+    return toProfile(user, await currentRoundOf(this.prisma, userId));
   }
 
   async options(): Promise<ProfileOptions> {
@@ -108,7 +112,7 @@ export class ProfileService {
         const user = await tx.user.findUnique({ where: { id: userId }, select: PROFILE_SELECT });
         if (!user || user.isBlocked) throw new ForbiddenException(['account_blocked']);
         const changed = sent.filter((f) => dto[f] !== user[f]);
-        if (changed.length === 0) return toProfile(user);
+        if (changed.length === 0) return toProfile(user, await currentRoundOf(tx, userId));
         if (changed.includes('phone')) await assertPhoneFree(tx, userId, dto.phone!);
         const data: Prisma.UserUpdateInput = {};
         for (const field of changed) data[field] = dto[field];
@@ -127,7 +131,7 @@ export class ProfileService {
             meta: { fields: changed },
           },
         });
-        return toProfile(updated);
+        return toProfile(updated, await currentRoundOf(tx, userId));
       });
     } catch (e) {
       // Two people claiming one number at the same moment: the UNIQUE index decides, the loser gets the same text.
@@ -184,7 +188,7 @@ export class ProfileService {
           },
         },
       });
-      return toProfile(updated);
+      return toProfile(updated, await currentRoundOf(tx, targetId));
     });
   }
 }
