@@ -9,7 +9,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-EARLY='\|[[:space:]]*(grep[[:space:]]+-[a-zA-Z]*[qm]|grep[[:space:]][^|]*[[:space:]]-m[[:space:]]*[0-9]|head([[:space:]]|$)|awk[[:space:]][^|]*[^a-z_]exit[^a-z_])'
+# A pipe is a `|` that is not part of `||`.
+EARLY='(^|[^|])\|[[:space:]]*(grep[[:space:]]+-[a-zA-Z]*[qm]|grep[[:space:]][^|]*[[:space:]]-m[[:space:]]*[0-9]|head([[:space:]]|$)|awk[[:space:]][^|]*[^a-z_]exit[^a-z_])'
 found=0
 while IFS= read -r f; do
   grep -q 'pipefail' "$f" || continue
