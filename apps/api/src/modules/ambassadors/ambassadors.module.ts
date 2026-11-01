@@ -2,9 +2,11 @@ import { Module } from '@nestjs/common';
 import {
   AdminAmbassadorPointsController,
   AdminAmbassadorsController,
+  AdminTasksController,
   AmbassadorController,
 } from './ambassadors.controller';
 import { AmbassadorPointsService } from './ambassador-points.service';
+import { AmbassadorTasksService } from './ambassador-tasks.service';
 import { AmbassadorsService } from './ambassadors.service';
 
 /**
@@ -14,7 +16,12 @@ import { AmbassadorsService } from './ambassadors.service';
  * Plan: docs/plans/CORE-PLAN.md section 6; contract: docs/06-API.md "Ambassadors".
  */
 @Module({
-  controllers: [AmbassadorController, AdminAmbassadorsController, AdminAmbassadorPointsController],
-  providers: [AmbassadorsService, AmbassadorPointsService],
+  controllers: [
+    AmbassadorController,
+    AdminAmbassadorsController,
+    AdminAmbassadorPointsController,
+    AdminTasksController,
+  ],
+  providers: [AmbassadorsService, AmbassadorPointsService, AmbassadorTasksService],
 })
 export class AmbassadorsModule {}

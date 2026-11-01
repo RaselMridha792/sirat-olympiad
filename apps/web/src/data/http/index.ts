@@ -12,6 +12,7 @@ import { adminPayments } from './payments.ts';
 import { studentProfile } from './profile.ts';
 import type { ApiGet } from './request.ts';
 import { adminStats } from './stats.ts';
+import { adminTasks } from './tasks.ts';
 import { adminUsers } from './users.ts';
 
 /**
@@ -47,6 +48,7 @@ export function createHttpSource(get: ApiGet): DataSource {
       ...adminBook(get),
       ...adminStats(get),
       ...adminAudit(get),
+      ...adminTasks(get),
     },
   };
 }
