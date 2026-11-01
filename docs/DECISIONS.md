@@ -26,6 +26,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - The site name is a network alias of nginx, so the tools container reaches `https://sirat-rh.test` with real TLS (the self-signed certificate is trusted there).
    - The RUNBOOK's create-admin uses a hidden prompt; with no terminal, the rehearsal uses `--password-stdin`.
 10. **CI checks the refusals on its own stack** (the development marker, a second `--first`). The full paths run in the rehearsal.
+
 ## 2026-11-01 — Admin statistics on the admin home (core; lead's task and review)
 
 1. **Counts only** (`GET /admin/stats`, admin and manager): no name, email, phone, id or money sum. A test scans the answer.
