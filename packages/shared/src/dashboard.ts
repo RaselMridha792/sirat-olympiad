@@ -138,9 +138,10 @@ export interface AmbassadorOverview {
     next: Pick<RankThresholdRecord, 'name' | 'minPoints'> | null;
   };
   team: (Pick<TeamRecord, 'id' | 'name'> & { memberCount: number; isOwner: boolean }) | null;
+  /** The ambassador's own assignments of tasks that are not archived; `id` is the assignment (for submitting). */
   tasks: Array<
-    Pick<AdminTaskRecord, 'id' | 'title' | 'description' | 'points'> &
-      Pick<TaskAssignmentRecord, 'status'>
+    Pick<AdminTaskRecord, 'title' | 'description' | 'points'> &
+      Pick<TaskAssignmentRecord, 'id' | 'status' | 'reviewNote' | 'submittedAt'>
   >;
   /** Latest referred students (no contact details). */
   recentReferrals: Array<Pick<UserRecord, 'name' | 'institution' | 'createdAt'>>;

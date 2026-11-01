@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { ClipboardList, Medal, Star, UserPlus, Users, UsersRound } from 'lucide-react';
 import { Badge, Card, DataTable, EmptyState, StatCard } from '@sirat/ui';
 import { CopyCode } from '@/components/ambassador/CopyCode';
+import { SubmitProofButton } from '@/components/ambassador/SubmitProofButton';
 import { rankStanding } from '@/components/ambassador/rank';
 import { rankTone, taskStatusTone } from '@/components/status';
 import { getData } from '@/data';
@@ -248,10 +249,32 @@ export default async function AmbassadorPage({
                       <Badge tone={taskStatusTone[task.status]}>{c.taskStatus[task.status]}</Badge>
                     </span>
                   </div>
-                  <p className="mt-2 flex-1 text-sm text-ink-muted">{task.description}</p>
-                  <p className="mt-4 text-sm font-black text-secondary">
-                    {m.tasks.points(n(task.points), task.points)}
+                  <p className="mt-2 flex-1 whitespace-pre-line text-sm text-ink-muted">
+                    {task.description}
                   </p>
+                  {task.status === 'rejected' && task.reviewNote ? (
+                    <p className="mt-3 rounded-control bg-page px-3 py-2 text-sm text-ink">
+                      <span className="font-semibold">{m.tasks.note}: </span>
+                      {task.reviewNote}
+                    </p>
+                  ) : null}
+                  {task.status === 'submitted' && task.submittedAt ? (
+                    <p className="mt-3 text-xs text-ink-muted">
+                      {m.tasks.sentOn(formatDate(locale, task.submittedAt))}
+                    </p>
+                  ) : null}
+                  <div className="mt-4 flex items-center justify-between gap-3">
+                    <p className="text-sm font-black text-secondary">
+                      {m.tasks.points(n(task.points), task.points)}
+                    </p>
+                    {task.status === 'assigned' || task.status === 'rejected' ? (
+                      <SubmitProofButton
+                        locale={locale}
+                        assignmentId={task.id}
+                        again={task.status === 'rejected'}
+                      />
+                    ) : null}
+                  </div>
                 </Card>
               </li>
             ))}

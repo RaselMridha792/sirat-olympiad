@@ -214,7 +214,9 @@ export interface MockWorld {
   snapshotAt: string;
   ambassadors: MockAmbassador[];
   team: { id: string; name: string; memberCount: number };
-  tasks: Array<AdminTaskRecord & { status: TaskStatus }>;
+  tasks: Array<
+    AdminTaskRecord & { status: TaskStatus; reviewNote: string | null; submittedAt: string | null }
+  >;
   registrationsDaily: Array<{ date: string; count: number }>;
   activeAttempts: number;
 }
@@ -720,8 +722,12 @@ function buildWorld(now: number): MockWorld {
         title: 'Share the registration link in your school group',
         description: 'Post the official link with your promo code in one school or class group.',
         points: 20,
+        archivedAt: null,
         createdAt: iso(now - 20 * DAY),
+        updatedAt: iso(now - 20 * DAY),
         status: 'approved',
+        reviewNote: null,
+        submittedAt: iso(now - 18 * DAY),
       },
       {
         id: 'tk-2',
@@ -729,8 +735,12 @@ function buildWorld(now: number): MockWorld {
         description:
           'Explain the rounds and the rules, then send a photo or the attendance list as proof.',
         points: 40,
+        archivedAt: null,
         createdAt: iso(now - 12 * DAY),
+        updatedAt: iso(now - 12 * DAY),
         status: 'submitted',
+        reviewNote: null,
+        submittedAt: iso(now - 2 * DAY),
       },
       {
         id: 'tk-3',
@@ -738,16 +748,24 @@ function buildWorld(now: number): MockWorld {
         description:
           'Ask five registered students what was hard during Round 1 and submit their answers.',
         points: 30,
+        archivedAt: null,
         createdAt: iso(now - 6 * DAY),
+        updatedAt: iso(now - 6 * DAY),
         status: 'assigned',
+        reviewNote: null,
+        submittedAt: null,
       },
       {
         id: 'tk-4',
         title: 'Design a poster for leadership week',
         description: 'A4 poster with the Olympiad dates. Use the brand colours.',
         points: 25,
+        archivedAt: null,
         createdAt: iso(now - 30 * DAY),
+        updatedAt: iso(now - 30 * DAY),
         status: 'rejected',
+        reviewNote: 'The poster file did not open. Please send it again as a PDF.',
+        submittedAt: iso(now - 25 * DAY),
       },
     ],
     registrationsDaily,
