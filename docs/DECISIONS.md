@@ -2,6 +2,33 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-01 — Nightly session and token cleanup (Claude; L13, LAUNCH-PLAN §9, A2's notes, lead review)
+
+1. **The rule is A2.1b #9 as recorded:**
+   - sessions go 30 days after they expired or were revoked; a rotation revokes;
+   - auth tokens go 7 days after expiry, used or not.
+   - `rotate()` is unchanged. A refresh token replayed after its row was purged gets 401 'invalid'. It no longer ends its family or writes `auth.refresh_reuse`: the accepted loss.
+2. **The schedule:**
+   - its own `housekeeping` queue. Not "maintenance", which L5's maintenance switch already means (lead);
+   - `30 3 * * *` Asia/Dhaka, one scheduler id, 3 attempts, failed jobs kept 7 days;
+   - in ops-check, a failed run is a `failed_jobs` **warning**, not critical (lead): a missed night is not urgent, and the next night catches up.
+3. **How it deletes:**
+   - batches of 1,000 with `FOR UPDATE SKIP LOCKED`, each in its own transaction under `SET LOCAL statement_timeout` (5 s);
+   - at most 50 batches per table and run;
+   - idempotent: a retry deletes only what is left, and two runs at once both finish.
+4. **Counts only:** one log line and one audit row (`housekeeping.session_cleanup`, meta `sessions`, `tokens`, `batches`, `more`). Never an IP, a browser or a token.
+5. **Indexes:** `sessions(expires_at)`, `sessions(revoked_at)`, `auth_tokens(expires_at)`. Plain `CREATE INDEX` inside Prisma's migration transaction: the tables are small before launch, so `CONCURRENTLY` is not needed.
+6. **AuditService** is provided in the worker module itself; it needs only Prisma. Importing the API's AuditModule would bring the alerts and the email queue.
+7. **Tests:** every run gets an explicit `now`, and the rows sit days from each cutoff, so no result depends on timing. They cover:
+   - 31 days deleted and 29 kept, for each branch on its own;
+   - tokens: 8 days deleted, 6 kept;
+   - the batch cap and "more", a second run deleting nothing, and two parallel runs;
+   - the other tables and the append-only logs unchanged, apart from the one audit row;
+   - the HTTP replay → 401 while the live session still refreshes;
+   - two worker inits → one scheduler, and its job runs the cleanup.
+   Mutation checks (cutoff 30 → 28 days, OR → AND, no batch cap) each fail the unit and the integration tests.
+8. **Next:** payments' D6 payload scrub (abandoned attempts after 30 days) joins this job as a follow-up after L1 (lead).
+
 ## 2026-11-01 — Ambassadors: admin approval, server promo codes and the panel (core C5a; plan `docs/plans/CORE-PLAN.md` section 6, Q2 default)
 
 1. **A promo code is attribution only** (lead, owner decision). It records who brought a registration and changes no fee, amount or payment. Anything that would make it a discount goes to the lead and the owner first.
