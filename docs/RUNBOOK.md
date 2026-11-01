@@ -356,6 +356,7 @@ scripts/prelaunch-check.sh
 | `certificate` | the origin certificate ends within 14 days | section 3 of LAUNCH-PLAN / the TLS steps in this runbook |
 | `backup_age` | no off-server backup in 26 h (critical) | `journalctl -u sirat-backup.service -n 50` (section 5) |
 | `time_sync` | the clock is not synchronised | `timedatectl`; `systemctl restart systemd-timesyncd` |
+| `trusted_generators` | load-test generators may set any client address: an `infra/nginx/loadtest-realip*.conf` exists (a warning); past the earliest `# expires` line, or without a readable one, it is critical (`scripts/loadtest-generators-left.sh` prints the minutes left) | no load test running: `scripts/loadtest-generators.sh off` (after a staging window: `sudo scripts/load-staging.sh close`); `scripts/loadtest-generators.sh status` shows it |
 | `monitor` (heartbeat only) | ops-check could not run | the api container: `$DC ps api`, `$DC logs --tail=50 api` |
 
 **The exam window, step by step** (E6; the load test behind it: `loadtests/README.md`):
@@ -708,7 +709,40 @@ SQL
 - **The lead cannot leave** their own team (by design). A member leaves from the team page.
 - **An unsuitable team name:** an admin renames it on `/admin/teams` with a reason (audited `team.renamed`; the audit row keeps the reason, not the names).
 
-## 19. Rounds and promotion (core C6a)
+## 19. Load test on the VPS (staging, `scripts/load-staging.sh`)
+
+The steps and the k6 commands: `loadtests/README.md`, "On the VPS". The rules around them:
+
+- **When:** staging shares the server's CPU, memory and disk with the live stack, which keeps running.
+  - Before launch: freely.
+  - After launch: only with Rasel's OK; never during a registration peak or within an exam window; `scripts/load-staging.sh down` right after the run.
+  - `up` prints the host's load average and free memory first, so whoever runs it sees what is live.
+- **What it is:** project `sirat-staging`, built from the deployed release's images (no build; only payments' fake PayStation is built, with `--registration`).
+  - its own volumes and throwaway settings in `/var/lib/sirat/staging` (mode 700);
+  - Postgres with the test marker, so the load fixtures accept only this server;
+  - payments off, or on the fake;
+  - emails to nowhere.
+
+  It never reads the clone's `.env` and never touches project `sirat`.
+- **The firewall:** nginx's staging port (8088) is dropped from outside by the DOCKER-USER guard. `scripts/load-staging.sh window --ips <ip>,<ip> --minutes N`, as root, lets at most 4 single public addresses in. It runs in the foreground, and the allow-list closes:
+  - on Ctrl-C;
+  - when the session is lost;
+  - on any error;
+  - when the minutes are over;
+  - and by a systemd timer if the script itself is killed.
+
+  It also switches A2's trusted generators on, and off again when it closes. `scripts/load-staging.sh status` (as root) must say `allow-list: closed` afterwards. When in doubt, `scripts/load-staging.sh close` (as root; it is safe to repeat).
+- **Root, from the provider's console:** `window`, `close` and the firewall part of `status` run as root in Hostinger's browser console. Root has no SSH login (bootstrap, #70), and deploy's only sudo rule is the backup unit. **Never add a sudo rule for `load-staging.sh`:** the clone is deploy-writable, so deploy could edit the script and run anything as root. Everything else runs as deploy.
+- **Every k6 run ends with the trusted generators off.** The window does it when it closes; a run without the window ends with `scripts/loadtest-generators.sh off`, and `scripts/loadtest-generators.sh status` must say off. Nothing removes their file at its expiry: the monitor alerts (`trusted_generators`, section 7) and `prelaunch-check.sh` fails while one is left.
+- **After the run:**
+  1. `scripts/load-staging.sh report <examId>`;
+  2. the numbers into DECISIONS;
+  3. `scripts/load-staging.sh down` (refused while the window's timer is active), which removes the stack, its volumes and its settings;
+  4. `scripts/prelaunch-check.sh` again: the real-IP lines must show Cloudflare addresses once the trusted generators are off.
+- **CI** runs the script on faked commands (`scripts/test/load-staging.test.sh`): the window opens only for the listed addresses, with its timer, and closes on a signal, on an error and by `close`; a dry run changes nothing; no secret is printed.
+- **A rehearsal against real Docker,** on a PC with the release's images: `SIRAT_TAG=<tag> [PARTS="exam registration"] bash scripts/test/run-load-staging-rehearsal.sh`. It runs up, exam, k6 inside, the report and down, then the registration staging with payments' fake, on 127.0.0.1:18088. It leaves nothing behind. The window is not part of it (no DOCKER-USER chain there).
+
+## 20. Rounds and promotion (core C6a)
 
 - **Where:** `/admin/rounds` (admins only). Round 1 is the quiz; add Round 2 (video, with its window) and the final after it, in order. Times are Bangladesh time.
 - **Before promoting from Round 1:**
