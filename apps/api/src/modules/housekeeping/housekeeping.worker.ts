@@ -41,6 +41,11 @@ export class HousekeepingWorker implements OnModuleInit, OnApplicationShutdown {
       name: HOUSEKEEPING_JOBS.sessionCleanup,
       opts: HOUSEKEEPING_JOB_OPTIONS,
     });
+    this.logger.log({
+      msg: 'housekeeping scheduler set',
+      id: SESSION_CLEANUP_SCHEDULER_ID,
+      ...SESSION_CLEANUP_SCHEDULE,
+    });
     this.worker = new Worker(queueName, (job) => this.process(job), {
       connection: this.connection,
       concurrency: 1,
