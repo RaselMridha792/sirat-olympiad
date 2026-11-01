@@ -156,6 +156,10 @@ cf_list_fresh() {
   [ -n "$d" ] && [ $(($(date -u +%s) - $(date -u -d "$d" +%s))) -le $((90 * 86400)) ]
 }
 check "the Cloudflare IP list is under 90 days old (RUNBOOK section 10)" cf_list_fresh
+# A2's trusted load-test generators: nginx takes any client address from them while a loadtest-realip*.conf exists, and
+# nothing removes it at its expiry. A k6 run ends with `scripts/loadtest-generators.sh off`; none may be on at launch.
+check "no trusted load-test generators (scripts/loadtest-generators.sh off)" \
+  test -z "$(bash scripts/loadtest-generators-left.sh)"
 
 # ---- the host ----
 disk_ok() {

@@ -47,6 +47,7 @@ const host = {
   certificateDaysLeft: null,
   backupAgeHours: 2,
   timeSynced: true,
+  trustedGeneratorsMinutesLeft: null,
 };
 
 describe('the ops commands as processes', () => {

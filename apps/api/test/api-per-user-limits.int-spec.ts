@@ -161,7 +161,7 @@ describe('per-user API limits', () => {
       return res.headers.get('x-ratelimit-limit');
     };
     const token = 'A'.repeat(43); // the right shape, not a real link
-    expect(await limitOf('refresh', {})).toBe('3000');
+    expect(await limitOf('refresh', {})).toBe('15000');
     expect(await limitOf('forgot-password', { email: 'nobody@test.invalid' })).toBe('120');
     expect(await limitOf('resend-verification', { email: 'nobody@test.invalid' })).toBe('300');
     expect(await limitOf('reset-password', { token, password: 'a-long-new-password-1' })).toBe(

@@ -51,9 +51,9 @@ Signing secret: the API refuses to start (in every `NODE_ENV`) when `JWT_ACCESS_
 **The two-factor key (admin 2FA, DECISIONS "Admin two-factor login"):**
 - **The stack:** every worktree's root `.env` needs `TOTP_ENCRYPTION_KEY`, since the stack's api runs with `NODE_ENV=production` and refuses to start without it. Add it once without printing it: `printf 'TOTP_ENCRYPTION_KEY=%s\n' "$(openssl rand -base64 32)" >> .env`.
 - **Host-side `pnpm dev:api`:** the same line in `apps/api/.env` turns 2FA on for that API. Without it 2FA is off there: nothing is enforced, and the 2FA routes answer 503 (development only).
-- **Enrolments follow the key:** it decrypts the stored secrets. An admin who enrolled under one key gets no code accepted under another (a recovery code or `admin:2fa-reset` still works, §19). So dev enrolments must be redone after a stack turn from a worktree with a different key, unless every worktree uses the same value.
+- **Enrolments follow the key:** it decrypts the stored secrets. An admin who enrolled under one key gets no code accepted under another (a recovery code or `admin:2fa-reset` still works, §20). So dev enrolments must be redone after a stack turn from a worktree with a different key, unless every worktree uses the same value.
 - **Tests:** the integration tests ignore the key in `apps/api/.env` (`test/load-env.ts`). Only the 2FA suites set their own throwaway key; every other suite runs with 2FA off.
-- **Admins on the stack:** with the key set, an admin from `admin:create` logs in but gets 403 `TWO_FACTOR_REQUIRED` on the admin pages until they enrol (§19).
+- **Admins on the stack:** with the key set, an admin from `admin:create` logs in but gets 403 `TWO_FACTOR_REQUIRED` on the admin pages until they enrol (§20).
 
 Fixtures: 3 verified students with paid registrations, `student1@fixtures.invalid` … `student3@fixtures.invalid`, password = your `FIXTURE_PASSWORD` in `apps/api/.env`. They refuse to run unless `NODE_ENV` is development/test, the confirmation is set for that run, the URL is local with no `host`/`hostaddr` parameter, and the connected Postgres server carries `sirat.environment=development` (only the dev override sets it; after pulling this change once, recreate the dev Postgres with `$DCD up -d postgres`, data is kept). PowerShell: `$env:ALLOW_DEV_FIXTURES='yes-this-is-not-production'; pnpm --filter @sirat/api db:fixtures:dev`. Each student has a distinct phone (`01700000001`…`01700000003`) and a paid 400 BDT payment that went initiated → pending → paid, like a real one.
 
@@ -308,7 +308,7 @@ Credentials are read inside the postgres container; nothing secret is typed on t
 
 ## 6. Rebuild on a fresh VPS (< 1 hour)
 
-`scripts/bootstrap.sh` (L12), as root on a fresh Ubuntu 24.04 host. It is idempotent: every step looks first, and a run with nothing left to do prints `0 change(s) made`. Run it again after each owner step below.
+`scripts/bootstrap.sh` (L12), as root on a fresh Ubuntu 24.04 or 26.04 host. It is idempotent: every step looks first, and a run with nothing left to do prints `0 change(s) made`. Run it again after each owner step below.
 
 ```bash
 # On the new host, as root (copy the script over, or take it from any checkout).
@@ -330,7 +330,7 @@ scripts/prelaunch-check.sh
   - Docker from Docker's own apt repository;
   - UTC with chrony (the monitor's 02:00 UTC digest is 08:00 Asia/Dhaka);
   - swap and `vm.overcommit_memory=1`; security updates without automatic reboot;
-  - the `deploy` user, in the docker group, with SSH keys only. Root and password logins go off only once deploy has keys (no lockout), and `sshd -t` checks the change first;
+  - the `deploy` user, in the docker group, with SSH keys only. Root and password logins go off only once deploy has keys (no lockout), and `sshd -t` checks the change first. The drop-in is `00-sirat.conf`, read before a cloud image's `50-cloud-init.conf` (sshd keeps the first value it reads). Every run checks with `sshd -T` that passwords, root and keyboard-interactive logins are really off; if an earlier file overrides them, it removes its drop-in, reloads ssh and stops;
   - UFW for the host, plus `sirat-docker-user.service`: Docker's published ports bypass UFW, so from outside only 80 and 443 may reach a container;
   - fail2ban for SSH;
   - the clone in `/srv/sirat` through a read-only deploy key, with GitHub's host key pinned;
@@ -363,6 +363,7 @@ scripts/prelaunch-check.sh
 | `certificate` | the origin certificate ends within 14 days | section 3 of LAUNCH-PLAN / the TLS steps in this runbook |
 | `backup_age` | no off-server backup in 26 h (critical) | `journalctl -u sirat-backup.service -n 50` (section 5) |
 | `time_sync` | the clock is not synchronised | `timedatectl`; `systemctl restart systemd-timesyncd` |
+| `trusted_generators` | load-test generators may set any client address: an `infra/nginx/loadtest-realip*.conf` exists (a warning); past the earliest `# expires` line, or without a readable one, it is critical (`scripts/loadtest-generators-left.sh` prints the minutes left) | no load test running: `scripts/loadtest-generators.sh off` (after a staging window: `sudo scripts/load-staging.sh close`); `scripts/loadtest-generators.sh status` shows it |
 | `monitor` (heartbeat only) | ops-check could not run | the api container: `$DC ps api`, `$DC logs --tail=50 api` |
 
 **The exam window, step by step** (E6; the load test behind it: `loadtests/README.md`):
@@ -391,7 +392,7 @@ scripts/prelaunch-check.sh
 **Students wait on "Signing you in again…" and the API log shows 503s on `/api/auth/refresh`:** the database was too slow for a session renewal to commit within `REFRESH_ROTATION_BUDGET_MS` (8 s), or its 5 s `lock_timeout` cut a wait. Each renewal was rolled back: nobody is logged out, the old cookies still work, and the browsers retry with a growing pause. Look at database load and connections; do not raise the budget during an exam (at most 10 s, and only with `$DC up -d api`).
 
 **Dashboards show the error page (not the login page):** the web cannot read the session: `GET /api/auth/me` timed out (5 s), was rate limited or the API is down. The web log has one `ServerApiError` line per failure (class and status only). Check `/api/ready` and the API's 429s. A 429 behind this page always comes from the API, because the web asks `/auth/me` server-side, not through nginx: either the user's own limit on `/auth/me` (`API_LIMIT_PER_USER_PER_MINUTE`, 120 per route) or, for a cookie that does not verify, the client IP's 600.
-**Clients get 429:** a JSON body with code `TOO_MANY_REQUESTS` and `Retry-After: 1` comes from nginx `limit_req`; a JSON body from the API (`ThrottlerException`) comes from a signed-in user's own limit (120 per route), the per-IP default for anonymous requests (600) or a route tier (forgot-password 120, resend/reset/verify 300, refresh 3,000). Many nginx 429s for one school or mobile operator come from its per-IP zones (`auth` 20 r/s, `api` 30 r/s; DECISIONS "Per-user API limits"). If a whole school is limited by the API, check that real client IPs are restored (section 10).
+**Clients get 429:** a JSON body with code `TOO_MANY_REQUESTS` and `Retry-After: 1` comes from nginx `limit_req`; a JSON body from the API (`ThrottlerException`) comes from a signed-in user's own limit (120 per route), the per-IP default for anonymous requests (600) or a route tier (forgot-password 120, resend/reset/verify 300, refresh 15,000). Many nginx 429s for one school or mobile operator come from its per-client zones (`auth` 100 r/s, burst 1,000; `api` 200 r/s, burst 2,000; per IPv4 address or IPv6 /64; DECISIONS "Real IPs and shared IPs"). If a whole school is limited by the API, check that real client IPs are restored (section 10).
 **"Security alert" email or `security.login.*` audit rows:** `login.account_limit` means one account failed 50 times within an hour (only IPs that failed are refused; the student can still log in from another network or reset the password); `login.distributed` means failures on one account from more than 20 IPs within an hour (nothing is blocked). Look the account id up in `audit_logs`; if it repeats across many accounts, consider Cloudflare Turnstile on login (DECISIONS). Alert emails pause 10 minutes per kind and stop at the hourly cap of their category; the audit log has every event.
 
 **Alert emails (L10):**
@@ -484,6 +485,17 @@ The container mounts the whole `infra/nginx` folder, so it sees the new file at 
 ```
 The script refuses (exit non-zero, live file untouched) when a download fails, returns anything that is not a CIDR, or has fewer than 10 IPv4 / 5 IPv6 ranges. Never edit `infra/nginx/cloudflare-realip.conf` by hand and never paste the old one-liner: it wrote an empty list when the download failed, which made every student behind a Cloudflare edge share one rate-limit bucket.
 After go-live, confirm in the nginx access log that client addresses are real users, not Cloudflare edges. If Cloudflare reaches the origin over IPv6 while the compose network has none, Docker replaces the source address and real-IP restore cannot work: keep the origin A-record-only.
+
+**Load-test generators (k6 on the VPS, L4).** nginx takes `CF-Connecting-IP` from Cloudflare only. For a k6 run it can also take it from up to four generator machines, for a few hours:
+```bash
+scripts/loadtest-generators.sh on 198.51.100.7,198.51.100.8 --hours 3  # IPv4 addresses the generators connect from, at most 4, 1 to 12 hours (default 2)
+scripts/loadtest-generators.sh status                                  # on/off, the addresses, the expiry (EXPIRED: turn it off)
+scripts/loadtest-generators.sh off                                     # right after the run; idempotent
+```
+- Each generator connects straight to the server on 443, with SNI and Host set to the public host (k6 `hosts` maps the domain to the server's address), and sends `CF-Connecting-IP: <simulated client address>`.
+- Each change runs `nginx -t` before the reload, and a failure puts the previous state back (exit 1).
+- Each change returns once nginx's new workers run (`applied`). Old workers keep their open keep-alive connections, and with them the old trust, until those close: stop k6 before `off`.
+- Nothing turns it off at the expiry, so run `off`. The file is `infra/nginx/loadtest-realip.local.conf` (git-ignored); while it exists, `deploy.sh` still sees a clean clone.
 
 ## 11. Payments: the review list, refunds and manual reconciliation (PayStation has no refund API)
 
@@ -704,7 +716,40 @@ SQL
 - **The lead cannot leave** their own team (by design). A member leaves from the team page.
 - **An unsuitable team name:** an admin renames it on `/admin/teams` with a reason (audited `team.renamed`; the audit row keeps the reason, not the names).
 
-## 19. Admin two-factor login: enrolment and a lost authenticator
+## 19. Load test on the VPS (staging, `scripts/load-staging.sh`)
+
+The steps and the k6 commands: `loadtests/README.md`, "On the VPS". The rules around them:
+
+- **When:** staging shares the server's CPU, memory and disk with the live stack, which keeps running.
+  - Before launch: freely.
+  - After launch: only with Rasel's OK; never during a registration peak or within an exam window; `scripts/load-staging.sh down` right after the run.
+  - `up` prints the host's load average and free memory first, so whoever runs it sees what is live.
+- **What it is:** project `sirat-staging`, built from the deployed release's images (no build; only payments' fake PayStation is built, with `--registration`).
+  - its own volumes and throwaway settings in `/var/lib/sirat/staging` (mode 700);
+  - Postgres with the test marker, so the load fixtures accept only this server;
+  - payments off, or on the fake;
+  - emails to nowhere.
+
+  It never reads the clone's `.env` and never touches project `sirat`.
+- **The firewall:** nginx's staging port (8088) is dropped from outside by the DOCKER-USER guard. `scripts/load-staging.sh window --ips <ip>,<ip> --minutes N`, as root, lets at most 4 single public addresses in. It runs in the foreground, and the allow-list closes:
+  - on Ctrl-C;
+  - when the session is lost;
+  - on any error;
+  - when the minutes are over;
+  - and by a systemd timer if the script itself is killed.
+
+  It also switches A2's trusted generators on, and off again when it closes. `scripts/load-staging.sh status` (as root) must say `allow-list: closed` afterwards. When in doubt, `scripts/load-staging.sh close` (as root; it is safe to repeat).
+- **Root, from the provider's console:** `window`, `close` and the firewall part of `status` run as root in Hostinger's browser console. Root has no SSH login (bootstrap, #70), and deploy's only sudo rule is the backup unit. **Never add a sudo rule for `load-staging.sh`:** the clone is deploy-writable, so deploy could edit the script and run anything as root. Everything else runs as deploy.
+- **Every k6 run ends with the trusted generators off.** The window does it when it closes; a run without the window ends with `scripts/loadtest-generators.sh off`, and `scripts/loadtest-generators.sh status` must say off. Nothing removes their file at its expiry: the monitor alerts (`trusted_generators`, section 7) and `prelaunch-check.sh` fails while one is left.
+- **After the run:**
+  1. `scripts/load-staging.sh report <examId>`;
+  2. the numbers into DECISIONS;
+  3. `scripts/load-staging.sh down` (refused while the window's timer is active), which removes the stack, its volumes and its settings;
+  4. `scripts/prelaunch-check.sh` again: the real-IP lines must show Cloudflare addresses once the trusted generators are off.
+- **CI** runs the script on faked commands (`scripts/test/load-staging.test.sh`): the window opens only for the listed addresses, with its timer, and closes on a signal, on an error and by `close`; a dry run changes nothing; no secret is printed.
+- **A rehearsal against real Docker,** on a PC with the release's images: `SIRAT_TAG=<tag> [PARTS="exam registration"] bash scripts/test/run-load-staging-rehearsal.sh`. It runs up, exam, k6 inside, the report and down, then the registration staging with payments' fake, on 127.0.0.1:18088. It leaves nothing behind. The window is not part of it (no DOCKER-USER chain there).
+
+## 20. Admin two-factor login: enrolment and a lost authenticator
 
 Admins and managers sign in with a password and a 6-digit code from an authenticator app (DECISIONS "Admin two-factor login"; 06-API "Two-factor login"). Production requires `TOTP_ENCRYPTION_KEY` in `.env`; the api logs `two-factor=on` at boot.
 
