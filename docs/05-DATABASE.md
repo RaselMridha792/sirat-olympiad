@@ -81,12 +81,14 @@ Leaderboard query form (index verified): `WHERE exam_id = $1 AND score IS NOT NU
 | Role | Who uses it | Rights |
 |---|---|---|
 | The bootstrap superuser (`POSTGRES_USER`, `sirat`) | The migrate job, backup and restore, psql | Owns every object and runs every migration |
-| `sirat_app` | The API, the worker, the seed and the CLI, from L8 (today the app still connects as the owner) | `SELECT`, `INSERT`, `UPDATE`, `DELETE` on every table; only `SELECT` and `INSERT` on the append-only `audit_logs`, `payment_events` and `submissions`; nothing on `_prisma_migrations`; no `TRUNCATE`, DDL, trigger switches, `session_replication_role` or `COPY … TO PROGRAM` |
+| `sirat_app` | The API, the worker, the seed and the CLI, from L8 (today the app still connects as the owner) | `SELECT`, `INSERT`, `UPDATE`, `DELETE` on every table; only `SELECT` and `INSERT` on the append-only tables (those with an `*_append_only` trigger: `audit_logs`, `payment_events`, `point_ledger`, `submissions`); nothing on `_prisma_migrations`; no `TRUNCATE`, DDL, temporary tables, trigger switches, `session_replication_role` or `COPY … TO PROGRAM`. Like every PostgreSQL role it can still change its own session defaults and password; the migrate job clears the defaults on each run |
 
-- **The migration `*_runtime_role`** creates `sirat_app` (NOLOGIN) and its grants. `ALTER DEFAULT PRIVILEGES` gives every table a later migration creates the same data rights. A new append-only table needs its own `REVOKE UPDATE, DELETE`, and `test/db-runtime-role.int-spec.ts` finds such tables by their `*_append_only` trigger.
-- **`prisma/runtime-role.ts`** runs in the migrate job after `migrate deploy`:
-  - it sets the login and password from `POSTGRES_APP_PASSWORD`, sending a SCRAM verifier, never the plaintext;
-  - it re-applies the database timeouts (statement 10 s, lock 5 s, idle in transaction 60 s), which a restore into a fresh database loses;
+- **The migration `*_runtime_role`** creates `sirat_app` (NOLOGIN) and its grants, and takes `TEMPORARY` on the database away from PUBLIC. `ALTER DEFAULT PRIVILEGES` gives every table and sequence a later migration creates the same data rights. A later append-only table needs its own `REVOKE UPDATE, DELETE` in its migration: `test/db-runtime-role.int-spec.ts` finds such tables by their `*_append_only` trigger.
+- **`prisma/runtime-role.ts`** runs in the migrate job after `migrate deploy`, on every run:
+  - it re-asserts the restrictions a restore can undo (CONNECT for `sirat_app`, no `TEMPORARY` for PUBLIC, nothing on `_prisma_migrations`, no `UPDATE` or `DELETE` on the append-only tables), and adds no other right;
+  - it clears the session defaults `sirat_app` set for itself;
+  - it puts back a missing database timeout: statement 10 s, lock 5 s, idle in transaction 60 s (`DATABASE_TIMEOUTS` in the script, the values of migration `20261030165953_db_session_timeouts`). A timeout that is present stays as a migration set it;
+  - it sets the login and password from `POSTGRES_APP_PASSWORD`, sending a SCRAM verifier, never the plaintext, with statement logging off for that statement;
   - `--ensure` only creates the role, for a restore on a fresh cluster before `pg_restore`.
 - **One password per cluster:** roles are cluster-wide. On the cluster marked `sirat.environment=development`, the script sets the password only while the role has none.
 - **The boot line** `database role=<name> superuser=<bool>` (API and worker) shows which role is in use. In production it warns while that is a superuser.

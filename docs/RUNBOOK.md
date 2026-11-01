@@ -39,8 +39,9 @@ $DCD up -d --build                                      # full stack; http://127
 
 **The runtime role sirat_app (L2):**
 - `POSTGRES_APP_PASSWORD` in the root `.env` (`openssl rand -hex 32`) is the same value in every worktree that takes stack turns: one Postgres cluster has one role. The first stack turn after L2 gives the role its login (the migrate log says `runtime role ready: sirat_app (login and password set)`); later turns keep it.
-- `TEST_APP_DATABASE_URL` in `apps/api/.env` (`postgresql://sirat_app:<the same value>@127.0.0.1:15432/sirat_test`) makes the integration tests run the app as `sirat_app`, as CI does. Without it the tests run the app as the owner and skip the `sirat_app` checks; with it but no login yet, `test:int` stops with a message.
+- `TEST_APP_DATABASE_URL` in `apps/api/.env` (`postgresql://sirat_app:<the same value>@127.0.0.1:15432/<the session's *_test database>`, the same host and database as `TEST_DATABASE_URL`) makes the integration tests run the app as `sirat_app`, as CI does. Without it the tests run the app as the owner and skip the `sirat_app` checks; with it but no login yet, `test:int` stops with a message.
 - Rasel types both values. Sessions never read or print them.
+- Changing the dev value (only to rotate it or when it is lost; with the lead's or Rasel's go-ahead, because every worktree's root `.env` and every `TEST_APP_DATABASE_URL` change with it): `$DCD exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "ALTER ROLE sirat_app PASSWORD NULL"'`, then one announced stack turn sets the new value from the root `.env`. No value is typed in the command.
 
 Signing secret: the API refuses to start (in every `NODE_ENV`) when `JWT_ACCESS_SECRET` is blank, shorter than 32 characters, too repetitive, or contains a placeholder word such as `fake`, `example` or `change me`. The error names the rule, never the value. Use a separate value per environment and never reuse the dev value on the VPS.
 
@@ -112,7 +113,7 @@ sha=$(git rev-parse origin/main)   # deploy ONLY a commit whose CI run is green 
 # gh run list --workflow CI --commit "$sha" --json conclusion --jq '.[0].conclusion'   -> must print success
 git merge --ff-only "$sha"
 $DC build                          # new images; nothing restarts yet
-$DC run --rm migrate               # migrate deploy + config seed with the NEW image while the OLD API keeps serving.
+$DC run --rm migrate               # migrate deploy, runtime role, config seed with the NEW image; the OLD API keeps serving.
                                    # Its own output must end with "config seed done". If it fails, STOP: the old API is
                                    # still up; follow "Migration failed" below. (`$DC logs migrate` shows an older run.)
 $DC up -d                          # recreates web/api with the new images; migrate runs again (no-op)
@@ -132,6 +133,8 @@ Migrations must stay backward-compatible: the old API keeps serving between `run
 2. Confirm the failed migration left no changes. Prisma runs each migration file as one transaction on Postgres, unless the file has its own `BEGIN`/`COMMIT` or statements that cannot run in a transaction; check those by hand.
 3. Mark it rolled back: `$DC run --rm migrate node_modules/.bin/prisma migrate resolve --rolled-back <migration_name>` (works with the new or the old image).
 4. Fix forward (a corrected migration in a new commit, then deploy again) or roll back the code (`git checkout --detach <deploy-tag>`, `$DC build`, `$DC up -d`). **No deploys during a live exam window** except a critical fix agreed with the owner.
+
+**The runtime role step failed** (the output's last line starts with `runtime role:`): every migration is applied and nothing needs `migrate resolve`. Fix what the line names (`POSTGRES_APP_PASSWORD` must be 32–128 letters, digits, `-` or `_`: `openssl rand -hex 32`; or the database error code), then run `$DC run --rm migrate` again. The old API keeps serving meanwhile.
 
 ## 3. Scale API replicas
 
@@ -229,6 +232,7 @@ $DC exec -T nginx wget -qO- http://127.0.0.1:8081/api/ready   # {"status":"ready
 scripts/maintenance.sh off && scripts/healthcheck.sh https://<domain>
 ```
 While the API is stopped, PayStation's IPN gets nginx's JSON 502 and is retried; reconciliation catches anything missed once the worker is back.
+The migrate step also puts back what the restore can lose: `sirat_app`'s restrictions (`--clean` re-creates the tables under the default privileges) and the database timeouts (`prisma/runtime-role.ts`).
 After a restore drill, also check the free book's cover: `GET /api/book/cover/<id>` (the id is `settings.book_cover_image_id`) returns the image. Covers live in Postgres (`book_images`), so the dump carries them; there is no file directory to restore.
 
 Credentials are read inside the postgres container; nothing secret is typed on the host. Hardening (L7): restore into a fresh database instead of `--clean` over the live schema, and a scripted drill. Before every exam: a fresh backup and a **restore drill on another machine**.

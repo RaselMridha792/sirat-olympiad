@@ -239,7 +239,7 @@ The superuser password also sits in every app container through `env_file`. The 
 - **A hand-written migration:**
   - creates `sirat_app` if missing (no superuser, createdb, createrole, replication or bypassrls), safe if two databases run it at the same moment;
   - grants CONNECT, USAGE and SELECT/INSERT/UPDATE/DELETE on the app tables;
-  - grants only SELECT/INSERT on `audit_logs`, `payment_events` and `submissions`, and nothing on `_prisma_migrations`;
+  - grants only SELECT/INSERT on the append-only tables (those with an `*_append_only` trigger: `audit_logs`, `payment_events`, `point_ledger`, `submissions`), nothing on `_prisma_migrations`, and no temporary tables;
   - sets default privileges, so every future table gets the same DML.
 - **`prisma/runtime-role.ts`**, run by the migrate job after `migrate deploy`:
   - sets the role's login and password with a SCRAM verifier computed locally, so the plaintext never reaches Postgres or its log;

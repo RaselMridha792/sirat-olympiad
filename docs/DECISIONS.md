@@ -8,28 +8,35 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - The bootstrap superuser stays the owner of every object and runs the migrations, backups and restores.
    - `sirat_app` (no superuser, createdb, createrole, replication or bypassrls) gets data rights only:
      - `SELECT`, `INSERT`, `UPDATE` and `DELETE` on every table;
-     - only `SELECT` and `INSERT` on the append-only `audit_logs`, `payment_events` and `submissions`;
+     - only `SELECT` and `INSERT` on the append-only tables, found by their `*_append_only` trigger (today `audit_logs`, `payment_events`, `point_ledger` and `submissions`);
      - nothing on `_prisma_migrations`;
-     - no `TRUNCATE`, `REFERENCES`, `TRIGGER` or `CREATE`.
-   - So an injected statement can no longer switch off the append-only triggers, set `session_replication_role`, truncate, change the schema or run `COPY … TO PROGRAM`. Every app row lock (`FOR UPDATE`) is on a table with full data rights.
+     - no `TRUNCATE`, `REFERENCES`, `TRIGGER` or `CREATE`, and no temporary tables: PUBLIC loses `TEMPORARY` on the database. For a table name without a schema PostgreSQL looks in the session's temporary schema first, so a temporary `exams` table could stand in for the real one inside the trigger functions and get past the published-question guard (the L2 review showed it on PostgreSQL 17).
+   - So an injected statement can no longer switch off the append-only triggers, set `session_replication_role`, truncate, change the schema, hide a table or run `COPY … TO PROGRAM`. Every app row lock (`FOR UPDATE`) is on a table with full data rights.
+   - PostgreSQL still lets every role change its own session defaults and its own password. The migrate job clears such defaults on every run (item 2).
    - Nothing switches yet. L8 points `DATABASE_URL` at the role and takes the superuser's password out of the app containers.
 2. **The migration and the script:**
-   - The migration `*_runtime_role` creates the role NOLOGIN and the grants, with `ALTER DEFAULT PRIVILEGES` for every later table.
-   - `prisma/runtime-role.ts` runs in the migrate job between `migrate deploy` and the seed. It manages only the fixed name `sirat_app`.
-   - It gives the role its login from `POSTGRES_APP_PASSWORD` as a SCRAM-SHA-256 verifier computed in Node, so the plaintext never reaches Postgres or its log. The derivation reproduces RFC 7677's client proof and server signature.
-   - It re-applies the database timeouts that a restore into a fresh database loses. `--ensure` creates the role before a restore on a fresh cluster (L7). It prints one line, never a value.
+   - The migration `*_runtime_role` creates the role NOLOGIN and the grants, with `ALTER DEFAULT PRIVILEGES` for every later table and sequence. Its `_prisma_migrations` REVOKE is guarded: Prisma's shadow database (`migrate dev`, CI's drift check) replays the files into a database without that table.
+   - `prisma/runtime-role.ts` runs in the migrate job between `migrate deploy` and the seed. It manages only the fixed name `sirat_app`. On every run it:
+     - re-asserts the restrictions that a restore or a late-merged migration can undo: CONNECT for `sirat_app`, no `TEMPORARY` for PUBLIC, nothing on `_prisma_migrations`, no `UPDATE` or `DELETE` on the append-only tables. A dump without `--create` carries no database-level grants, and `pg_restore --clean` over a live schema re-creates each table under the default privileges. It adds no other right, so a later migration that narrows a table's grants stays in charge;
+     - clears every session default `sirat_app` set for itself (for all databases and for this one) and warns with the count, never the values;
+     - puts back a database timeout only where it is missing: a restore loses them, and a later migration that changes one stays in charge;
+     - gives the role its login from `POSTGRES_APP_PASSWORD` as a SCRAM-SHA-256 verifier computed in Node, so the plaintext never reaches Postgres. The `ALTER ROLE` runs with statement logging off in its own transaction, so the verifier stays out of the server log on an error or a slow run. The derivation reproduces RFC 7677's client proof and server signature.
+   - `--ensure` creates the role before a restore on a fresh cluster (L7). The script prints one line, never a value.
 3. **One password per cluster:**
-   - On the dev cluster (`sirat.environment=development`) the password is set only while the role has none, so no worktree can reset another's.
-   - Until L8, an empty `POSTGRES_APP_PASSWORD` only skips the login step. Test preparation never changes the password; it checks the login and explains a failure. CI creates the role with its own throwaway password.
+   - On the dev cluster (`sirat.environment=development`) the password is set only while the role has none, so no worktree can reset another's. Changing it needs `ALTER ROLE sirat_app PASSWORD NULL` first, with the lead's or Rasel's go-ahead (RUNBOOK §0).
+   - Until L8, an empty `POSTGRES_APP_PASSWORD` only skips the password step, and the line says whether an earlier login is kept. Test preparation never changes the password; it checks the login and explains a failure.
 4. **Tests:**
-   - With `TEST_APP_DATABASE_URL` (CI always sets it) the whole integration suite runs the app as `sirat_app`, so a missing grant fails in CI, not in production.
+   - CI's database job sets the role up as the migrate job does: `migrate deploy`, then `runtime-role.ts` with a throwaway password. So the role comes from the migration, and the script's own login is what the tests use. `TEST_APP_DATABASE_URL` is required in CI and must name the same host and database as `TEST_DATABASE_URL`.
+   - The app under test (every AppModule test) and the create-admin CLI test run as `sirat_app`, so a missing grant fails in CI, not in production. The seed still runs as the owner in the tests; L8's docker job runs it as `sirat_app`.
    - `test/db-runtime-role.int-spec.ts` covers:
-     - the role attributes;
+     - the role attributes, and its rights on the database and the schema;
      - every table's privileges, with the append-only set found from the triggers;
-     - the default privileges;
-     - the timeout re-apply;
-     - a SCRAM login on a scratch role that is dropped after;
-     - eleven statements `sirat_app` must not run (each fails with 42501).
+     - the exact default privileges, and a probe table and sequence;
+     - the script's timeout rule, its re-assertion after a simulated restore, and its clearing of the role's own settings, each in a rolled-back transaction;
+     - a SCRAM login on a scratch role (one name per test database, removed after);
+     - that the app's `PrismaService` connects as `sirat_app`;
+     - fourteen statements `sirat_app` must not run, each in a rolled-back transaction (each fails with 42501).
+   - A unit test keeps the script's CREATE ROLE attributes equal to the migration's.
 5. **The boot line** `database role=<name> superuser=<bool>` in the API and the worker makes the RUNBOOK §9 item readable from the logs. In production it warns while the role is a superuser; from L8 a superuser is refused.
 
 ## 2026-11-01 — Registration surge, local k6 (Claude; payments PR 5, plan step 13; provisional until the VPS)
