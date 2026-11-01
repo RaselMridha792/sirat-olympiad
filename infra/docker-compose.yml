@@ -12,6 +12,10 @@ x-logging: &logging
   logging:
     driver: json-file
     options: { max-size: '50m', max-file: '5' }
+# The app's database connection: the runtime role sirat_app through PgBouncer (OPEN-QUESTIONS #27, LAUNCH-PLAN L8). Built
+# here from POSTGRES_APP_PASSWORD, so .env holds that password once and no DATABASE_URL; the bootstrap superuser
+# (DIRECT_URL) reaches only the migrate job.
+x-app-database-url: &app-database-url 'postgresql://sirat_app:${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD missing - set it in .env (openssl rand -hex 32)}@pgbouncer:6432/${POSTGRES_DB:?POSTGRES_DB missing - run compose with --env-file .env}?pgbouncer=true&connection_limit=5'
 
 services:
   nginx:
@@ -56,13 +60,12 @@ services:
     <<: *logging
     build: { context: .., dockerfile: apps/api/Dockerfile, target: migrate }
     image: sirat-migrate:${SIRAT_TAG:-latest}
-    # Only what `prisma migrate deploy` (DIRECT_URL), the runtime role (DIRECT_URL, POSTGRES_APP_PASSWORD) and the
-    # config seed (DATABASE_URL) read; not the whole .env. POSTGRES_APP_PASSWORD stays optional until L8 switches the API
-    # to sirat_app (empty: the password step is skipped).
+    # Only what `prisma migrate deploy` and the runtime role (DIRECT_URL, the superuser; POSTGRES_APP_PASSWORD) and the
+    # config seed (the app's connection, as sirat_app) read; not the whole .env.
     environment:
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL missing - run compose with --env-file .env}
+      DATABASE_URL: *app-database-url
       DIRECT_URL: ${DIRECT_URL:?DIRECT_URL missing - run compose with --env-file .env}
-      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD missing - set it in .env (openssl rand -hex 32)}
     restart: 'no'
     depends_on:
       pgbouncer: { condition: service_healthy }
@@ -75,6 +78,10 @@ services:
     env_file: ../.env
     environment:
       NODE_ENV: production # beats env_file: a NODE_ENV=development left in .env cannot downgrade the API
+      # The runtime role (L8), and the superuser's URL and password kept out (these beat env_file too).
+      DATABASE_URL: *app-database-url
+      DIRECT_URL: ''
+      POSTGRES_PASSWORD: ''
     # Longer than nginx proxy_read_timeout (30 s): SIGTERM lets in-flight requests finish before pools close.
     stop_grace_period: 35s
     deploy:
@@ -103,6 +110,9 @@ services:
     env_file: ../.env
     environment:
       NODE_ENV: production
+      DATABASE_URL: *app-database-url # the runtime role (L8); the superuser's URL and password kept out
+      DIRECT_URL: ''
+      POSTGRES_PASSWORD: ''
     # Jobs in progress finish on SIGTERM (an email send gives up after 10 s).
     stop_grace_period: 35s
     deploy:
@@ -125,8 +135,9 @@ services:
     environment:
       DB_HOST: postgres
       DB_PORT: '5432'
-      DB_USER: ${POSTGRES_USER:?POSTGRES_USER missing - run compose with --env-file .env}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD missing - run compose with --env-file .env}
+      # PgBouncer knows only the runtime role (L8): the superuser connects straight to Postgres (migrate, backup, psql).
+      DB_USER: sirat_app
+      DB_PASSWORD: ${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD missing - set it in .env (openssl rand -hex 32)}
       DB_NAME: ${POSTGRES_DB:?POSTGRES_DB missing - run compose with --env-file .env}
       LISTEN_PORT: '6432' # must match DATABASE_URL (image default is 5432)
       POOL_MODE: transaction
