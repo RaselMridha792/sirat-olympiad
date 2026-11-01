@@ -1,4 +1,5 @@
 import type { Category, Paginated, Role } from './index';
+import type { RegistrationAttemptStatus, StatsPaymentStatus } from './core';
 import type { MyRegistration } from './registration';
 import type {
   AdminTaskRecord,
@@ -168,21 +169,41 @@ export type AdminLeaderboardRow = LeaderboardRow &
 
 // ───────────── Admin ─────────────
 
-/** Cached aggregate (refreshed by a job), never a full-table scan per request. */
+/**
+ * GET /admin/stats (06-API "Admin statistics"): counts only, never a person. Computed in one consistent snapshot and
+ * cached for 60 s; `asOf` is when it was computed.
+ */
 export interface AdminStats {
   asOf: string;
   totals: {
+    /** Registrations (each one is a paid payment). */
     registered: number;
     paid: number;
+    /** Payments still initiated or pending at PayStation. */
     pendingPayments: number;
     activeAttempts: number;
+    /** Exam attempts submitted, expired or scored. */
     submittedAttempts: number;
-    secondRound: number;
-    finalists: number;
+    /** null until rounds exist (core C6). */
+    secondRound: number | null;
+    finalists: number | null;
   };
   /** Last 45 days, oldest first; `date` is a calendar day in Asia/Dhaka (YYYY-MM-DD). */
   registrationsDaily: Array<{ date: string; count: number }>;
+  /** Student and ambassador accounts by category. */
   byCategory: Array<{ category: Category; count: number }>;
+  /** Registration attempts (payments' pending_registrations) by status. */
+  registrationAttempts: Record<RegistrationAttemptStatus, number>;
+  /** Payments by status (`refunded` is never entered: there are no refunds). */
+  paymentsByStatus: Record<StatsPaymentStatus, number>;
+  /** Payments that carry a review reason (payments' "needs review" filter). */
+  paymentsNeedingReview: number;
+  ambassadors: {
+    approved: number;
+    revoked: number;
+    /** Students who registered with an ambassador's code. */
+    referredStudents: number;
+  };
 }
 
 /** The account's registration and the status of the payment behind it (payments' tables, read only). */

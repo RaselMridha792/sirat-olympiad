@@ -4,16 +4,23 @@ import type { ComponentProps } from 'react';
 import {
   Activity,
   Award,
+  BadgeCheck,
+  BadgeX,
   ChartLine,
   CircleCheckBig,
   Clock,
   Layers,
   RefreshCw,
+  UserPlus,
   Users,
   Wallet,
   type LucideIcon,
 } from 'lucide-react';
-import type { AdminStats } from '@sirat/shared';
+import {
+  REGISTRATION_ATTEMPT_STATUSES,
+  STATS_PAYMENT_STATUSES,
+  type AdminStats,
+} from '@sirat/shared';
 import { Card, EmptyState, PageHeader, StatCard } from '@sirat/ui';
 import { BarList, LineChart, type BarListItem, type LineChartPoint } from '@sirat/ui/charts';
 import { getData } from '@/data';
@@ -144,13 +151,67 @@ export default async function AdminHomePage({
     shareLabel: share(count, categoryTotal),
   }));
 
-  const stages: BarListItem[] = PIPELINE.map((key) => ({
-    key,
-    label: m.kpi[key],
-    value: totals[key],
-    valueLabel: num(totals[key]),
-    shareLabel: share(totals[key], totals.registered),
+  // Rounds (second round, finalists) are null until they exist: their card and stage are left out.
+  const known = <K extends keyof Totals>(key: K) => totals[key] !== null;
+  const kpis = KPIS.filter(({ key }) => known(key));
+  const stages: BarListItem[] = PIPELINE.filter(known).map((key) => {
+    const value = totals[key] ?? 0;
+    return {
+      key,
+      label: m.kpi[key],
+      value,
+      valueLabel: num(value),
+      shareLabel: share(value, totals.registered),
+    };
+  });
+
+  const paymentTotal = STATS_PAYMENT_STATUSES.reduce(
+    (sum, s) => sum + stats.paymentsByStatus[s],
+    0,
+  );
+  const payments: BarListItem[] = STATS_PAYMENT_STATUSES.map((status) => ({
+    key: status,
+    label: c.paymentStatus[status],
+    value: stats.paymentsByStatus[status],
+    valueLabel: num(stats.paymentsByStatus[status]),
+    shareLabel: share(stats.paymentsByStatus[status], paymentTotal),
   }));
+  const attemptTotal = REGISTRATION_ATTEMPT_STATUSES.reduce(
+    (sum, s) => sum + stats.registrationAttempts[s],
+    0,
+  );
+  const attempts: BarListItem[] = REGISTRATION_ATTEMPT_STATUSES.map((status) => ({
+    key: status,
+    label: m.attempts.status[status],
+    value: stats.registrationAttempts[status],
+    valueLabel: num(stats.registrationAttempts[status]),
+    shareLabel: share(stats.registrationAttempts[status], attemptTotal),
+  }));
+  const ambassadorCards: ReadonlyArray<{
+    title: string;
+    value: number;
+    tone: Tone;
+    Icon: LucideIcon;
+  }> = [
+    {
+      title: m.ambassadors.approved,
+      value: stats.ambassadors.approved,
+      tone: 'success',
+      Icon: BadgeCheck,
+    },
+    {
+      title: m.ambassadors.revoked,
+      value: stats.ambassadors.revoked,
+      tone: 'secondary',
+      Icon: BadgeX,
+    },
+    {
+      title: m.ambassadors.referred,
+      value: stats.ambassadors.referredStudents,
+      tone: 'info',
+      Icon: UserPlus,
+    },
+  ];
 
   return (
     <>
@@ -209,11 +270,11 @@ export default async function AdminHomePage({
           {m.kpiHeading}
         </h2>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {KPIS.map(({ key, tone, Icon }) => (
+          {kpis.map(({ key, tone, Icon }) => (
             <StatCard
               key={key}
               title={m.kpi[key]}
-              value={num(totals[key])}
+              value={num(totals[key] ?? 0)}
               tone={tone}
               icon={<Icon size={24} aria-hidden="true" />}
             />
@@ -281,6 +342,66 @@ export default async function AdminHomePage({
           emptyLabel={m.pipeline.empty}
         />
       </Card>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <Card className="flex min-w-0 flex-col">
+          <h2 className="text-lg font-bold tracking-tight text-ink">{m.payments.title}</h2>
+          <p className="mt-1 text-sm text-ink-muted">{m.payments.subtitle}</p>
+          <BarList
+            className="mt-6"
+            items={payments}
+            max={paymentTotal}
+            summary={paymentTotal > 0 ? m.payments.summary(summarize(payments)) : m.payments.empty}
+            caption={m.payments.title}
+            columns={{
+              label: m.payments.columns.status,
+              value: m.payments.columns.count,
+              share: m.payments.columns.share,
+            }}
+            emptyLabel={m.payments.empty}
+          />
+          <div className="mt-auto pt-6">
+            <p className="border-t border-line pt-4 text-sm text-ink-muted">
+              {m.payments.review(num(stats.paymentsNeedingReview))}
+            </p>
+          </div>
+        </Card>
+
+        <Card className="min-w-0">
+          <h2 className="text-lg font-bold tracking-tight text-ink">{m.attempts.title}</h2>
+          <p className="mt-1 text-sm text-ink-muted">{m.attempts.subtitle}</p>
+          <BarList
+            className="mt-6"
+            items={attempts}
+            max={attemptTotal}
+            summary={attemptTotal > 0 ? m.attempts.summary(summarize(attempts)) : m.attempts.empty}
+            caption={m.attempts.title}
+            columns={{
+              label: m.attempts.columns.status,
+              value: m.attempts.columns.count,
+              share: m.attempts.columns.share,
+            }}
+            emptyLabel={m.attempts.empty}
+          />
+        </Card>
+      </div>
+
+      <section aria-labelledby="admin-ambassadors-title" className="mt-6">
+        <h2 id="admin-ambassadors-title" className="text-lg font-bold tracking-tight text-ink">
+          {m.ambassadors.heading}
+        </h2>
+        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+          {ambassadorCards.map(({ title, value, tone, Icon }) => (
+            <StatCard
+              key={title}
+              title={title}
+              value={num(value)}
+              tone={tone}
+              icon={<Icon size={24} aria-hidden="true" />}
+            />
+          ))}
+        </div>
+      </section>
     </>
   );
 }

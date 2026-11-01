@@ -26,6 +26,25 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - The site name is a network alias of nginx, so the tools container reaches `https://sirat-rh.test` with real TLS (the self-signed certificate is trusted there).
    - The RUNBOOK's create-admin uses a hidden prompt; with no terminal, the rehearsal uses `--password-stdin`.
 10. **CI checks the refusals on its own stack** (the development marker, a second `--first`). The full paths run in the rehearsal.
+## 2026-11-01 — Admin statistics on the admin home (core; lead's task and review)
+
+1. **Counts only** (`GET /admin/stats`, admin and manager): no name, email, phone, id or money sum. A test scans the answer.
+   - **Roles:** the user is re-read on every call, so a demoted or blocked one gets 403 at once.
+   - **Jury** gets a short welcome on `/admin` and the page makes no call (lead: least privilege; letting jury see the counts later is a one-line role change).
+2. **One snapshot:** every count is read in one `REPEATABLE READ` batch transaction on one connection, so the totals agree with the breakdowns and the queries never take more than one pool connection.
+3. **Cache:** 60 s in the cache Redis (`admin-stats:v1`); `asOf` says when the counts were computed.
+   - **Single flight:** a lock (`SET NX PX`, released only by its holder) makes a burst compute once. The others wait up to 5 s for that result, then compute on their own.
+   - **Redis trouble:** every call reads Postgres, with a warning logged at most every 30 s.
+   - **No invalidation:** counts up to a minute old are fine for an overview.
+4. **Others' tables, read only:** payments' `registrations`, `payments` and `pending_registrations`, and exam's `attempts`. No index was added to them.
+   - The 45-day per-day `GROUP BY` on `registrations.created_at` (Asia/Dhaka days, UTC+6 all year) runs at most once a minute behind the cache.
+5. **Where it lives:** in the scaffold's empty `AdminModule`, which was already in `app.module.ts`, instead of a new module (lead's plan said a new `AdminStatsModule` with one line there). The audit-log viewer joins it next.
+6. **Shape:** `AdminStats` (`dashboard.ts`) keeps the UI port's fields, so the page's cards and charts stay.
+   - `secondRound` and `finalists` are `null` until rounds exist (C6); the page hides their card and pipeline stage.
+   - New fields: `registrationAttempts`, `paymentsByStatus` (without `refunded`, which is never entered), `paymentsNeedingReview` (payments' own "needs review" rule: a `review_reason` is set) and `ambassadors`.
+7. **Tests:** `admin-stats.int-spec.ts` (6) and the `dhakaDays` unit spec.
+   - `admin-stats.int-spec.ts` covers every count as a difference around its own rows (the test database is shared), the Dhaka day edges, the burst computing once, the cache serving the same `asOf`, the Postgres fallback, the roles, and the counts-only scan.
+   - web: `http/stats.test.ts` (picks at every level, shape refusals).
 
 ## 2026-11-01 — Exam authoring screens (E5b; exam session, EXAM-PLAN §5, on E1's API)
 

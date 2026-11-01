@@ -598,8 +598,9 @@ export function createMockSource(state: MockState | null): DataSource {
         run(
           () => {
             const w = getWorld();
-            const count = (status: 'paid' | 'pending') =>
+            const count = (status: 'paid' | 'pending' | 'failed' | 'expired') =>
               w.users.filter((u) => u.payment?.status === status).length;
+            const ambassadors = w.users.filter((u) => u.role === 'ambassador').length;
             const promoted =
               w.standings.get('rd-1')?.filter((s) => s.entryStatus === 'promoted').length ?? 0;
             return {
@@ -618,6 +619,21 @@ export function createMockSource(state: MockState | null): DataSource {
                 category,
                 count: w.users.filter((u) => u.category === category).length,
               })),
+              registrationAttempts: {
+                open: count('pending'),
+                completed: count('paid'),
+                abandoned: count('failed') + count('expired'),
+                conflict: 0,
+              },
+              paymentsByStatus: {
+                initiated: 0,
+                pending: count('pending'),
+                paid: count('paid'),
+                failed: count('failed'),
+                expired: count('expired'),
+              },
+              paymentsNeedingReview: 1,
+              ambassadors: { approved: ambassadors, revoked: 1, referredStudents: 3 * ambassadors },
             };
           },
           () => ({
@@ -639,6 +655,10 @@ export function createMockSource(state: MockState | null): DataSource {
               category,
               count: 0,
             })),
+            registrationAttempts: { open: 0, completed: 0, abandoned: 0, conflict: 0 },
+            paymentsByStatus: { initiated: 0, pending: 0, paid: 0, failed: 0, expired: 0 },
+            paymentsNeedingReview: 0,
+            ambassadors: { approved: 0, revoked: 0, referredStudents: 0 },
           }),
         ),
 

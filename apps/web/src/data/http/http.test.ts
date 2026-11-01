@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DataSourceUnavailableError, unavailableSource } from '../unavailable.ts';
+import { unavailableSource } from '../unavailable.ts';
 import { createHttpSource } from './index.ts';
 import {
   DataRequestError,
@@ -74,7 +74,7 @@ test('getJsonOrNull turns 404 into null and still refuses other failures', async
   await assert.rejects(getJsonOrNull(get, '/boom', isRecord), DataRequestError);
 });
 
-test('the HTTP source implements every DataSource method, unconnected ones fall back to unavailable', async () => {
+test('the HTTP source implements every DataSource method (an unconnected one would fall back to unavailable)', async () => {
   const source = createHttpSource(fakeApi({}));
   assert.equal(source.kind, 'http');
   for (const group of ['student', 'leaderboard', 'admin'] as const) {
@@ -84,7 +84,6 @@ test('the HTTP source implements every DataSource method, unconnected ones fall 
       group,
     );
   }
-  await assert.rejects(source.admin.getStats(), DataSourceUnavailableError);
 });
 
 test('student.listExams reads GET /exams and passes on only the card fields', async () => {
