@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ConfigService } from '@nestjs/config';
 import type { PrismaClient } from '@prisma/client';
-import { Queue, QueueEvents } from 'bullmq';
+import { Queue } from 'bullmq';
 import Redis from 'ioredis';
 import type { EnvVars } from '../src/config/env';
 import { AmbassadorPointsWorker } from '../src/modules/ambassadors/ambassador-points.worker';
@@ -164,8 +164,6 @@ describe('the schedulers', () => {
     ];
     const redis = new Redis(process.env.REDIS_QUEUE_URL as string, QUEUE_REDIS_OPTIONS);
     const queue = new Queue(queueName, { connection: redis });
-    const eventsRedis = redis.duplicate();
-    const events = new QueueEvents(queueName, { connection: eventsRedis });
     try {
       for (const w of workers) await w.onModuleInit();
       const schedulers = await queue.getJobSchedulers(0, 10, true);
@@ -179,16 +177,16 @@ describe('the schedulers', () => {
         pattern: '45 3 * * *',
         tz: 'Asia/Dhaka',
       });
-      await events.waitUntilReady();
-      const job = await queue.add(AMBASSADOR_JOBS.referralBackfill, {}, AMBASSADOR_JOB_OPTIONS);
-      expect(await job.waitUntilFinished(events, 20_000)).toMatchObject({ mode: 'full' });
+      // Wait on the effect (the worker ran the back-fill), not on the job: with the real options the job's key is
+      // removed on completion, and reading it back after that races (BullMQ "Missing key for job").
+      await queue.add(AMBASSADOR_JOBS.referralBackfill, {}, AMBASSADOR_JOB_OPTIONS);
+      for (let i = 0; i < 400 && !runs.includes('full'); i += 1)
+        await new Promise((resolve) => setTimeout(resolve, 50));
       expect(runs).toContain('full');
     } finally {
       for (const w of workers) await w.onApplicationShutdown();
-      await events.close();
       await queue.obliterate({ force: true });
       await queue.close();
-      eventsRedis.disconnect();
       redis.disconnect();
     }
   });
