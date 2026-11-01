@@ -20,6 +20,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - **On the record:** the export's own audit row keeps the filters with the account only as a kind (`email`/`system`), the row count and the reason.
    - **Limits:** at most 50,000 rows, 5 exports per admin per hour.
 7. **Web:** one `ExportCsvButton` (students and audit); its texts are picked in the client from a fixed table, so no message travels as a prop. `ExportUsersButton` is a thin wrapper.
+
 ## 2026-11-01 — "Coming soon" from a launch table (Claude; L1, LAUNCH-PLAN §8, lead review)
 
 1. **The table:** `apps/web/src/data/launch.ts` has one row per `/dashboard` and `/admin` page, `live` or `soon`.
