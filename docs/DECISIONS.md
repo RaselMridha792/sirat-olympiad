@@ -31,6 +31,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
      - a SCRAM login on a scratch role that is dropped after;
      - eleven statements `sirat_app` must not run (each fails with 42501).
 5. **The boot line** `database role=<name> superuser=<bool>` in the API and the worker makes the RUNBOOK §9 item readable from the logs. In production it warns while the role is a superuser; from L8 a superuser is refused.
+
 ## 2026-11-01 — Registration surge, local k6 (Claude; payments PR 5, plan step 13; provisional until the VPS)
 
 1. **The scenario** (`loadtests/registration-surge.js`). One iteration is one student, as the browser would do it:
