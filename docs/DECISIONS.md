@@ -20,6 +20,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - `prelaunch-check.sh` fails while any file exists, and every k6 run ends with `off`.
    - Nothing else enforces the expiry: nginx keeps trusting the file until `off`.
 8. **The registration staging's cookies are not Secure** (`COOKIE_SECURE=false`, only there): payments' k6 script uses k6's cookie jar, which does not send Secure cookies over plain http, so the result page could never read its registration. The first rehearsal failed exactly there (`current 200`: 0 of 1,275). The API allows it because that staging runs in development mode; the exam staging stays in production mode with Secure cookies, which the exam simulation keeps itself.
+
 ## 2026-11-01 — CSV question import (E7a; payments, exam's handover, lead)
 
 1. **A multipart upload, not a JSON body** (lead approved):
