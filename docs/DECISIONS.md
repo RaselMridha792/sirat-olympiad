@@ -2,6 +2,13 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-01 — The minute exam sweep tries each item on its own (exam session; lead's question after a test flake)
+
+1. **Each finalize, score and results build in the sweep is tried on its own.** One that throws (a lock or statement timeout under load, a bad row) is logged with its step and id, and the rest go on. Before, the first exception ended the run, and since the sweep orders by `ends_at`, an attempt that kept failing would have held back every later attempt and the results build, minute after minute.
+2. **The run then fails** (`exam sweep: n item(s) failed`), so the worker logs it and L11's `failed_jobs` check alerts (an ops alert at the first failure, hourly while it repeats). The next minute's sweep tries the item again. No per-attempt state: the log names the id, which an ops alert cannot carry (numbers only).
+3. **A finalize that loses its row to `SKIP LOCKED` is not an error:** the holder wins (a late client submit, another sweep), and the next sweep takes the row if it is still unfinished. Both are now tested: a row held by another transaction is skipped, then finalized by the next sweep; an attempt whose finalize throws does not stop a later one.
+4. **The test flake was the clock, not the finalize.** "Two finalizes, exactly one winner" got 0 winners once, under load: the test waited by this machine's clock, while finalize decides "due" with Postgres's `now()`, and the database container's clock can trail the host's. The test now waits on the database's clock. Worker jobs do not go through the HTTP busy-503 filter (#52), hence the isolation here.
+
 ## 2026-11-01 — A busy database answers 503 SERVICE_BUSY, never 500; the registration start retries once (Claude; lead, A2's conditions)
 
 1. **Found:** k6 at 25 starts/s while every CPU thread was busy, with a pool of 5 like production. 180 starts answered 500, all Prisma P2028 (start's interactive transaction ran out of maxWait or timeout); the global filter turned every non-HTTP error into 500.
