@@ -239,21 +239,59 @@ bash scripts/test/run-backup-test.sh               # the tests (own compose proj
   That keeps 7 daily and 4 weekly copies (RULEBOOK §6) plus 2 days of hourly ones.
 - **"The dump is much smaller than the last one":** the run stops when a dump is under half the size of the last one, because a sudden drop usually means lost data. After a deliberate big delete (the first run of the session and token cleanup job, a test-data wipe), check that the drop is expected, then run `sudo /srv/sirat/scripts/backup.sh --accept-smaller` once by hand. It logs that it was used; the timer never passes it, and the next timed runs compare with that copy.
 
-**Restore** (until L7): maintenance on, stop the app (nginx keeps running and shows the page), restore a decrypted dump (refuses a truncated dump; one transaction), migrate, start the app, check it through the internal listener, then maintenance off.
+**Restore (L7):** `scripts/restore.sh`, as the deploy user from the clone. It never overwrites a database: a rebuilt server restores into the empty database of a fresh volume, and a server still up restores beside the live database, then swaps the names.
 
 ```bash
-scripts/maintenance.sh on                 # section 4; visitors get the maintenance page
-$DC stop web api worker                   # the worker too: no job writes during the restore
-scripts/restore.sh <decrypted>.dump  # DESTRUCTIVE, asks for YES (truncated-dump refusal VERIFIED; full restore not yet rehearsed)
-$DC run --rm --no-deps migrate && $DC exec redis-cache redis-cli FLUSHALL && $DC up -d --no-deps --no-build api worker web
-$DC exec -T nginx wget -qO- http://127.0.0.1:8081/api/ready   # {"status":"ready"}
+age -d -i <key file> sirat-<stamp>.dump.age > sirat.dump   # a key holder, never on the server; sha256 against the manifest first
+scripts/restore.sh sirat.dump --project sirat                # a rebuilt server: the EMPTY database of a fresh volume
+scripts/restore.sh sirat.dump --project sirat --mode beside  # the server is up: into <db>_restore_<stamp>, then swapped;
+                                                             # the old database stays as <db>_old_<stamp>
+$DC exec -T nginx wget -qO- http://127.0.0.1:8081/api/ready   # {"status":"ready"} (the script checks it too)
 scripts/maintenance.sh off && scripts/healthcheck.sh https://<domain>
 ```
-While the API is stopped, PayStation's IPN gets nginx's JSON 502 and is retried; reconciliation catches anything missed once the worker is back.
-The migrate step also puts back what the restore can lose: `sirat_app`'s restrictions (`--clean` re-creates the tables under the default privileges) and the database timeouts (`prisma/runtime-role.ts`).
-After a restore drill, also check the free book's cover: `GET /api/book/cover/<id>` (the id is `settings.book_cover_image_id`) returns the image. Covers live in Postgres (`book_images`), so the dump carries them; there is no file directory to restore.
 
-Credentials are read inside the postgres container; nothing secret is typed on the host. Hardening (L7): restore into a fresh database instead of `--clean` over the live schema, and a scripted drill. Before every exam: a fresh backup and a **restore drill on another machine**.
+- **What the script does:**
+  1. reads the whole archive (a truncated dump stops it before anything changes);
+  2. says the project, the database and the server marker, and asks for the project name to be typed (a server marked as development is refused without `--allow-dev`);
+  3. maintenance on; stops web, api and worker, while nginx shows the maintenance page;
+  4. makes sure `sirat_app` exists: roles are not in a dump (`prisma/runtime-role.ts --ensure`);
+  5. restores in one transaction, without `--clean`;
+  6. clears `sessions` and `auth_tokens` (everyone logs in again);
+  7. runs migrate, which puts back the database timeouts and `sirat_app`'s restrictions, CONNECT and login;
+  8. checks `statement_timeout` 10s in a new session, `sirat_app`'s grants and CONNECT, and the migrations;
+  9. flushes the cache, starts the app and checks it through the internal listener.
+
+  Maintenance stays on for a person to check.
+- **By hand, after a restore:**
+  - rotate `JWT_ACCESS_SECRET` in `.env` and recreate api and worker;
+  - compare the payments since the dump time minus 1 h with a PayStation export (section 11);
+  - with `--mode beside`, drop `<db>_old_<stamp>` once nothing more is needed from it.
+
+  While the API is stopped, PayStation's IPN gets nginx's JSON 502 and is retried; reconciliation catches anything missed once the worker is back. After a restore, also check the free book's cover: `GET /api/book/cover/<id>` (the id is `settings.book_cover_image_id`). Covers live in Postgres (`book_images`), so the dump carries them.
+- **The drill** (`scripts/restore-drill.sh`), on another machine than the server, before every exam and before registration opens:
+
+  ```bash
+  scripts/restore-drill.sh --age sirat-<stamp>.dump.age --manifest sirat-<stamp>.manifest.json --identity <key file> [--tag <sha>]
+  ```
+
+  - **The copy:** its sha256 is checked against the manifest, then it is decrypted into an owner-only directory.
+  - **The drill project** `sirat-drill`: its own volumes, throwaway secrets, payments off, email only to Mailpit, nginx and Mailpit on 127.0.0.1 only. It refuses a port bound beyond 127.0.0.1.
+  - **The restore** with `restore.sh`, then the checks:
+    - every table's row count against the manifest;
+    - the triggers;
+    - `sirat_app`'s grants and default privileges;
+    - `statement_timeout` 10s;
+    - the audit log refusing a delete;
+    - one login as `sirat_app`.
+  - **The wipe:** `down -v`, only after checking each container's project label; it never touches project `sirat`. It prints the measured time.
+  - The images must be of the dump's release (`--tag`); the drill never builds.
+- **The drill never reads the clone's `.env`:** the drill's api and worker take their settings only from the drill's own throwaway file (`infra/backup/drill.compose.yml` replaces compose's `env_file: ../.env` with it). The script refuses to start unless both resolve the drill's own secret, compared and never printed. On a server, the clone's `.env` holds the production secrets.
+- **Tests:** `bash scripts/test/run-restore-roundtrip.sh` (CI's docker job runs it):
+  - a source in its own project gets admin A, then a dump is taken, then admin B is created;
+  - the drill restores the dump: A logs in (204), B does not (401);
+  - then `--mode beside` restores over the running drill, keeps the old database, and the logins answer the same.
+
+Credentials are read inside the postgres container; nothing secret is typed on the host.
 
 ## 6. Rebuild on a fresh VPS (< 1 hour)
 
