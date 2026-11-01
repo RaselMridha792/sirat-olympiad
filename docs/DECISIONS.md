@@ -11,7 +11,11 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - Completed attempts are cleared at settlement, as before.
    - The row, name, email and phone stay for payment lookups, and so do the payments and their events. `updated_at` is not changed.
 4. **Money is never lost:** a payment that succeeds on an attempt whose form was cleared is marked paid and set aside as `attempt_invalid`, with no account. `attempt-scrub.int-spec` runs exactly that.
-5. **How:** its own scheduler on the housekeeping queue, `attempt-scrub` at **04:00** Dhaka.
+5. **A student who comes back** with a cookie the browser kept (it should drop it after 7 days, but the server does not check the cookie's age):
+   - the result page offers no retry or resume for a cleared attempt;
+   - retry or resume answers 409 `START_OVER` (bn/en: "This registration has expired. Please fill in the form again.") and gives the attempt up, so no payment ever starts on it;
+   - the same form sent again asks for a new request id (`START_REQUEST_REUSED`), and the new start registers normally.
+6. **How:** its own scheduler on the housekeeping queue, `attempt-scrub` at **04:00** Dhaka.
    - The other nightly jobs are spread out: session-cleanup at 03:30, core's ambassador back-fill at 03:45.
    - It uses the session cleanup's batch loop, now shared (`batch-drain.ts`): 1,000 rows per batch, `FOR UPDATE SKIP LOCKED`, `SET LOCAL statement_timeout`, a cap, idempotent.
    - Counts-only log and audit (`housekeeping.attempt_scrub`). A failed run shows in ops-check as a warning on the same queue.
@@ -65,6 +69,8 @@ One short entry per non-obvious technical or product decision. Newest first. For
    The k6 script retries a busy start as the wizard does.
 6. **The shared-IP test** (300 starts from one IP, then the 301st refused) no longer depends on wall time. The first start goes alone, its throttler window gets a long TTL, and all 301 count in that one window. It passed with a 61 s pause added.
 7. **Not changed:** the transaction limits (answering 503 fast is better than waiting longer), and `connection_limit` (A2's L14 VPS tuning).
+8. **The shared-IP budget (lead; for the VPS k6 run and A2's L14):** a busy 503 still counts against the IP's start limit (300 a minute), and the wizard's one retry counts again. So a school behind one IP could reach 429 sooner during a database-busy burst.
+   - The shared-IP test now accepts 201 or 503 `SERVICE_BUSY` for the first 300 starts, and still requires the 301st to be refused with 429.
 
 ## 2026-11-01 — The audit-log viewer (core; lead's task, plan and review, M13)
 
