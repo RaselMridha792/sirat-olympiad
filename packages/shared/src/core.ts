@@ -513,8 +513,7 @@ export interface PromotionPreview {
   category: Category;
   topN: number;
   source:
-    | { kind: 'exam'; examId: string; examTitle: string; generation: number }
-    | { kind: 'jury' };
+    { kind: 'exam'; examId: string; examTitle: string; generation: number } | { kind: 'jury' };
   /** Ranked rows of this category in the source. */
   candidates: number;
   promoted: number;
