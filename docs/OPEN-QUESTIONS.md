@@ -34,7 +34,7 @@ Owner = Rasel Mridha. Client = GLTS Leadership × Sirat Olympiad. Add the answer
 | 24 | Real expected **peak concurrency** and whether starts are bunched (e.g. at window open) | Load test | 1,300–3,800 estimate |
 | 25 | **CI cannot block merges**: the repo is private on GitHub Free, where branch protection/required checks are unavailable (HTTP 403). Upgrade to GitHub Pro (or make the repo public) and switch to pull requests with required checks, or keep pushing to `main` with the rule "deploy only a commit with a green CI run"? | Release process | Advisory CI + green-SHA deploy rule |
 | 26 | Postgres error logs include the conflicting value on unique violations (e.g. `Key (email)=(…) already exists`). Accept (logs are private and rotated), or set `log_error_verbosity = terse` (also drops deadlock/lock-wait detail)? | Logging / privacy | Keep default; A2 checks duplicates in code first so the constraint rarely fires |
-| 27 | Run the API with a **non-superuser** DB role (separate from the bootstrap/migration role)? Needs a second PgBouncer user and grants. | Security hardening | Yes, before launch (owner, A1 approval). The role `sirat_app` and its grants exist (L2, 05-DATABASE "Roles"); the API switches to it in L8 |
+| 27 | Run the API with a **non-superuser** DB role (separate from the bootstrap/migration role)? Needs a second PgBouncer user and grants. | Security hardening | Yes, before launch (owner, A1 approval). Done: the role `sirat_app` and its grants (L2), and the API, the worker, the seed and the CLI connect as it through PgBouncer (L8, 05-DATABASE "Roles") |
 
 ## PayStation (official docs read 2026-10-30; summary: `docs/paystation/PAYSTATION-NOTES.md`)
 

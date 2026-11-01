@@ -82,7 +82,7 @@ Leaderboard query form (index verified): `WHERE exam_id = $1 AND score IS NOT NU
 | Role | Who uses it | Rights |
 |---|---|---|
 | The bootstrap superuser (`POSTGRES_USER`, `sirat`) | The migrate job, backup and restore, psql | Owns every object and runs every migration |
-| `sirat_app` | The API, the worker, the seed and the CLI, from L8 (today the app still connects as the owner) | `SELECT`, `INSERT`, `UPDATE`, `DELETE` on every table; only `SELECT` and `INSERT` on the append-only tables (those with an `*_append_only` trigger: `audit_logs`, `payment_events`, `point_ledger`, `submissions`); nothing on `_prisma_migrations`; no `TRUNCATE`, DDL, temporary tables, trigger switches, `session_replication_role` or `COPY … TO PROGRAM`. Like every PostgreSQL role it can still change its own session defaults and password, and drop the privileges granted to it (`DROP OWNED`); the migrate job clears its role-level settings on each run |
+| `sirat_app` | The API, the worker, the seed and the CLI, through PgBouncer (L8) | `SELECT`, `INSERT`, `UPDATE`, `DELETE` on every table; only `SELECT` and `INSERT` on the append-only tables (those with an `*_append_only` trigger: `audit_logs`, `payment_events`, `point_ledger`, `submissions`); nothing on `_prisma_migrations`; no `TRUNCATE`, DDL, temporary tables, trigger switches, `session_replication_role` or `COPY … TO PROGRAM`. Like every PostgreSQL role it can still change its own session defaults and password, and drop its default privileges (`DROP OWNED`); the migrate job clears its role-level settings on each run |
 
 - **The migration `*_runtime_role`** creates `sirat_app` (NOLOGIN) and its grants, and takes `TEMPORARY` on the database away from PUBLIC. `ALTER DEFAULT PRIVILEGES` gives every table and sequence a later migration creates the same data rights. A later append-only table needs its own `REVOKE UPDATE, DELETE` in its migration: CI checks the migrations' result before `runtime-role.ts` runs, and a local `test:int` (`test/db-runtime-role.int-spec.ts`) finds such tables by their `*_append_only` trigger.
 - **`prisma/runtime-role.ts`** runs in the migrate job after `migrate deploy`, on every run:
@@ -93,7 +93,8 @@ Leaderboard query form (index verified): `WHERE exam_id = $1 AND score IS NOT NU
   - all steps run in one transaction behind an advisory lock, so two runs at once on one database follow each other;
   - `--ensure` only creates the role, for a restore on a fresh cluster before `pg_restore`.
 - **One password per cluster:** roles are cluster-wide. On the cluster marked `sirat.environment=development`, the script sets the password only while the role has none.
-- **The boot line** `database role=<name> superuser=<bool>` (API and worker) shows which role is in use. In production it warns while that is a superuser.
+- **The boot line** `database role=<name> superuser=<bool>` (API and worker) shows which role is in use. In production a superuser is refused: the app does not start.
+- **Connections (L8):** PgBouncer knows only `sirat_app`. Compose builds the app's `DATABASE_URL` from `POSTGRES_APP_PASSWORD` (`x-app-database-url`), and the app containers get the superuser's `DIRECT_URL` and password blanked. The migrate job stops when `sirat_app` cannot read a table or lacks its default privileges.
 
 ## PgBouncer + Prisma
 

@@ -2,6 +2,21 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-01 — The app connects as sirat_app (Claude; LAUNCH-PLAN L8, OPEN-QUESTIONS #27)
+
+1. **Connections:**
+   - PgBouncer knows only `sirat_app` (its `DB_USER`/`DB_PASSWORD` come from `POSTGRES_APP_PASSWORD`). The bootstrap superuser connects straight to Postgres, and only the migrate job, backup, restore and psql use it.
+   - Compose builds the app's `DATABASE_URL` (`x-app-database-url` in `infra/docker-compose.yml`) from `POSTGRES_APP_PASSWORD` and `POSTGRES_DB`, for the API, the worker and the migrate job's seed. So `.env` holds that password once, with nothing to keep in step, and has no `DATABASE_URL` any more: one left in an older `.env` is overridden. Prisma keeps `connection_limit=5` per process (L14 tunes it).
+   - The API and worker containers get `DIRECT_URL` and `POSTGRES_PASSWORD` blanked, so the superuser's password is no longer in any app container. Prisma Client runs without `DIRECT_URL` (checked).
+2. **Refusals:**
+   - In production the API and the worker refuse to boot as a superuser (`databaseRoleProblem`); development and tests may still connect as the owner.
+   - `prisma/runtime-role.ts` requires `POSTGRES_APP_PASSWORD` outside the dev cluster, and stops the migrate job when `sirat_app` cannot read a table or lacks its default privileges, before the app would fail. `DROP OWNED BY CURRENT_USER`, which every role may run on itself, removes its default privileges (the owner granted its table rights, so those stay), and every table created after that would lack its rights. Counts only; the repair is a reviewed migration.
+3. **CI:** the docker job checks that the API and the worker log `database role=sirat_app superuser=false`. The database job already runs the whole integration suite as `sirat_app` (L2).
+4. **L9's scripts (exam's files, changed with the lead's knowledge):** `deploy.sh --first` requires `POSTGRES_APP_PASSWORD` instead of `DATABASE_URL`, and refuses an exported `POSTGRES_APP_PASSWORD`, which would beat `.env`. The rehearsal's throwaway `.env` gets one.
+5. **Left to others:**
+   - `restore.sh` is L7's (exam): on a fresh cluster, `runtime-role.ts --ensure` runs before `pg_restore`, and the migrate job runs after it.
+   - On the shared dev stack the switch needs one window that the lead and Rasel pick: PgBouncer is recreated, after the first stack turn since L2 has given the role its login. A worktree's `pnpm dev:api` through PgBouncer then uses `sirat_app`, or it connects as the owner straight to Postgres (`apps/api/.env.example`).
+
 ## 2026-11-01 — The runtime database role sirat_app (Claude; LAUNCH-PLAN L2, OPEN-QUESTIONS #27)
 
 1. **Two roles:**
@@ -12,7 +27,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
      - nothing on `_prisma_migrations`;
      - no `TRUNCATE`, `REFERENCES`, `TRIGGER` or `CREATE`, and no temporary tables: PUBLIC loses `TEMPORARY` on the database. For a table name without a schema PostgreSQL looks in the session's temporary schema first, so a temporary `exams` table could stand in for the real one inside the trigger functions and get past the published-question guard (the L2 review showed it on PostgreSQL 17).
    - So an injected statement can no longer switch off the append-only triggers, set `session_replication_role`, truncate, change the schema, hide a table or run `COPY … TO PROGRAM`. Every app row lock (`FOR UPDATE`) is on a table with full data rights.
-   - PostgreSQL still lets every role change its own session defaults and its own password, and drop the privileges granted to it (`DROP OWNED BY CURRENT_USER`, which also removes its default privileges, so tables created later lack its grants). The migrate job clears role-level settings on every run (item 2); a dropped grant needs a reviewed migration, and L8 decides how the migrate job checks for one.
+   - PostgreSQL still lets every role change its own session defaults and its own password, and drop its default privileges (`DROP OWNED BY CURRENT_USER`; its table rights stay, because the owner granted them), so tables created later would lack its grants. The migrate job clears role-level settings on every run (item 2); a dropped grant needs a reviewed migration, and L8 decides how the migrate job checks for one.
    - Nothing switches yet. L8 points `DATABASE_URL` at the role and takes the superuser's password out of the app containers.
 2. **The migration and the script:**
    - The migration `*_runtime_role` creates the role NOLOGIN and the grants, with `ALTER DEFAULT PRIVILEGES` for every later table and sequence. Its `_prisma_migrations` REVOKE is guarded: Prisma's shadow database (`migrate dev`, CI's drift check) replays the files into a database without that table.

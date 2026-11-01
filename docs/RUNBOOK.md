@@ -40,7 +40,11 @@ $DCD up -d --build --no-deps migrate api worker web nginx   # the shared stack (
 - With the lead's or Rasel's go-ahead (the stack is shared), recreate it once from a checkout that has the change: `$DCD up -d --no-deps nginx`. The same applies if a smoke turn recreated nginx from a worktree without the change and that worktree merges main later.
 - The e2e's CSP step needs nginx's site (http://127.0.0.1:8080). Against a bare Next, or an nginx without the change, it fails on purpose.
 
-**The runtime role sirat_app (L2):**
+**The runtime role sirat_app (L2, L8):**
+- Every stack turn needs `POSTGRES_APP_PASSWORD` in the root `.env`, because PgBouncer, the API, the worker and the seed log in as `sirat_app` (L8).
+  - **Without it**, compose stops before it creates or restarts any container, so nothing crash-loops. It prints `required variable POSTGRES_APP_PASSWORD is missing a value: POSTGRES_APP_PASSWORD missing - set it in .env (openssl rand -hex 32)`.
+  - **With a value other than the one the cluster already has** (the dev cluster keeps its first one), the migrate job prints `password already set, kept`, then its seed fails to log in through PgBouncer (password authentication failed for `sirat_app`). The job exits non-zero, so the API and the worker do not start. Put the agreed value in the root `.env`; if it is lost, use the reset below.
+- `pnpm dev:api` through the stack's PgBouncer (`127.0.0.1:16432`) logs in as `sirat_app` too (`apps/api/.env.example`). To run as the owner instead, point `DATABASE_URL` straight at Postgres (`127.0.0.1:15432`).
 - `POSTGRES_APP_PASSWORD` in the root `.env` (`openssl rand -hex 32`) is the same value in every worktree that takes stack turns: one Postgres cluster has one role. The first stack turn after L2 gives the role its login (the migrate log says `runtime role ready: sirat_app (login and password set)`); later turns keep it.
 - `TEST_APP_DATABASE_URL` in `apps/api/.env` (`postgresql://sirat_app:<the same value>@127.0.0.1:15432/<the session's *_test database>`, the same host and database as `TEST_DATABASE_URL`) makes the integration tests run the app as `sirat_app`, as CI does. Without it the tests run the app as the owner and skip the `sirat_app` checks; with it but no login yet, `test:int` stops with a message.
 - Rasel types both values. Sessions never read or print them.
@@ -318,7 +322,7 @@ Client: — · PayStation support: — · Email provider: Amazon SES (AWS accoun
 See `RULEBOOK.md` section 13: load test at 1.5–2× peak, backup + restore drill, 48 h code freeze, patches before freeze, monitoring + fake alert, Cloudflare verified, email deliverability, real small PayStation payment, rollback rehearsed, owner watching dashboards.
 
 Also before launch:
-- [ ] The API connects to Postgres with a **non-superuser runtime role** (OPEN-QUESTIONS #27); the bootstrap superuser is used only for migrations, backup and restore.
+- [ ] The API connects to Postgres with a **non-superuser runtime role** (OPEN-QUESTIONS #27); the bootstrap superuser is used only for migrations, backup and restore. Check: `$DC logs api worker | grep "database role="` shows only `role=sirat_app superuser=false` (production refuses to boot as a superuser).
 - [ ] PayStation sandbox checklist done (`docs/paystation/SANDBOX-CHECKLIST.md`) and the accepted `trx_status` values confirmed.
 - [ ] `PAYSTATION_ENV=live` on the VPS, and the boot log's PayStation line matches the client account: `$DC logs api | grep "PayStation env="` shows `env=live`, the live host, the client's account label and invoice prefix, and the production callback and IPN URLs. It never shows any part of the merchant id or password. A `payments are DISABLED` WARN, or a `payments.disabled_in_production` alert, means PAYSTATION_ENV is blank: no registration can be paid.
 - [ ] The free book: an admin has set the real title and uploaded the cover (`/admin/book`), before registration opens.
