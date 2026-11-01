@@ -1,4 +1,5 @@
 import {
+  ForbiddenException,
   HttpException,
   Injectable,
   Logger,
@@ -414,6 +415,9 @@ export class TwoFactorService {
   ): Promise<{ sessionsEnded: number }> {
     const box = this.requireBox();
     if (!actor.twoFactor) throw twoFactorRequired(); // the guard refuses this already; kept explicit
+    // The role fresh from the database, not the token's (up to 15 minutes old): as assertAdmin elsewhere.
+    const me = await this.enrolledUser(actor.id, true);
+    if (me.role !== 'admin') throw new ForbiddenException('Forbidden resource');
     if (targetId === actor.id)
       throw resetNotAllowed(
         'You cannot reset your own two-factor login: use a recovery code, or ask another admin',
@@ -427,7 +431,6 @@ export class TwoFactorService {
       throw resetNotAllowed('Only an admin or manager has two-factor login');
     if (!target.twoFactor) throw notEnabled();
 
-    const me = await this.enrolledUser(actor.id, true);
     await this.checkLimits(me.email, client);
     const proof = await this.prove(box, me.id, me.twoFactor, { code: input.code });
     if (!proof) {
