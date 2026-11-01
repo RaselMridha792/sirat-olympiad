@@ -17,6 +17,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 5. **Left to others:**
    - `restore.sh` is L7's (exam): on a fresh cluster, `runtime-role.ts --ensure` runs before `pg_restore`, and the migrate job runs after it.
    - On the shared dev stack the switch needs one window that the lead and Rasel pick, after the first stack turn since L2 has given the role its login. First every root `.env` gets the value and every `apps/api/.env` `DATABASE_URL` through 16432 moves to `sirat_app` (or the owner on 15432); then `$DCD up -d --no-deps pgbouncer` comes last. Apps with L8 already work through the old PgBouncer (checked), so nothing breaks before it (RUNBOOK section 0).
+
 ## 2026-11-01 — The fake PayStation as a container for load and staging stacks (Claude; payments, exam's load kit, lead)
 
 1. **Its own image, never in the api image:** `apps/api/test/fake-paystation/Dockerfile` builds from that folder alone.
