@@ -81,7 +81,30 @@ function alertsWith(
     limiter,
     opts.inbox === false ? undefined : inbox,
   );
-  return { alerts, inbox };
+  return { alerts, inbox, limiter };
+}
+
+/**
+ * Holds the email path at its first step (the limiter) until `release()`: a caller that waited for the email could
+ * not return while it is held. A backstop releases it after 10 s, so such a caller fails the test instead of hanging.
+ */
+function holdEmailPath(limiter: AlertEmailLimiter) {
+  const state = { entered: false, released: false };
+  let open!: () => void;
+  const opened = new Promise<void>((resolve) => (open = resolve));
+  const backstop = setTimeout(() => release(), 10_000);
+  function release() {
+    clearTimeout(backstop);
+    state.released = true;
+    open();
+  }
+  const allow = limiter.allow.bind(limiter);
+  jest.spyOn(limiter, 'allow').mockImplementation(async (kind, category) => {
+    state.entered = true;
+    await opened;
+    return allow(kind, category);
+  });
+  return { state, release };
 }
 
 async function inboxOf(to: string) {
@@ -196,11 +219,18 @@ describe('SecurityAlerts', () => {
     const deadQueue = new EmailQueue(dead, `${QUEUE}-dead`);
     try {
       for (const opts of [{ queue: deadQueue }, { cache: dead }]) {
-        const { alerts, inbox } = alertsWith(10, opts);
+        const { alerts, inbox, limiter } = alertsWith(10, opts);
+        const held = holdEmailPath(limiter);
         const actorId = randomUUID();
-        const started = Date.now();
-        await expect(alerts.raise('login.account_limit', event(actorId))).resolves.toBeUndefined();
-        expect(Date.now() - started).toBeLessThan(500); // the email part never waits in the caller
+        try {
+          await expect(
+            alerts.raise('login.account_limit', event(actorId)),
+          ).resolves.toBeUndefined();
+          // The email part never waits in the caller: the call returned while its email was still held.
+          expect(held.state).toEqual({ entered: true, released: false });
+        } finally {
+          held.release(); // the dead queue or dead limiter now fails in the background
+        }
         expect(
           await prisma.auditLog.count({
             where: { action: 'security.login.account_limit', actorId },
