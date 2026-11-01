@@ -23,6 +23,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - **A fixture table in `launch.test.ts`:** a soon row, a live row and a missing row; the mock with and without the preview; the order check on a guarded page, a late guard and a missing one.
    - **A local run** with one page temporarily marked soon (in the PR).
 7. **The Bangla strings:** Rasel checks them (Q5).
+
 ## 2026-11-01 — Nightly session and token cleanup (Claude; L13, LAUNCH-PLAN §9, A2's notes, lead review)
 
 1. **The rule is A2.1b #9 as recorded:**
