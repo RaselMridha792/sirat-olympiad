@@ -393,7 +393,7 @@ describe('settings: the registration fee (CHECK)', () => {
     await expect(
       prisma.setting.update({ where: { key: 'payment_expiry_minutes' }, data: { value: 0 } }),
     ).resolves.toBeDefined();
-    await prisma.setting.update({ where: { key: 'payment_expiry_minutes' }, data: { value: 60 } });
+    await prisma.setting.update({ where: { key: 'payment_expiry_minutes' }, data: { value: 10 } });
   });
 });
 

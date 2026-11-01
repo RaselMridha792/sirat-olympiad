@@ -23,7 +23,8 @@ export const DEFAULT_SETTINGS: Readonly<
   registration_closes_at: Prisma.JsonNull, // ISO UTC or null (no upper bound)
   currency: 'BDT',
   leaderboard_public: false,
-  payment_expiry_minutes: 60,
+  // PayStation's checkout link lives about 10 minutes (sandbox S12, 2026-11-01); the time limit equals it (plan Q5, D3).
+  payment_expiry_minutes: 10,
   // Free book (plan 16): an admin sets the real title and uploads the cover before registration opens (RUNBOOK §9).
   book_title: 'Sirat Leadership Olympiad book',
   book_cover_image_id: Prisma.JsonNull, // book_images.id once an admin uploads a cover
