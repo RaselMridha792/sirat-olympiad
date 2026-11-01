@@ -28,9 +28,9 @@ cleanup() {
 }
 trap cleanup EXIT
 git bundle create "$tmp/repo.bundle" HEAD 2> /dev/null
+dk volume create "$VOL" > /dev/null
 # The single-quoted script runs in the tools container, which expands it.
 # shellcheck disable=SC2016
-dk volume create "$VOL" > /dev/null
 dk run --rm --name "$TOOLS" \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$VOL:$MOUNT" \
