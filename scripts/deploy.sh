@@ -140,11 +140,14 @@ if [ "$MODE" = first ]; then
   for f in infra/nginx/certs/origin.pem infra/nginx/certs/origin.key; do
     [ -s "$f" ] || fail "no $f (RUNBOOK section 15, the origin certificate)"
   done
-  say "first start of project $PROJECT: the data services, then nginx"
+  # The data services take their settings from this commit's compose file, and a deploy refuses any difference: the
+  # first release must be this same commit.
+  head=$(git rev-parse HEAD)
+  say "first start of project $PROJECT from $head: the data services, then nginx"
   dc up -d --no-build --wait --wait-timeout "$WAIT" "${DATA[@]}"
   dc up -d --no-deps --no-build nginx
-  record - first-start
-  say "first start done; next: scripts/deploy.sh <sha>"
+  record "$head" first-start
+  say "first start done; deploy this same commit first: scripts/deploy.sh $head"
   exit 0
 fi
 
@@ -181,6 +184,9 @@ data_unchanged() {
     wanted=$(dc config --hash "$s" | awk '{print $2}')
     if [ "$running" != "$wanted" ]; then
       echo "deploy: data-service change pending: apply it as its own step ($s)" >&2
+      if [ -z "$LIVE" ]; then
+        echo "deploy: (no release yet: the first release must be the commit --first ran on, $(awk '$3 == "first-start" {c = $2} END {print c}' "$LOG_FILE"))" >&2
+      fi
       return 1
     fi
   done
