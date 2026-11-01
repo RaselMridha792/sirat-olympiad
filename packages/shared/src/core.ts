@@ -97,6 +97,16 @@ export const AMBASSADOR_REFUSALS = [
 ] as const;
 export type AmbassadorRefusal = (typeof AMBASSADOR_REFUSALS)[number];
 
+// ───────────── Admin statistics (06-API "Admin statistics"; the shape is AdminStats in dashboard.ts) ─────────────
+
+/** payments' RegistrationAttemptStatus (schema.prisma), in the order the admin home lists them. */
+export const REGISTRATION_ATTEMPT_STATUSES = ['open', 'completed', 'abandoned', 'conflict'] as const;
+export type RegistrationAttemptStatus = (typeof REGISTRATION_ATTEMPT_STATUSES)[number];
+
+/** The payment statuses the admin home counts: every status except `refunded`, which is never entered. */
+export const STATS_PAYMENT_STATUSES = ['initiated', 'pending', 'paid', 'failed', 'expired'] as const;
+export type StatsPaymentStatus = (typeof STATS_PAYMENT_STATUSES)[number];
+
 /** POST /admin/ambassadors/:userId/{approve,revoke} answer: the ambassador's state after the change. */
 export interface AmbassadorState {
   userId: string;
