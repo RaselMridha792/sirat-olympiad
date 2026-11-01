@@ -159,7 +159,9 @@ The defaults are used if no answer comes before the PR that needs them.
 
 ### C5b (after launch; nothing is lost by waiting)
 
-**Migration CX3 `*_core_ambassador_tasks_teams`:** `task_assignments` + `proof_text` (≤ 1,000), `submitted_at`, `review_note`; `teams` + `join_code` (UNIQUE, CITEXT); `team_members UNIQUE(user_id)` (one team per student, D7); `settings` key `ambassador_points_per_referral` (data migration, insert-only; Q3).
+Split into three PRs (lead, 2026-11-01): C5b-1 points (built: the sweep, bounded to 2 days every 5 minutes with a nightly back-fill, on its own queue; `/admin/ambassador-points`; adjustments), C5b-2 tasks, C5b-3 teams.
+
+**Migration CX3 `*_core_ambassador_tasks_teams`:** `task_assignments` + `proof_text` (≤ 1,000), `submitted_at`, `review_note`; `teams` + `join_code` (UNIQUE, CITEXT); `team_members UNIQUE(user_id)` (one team per student, D7); `settings` key `ambassador_points_per_referral` (in the insert-only config seed, built in C5b-1; Q3).
 
 - **Referral points:** a worker job every 5 minutes, one run at a time: `INSERT … SELECT` one ledger row per paid registration with a referrer, `event_key = 'referral_paid:<paymentId>'`, `ON CONFLICT (event_key) DO NOTHING`. It reads payments' `registrations` only; run twice, it adds nothing. It back-fills every referral made before C5b.
 - **Tasks:** admin creates and assigns (`CRUD /admin/tasks`, `POST /admin/tasks/:id/assign`); the ambassador submits proof (`POST /ambassador/tasks/:assignmentId/submit`); approval writes `task:<assignmentId>` once (`POST /admin/task-assignments/:id/{approve,reject}`, audited).

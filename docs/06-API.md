@@ -54,8 +54,8 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `GET/POST /admin/jury/*` | jury/admin | Judge recorded |
 | | `GET/POST /admin/announcements`, `PATCH /admin/announcements/:id`, `POST /admin/announcements/:id/{archive,restore}` | admin | Announcements (below). Built (core C4) |
 | | `GET /admin/ambassadors`, `POST /admin/ambassadors/:userId/{approve,revoke}` | admin | Ambassadors (below). Built (core C5a) |
-| | `CRUD /admin/tasks`, `/admin/rank-thresholds` | admin | Core C5b |
-| | `POST /admin/points/adjust` | admin | Compensating ledger entry |
+| | `GET/PUT /admin/ambassador-points`, `POST /admin/points/adjust` | admin | Points per referral and the ranks (single writer), compensating entries; audited. Built (core C5b-1) |
+| | `CRUD /admin/tasks` | admin | Core C5b-2 |
 | | `GET /admin/audit`, `GET /admin/audit/:id`, `POST /admin/audit/export` | admin | Audit log (below). Read only; the export is audited. Built (core) |
 
 ## Registration and payment (payments PR 2 and 3; plan: `docs/plans/PAYMENTS-PLAN.md` 6.1–6.7)
@@ -251,6 +251,16 @@ The database refuses out-of-range text and an archive time before creation (`*_c
 | `GET /ambassador/me` (ambassador) | — | `AmbassadorOverview`: code, referral count, the 5 latest referrals (name, institution, date; no contact details), points, rank (current and next threshold); `team` null and `tasks` empty until C5b. The user is re-read, so a revoked ambassador is refused (403) even with a token minted before the revocation. A newly approved student's token still says `student`: the panel answers that 403 by renewing the token once (`/refresh`), so the panel opens at once |
 
 The database refuses a code outside `^[A-Za-z0-9_-]{3,40}$`, and `point_ledger` refuses UPDATE, DELETE and TRUNCATE (except TRUNCATE in a `*_test` database) (`*_core_ambassador_checks`).
+
+**Points (core C5b-1; owner Q3 defaults until answered: 10 per paid referral, Bronze 0 / Silver 100 / Gold 250).** Shapes `AmbassadorPointsConfig`, `AmbassadorPointsUpdate`, `PointsAdjustRequest`, `PointsAdjustResult`, `AMBASSADOR_POINTS_LIMITS`, `AMBASSADOR_POINTS_REFUSALS` (`core.ts`).
+
+| Method + path | Request | Answers |
+|---|---|---|
+| `GET /admin/ambassador-points` (admin, re-read) | — | `AmbassadorPointsConfig`: `pointsPerReferral` (the `ambassador_points_per_referral` setting, 10 when missing) and `thresholds` (`rank_thresholds`, lowest first) |
+| `PUT /admin/ambassador-points` (admin) | `{ pointsPerReferral (0–1,000), thresholds (1–10 of { name 2–30, minPoints 0–1,000,000 }), expected (the config the admin saw), reason (3–200) }` | 200 the new config. One writer at a time (a transaction advisory lock): 409 `stale` when the current config is not `expected`; 400 `bad_thresholds` unless the first starts at 0, minimums rise and names differ in any case. Audit `ambassador_points.changed` (before, after, reason). A new value counts for later awards only |
+| `POST /admin/points/adjust` (admin) | `{ userId, amount (±1–10,000, not 0), reason (3–200) }` | 200 `{ userId, points }` (the total after). A new ledger row `adjust:<uuid>` with the admin as `created_by`; nothing earlier changes. 404 unknown user; 409 `not_ambassador` without an ambassador profile (a revoked one has a profile). Audit `points.adjusted` |
+
+**The referral sweep** (worker, queue `ambassador-points`): every 5 minutes (scheduler `referral-points`) one statement inserts a ledger row `referral_paid:<paymentId>` for each paid registration with a referrer, `ON CONFLICT (event_key) DO NOTHING`, over the registrations of the last 2 days (the whole table on the very first run); every night at 03:45 Asia/Dhaka (`referral-points-backfill`) over every registration. Run twice or by two workers at once, it adds nothing twice. A referral counts even if the ambassador was revoked later; the amount is the setting at sweep time, and 0 awards nothing (a later value back-fills). It reads payments' `registrations` and `users`, and writes only the ledger.
 
 ## Admin statistics (core; lead 2026-11-01)
 
