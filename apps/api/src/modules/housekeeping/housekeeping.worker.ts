@@ -8,15 +8,16 @@ import { QUEUE_REDIS_OPTIONS } from '../../redis/redis.module';
 import {
   HOUSEKEEPING_JOBS,
   HOUSEKEEPING_JOB_OPTIONS,
-  SESSION_CLEANUP_SCHEDULER_ID,
-  SESSION_CLEANUP_SCHEDULE,
+  HOUSEKEEPING_SCHEDULES,
   housekeepingQueueName,
 } from './housekeeping-queue';
+import { AttemptScrub } from './attempt-scrub';
 import { SessionCleanup } from './session-cleanup';
 
 /**
- * Worker side of housekeeping (the `worker` service, never an API replica): the nightly session and token cleanup.
- * One scheduler id, so one run per night across all workers; one job at a time. Logs job names and ids only.
+ * Worker side of housekeeping (the `worker` service, never an API replica): the nightly session and token cleanup and
+ * the registration form's retention.
+ * One scheduler id per job, so one run per night across all workers; one job at a time. Logs job names and ids only.
  */
 @Injectable()
 export class HousekeepingWorker implements OnModuleInit, OnApplicationShutdown {
@@ -27,6 +28,7 @@ export class HousekeepingWorker implements OnModuleInit, OnApplicationShutdown {
 
   constructor(
     private readonly cleanup: SessionCleanup,
+    private readonly scrub: AttemptScrub,
     private readonly config: ConfigService<EnvVars, true>,
   ) {}
 
@@ -37,15 +39,13 @@ export class HousekeepingWorker implements OnModuleInit, OnApplicationShutdown {
     this.connection.on('error', () => undefined); // BullMQ reconnects; job failures are logged below
     const queueName = housekeepingQueueName(this.config);
     this.queue = new Queue(queueName, { connection: this.connection });
-    await this.queue.upsertJobScheduler(SESSION_CLEANUP_SCHEDULER_ID, SESSION_CLEANUP_SCHEDULE, {
-      name: HOUSEKEEPING_JOBS.sessionCleanup,
-      opts: HOUSEKEEPING_JOB_OPTIONS,
-    });
-    this.logger.log({
-      msg: 'housekeeping scheduler set',
-      id: SESSION_CLEANUP_SCHEDULER_ID,
-      ...SESSION_CLEANUP_SCHEDULE,
-    });
+    for (const { id, schedule, job } of HOUSEKEEPING_SCHEDULES) {
+      await this.queue.upsertJobScheduler(id, schedule, {
+        name: job,
+        opts: HOUSEKEEPING_JOB_OPTIONS,
+      });
+      this.logger.log({ msg: 'housekeeping scheduler set', id, ...schedule });
+    }
     this.worker = new Worker(queueName, (job) => this.process(job), {
       connection: this.connection,
       concurrency: 1,
@@ -65,6 +65,8 @@ export class HousekeepingWorker implements OnModuleInit, OnApplicationShutdown {
     switch (job.name) {
       case HOUSEKEEPING_JOBS.sessionCleanup:
         return this.cleanup.run();
+      case HOUSEKEEPING_JOBS.attemptScrub:
+        return this.scrub.run();
       default:
         throw new Error(`unknown housekeeping job ${job.name}`);
     }

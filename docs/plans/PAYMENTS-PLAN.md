@@ -211,7 +211,7 @@ The test helper `paymentData()` (`apps/api/test/helpers.ts`), `db-constraints.in
 
 ### 4.3 Retention (D6)
 
-On completion `payload` becomes NULL at once (the account holds the data now; the password hash leaves the pending row). Abandoned attempts: a daily job clears `payload` after 30 days; email, phone and name stay while a payment of the attempt exists (payment lookups).
+On completion `payload` becomes NULL at once (the account holds the data now; the password hash leaves the pending row). Abandoned attempts: a daily job clears `payload` after 30 days; email, phone and name stay while a payment of the attempt exists (payment lookups). **Built 2026-11-01:** the housekeeping job `attempt-scrub` (04:00 Dhaka). With the lead it also covers dead open attempts, and conflict attempts stay (DECISIONS, RUNBOOK §16).
 
 ### 4.4 Dev fixtures (step 1, with M1–M3)
 

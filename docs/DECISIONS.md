@@ -29,6 +29,24 @@ One short entry per non-obvious technical or product decision. Newest first. For
 10. **Tests:**
     - `ambassador-teams.int-spec.ts` (9): create and the code; join in any case, first names only, leave, the lead may not; 12 joins at once stop at 10; a revoked lead closes the team; the per-user and per-IP limits with refusals counted; admin list, detail and rename with no names in the audit row; admins only; the CHECKs and the uniques.
     - web: the area file picks (first names, the code for the lead only, a malformed id never sent), the problem mapper.
+## 2026-11-01 — The registration form's retention: abandoned and dead attempts (Claude; D6, PAYMENTS-PLAN 4.3, lead)
+
+1. **D6 as written:** an abandoned attempt's stored form (`payload`, with the argon2id password hash) is cleared 30 days after its last change.
+2. **Extended (lead; Rasel, please see):** an **open attempt that is dead** is cleared too. Dead means it was last changed over 30 days ago, has no payment initiated, pending, paid or refunded, and every checkout of it expired over 30 days ago, far past the 48 h late watch.
+   - Such a student never came back. Without this, their password hash and form would stay forever, which is what D6 exists to prevent.
+3. **Kept:** **conflict** attempts are an admin case, so the job never clears them. An admin clears one by hand once the case is closed (RUNBOOK §16).
+   - Completed attempts are cleared at settlement, as before.
+   - The row, name, email and phone stay for payment lookups, and so do the payments and their events. `updated_at` is not changed.
+4. **Money is never lost:** a payment that succeeds on an attempt whose form was cleared is marked paid and set aside as `attempt_invalid`, with no account. `attempt-scrub.int-spec` runs exactly that.
+5. **A student who comes back** with a cookie the browser kept (it should drop it after 7 days, but the server does not check the cookie's age):
+   - the result page offers no retry or resume for a cleared attempt;
+   - retry or resume answers 409 `START_OVER` (bn/en: "This registration has expired. Please fill in the form again.") and gives the attempt up, so no payment ever starts on it;
+   - the same form sent again asks for a new request id (`START_REQUEST_REUSED`), and the new start registers normally.
+6. **How:** its own scheduler on the housekeeping queue, `attempt-scrub` at **04:00** Dhaka.
+   - The other nightly jobs are spread out: session-cleanup at 03:30, core's ambassador back-fill at 03:45.
+   - It uses the session cleanup's batch loop, now shared (`batch-drain.ts`): 1,000 rows per batch, `FOR UPDATE SKIP LOCKED`, `SET LOCAL statement_timeout`, a cap, idempotent.
+   - Counts-only log and audit (`housekeeping.attempt_scrub`). A failed run shows in ops-check as a warning on the same queue.
+   - No migration: `@@index([status, updatedAt])` and the payments foreign-key index serve the scans.
 
 ## 2026-11-01 — Restores never overwrite, and the drill never reads the real settings (L7; exam session, LAUNCH-PLAN §5)
 
@@ -199,6 +217,8 @@ One short entry per non-obvious technical or product decision. Newest first. For
    The k6 script retries a busy start as the wizard does.
 6. **The shared-IP test** (300 starts from one IP, then the 301st refused) no longer depends on wall time. The first start goes alone, its throttler window gets a long TTL, and all 301 count in that one window. It passed with a 61 s pause added.
 7. **Not changed:** the transaction limits (answering 503 fast is better than waiting longer), and `connection_limit` (A2's L14 VPS tuning).
+8. **The shared-IP budget (lead; for the VPS k6 run and A2's L14):** a busy 503 still counts against the IP's start limit (300 a minute), and the wizard's one retry counts again. So a school behind one IP could reach 429 sooner during a database-busy burst.
+   - The shared-IP test now accepts 201 or 503 `SERVICE_BUSY` for the first 300 starts, and still requires the 301st to be refused with 429.
 
 ## 2026-11-01 — The audit-log viewer (core; lead's task, plan and review, M13)
 

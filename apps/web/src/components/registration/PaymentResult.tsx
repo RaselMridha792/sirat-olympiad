@@ -102,6 +102,9 @@ export function PaymentResult({ locale }: { locale: Locale }) {
       setActionError(
         problem.kind === 'form' ? problemText(m, problem.text) : m.errors.PAYMENT_START_FAILED,
       );
+      // The API gave the attempt up (its form was cleared after 30 days, D6): read it again, so the page offers
+      // a new registration instead of buttons that no longer apply.
+      if (problem.kind === 'form' && problem.text === 'START_OVER') restart();
     }
     setBusy(false);
   }

@@ -70,6 +70,11 @@ describe('SessionCleanup.run', () => {
     const cut = cleanupCutoffs(NOW);
     expect(sql[1]).toMatch(/expires_at < \? OR revoked_at < \?/);
     expect(sql[1]).toContain('FOR UPDATE SKIP LOCKED');
+    // The ids are picked once, in a MATERIALIZED CTE: an IN (subquery LIMIT n) can run more than once and pass n.
+    expect(sql[1]).toContain('WITH batch AS MATERIALIZED (');
+    expect(sql[1]).toContain('DELETE FROM sessions s USING batch WHERE s.id = batch.id');
+    expect(sql[3]).toContain('DELETE FROM auth_tokens t USING batch WHERE t.id = batch.id');
+    for (const q of sql) expect(q).not.toContain('WHERE id IN (');
     expect(params[1]).toEqual([cut.sessions, cut.sessions, 3]);
     expect(sql[3]).toContain('FROM auth_tokens');
     expect(params[3]).toEqual([cut.tokens, 3]);

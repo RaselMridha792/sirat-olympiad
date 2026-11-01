@@ -71,6 +71,7 @@ export const registrationMessages = defineMessages({
       GRADE_LEVEL_UNKNOWN: 'Choose your class again.',
       START_IN_PROGRESS: 'Your payment is being prepared. Try again in a moment.',
       START_REQUEST_REUSED: 'Please press the button again.',
+      START_OVER: 'This registration has expired. Please fill in the form again.',
       PAYMENT_START_FAILED: 'The payment could not start. Please try again.',
       TOO_MANY_ATTEMPTS: 'Too many attempts with this email or phone. Try again in an hour.',
       invalid: 'Some details are not accepted. Check the form.',
@@ -202,6 +203,7 @@ export const registrationMessages = defineMessages({
       GRADE_LEVEL_UNKNOWN: 'আপনার শ্রেণি আবার বেছে নিন।',
       START_IN_PROGRESS: 'আপনার পেমেন্ট প্রস্তুত হচ্ছে। একটু পরে আবার চেষ্টা করুন।',
       START_REQUEST_REUSED: 'অনুগ্রহ করে বোতামটি আবার চাপুন।',
+      START_OVER: 'এই রেজিস্ট্রেশনের মেয়াদ শেষ হয়ে গেছে। অনুগ্রহ করে ফর্মটি আবার পূরণ করুন।',
       PAYMENT_START_FAILED: 'পেমেন্ট শুরু করা গেল না। আবার চেষ্টা করুন।',
       TOO_MANY_ATTEMPTS:
         'এই email বা ফোন দিয়ে অনেকবার চেষ্টা হয়েছে। এক ঘণ্টা পরে আবার চেষ্টা করুন।',
