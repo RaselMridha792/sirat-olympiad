@@ -1,4 +1,4 @@
-// Authenticator codes for the e2e scripts' admins and managers (admin two-factor login, RUNBOOK section 21). RFC 6238
+// Authenticator codes for the e2e scripts' admins and managers (admin two-factor login, RUNBOOK section 22). RFC 6238
 // on HMAC-SHA1, 6 digits, 30-second steps, as apps/api/src/modules/auth/two-factor/totp.ts. No dependencies.
 //
 // The secrets live in apps/web/.e2e-totp.json (git-ignored, mode 600), written by `pnpm --filter @sirat/web

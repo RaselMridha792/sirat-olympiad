@@ -51,9 +51,9 @@ Signing secret: the API refuses to start (in every `NODE_ENV`) when `JWT_ACCESS_
 **The two-factor key (admin 2FA, DECISIONS "Admin two-factor login"):**
 - **The stack:** every worktree's root `.env` needs `TOTP_ENCRYPTION_KEY`, since the stack's api runs with `NODE_ENV=production` and refuses to start without it. Add it once without printing it: `printf 'TOTP_ENCRYPTION_KEY=%s\n' "$(openssl rand -base64 32)" >> .env`.
 - **Host-side `pnpm dev:api`:** the same line in `apps/api/.env` turns 2FA on for that API. Without it 2FA is off there: nothing is enforced, and the 2FA routes answer 503 (development only).
-- **Enrolments follow the key:** it decrypts the stored secrets. An admin who enrolled under one key gets no code accepted under another (a recovery code or `admin:2fa-reset` still works, §21). So dev enrolments must be redone after a stack turn from a worktree with a different key, unless every worktree uses the same value.
+- **Enrolments follow the key:** it decrypts the stored secrets. An admin who enrolled under one key gets no code accepted under another (a recovery code or `admin:2fa-reset` still works, §22). So dev enrolments must be redone after a stack turn from a worktree with a different key, unless every worktree uses the same value.
 - **Tests:** the integration tests ignore the key in `apps/api/.env` (`test/load-env.ts`). Only the 2FA suites set their own throwaway key; every other suite runs with 2FA off.
-- **Admins on the stack:** with the key set, an admin from `admin:create` logs in but gets 403 `TWO_FACTOR_REQUIRED` on the admin pages until they enrol on `/admin/security` (§21).
+- **Admins on the stack:** with the key set, an admin from `admin:create` logs in but gets 403 `TWO_FACTOR_REQUIRED` on the admin pages until they enrol on `/admin/security` (§22).
 - **The e2e scripts' admins:** run `E2E_ADMIN_EMAIL=... E2E_ADMIN_PASSWORD=... pnpm --filter @sirat/web e2e:2fa-enrol` once for each admin or manager they sign in with. It enrols the account through the API and keeps its secret in `apps/web/.e2e-totp.json` (git-ignored, mode 600, never printed). The scripts then pass the code step by themselves (`scripts/lib/totp.mjs`).
 - **The 2FA browser test:** `E2E_2FA_EMAIL=... E2E_2FA_PASSWORD=... pnpm --filter @sirat/web e2e:2fa`, with a throwaway admin that has no 2FA. It covers enrolment, the code step, a recovery code, a refresh and turning it off, and leaves the account as it found it.
 
@@ -774,7 +774,23 @@ select r.name as from_round, p.category, p.top_n, p.promoted_count, p.eliminated
 SQL
 ```
 
-## 21. Admin two-factor login: enrolment and a lost authenticator
+## 21. Video round and jury (core C6b)
+
+- **Students** send their video link on "My round" (`/dashboard/round`) while the video round is open: an https link to YouTube or Google Drive only. They can change it until the close; after the close it stays.
+- **Judges** are jury-role accounts (created like the other staff accounts). On `/admin/rounds`, an admin opens the video round's "Jury" dialog, picks a judge and ticks the categories. Removing a judge (for example a wrong or compromised account) keeps their scores in the history but takes them out of every entry's score at once; an entry with no other score is "to score" again.
+- **Scoring starts when the round closes.** A judge sees "To score" and "Scored" on `/admin/jury`, with entry numbers only (no names). Every criterion gets 0–10; the total is out of 100. Scoring an entry again adds a new score: the judge's latest one counts, and the entry's score is the average of the judges' latest totals.
+- **Before promoting from the video round** (§20), every sent video needs at least one score ("Some sent videos have no jury score yet"). Once a category is promoted, its entries take no more scores.
+- **"Link not allowed"** on the jury page means the stored link is not on the allow-list. The server refuses such links, so this should not happen; report it rather than opening the link.
+- **Check the progress** (counts only, no names):
+
+```bash
+$DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+select r.name, e.status, count(*), count(e.video_url) as with_video from round_entries e join rounds r on r.id = e.round_id where r.type = 'video' group by 1, 2 order by 1, 2;
+select r.name, a.category, count(distinct a.judge_id) as judges from jury_assignments a join rounds r on r.id = a.round_id group by 1, 2 order by 1, 2;
+SQL
+```
+
+## 22. Admin two-factor login: enrolment and a lost authenticator
 
 Admins and managers sign in with a password and a 6-digit code from an authenticator app (DECISIONS "Admin two-factor login"; 06-API "Two-factor login"). Production requires `TOTP_ENCRYPTION_KEY` in `.env`; the api logs `two-factor=on` at boot.
 

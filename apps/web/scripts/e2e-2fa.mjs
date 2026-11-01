@@ -1,4 +1,4 @@
-// Browser end-to-end test of admin two-factor login against the whole stack behind nginx (RUNBOOK section 21), with
+// Browser end-to-end test of admin two-factor login against the whole stack behind nginx (RUNBOOK section 22), with
 // the shared CDP driver. Needs a stack with TOTP_ENCRYPTION_KEY and a throwaway admin (scripts/... create-admin)
 // that has no two-factor login yet:
 //

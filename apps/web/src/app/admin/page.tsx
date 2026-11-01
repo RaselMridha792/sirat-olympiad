@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import type { ComponentProps } from 'react';
 import {
   Activity,
@@ -82,16 +83,8 @@ export default async function AdminHomePage({
   searchParams: Promise<SearchParams>;
 }) {
   const user = await requireAccess('/admin');
-  if (user.role === 'jury') {
-    // No statistics call: /admin/stats is for admins and managers.
-    const { m } = await getMessages(adminHomeMessages);
-    return (
-      <>
-        <PageHeader title={m.jury.title} />
-        <EmptyState title={m.jury.body} />
-      </>
-    );
-  }
+  // No statistics call for the jury (/admin/stats is for admins and managers): its home is the jury page.
+  if (user.role === 'jury') redirect('/admin/jury');
   const params = await searchParams;
   const [{ locale, m }, { m: c }, data] = await Promise.all([
     getMessages(adminHomeMessages),

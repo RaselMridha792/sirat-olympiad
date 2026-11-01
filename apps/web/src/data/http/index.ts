@@ -13,6 +13,7 @@ import { studentProfile } from './profile.ts';
 import type { ApiGet } from './request.ts';
 import { adminStats } from './stats.ts';
 import { adminTasks } from './tasks.ts';
+import { adminJury } from './jury.ts';
 import { adminRounds, studentRound } from './rounds.ts';
 import { adminTeams, studentTeam } from './teams.ts';
 import { adminUsers } from './users.ts';
@@ -55,6 +56,7 @@ export function createHttpSource(get: ApiGet): DataSource {
       ...adminTasks(get),
       ...adminTeams(get),
       ...adminRounds(get),
+      ...adminJury(get),
     },
   };
 }

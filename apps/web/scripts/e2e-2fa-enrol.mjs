@@ -1,4 +1,4 @@
-// Enrols one local-stack admin or manager in two-factor login for the e2e scripts (RUNBOOK section 21), through the
+// Enrols one local-stack admin or manager in two-factor login for the e2e scripts (RUNBOOK section 22), through the
 // API, and keeps its authenticator secret in apps/web/.e2e-totp.json (git-ignored, mode 600). The secret and the
 // recovery codes are never printed. Once per account after the stack runs with TOTP_ENCRYPTION_KEY; the e2e scripts'
 // logins (lib/cdp.mjs apiLogin, e2e.mjs) then pass the code step by themselves.
@@ -51,7 +51,7 @@ try {
   const cookies = await apiLogin(BASE, email, password).catch((error) => {
     if (/no authenticator secret/.test(error.message))
       throw new Error(
-        `${email} is enrolled, but its secret is not kept here: reset it (admin:2fa-reset, RUNBOOK section 21), then run this again`,
+        `${email} is enrolled, but its secret is not kept here: reset it (admin:2fa-reset, RUNBOOK section 22), then run this again`,
       );
     throw error;
   });

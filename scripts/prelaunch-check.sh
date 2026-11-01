@@ -89,7 +89,7 @@ check "APP_URL is https" bash -c '[[ "$1" == https://* ]]' _ "$(envval APP_URL)"
 check "COOKIE_SECURE is not false" test "$(envval COOKIE_SECURE)" != false
 check "the API connects as a runtime role, not the database owner" bash -c \
   '[ -n "$1" ] && [ "$1" != "$2" ]' _ "$(envval DATABASE_URL | sed -n 's|^postgresql://\([^:@]*\).*|\1|p')" "$(envval POSTGRES_USER)"
-# Admin two-factor login (RUNBOOK section 21): the API refuses to boot in production without the key, and every
+# Admin two-factor login (RUNBOOK section 22): the API refuses to boot in production without the key, and every
 # enrolled admin's secret is sealed with it. The format only (as the API parses it); the value is never printed.
 totp_key_ok() { [[ "$(envval TOTP_ENCRYPTION_KEY)" =~ ^([0-9a-fA-F]{64}|[A-Za-z0-9+/_-]{43}=?)$ ]]; }
 check "TOTP_ENCRYPTION_KEY is set: 32 random bytes, base64 or 64 hex (admin 2FA)" totp_key_ok

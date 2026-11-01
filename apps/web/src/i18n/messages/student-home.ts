@@ -18,6 +18,7 @@ export const studentHomeMessages = defineMessages({
     },
     round: {
       label: 'Your current round',
+      open: 'Open my round',
       none: 'Your first round has not started yet.',
       noneHint: 'Watch the announcements for the start date.',
       noEntry: 'Your status for this round will appear here soon.',
@@ -111,6 +112,7 @@ export const studentHomeMessages = defineMessages({
     },
     round: {
       label: 'আপনার বর্তমান রাউন্ড',
+      open: 'আমার রাউন্ড খুলুন',
       none: 'আপনার প্রথম রাউন্ড এখনো শুরু হয়নি।',
       noneHint: 'শুরুর তারিখ জানতে ঘোষণাগুলো দেখুন।',
       noEntry: 'এই রাউন্ডে আপনার অবস্থা শিগগিরই এখানে দেখা যাবে।',

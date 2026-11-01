@@ -9,7 +9,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - Without the key (development and tests only) 2FA is **off**: nothing is enforced, and every 2FA route answers 503 `TWO_FACTOR_UNAVAILABLE`. The API logs `two-factor=on` at boot.
    - Rotation: the old value goes to `TOTP_ENCRYPTION_KEY_PREVIOUS`; each secret is re-sealed with the new key at its next right code.
 2. **The claim:** the access token carries `tfa` (boolean). A token without it (issued before this change) reads as false.
-   - **The proof lives on the session row** (`sessions.two_factor_verified`, migration `20261101060002_session_two_factor_proof`); the token's `tfa` is only a copy of it. `start()` stores false; `startVerified()` true, only after the login's code step or turning 2FA on with a code.
+   - **The proof lives on the session row** (`sessions.two_factor_verified`, migration `20261101080002_session_two_factor_proof`); the token's `tfa` is only a copy of it. `start()` stores false; `startVerified()` true, only after the login's code step or turning 2FA on with a code.
    - **A refresh never raises it:** the successor carries the previous row's proof AND the user's current enrolment (`user_two_factor.enabled_at` set). So turning 2FA off or a reset drops it, and enrolling later never upgrades a session that skipped the code.
    - **change-password** (review fix): the access token's session row must still be alive, else 401 (a token outlives its row by up to 15 minutes). For an enrolled user that row must have proved the code, else 403 `TWO_FACTOR_REQUIRED` with nothing changed. The new session inherits that row's proof (AND enrolled now), never the token's claim.
    - This closes the upgrade the review found: an attacker who logged in with the password before the admin enrolled used change-password, after enable had ended the sessions, to mint a fresh session, then refreshed it to `tfa`. It also closes the same upgrade through races (a login or a rotation committing around enable's end-all): their sessions carry false.
@@ -30,7 +30,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 6. **Enrolment and the rest** (`@Roles('admin', 'manager')`):
    - `setup` asks for the password again under the login limits, creates or replaces a PENDING row, and returns `{ otpauthUri, qrDataUri }` (the QR is rendered server-side).
    - `enable` takes a code from the pending secret. It is not under the login limits (the caller holds the secret it confirms). It returns 10 recovery codes once (SHA-256 stored), ends every session, and sets new cookies with the proof.
-   - **The enable cap** (review fix): a stolen session with a pending setup must not guess at the per-user rate. Each enable attempt reserves one on the pending row (`user_two_factor.enable_attempts`, migration `20261101060003_two_factor_enable_attempts`, CHECK 0–5) before its code is checked; the 5th wrong code deletes the row, answering 409 `TWO_FACTOR_SETUP_REQUIRED`, so setup (which asks for the password) must run again. A right code and a new setup reset the count.
+   - **The enable cap** (review fix): a stolen session with a pending setup must not guess at the per-user rate. Each enable attempt reserves one on the pending row (`user_two_factor.enable_attempts`, migration `20261101080003_two_factor_enable_attempts`, CHECK 0–5) before its code is checked; the 5th wrong code deletes the row, answering 409 `TWO_FACTOR_SETUP_REQUIRED`, so setup (which asks for the password) must run again. A right code and a new setup reset the count.
    - Why a column, not Redis: the count dies with the row, a new setup resets it in the same statement, and the cache Redis (allkeys-lru) may evict a key.
    - `recovery-codes` needs a current TOTP code under the limits. `disable` needs both factors under the limits, ends every session, and sets new cookies without `tfa`.
    - Signed-in step-ups answer **400** (`PASSWORD_INCORRECT`, `TWO_FACTOR_CODE_INVALID`), never 401, so the web never mistakes them for an expired session.
@@ -47,6 +47,49 @@ One short entry per non-obvious technical or product decision. Newest first. For
     - Compose pins `NODE_ENV=production` for the api, so the stack requires the key and enforces 2FA.
     - CI's docker job, the drill, the rehearsal, exam-load and the VPS load staging (`load-staging.sh up`) give their throwaway `.env` a random key.
     - The integration tests ignore a key in `apps/api/.env` (`test/load-env.ts`): only the 2FA suites set their own, so every other admin suite runs with 2FA off.
+
+## 2026-11-01 — Video and jury (core C6b; the C6 plan, the lead's notes, owner Q4b–Q4d defaults)
+
+1. **The video link** (Q4b default):
+   - https to `youtube.com`, `www.youtube.com`, `m.youtube.com`, `youtu.be` or `drive.google.com` only, with no user name, password or port (`isAllowedVideoUrl` in shared, used by the server and the web).
+   - A strict pattern, not `URL` parsing, because shared has no DOM or Node types; the host part admits letters, digits, dots and hyphens only, so `@`, `:`, `\` and spaces cannot reach the host check.
+   - The student's own entry only, inside the window by the server's clock, changeable until the close; status `submitted`.
+   - **Never logged or audited** (a minor's input; the audit row keeps ids). The student sees it back as text; the jury gets a link (`rel="noopener noreferrer"`, `target="_blank"`) only for an allowed host, and never an embedded video (lead).
+2. **Assignment per category:** "all categories" is one row per category, not a NULL category, so the UNIQUE `(round_id, judge_id, category)` is a plain index Prisma can describe (NULLS NOT DISTINCT would be drift). Removing an assignment keeps the judge's scores.
+3. **Blind judging** (Q4c default): the jury sees an entry number (`E-` + the last 8 hex digits of the entry id, the random part of a UUIDv7), the category, the link and the time it was sent; never a name, institution, user id or contact.
+4. **Scoring:**
+   - Only after the window closed, so the video is frozen; only before the category's promotion.
+   - Every criterion of the round, whole numbers 0–10.
+   - **The total is out of 100 whatever the number of criteria:** sum × 100 / (10 × criteria), two decimals. With the default ten it is the plain sum. A round may have 1–20 criteria (C6a), while an entry's score and a total stay 0–100.
+   - `jury_scores` is append-only: scoring again adds a row. The entry's score is the average of the **latest** total of each judge **assigned now** to its round and category, recomputed under the entry's row lock.
+   - **Unassigning a judge takes their scores out at once** (lead's review of #75): it is the admin's remedy for a wrong or compromised judge. In the same transaction, under the round's share lock, every entry of that category the judge scored is recomputed. An entry left with no assigned score goes back to `submitted` with no score, so it blocks that category's promotion until someone scores it. The history rows stay. Entries already promoted or eliminated keep their result.
+   - The comment stays with the judges: never the student (Q4d default), never the audit log.
+5. **Locks** (lead's note): the video and a score take a **share** lock (`FOR SHARE`) on the round, and a promotion takes `FOR UPDATE`. So many students and judges work at once, but never while a promotion of that round runs, and the promotion sees settled scores.
+6. **Append-only `jury_scores`** (lead's note 1): `jury_scores_append_only()` refuses UPDATE and DELETE (row trigger) and TRUNCATE (statement trigger), except TRUNCATE in a database whose name ends exactly in `_test` (truncateAll cascades into it through users and round entries). The migration has its own guarded `REVOKE UPDATE, DELETE … FROM sirat_app`: the table is from A1, so it had full rights, and #57's REVOKE loop ran before it became append-only.
+7. **Web:**
+   - `/dashboard/round` (students and ambassadors): the round, the status, the video form; also a nav item and a link from the home's round card for a video round.
+   - `/admin/jury` (jury only): rounds, "To score" and "Scored", the score dialog with the live total. The jury's `/admin` home now opens it (the placeholder is gone).
+   - `/admin/rounds`: a "Jury" dialog on video rounds.
+8. **Tests:**
+   - `jury.int-spec.ts`: the video (inside the window, changed, shown back, no link in the audit row, the refusals); assignment; scoring (blind, only the judge's categories, after the close, the average of the latest totals, bad scores, 404s, stopped by the promotion, the counts); the total out of 100 with four criteria; jury only, a demoted and a blocked judge; the CHECKs and append-only, with the migration's SQL in a `…xtest` scratch database.
+   - `video-url.spec.ts`: the allowed links and 14 refusals (look-alike hosts, a user name, a port, a backslash, javascript, protocol-relative).
+   - web: the area file, the refusal helper, the total and the window helpers.
+
+## 2026-11-01 — A CI exam smoke that counts outcomes, never time (E6 follow-up; exam session, lead's conditions)
+
+1. **Every PR runs 20 students through a 1-minute exam** in the docker job: `loadtests/exam-local.sh` with `SMOKE=1 NO_BUILD=1 LOAD_TAG=latest`.
+   - It runs on the images the job just built, in its own project `sirat-exam-load`, with nothing published, and is removed at the end.
+   - It costs about 3.5–4 minutes: the exam, the 30 s grace, and up to one minute for the sweep to submit the students who left.
+2. **Only counted outcomes fail it:**
+   - errors over 0.5 %;
+   - a failed check;
+   - a submit without a receipt, or a receipt the waiting room does not show;
+   - an attempt not submitted or not scored;
+   - receipts not equal to the students' own submissions, or sweep submissions not equal to the students who left.
+
+   No latency limit and no timed write window: a shared CI runner's timing proves nothing, and a wall-time assert would only add flakes.
+3. **The runner's fixtures now run in a container** that shares Postgres's network (the migrate image, with the clone's fixtures and `src` mounted read-only), as in the VPS kit. The docker job has no pnpm, and the local runner no longer publishes Postgres on 127.0.0.1.
+4. **Validated locally before the PR:** a build run, and then CI's path with no build (220 s). Each had 20 attempts submitted and scored, receipts equal to the own submissions, and the sweep taking exactly the leavers.
 
 ## 2026-11-01 — Rounds and promotion (core C6a; the C6 plan the lead approved, owner Q4 defaults)
 

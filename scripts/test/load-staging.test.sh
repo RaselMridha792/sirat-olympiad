@@ -98,6 +98,8 @@ out=$(FAKE_UID=1000 bash "$LS" up 2>&1); st=$?
 expect "a second up is refused while the project exists" '[ "$st" = 1 ] && grep -q "exists" <<< "$out"'
 out=$(FAKE_UID=1000 bash "$LS" exam --duration 30 2>&1)
 expect "exam records the id for the generators" 'grep -qx "EXAM_ID=01a19600-0000-7000-8000-000000000001" "$STAGING_DIR/k6.env"'
+out=$(FAKE_UID=1000 bash "$LS" k6 login -e RATE=10 2>&1)
+expect "k6 login runs inside, straight to the API replicas" 'grep -q "grafana/k6:1.0.0 run -e BASE_URL=http://api:4000 -e RATE=10 /scripts/login-surge.js" "$STATE/log"'
 
 echo "== window refusals"
 reset

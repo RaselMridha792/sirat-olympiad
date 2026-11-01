@@ -38,7 +38,8 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `GET /admin/leaderboard?exam=&page=&pageSize=&q=` | Role(admin, manager) | The snapshot with email, score and time, also before publishing. Built (E3) |
 | | `GET /admin/exams/:id/results`, `POST /admin/exams/:id/results/{build,publish,unpublish}`, `GET /admin/exams/:id/attempts[/:attemptId]` | admin | Results (below). Built (E3) |
 | rounds | `GET /rounds/me` | Role(student, ambassador) | Rounds (below). Built (core C6a) |
-| | `POST /rounds/:id/video` | Owner | Inside round window |
+| | `PUT /rounds/:id/video` | Role(student, ambassador) | Own entry, inside the window. Rounds (below). Built (core C6b) |
+| jury | `GET /jury/rounds`, `GET /jury/entries`, `POST /jury/entries/:entryId/scores` | Role(jury) | Own rounds and categories only, blind. Rounds (below). Built (core C6b) |
 | certificates | `GET /certificates/mine`, `GET /certificates/:id/pdf` | Owner | |
 | | `GET /certificates/verify/:code` | Public | |
 | announcements | `GET /announcements` | Role(student, ambassador) | Announcements (below). Built (core C4) |
@@ -54,7 +55,7 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `GET /admin/payments`, `GET /admin/payments/:id`, `POST /admin/payments/:id/{recheck,reconcile}` | admin | Audited. Built (payments PR 3), below |
 | | `GET /admin/stats` | admin/manager | Admin statistics (below). Counts only, cached 60 s. Built (core) |
 | | `GET/POST /admin/rounds`, `GET/PATCH /admin/rounds/:id`, `POST /admin/rounds/:id/promotion/preview`, `POST /admin/rounds/:id/promotion` | admin | Rounds (below): one promotion per round and category, audited. Built (core C6a) |
-| | `GET/POST /admin/jury/*` | jury/admin | Judge recorded |
+| | `GET/POST /admin/rounds/:id/jury`, `DELETE /admin/rounds/:id/jury/:assignmentId` | admin | Jury assignment per category, audited. Built (core C6b) |
 | | `GET/POST /admin/announcements`, `PATCH /admin/announcements/:id`, `POST /admin/announcements/:id/{archive,restore}` | admin | Announcements (below). Built (core C4) |
 | | `GET /admin/ambassadors`, `POST /admin/ambassadors/:userId/{approve,revoke}` | admin | Ambassadors (below). Built (core C5a) |
 | | `GET/PUT /admin/ambassador-points`, `POST /admin/points/adjust` | admin | Points per referral and the ranks (single writer), compensating entries; audited. Built (core C5b-1) |
@@ -79,7 +80,7 @@ TOTP for admins and managers. While 2FA is on (`TOTP_ENCRYPTION_KEY` set; produc
 
 - Signed-in step-ups answer 400, never 401, so the web never takes them for an expired session. Only the login's code step answers 401.
 - The proof lives on the session row (`two_factor_verified`); the token's `tfa` copies it. `startVerified` after the code step or enable stores true, `start` false. A refresh carries the row's proof AND the user's current enrolment, so it can drop the claim but never raise it. change-password needs a live row, and for an enrolled user a proved one (above). Enable, disable and both resets end the user's other sessions. An access token already issued stays valid until it expires (15 min).
-- Break-glass without the API: `pnpm --filter @sirat/api admin:2fa-reset --email <address> --reason "<why>"` (`node dist/cli/admin-2fa-reset.js` on the VPS; RUNBOOK §21).
+- Break-glass without the API: `pnpm --filter @sirat/api admin:2fa-reset --email <address> --reason "<why>"` (`node dist/cli/admin-2fa-reset.js` on the VPS; RUNBOOK §22).
 
 ## Registration and payment (payments PR 2 and 3; plan: `docs/plans/PAYMENTS-PLAN.md` 6.1–6.7)
 
@@ -339,6 +340,20 @@ Shapes `AdminRound`, `RoundCreateRequest`, `RoundUpdateRequest`, `RoundCriterion
 - **`promotion_runs` is append-only** (`*_core_rounds_append_only`): UPDATE, DELETE and TRUNCATE are refused (TRUNCATE only passes in a database named `*_test`), and `sirat_app` has no UPDATE or DELETE on it. A student who already had an entry in the next round keeps it and is counted in `promoted`.
 
 The database keeps the limits (`*_core_rounds_checks`): round name 2–60, at most 10 rounds, the window order, 1–20 criteria, a video round with its window and criteria; an entry's score 0–100, the video link ≤ 500 with its time; a run's top N 1–25,000, counts ≥ 0, from ≠ to, and the source (`exam` with its exam and results version, or `jury`).
+
+**Video and jury (core C6b; the C6 plan, the lead's notes, owner Q4b–Q4d defaults).** Shapes `VideoSubmitRequest`, `AdminRoundJury`, `JuryAssignRequest`, `JuryAssignResult`, `JuryRound`, `JuryEntryRow`, `JuryEntryQuery`, `JuryScoreRequest`, `JuryScoreResult`, `VIDEO_HOSTS`, `isAllowedVideoUrl`, `JURY_LIMITS`, `JURY_REFUSALS` (`core.ts`). The video link is a minor's input: it is never logged or audited (the audit rows keep ids). Blind judging: the jury never gets a student's name, institution, user id or contact.
+
+| Method + path | Request | Answers |
+|---|---|---|
+| `PUT /rounds/:id/video` (student, ambassador, re-read) | `{ url (≤ 500) }` | 200 `MyRound` of that round. Own entry only (none is 404, as for an unknown round). https to `youtube.com`, `www.youtube.com`, `m.youtube.com`, `youtu.be` or `drive.google.com` only, with no user name, password or port (400 `bad_video_url`). Inside the window by the server's clock (409 `window_not_open`, `window_closed`); a video round only (409 `not_video_round`); while the entry is pending or sent (409 `entry_closed`). Status `submitted`. Takes the round's share lock, so it never runs during a promotion. Audit `round.video_submitted` (ids) |
+| `GET /admin/rounds/:id/jury` (admin) | — | `AdminRoundJury`: the assignments (judge with name and email, category) and up to 200 unblocked jury accounts to add |
+| `POST /admin/rounds/:id/jury` (admin) | `{ judgeId, categories (1–3, unique) }` | 200 `{ assigned, alreadyAssigned }`: one row per category, existing ones skipped. A video round only (409 `not_video_round`); an unblocked jury account only (409 `not_jury`). Audit `jury.assigned` |
+| `DELETE /admin/rounds/:id/jury/:assignmentId` (admin) | — | 204; 404 when it is not this round's. The judge's scores stay in the history but stop counting: in the same transaction (under the round's share lock) every entry of that category the judge scored is recomputed, and one left with no assigned score is `submitted` again with no score. Audit `jury.unassigned` (with the number recomputed) |
+| `GET /jury/rounds` (jury, re-read) | — | `JuryRound[]`: the video rounds the judge is assigned to, with the criteria, the judge's categories, `scoringOpen` (the window has closed) and the judge's own counts (`pending`: sent videos not scored by them; `evaluated`: scored by them) |
+| `GET /jury/entries` (jury) | `round`, `status` (`pending` default, `evaluated`), `page`, `pageSize` (≤ 50) | `Paginated<JuryEntryRow>`, oldest video first: an entry number (`E-` + the last 8 hex digits of the entry id), the category, the link, the time it was sent, and the judge's own latest score. Only the judge's categories (another round is 404); 409 `window_open` before the close. Pending leaves out the categories already promoted |
+| `POST /jury/entries/:entryId/scores` (jury) | `{ criteria: { key: 0–10 }, comment? (≤ 1,000) }` | 201 `JuryScoreResult`. Every criterion of the round, whole numbers 0–10 (400 `bad_scores`). An entry outside the judge's categories, without a video or not in a video round is 404. After the close only (409 `window_open`), before the category's promotion (409 `already_promoted`). The total is out of 100: the sum × 100 / (10 × the number of criteria), so with the default ten it is the plain sum. A new `jury_scores` row (append-only); the entry's score becomes the average of the latest total of each judge assigned now to its round and category, under the entry's row lock and the round's share lock; status `evaluated`. Audit `jury.scored` (ids only; never the comment, which the student never sees) |
+
+The database keeps the limits (`*_core_jury_checks`): a score's total 0–100, the criteria a JSON object, the comment ≤ 1,000; one assignment per (round, judge, category). `jury_scores` is append-only (UPDATE, DELETE and TRUNCATE refused; TRUNCATE passes only in a database named `*_test`), and `sirat_app` has no UPDATE or DELETE on it.
 
 ## Admin statistics (core; lead 2026-11-01)
 

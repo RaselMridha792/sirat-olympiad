@@ -8,7 +8,7 @@
 #                                                              registration open, for the registration surge
 #   scripts/load-staging.sh exam [--questions 30] [--duration 30] [--window-end-in 60]   a new published exam
 #   scripts/load-staging.sh report <examId>                    attempts, submissions, overdue attempts, writes
-#   scripts/load-staging.sh k6 exam|registration [k6 options]  k6 in a container on staging's network
+#   scripts/load-staging.sh k6 exam|login|registration [k6 options]   k6 in a container on staging's network
 #   (as root) scripts/load-staging.sh window --ips <ip>[,<ip>...] [--minutes 90] [--no-trusted]
 #                       lets only those addresses (at most 4) reach STAGING_PORT (default 8088) while it runs in the
 #                       foreground, and trusts their CF-Connecting-IP (A2's scripts/loadtest-generators.sh); it closes
@@ -248,7 +248,9 @@ case "$cmd" in
         registration_mode || fail "the registration surge needs 'up --registration'"
         script=registration-surge.js base=http://nginx ;;
       exam) script=exam-simulation.js base=http://api:4000 ;;
-      *) fail "k6 exam|registration [k6 options, e.g. -e RATE=4]" ;;
+      # The login surge measures argon2 on this host's cores, straight at the API replicas (as the exam check).
+      login) script=login-surge.js base=http://api:4000 ;;
+      *) fail "k6 exam|login|registration [k6 options, e.g. -e RATE=4]" ;;
     esac
     [ "$DRY" = 1 ] || [ -n "$(project_containers)" ] || fail "staging is not up"
     run docker run --rm --name "$P-k6" --network "${P}_default" -v "$PWD/loadtests:/scripts:ro" \

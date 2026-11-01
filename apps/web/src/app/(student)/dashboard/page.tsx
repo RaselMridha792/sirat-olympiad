@@ -288,6 +288,17 @@ function RoundCard({ round, copy }: { round: CurrentRound | null; copy: Copy }) 
             ) : (
               <p className="mt-4 text-sm leading-relaxed text-white/80">{roundLine(round, m)}</p>
             )}
+            {round.type === 'video' ? (
+              <Link
+                href="/dashboard/round"
+                className={cn(
+                  'mt-4 inline-flex text-sm font-bold text-white underline-offset-4 hover:underline',
+                  FOCUS_ON_DARK,
+                )}
+              >
+                {m.round.open}
+              </Link>
+            ) : null}
           </>
         ) : (
           <>
