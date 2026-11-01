@@ -377,7 +377,8 @@ jobs:
           out=$(scripts/prelaunch-check.sh --local 2>&1 || true)
           echo "$out"
           rm -f .env.deploy
-          bad=$(grep -vE '^(PASS|FAIL|N/A|MANUAL) {1,4}[a-zA-Z.]|^prelaunch-check: ' <<< "$out" || true)
+          # The word is padded to 8 columns (N/A takes 5 spaces). The disk line depends on the runner, so it is not asserted.
+          bad=$(grep -vE '^(PASS|FAIL|N/A|MANUAL) +[a-zA-Z.]|^prelaunch-check: ' <<< "$out" || true)
           [ -z "$bad" ] || { echo "::error::a line that is not PASS, FAIL, N/A or MANUAL"; exit 1; }
           for v in $(grep -E '^(JWT_ACCESS_SECRET|POSTGRES_PASSWORD)=' .env | cut -d= -f2-); do
             ! grep -qF -- "$v" <<< "$out" || { echo "::error::a secret value reached the output"; exit 1; }
