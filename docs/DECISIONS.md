@@ -20,6 +20,27 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - **On the record:** the export's own audit row keeps the filters with the account only as a kind (`email`/`system`), the row count and the reason.
    - **Limits:** at most 50,000 rows, 5 exports per admin per hour.
 7. **Web:** one `ExportCsvButton` (students and audit); its texts are picked in the client from a fixed table, so no message travels as a prop. `ExportUsersButton` is a thin wrapper.
+## 2026-11-01 — "Coming soon" from a launch table (Claude; L1, LAUNCH-PLAN §8, lead review)
+
+1. **The table:** `apps/web/src/data/launch.ts` has one row per `/dashboard` and `/admin` page, `live` or `soon`.
+   - At this merge every page is live: only `admin.getStats` was still unwired, and core's #46 serves it.
+   - Each owner flips its own rows.
+   - A new page needs a row: `launch.test.ts` and `check-pages` fail without one.
+2. **Amends "Web data layer over HTTP" #2:** a page the table marks `soon` shows `ComingSoon` instead of the error state its unwired methods would give.
+   - `ComingSoon` is in `packages/ui`: `role="status"`, `data-state="coming-soon"`, neutral tokens, no retry button.
+   - "Soon" comes only from the table, with no try/catch around data calls. A 404, 5xx or timeout still shows the error page.
+   - With the API down, a soon page shows the error page too, because `requireAccess()` fails first.
+3. **The guard:** `if (!isLive('<route>', data, params.mock)) return <ComingSoonPage title={…} />`, after `requireAccess()` and before the first data call. `launch.test.ts` reads each soon page and checks that order.
+4. **Development:** the mock has every method, so every page is live there. `?mock=launch` previews the production view.
+5. **`check-pages` prod is strict per route:**
+   - a live page that shows the error state fails (until now such pages were only counted);
+   - a soon page must show `ComingSoon` with HTTP 200;
+   - a page without a row fails.
+   `api-down` adds the first soon page, when there is one.
+6. **The proof while every page is live:**
+   - **A fixture table in `launch.test.ts`:** a soon row, a live row and a missing row; the mock with and without the preview; the order check on a guarded page, a late guard and a missing one.
+   - **A local run** with one page temporarily marked soon (in the PR).
+7. **The Bangla strings:** Rasel checks them (Q5).
 
 ## 2026-11-01 — Nightly session and token cleanup (Claude; L13, LAUNCH-PLAN §9, A2's notes, lead review)
 

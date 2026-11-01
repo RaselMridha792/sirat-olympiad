@@ -18,6 +18,7 @@ test('the mock switch works in development and test', () => {
   assert.equal(parseMockState('empty', 'development'), 'empty');
   assert.equal(parseMockState(['error', 'slow'], 'development'), 'error');
   assert.equal(parseMockState('slow', 'test'), 'slow');
+  assert.equal(parseMockState('launch', 'development'), 'launch');
   assert.equal(parseMockState('drop-table', 'development'), null);
   assert.equal(parseMockState(undefined, 'development'), null);
 });
