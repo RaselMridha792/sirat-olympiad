@@ -713,7 +713,10 @@ SQL
 
 The steps and the k6 commands: `loadtests/README.md`, "On the VPS". The rules around them:
 
-- **When:** before launch, or in a quiet hour outside any exam window and any registration surge. Staging shares the server's CPU with the live stack, which keeps running. Never during a live exam window.
+- **When:** staging shares the server's CPU, memory and disk with the live stack, which keeps running.
+  - Before launch: freely.
+  - After launch: only with Rasel's OK; never during a registration peak or within an exam window; `scripts/load-staging.sh down` right after the run.
+  - `up` prints the host's load average and free memory first, so whoever runs it sees what is live.
 - **What it is:** project `sirat-staging`, built from the deployed release's images (no build; only payments' fake PayStation is built, with `--registration`).
   - its own volumes and throwaway settings in `/var/lib/sirat/staging` (mode 700);
   - Postgres with the test marker, so the load fixtures accept only this server;
@@ -721,14 +724,15 @@ The steps and the k6 commands: `loadtests/README.md`, "On the VPS". The rules ar
   - emails to nowhere.
 
   It never reads the clone's `.env` and never touches project `sirat`.
-- **The firewall:** nginx's staging port (8088) is dropped from outside by the DOCKER-USER guard. `sudo scripts/load-staging.sh window --ips <ip>,<ip> --minutes N` lets at most 4 single public addresses in. It runs in the foreground, in its own SSH session, and the allow-list closes:
+- **The firewall:** nginx's staging port (8088) is dropped from outside by the DOCKER-USER guard. `scripts/load-staging.sh window --ips <ip>,<ip> --minutes N`, as root, lets at most 4 single public addresses in. It runs in the foreground, and the allow-list closes:
   - on Ctrl-C;
   - when the session is lost;
   - on any error;
   - when the minutes are over;
   - and by a systemd timer if the script itself is killed.
 
-  It also switches A2's trusted generators on, and off again when it closes. `sudo scripts/load-staging.sh status` must say `allow-list: closed` afterwards. When in doubt, `sudo scripts/load-staging.sh close` (it is safe to repeat).
+  It also switches A2's trusted generators on, and off again when it closes. `scripts/load-staging.sh status` (as root) must say `allow-list: closed` afterwards. When in doubt, `scripts/load-staging.sh close` (as root; it is safe to repeat).
+- **Root, from the provider's console:** `window`, `close` and the firewall part of `status` run as root in Hostinger's browser console. Root has no SSH login (bootstrap, #70), and deploy's only sudo rule is the backup unit. **Never add a sudo rule for `load-staging.sh`:** the clone is deploy-writable, so deploy could edit the script and run anything as root. Everything else runs as deploy.
 - **Every k6 run ends with the trusted generators off.** The window does it when it closes; a run without the window ends with `scripts/loadtest-generators.sh off`, and `scripts/loadtest-generators.sh status` must say off. Nothing removes their file at its expiry: the monitor alerts (`trusted_generators`, section 7) and `prelaunch-check.sh` fails while one is left.
 - **After the run:**
   1. `scripts/load-staging.sh report <examId>`;

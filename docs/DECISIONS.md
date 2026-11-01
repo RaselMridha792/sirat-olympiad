@@ -6,7 +6,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 
 1. **A staging project, `sirat-staging`,** from the deployed release's images, never a build (only payments' fake PayStation is built, as test code that no release image holds). Its own volumes and throwaway settings in `/var/lib/sirat/staging` (700); Postgres carries the test marker; payments are off or on the fake. It never reads the clone's `.env` (the overlay replaces `env_file`, as the drill's does) and never touches project `sirat`.
 2. **The load fixtures run in a container that shares staging Postgres's network** (`--network container:<postgres>`), with the migrate image (it holds tsx and the dependencies) and the clone's fixtures and `src` mounted read-only. So `127.0.0.1` there is staging's own Postgres: the fixtures' local-URL guard and the server's test marker both still hold, and the server needs no node.
-3. **The firewall window** (`sudo scripts/load-staging.sh window`):
+3. **The firewall window** (`scripts/load-staging.sh window`, as root from the provider's console: root has no SSH login, and deploy gets no sudo rule for it, since the clone is deploy-writable):
    - nginx's staging port (8088) is dropped from outside by the DOCKER-USER guard (L12) until a window inserts one `RETURN` rule per generator address, above the guard's `DROP`;
    - at most 4 single public IPv4 addresses (A2's limit for trusted generators); private, loopback and network ranges are refused;
    - the window runs in the foreground and closes on Ctrl-C, a lost session (SIGHUP), any error and the end of its minutes (a trap); a `systemd-run` timer, started before the first rule, closes it too if the script is killed;

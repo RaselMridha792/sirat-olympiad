@@ -75,6 +75,7 @@ echo "== up (as deploy)"
 reset
 out=$(FAKE_UID=1000 bash "$LS" up --users 50 2>&1); st=$?
 expect "exits 0" '[ "$st" = 0 ]'
+expect "it shows what the host runs now first (load average, memory)" 'grep -q "this host now: load average" <<< "$out" && grep -q "memory available" <<< "$out"'
 expect "the settings directory is owner-only" '[ "$(stat -c %a "$STAGING_DIR")" = 700 ]'
 for f in staging.env fixtures.env k6.env release.env; do
   expect "$f exists, mode 600 or tighter" '[ -f "$STAGING_DIR/$f" ] && [ "$(stat -c %a "$STAGING_DIR/$f")" -le 644 ]'
@@ -99,7 +100,7 @@ expect "exam records the id for the generators" 'grep -qx "EXAM_ID=01a19600-0000
 echo "== window refusals"
 reset
 out=$(FAKE_UID=1000 bash "$LS" window --ips 203.0.113.5 2>&1); st=$?
-expect "not as deploy" '[ "$st" = 1 ] && grep -q sudo <<< "$out"'
+expect "not as deploy" '[ "$st" = 1 ] && grep -q "run it as root" <<< "$out"'
 for ips in 0.0.0.0 10.1.2.3 192.168.1.5 172.20.0.1 127.0.0.1 203.0.113.0/24 300.1.1.1 "203.0.113.5,a.b.c.d" "1.1.1.1,1.1.1.2,1.1.1.3,1.1.1.4,1.1.1.5"; do
   out=$(bash "$LS" window --ips "$ips" 2>&1); st=$?
   expect "refuses --ips $ips" '[ "$st" = 1 ] && [ "$(staging_rules)" = 0 ] && [ ! -f "$STATE/timer" ]'

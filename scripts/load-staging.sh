@@ -9,15 +9,19 @@
 #   scripts/load-staging.sh exam [--questions 30] [--duration 30] [--window-end-in 60]   a new published exam
 #   scripts/load-staging.sh report <examId>                    attempts, submissions, overdue attempts, writes
 #   scripts/load-staging.sh k6 exam|registration [k6 options]  k6 in a container on staging's network
-#   sudo scripts/load-staging.sh window --ips <ip>[,<ip>...] [--minutes 90] [--no-trusted]
+#   (as root) scripts/load-staging.sh window --ips <ip>[,<ip>...] [--minutes 90] [--no-trusted]
 #                       lets only those addresses (at most 4) reach STAGING_PORT (default 8088) while it runs in the
 #                       foreground, and trusts their CF-Connecting-IP (A2's scripts/loadtest-generators.sh); it closes
 #                       on Ctrl-C, on a lost session, on any error and when the minutes are over; a systemd timer
 #                       closes it too if this script is killed
-#   sudo scripts/load-staging.sh close                         removes the allow-list now (the timer runs it too)
+#   (as root) scripts/load-staging.sh close                    removes the allow-list now (the timer runs it too)
 #   scripts/load-staging.sh status                             the stack, the allow-list (as root) and its timer
 #   scripts/load-staging.sh down                               the stack and its data, removed (refused while open)
 #   --dry-run, before the command: prints every command that would change something, runs none of them (CI)
+#
+# window, close and status (for the firewall) run as root from the provider's browser console: root has no SSH
+# login, and deploy's only sudo rule is the backup unit. Never add a sudo rule for this script: the clone is
+# deploy-writable, so such a rule would make deploy root.
 #
 # The generator machines run k6 with the settings in $STAGING_DIR/k6.env (the throwaway load password, the address
 # and the exam id; mode 600): loadtests/README.md, "On the VPS".
@@ -148,6 +152,10 @@ case "$cmd" in
       # Without the guard, the staging port would be open to everyone from the start.
       systemctl is-active --quiet sirat-docker-user || fail "the DOCKER-USER guard (sirat-docker-user) is not active"
     fi
+    # Staging shares this host with the live stack: what is running now, before adding to it (RUNBOOK section 19).
+    say "this host now: load average $(cut -d' ' -f1-3 /proc/loadavg 2> /dev/null || echo unknown)," \
+      "memory available $(awk '$1 == "MemAvailable:" { printf "%d MiB", $2 / 1024 }' /proc/meminfo 2> /dev/null || echo unknown)" \
+      "of $(awk '$1 == "MemTotal:" { printf "%d MiB", $2 / 1024 }' /proc/meminfo 2> /dev/null || echo unknown)"
     say "project $P from sirat-*:$tag, $users load students; settings in $STAGING_DIR (mode 700)"
     run install -d -m 700 "$STAGING_DIR"
     pw=$(hex 24)
@@ -195,7 +203,7 @@ case "$cmd" in
       say "up for the registration surge: payments on the fake; next: scripts/load-staging.sh k6 registration"
     else
       dc up -d --no-build --wait api worker web nginx
-      say "up: nginx on port $STAGING_PORT, closed to the outside until 'sudo scripts/load-staging.sh window --ips ...'"
+      say "up: nginx on port $STAGING_PORT, closed to the outside until 'scripts/load-staging.sh window --ips ...' (as root)"
       say "next: scripts/load-staging.sh exam; the generators' settings are in $STAGING_DIR/k6.env"
     fi
     ;;
@@ -245,7 +253,7 @@ case "$cmd" in
     ;;
 
   window)
-    is_root || [ "$DRY" = 1 ] || fail "window changes the firewall: run it with sudo"
+    is_root || [ "$DRY" = 1 ] || fail "window changes the firewall: run it as root (the provider's console; deploy has no sudo for it)"
     ips='' minutes=90 trusted=1
     while [ "$#" -gt 0 ]; do
       case "$1" in
@@ -298,7 +306,7 @@ case "$cmd" in
     ;;
 
   close)
-    is_root || [ "$DRY" = 1 ] || fail "close changes the firewall: run it with sudo"
+    is_root || [ "$DRY" = 1 ] || fail "close changes the firewall: run it as root (the provider's console; deploy has no sudo for it)"
     close_rules
     trusted_off
     say "closed: $( [ -z "$(rules)" ] && echo 'no staging rule left' || echo 'RULES LEFT, see status')"
@@ -312,7 +320,7 @@ case "$cmd" in
       r=$(rules)
       if [ -z "$r" ]; then echo "allow-list: closed"; else echo "allow-list: OPEN"; echo "$r"; fi
     else
-      echo "allow-list: run with sudo to read the firewall"
+      echo "allow-list: run status as root to read the firewall"
     fi
     if systemctl is-active --quiet "$TIMER.timer" 2> /dev/null; then echo "expiry timer: active"; else echo "expiry timer: none"; fi
     if [ -x scripts/loadtest-generators.sh ]; then
@@ -325,7 +333,7 @@ case "$cmd" in
       close_rules
       trusted_off
     elif systemctl is-active --quiet "$TIMER.timer" 2> /dev/null; then
-      fail "the allow-list may be open: sudo scripts/load-staging.sh close first"
+      fail "the allow-list may be open: scripts/load-staging.sh close first (as root)"
     fi
     for c in $(project_containers); do
       [ "$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project" }}' "$c")" = "$P" ] || fail "label mismatch on $c"

@@ -78,13 +78,13 @@ The exam simulation:
 ```bash
 scripts/load-staging.sh up --users 8000                        # on the VPS, as deploy
 scripts/load-staging.sh exam --duration 30 --window-end-in 60  # writes EXAM_ID into k6.env
-sudo scripts/load-staging.sh window --ips <gen1>,<gen2> --minutes 90   # its own SSH session; Ctrl-C closes it
+scripts/load-staging.sh window --ips <gen1>,<gen2> --minutes 90   # as root, in the provider's console; Ctrl-C closes it
 # on each generator machine, with k6.env copied over (it holds the throwaway load password), each with its own range:
 set -a; . ./k6.env; set +a
 k6 run -e IP_HEADER=cf-connecting-ip -e SCENARIO=surge -e RATE=10 -e FIRST=1 -e USERS=4000 loadtests/exam-simulation.js
 k6 run -e IP_HEADER=cf-connecting-ip -e SCENARIO=surge -e RATE=10 -e FIRST=4001 -e USERS=4000 loadtests/exam-simulation.js
 scripts/load-staging.sh report <examId>    # after the window and the grace: every attempt submitted and scored
-sudo scripts/load-staging.sh status         # allow-list: closed
+scripts/load-staging.sh status              # as root: allow-list: closed
 scripts/load-staging.sh down
 ```
 
