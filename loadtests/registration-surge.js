@@ -70,6 +70,13 @@ const settleTime = new Trend('registration_settle_ms', true);
 const completed = new Rate('registration_completed');
 const started = new Counter('registrations_started');
 const throttled = new Counter('responses_429');
+/** Starts answered 503 SERVICE_BUSY (a busy database), and those still busy after the wizard's one retry. */
+const busyRetried = new Counter('start_busy_retried');
+const busyAgain = new Counter('start_busy_after_retry');
+
+/** As the wizard (components/registration/start-retry.ts): Retry-After capped at 5 s, plus up to 1 s of jitter. */
+const busyAnswer = (r) => r.status === 503 && r.json('code') === 'SERVICE_BUSY';
+const busyWait = (r) => Math.min(Number(r.headers['Retry-After']) || 2, 5) + Math.random();
 
 const api = (name) => ({ tags: { name, kind: 'api' } });
 
@@ -163,10 +170,17 @@ export default function (data) {
 
   http.get(`${BASE}/api/registrations/info`, { headers, ...api('info') });
 
-  const res = http.post(`${BASE}/api/registrations/start`, JSON.stringify(student(data, n)), {
-    headers: write,
-    ...api('start'),
-  });
+  const body = JSON.stringify(student(data, n));
+  const send = () =>
+    http.post(`${BASE}/api/registrations/start`, body, { headers: write, ...api('start') });
+  let res = send();
+  if (busyAnswer(res)) {
+    // The wizard's one automatic retry: the same body, so the same startRequestId.
+    busyRetried.add(1);
+    sleep(busyWait(res));
+    res = send();
+    if (busyAnswer(res)) busyAgain.add(1);
+  }
   if (res.status === 429) throttled.add(1, { name: 'start' });
   const ok = check(res, {
     'start 201': (r) => r.status === 201,

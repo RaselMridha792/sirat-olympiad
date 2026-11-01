@@ -251,6 +251,7 @@ Credentials are read inside the postgres container; nothing secret is typed on t
 | `reconciliation` | the payments reconciliation is more than 3 intervals late | worker running? `$DC logs worker \| grep reconcile` |
 | `queue_redis_memory` | the queue Redis over 300 MB (warning), 400 MB of 512 (critical) | failed jobs piling up; `redis-cli INFO memory` in `redis-queue` |
 | `http_5xx` | over 2% (warning) or 10% (critical) of at least 50 requests in 5 min | `$DC logs --since 10m nginx api`; `/api/ready`; recent deploy? |
+| `database busy` (api log, warn) | the database refused for a passing reason (Prisma P2028/P2034/P2024 or a lock or statement timeout): the request answered **503 `SERVICE_BUSY`** with `Retry-After: 2`, nothing was applied, and the registration wizard retried once by itself | a few under a surge are expected. Many, or for minutes: the API is CPU-bound or the pool is too small (`docker stats`; `connection_limit` in `DATABASE_URL`; scale API replicas, section 3). A plain `unhandled error` (500) is a different thing: read its class |
 | `app_errors` | API 5xx or web render errors in the logs | `$DC logs --since 10m api web` |
 | `api_p95` | the API's p95 over 1 s | "Site slow" below |
 | `certificate` | the origin certificate ends within 14 days | section 3 of LAUNCH-PLAN / the TLS steps in this runbook |
