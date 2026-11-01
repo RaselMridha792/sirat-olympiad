@@ -788,6 +788,7 @@ SQL
   - Promotion: for a round after Round 1, once its entries exist (after the promotion into it).
   - Winners: in the final round, the winners' emails (one per line) and a reason.
 - **"The background queue does not answer"**: the queue Redis is down or slow (§7). Nothing was issued; ask again when it is back. A job that failed three times is kept 7 days, and `ops-check` reports it (queue `certificates`).
+- **Two certificates drawing the same check code** (48 random bits, so rare) fails the whole issue run on the unique code; the job tries again by itself (3 tries) and draws new codes, so nothing is half-issued. Only three failures in a row show in `ops-check`.
 - **Revoke** a wrong certificate on `/admin/certificates` with a reason. It stops checking online at once; it is never deleted, and the same student cannot get the same one again (one per type and round).
 - **The public check** is `/verify/<code>`, printed on the certificate. It shows only the name and the award; a revoked or unknown code shows "No valid certificate". One network can check 30 times a minute.
 - **The PDF** is not built yet (C6c-2, after the owner approves the library): students see "comes soon".
