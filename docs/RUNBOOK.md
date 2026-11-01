@@ -356,7 +356,7 @@ scripts/prelaunch-check.sh
 | `certificate` | the origin certificate ends within 14 days | section 3 of LAUNCH-PLAN / the TLS steps in this runbook |
 | `backup_age` | no off-server backup in 26 h (critical) | `journalctl -u sirat-backup.service -n 50` (section 5) |
 | `time_sync` | the clock is not synchronised | `timedatectl`; `systemctl restart systemd-timesyncd` |
-| `trusted_generators` | load-test generators may set any client address: `infra/nginx/loadtest-realip.local.conf` exists (a warning), and past its `# expires` line, or without a readable one, it is critical | no load test running: `scripts/loadtest-generators.sh off` (after a staging window: `sudo scripts/load-staging.sh close`); `scripts/loadtest-generators.sh status` shows it |
+| `trusted_generators` | load-test generators may set any client address: an `infra/nginx/loadtest-realip*.conf` exists (a warning); past the earliest `# expires` line, or without a readable one, it is critical (`scripts/loadtest-generators-left.sh` prints the minutes left) | no load test running: `scripts/loadtest-generators.sh off` (after a staging window: `sudo scripts/load-staging.sh close`); `scripts/loadtest-generators.sh status` shows it |
 | `monitor` (heartbeat only) | ops-check could not run | the api container: `$DC ps api`, `$DC logs --tail=50 api` |
 
 **The exam window, step by step** (E6; the load test behind it: `loadtests/README.md`):
@@ -718,6 +718,7 @@ The steps and the k6 commands: `loadtests/README.md`, "On the VPS". The rules ar
   - and by a systemd timer if the script itself is killed.
 
   It also switches A2's trusted generators on, and off again when it closes. `sudo scripts/load-staging.sh status` must say `allow-list: closed` afterwards. When in doubt, `sudo scripts/load-staging.sh close` (it is safe to repeat).
+- **Every k6 run ends with the trusted generators off.** The window does it when it closes; a run without the window ends with `scripts/loadtest-generators.sh off`, and `scripts/loadtest-generators.sh status` must say off. Nothing removes their file at its expiry: the monitor alerts (`trusted_generators`, section 7) and `prelaunch-check.sh` fails while one is left.
 - **After the run:**
   1. `scripts/load-staging.sh report <examId>`;
   2. the numbers into DECISIONS;

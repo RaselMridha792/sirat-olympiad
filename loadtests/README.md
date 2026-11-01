@@ -89,6 +89,7 @@ scripts/load-staging.sh down
 ```
 
 - **The window** trusts the generators' `CF-Connecting-IP` (A2's `scripts/loadtest-generators.sh`), so each simulated student counts as its own address in nginx's limits. `--no-trusted` skips that; then each generator is a single address.
+- **The run ends with the trusted generators off:** closing the window does it; without the window, `scripts/loadtest-generators.sh off`. The monitor alerts and `prelaunch-check.sh` fails while their file is left.
 - **Zero lost submissions across generators:** add up the receipts in each generator's summary. That sum must equal the report's `submitted + time_up + violations`, and the students who left must equal `server_checkpoint + server_empty`.
 
 The registration surge (payments' script) needs the fake's checkout, which only the stack's own network reaches:

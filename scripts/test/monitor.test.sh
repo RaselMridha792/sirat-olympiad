@@ -123,9 +123,10 @@ result "$ok" "the backup age from backup.sh's status file, the certificate and t
 ok=1
 [ "$(fact trustedGeneratorsMinutesLeft)" = null ] && ok=0
 result "$ok" "no trusted-generators file (A2's loadtest-realip): null, so the check stays ok"
-generators() { # $1 = the file's first line
-  printf '%s\nset_real_ip_from 203.0.113.5;\n' "$1" > "$T/loadtest-realip.local.conf"
-  config "MONITOR_GENERATORS_FILE=$T/loadtest-realip.local.conf"
+mkdir -p "$T/nginx"
+generators() { # $1 = the first line of loadtest-realip.local.conf (A2's file); other files of the folder stay
+  printf '%s\nset_real_ip_from 203.0.113.5;\n' "$1" > "$T/nginx/loadtest-realip.local.conf"
+  config "MONITOR_GENERATORS_DIR=$T/nginx"
   reset
   FAKE_OPS_OUT="$CLEAN" run_monitor --dry-run || true
   fact trustedGeneratorsMinutesLeft
@@ -139,7 +140,12 @@ result "$ok" "past the expiry by 30 s: negative at once ($v), with fractional se
 v=$(generators "set_real_ip_from 203.0.113.9;")
 ok=1; [ "$v" = -1 ] && ok=0
 result "$ok" "a file without a readable expiry line counts as expired ($v)"
-rm -f "$T/loadtest-realip.local.conf"
+printf '# expires %s\n' "$(date -u -d "@$((NOW - 3600))" +%Y-%m-%dT%H:%M:%SZ)" > "$T/nginx/loadtest-realip-extra.conf"
+printf 'not one of them\n' > "$T/nginx/realip-other.conf"
+v=$(generators "# expires $(date -u -d "@$((NOW + 90 * 60 + 30))" +%Y-%m-%dT%H:%M:%SZ)")
+ok=1; [[ "$v" =~ ^-6[01]$ ]] && ok=0
+result "$ok" "every loadtest-realip*.conf counts, the earliest expiry wins ($v), and other files are ignored"
+rm -f "$T"/nginx/*.conf
 config
 ok=1
 grep -q 'exec -T api node dist/cli/ops-check.js --dry-run' "$T/calls.log" && [ ! -s "$T/pings.log" ] &&

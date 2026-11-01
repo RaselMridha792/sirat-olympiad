@@ -14,7 +14,11 @@ One short entry per non-obvious technical or product decision. Newest first. For
 4. **Trusted generators:** the window switches A2's `scripts/loadtest-generators.sh` on for the same addresses (as the clone's owner, never root) and off again when it closes, then reloads staging's nginx, which reads the same folder. k6 then sends each simulated student's address in `CF-Connecting-IP` (`IP_HEADER`).
 5. **The registration surge runs inside the stack** (`up --registration`, `k6 registration`): the payer must reach the fake's checkout at `http://fake-paystation:18090`, which only the project's network has. Payments' overlay runs api and worker in development mode there (the API refuses the fake in production), so the exam simulation stays on a plain `up`.
 6. **CI** runs the script on faked commands (iptables, systemd-run, docker and the rest): 59 checks, no Docker and no root. A dry run prints every change and makes none.
-7. **A forgotten trusted generator cannot go unnoticed** (A2's suggestion): monitor.sh reads the minutes left on `infra/nginx/loadtest-realip.local.conf`'s `# expires` line, and ops-check's `trusted_generators` check warns while the file exists and goes critical past the expiry (or without a readable expiry line). Nothing else enforces the expiry: nginx keeps trusting the file until `off`.
+7. **A forgotten trusted generator cannot go unnoticed** (A2's L4/L14 items).
+   - `scripts/loadtest-generators-left.sh` gives the minutes to the earliest `# expires` line among the `infra/nginx/loadtest-realip*.conf` files (nginx's wildcard). It is negative past an expiry or without a readable one, and prints nothing when there is no file.
+   - monitor.sh reports that number. ops-check's `trusted_generators` check warns while any file exists and goes critical past the expiry.
+   - `prelaunch-check.sh` fails while any file exists, and every k6 run ends with `off`.
+   - Nothing else enforces the expiry: nginx keeps trusting the file until `off`.
 8. **The registration staging's cookies are not Secure** (`COOKIE_SECURE=false`, only there): payments' k6 script uses k6's cookie jar, which does not send Secure cookies over plain http, so the result page could never read its registration. The first rehearsal failed exactly there (`current 200`: 0 of 1,275). The API allows it because that staging runs in development mode; the exam staging stays in production mode with Secure cookies, which the exam simulation keeps itself.
 
 ## 2026-11-01 — Exam simulation, local k6 (E6; exam session, EXAM-PLAN 6.2; provisional until the VPS)

@@ -36,6 +36,8 @@ jobs:
         run: shellcheck -S warning $(git ls-files '*.sh')
       - name: load-staging.sh on faked commands - the firewall window opens only for the listed addresses and closes on a signal, an error and its timer; a dry run changes nothing (E6 kit)
         run: bash scripts/test/load-staging.test.sh
+      - name: loadtest-generators-left.sh - trusted load-test generators as minutes to the earliest expiry, negative past it or unreadable (A2's L14 files)
+        run: bash scripts/test/loadtest-generators-left.test.sh
       - run: pnpm format:check
       - run: pnpm --filter @sirat/shared build
       - run: pnpm db:generate
@@ -378,7 +380,13 @@ jobs:
           chmod 600 .env.deploy .env
           out=$(scripts/prelaunch-check.sh --local 2>&1 || true)
           echo "$out"
-          rm -f .env.deploy
+          # Once more with a trusted load-test generators file left behind (expired): that line must fail. nginx never
+          # reloads in this step, so the file reaches no request.
+          printf '# expires 2000-01-01T00:00:00Z\nset_real_ip_from 203.0.113.5;\n' > infra/nginx/loadtest-realip.ci-test.conf
+          gen=$(scripts/prelaunch-check.sh --local 2>&1 || true)
+          rm -f infra/nginx/loadtest-realip.ci-test.conf .env.deploy
+          grep -qxF 'FAIL    no trusted load-test generators (scripts/loadtest-generators.sh off)' <<< "$gen" ||
+            { echo "::error::prelaunch-check passed with a trusted-generators file"; exit 1; }
           # The word is padded to 8 columns (N/A takes 5 spaces). The disk line depends on the runner, so it is not asserted.
           bad=$(grep -vE '^(PASS|FAIL|N/A|MANUAL) +[a-zA-Z.]|^prelaunch-check: ' <<< "$out" || true)
           [ -z "$bad" ] || { echo "::error::a line that is not PASS, FAIL, N/A or MANUAL"; exit 1; }
@@ -388,7 +396,8 @@ jobs:
           for line in 'PASS    migrations are up to date' 'PASS    the worker is healthy' 'PASS    no published exam yet' \
             'PASS    the registration fee is 400 BDT (40000 paisa)' 'PASS    registration_open is false' 'PASS    the page CSP is sent' \
             'FAIL    no development marker on Postgres' 'FAIL    no Mailpit in the project' 'FAIL    APP_URL is https' \
-            'N/A     the newest off-server backup is under 26 h old (on the VPS only)'; do
+            'N/A     the newest off-server backup is under 26 h old (on the VPS only)' \
+            'PASS    no trusted load-test generators (scripts/loadtest-generators.sh off)'; do
             grep -qxF -- "$line" <<< "$out" || { echo "::error::expected: $line"; exit 1; }
           done
       - name: bootstrap.sh in an Ubuntu 24.04 container - dry run, no lockout, the setup, idempotent (L12)
