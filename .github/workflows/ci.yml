@@ -235,6 +235,10 @@ jobs:
             UNION SELECT '_prisma_migrations' WHERE has_table_privilege('sirat_app', 'public._prisma_migrations', 'SELECT')
             UNION SELECT 'TEMPORARY for PUBLIC' WHERE has_database_privilege('public', current_database(), 'TEMPORARY')")
           [ -z "$wrong" ] || { echo "::error::the migrations leave too many rights: $wrong"; exit 1; }
+          # Outside the dev cluster the key is required: an empty one stops the job (exit 2) before any login.
+          empty=$(POSTGRES_APP_PASSWORD= pnpm exec tsx prisma/runtime-role.ts 2>&1) && code=0 || code=$?
+          [ "$code" = 2 ] && grep -qF 'POSTGRES_APP_PASSWORD is required' <<<"$empty" ||
+            { echo "::error::an empty POSTGRES_APP_PASSWORD must stop the job with exit 2 (got $code)"; exit 1; }
           # Undo one thing per repair step: the tests below fail if runtime-role.ts skips one.
           psql -h localhost -U sirat -d sirat_test -q -c "GRANT UPDATE, DELETE ON audit_logs TO sirat_app" \
             -c "GRANT TEMPORARY ON DATABASE sirat_test TO PUBLIC" -c "ALTER DATABASE sirat_test RESET lock_timeout" \
