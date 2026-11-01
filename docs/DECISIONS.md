@@ -2,6 +2,15 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-01 — Ready by 15 Nov; registration opens when an admin opens it, expected 25 Nov (owner, via the lead)
+
+- **Decision:**
+  - Everything is ready on Sun 15 Nov as planned (LAUNCH-PLAN): deployed, checked, `prelaunch-check.sh` all PASS.
+  - Registration stays closed (`registration_open=false`). An admin opens it from `/admin/settings` (audited) when the owner says. Expected Wed 25 Nov, the client's date.
+  - The "coming soon" states stay on until then.
+- **Why:** the client's published dates are registration 25 Nov – 15 Feb, the selection round 19–20 Mar and the knockout 18 Apr. Opening is a setting, not a deploy, so it needs no release and no freeze.
+- **Who:** Rasel (owner, 2026-11-01), passed on by the lead; recorded by A2. Per-group fees (senior and junior, set by an admin) are payments' work.
+
 ## 2026-11-01 — Admin two-factor login (A2; design approved by the lead, groundwork by payments)
 
 1. **What:** TOTP (RFC 6238: SHA-1, 6 digits, 30 s, one step either side) for **admin and manager** (`TWO_FACTOR_ROLES`).
