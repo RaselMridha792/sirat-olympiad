@@ -58,6 +58,7 @@ async function cleanRounds() {
     WHERE "round_id" = ${round1.id}::uuid AND "status"::text = 'published'`;
   // promotion_runs is append-only: TRUNCATE is its one way out, and only in a *_test database (truncateAll's too).
   await prisma.$executeRawUnsafe('TRUNCATE "jury_scores", "round_entries", "promotion_runs"');
+  await prisma.$executeRaw`DELETE FROM "jury_assignments"`;
   await prisma.$executeRaw`DELETE FROM "rounds" WHERE "sort_order" > 1`;
 }
 
