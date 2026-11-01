@@ -28,6 +28,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - `rounds.int-spec.ts`: rounds and their rules; frozen criteria; promotion from Round 1 (in-category rank, ties, stale, the run, nothing overwritten, already promoted, the audit counts); the student's round, the profile and the stats; the source refusals; two simultaneous runs (one wins); promotion from a video round (close, unscored, stale after a score change, statuses, videos and scores kept); admins only; the CHECKs.
    - The test cleans its own rounds, because rounds are global data in the shared test database. `admin-stats` and `users-me` follow the new values.
    - web: the area file picks, the problem mapper (a message for every code in both languages), the criteria lines, the typed count.
+
 ## 2026-11-01 — CSV question import (E7a; payments, exam's handover, lead)
 
 1. **A multipart upload, not a JSON body** (lead approved):
