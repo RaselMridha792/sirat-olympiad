@@ -71,8 +71,8 @@ export class SessionService {
   }
 
   /**
-   * A new session family whose tokens carry `tfa` true: only after the second factor was proved (the login's code
-   * step, or turning 2FA on with a code). Its refreshes keep the flag while the user's 2FA stays on (rotate).
+   * A new session family that proved the second factor (the row's `two_factor_verified`, the tokens' `tfa`): only
+   * after the login's code step, or turning 2FA on with a code. Its refreshes keep it while the user's 2FA stays on.
    */
   startVerified(user: { id: string; role: Role }, client: ClientInfo): Promise<IssuedSession> {
     return this.issue(this.prisma, user, randomUUID(), client, true);
@@ -112,9 +112,10 @@ export class SessionService {
       await this.endFamily(current.familyId);
       return { status: 'invalid' };
     }
-    // The user's CURRENT 2FA state, not the old token's: every change of it ends the user's other sessions, so a
-    // family still alive while 2FA is on proved the code (DECISIONS "Admin two-factor login").
-    const twoFactor = current.user.twoFactor?.enabledAt != null;
+    // What THIS family proved (its row), and only while the user is still enrolled: a refresh may drop the claim
+    // (2FA turned off or reset), never raise it. Enrolling later never upgrades a session that skipped the code, also
+    // one that slips past enable's end-all in a race (DECISIONS "Admin two-factor login").
+    const twoFactor = current.twoFactorVerified && current.user.twoFactor?.enabledAt != null;
     const budget = deadline - Date.now();
     if (budget < MIN_ROTATION_MS) return { status: 'busy' };
     // Assigned inside the transaction callback, which TypeScript's flow analysis does not follow.
@@ -164,6 +165,19 @@ export class SessionService {
       throw error;
     }
     return issued ? { status: 'rotated', session: issued } : { status: 'race' };
+  }
+
+  /**
+   * The session row an access token names, if it is still alive: its second-factor proof, or null when it is missing,
+   * revoked or expired. An access token outlives its row by up to its TTL; actions that start a new session from one
+   * (change-password) must not trust the token alone.
+   */
+  async liveProof(sessionId: string, userId: string): Promise<boolean | null> {
+    const row = await this.prisma.session.findFirst({
+      where: { id: sessionId, userId, revokedAt: null, expiresAt: { gt: new Date() } },
+      select: { twoFactorVerified: true },
+    });
+    return row ? row.twoFactorVerified : null;
   }
 
   /** Logout on this device: ends the family of the session the access token belongs to. */
@@ -234,6 +248,8 @@ export class SessionService {
         expiresAt: refreshExpiresAt,
         ip: client.ip ?? null,
         userAgent: client.userAgent?.slice(0, 512) ?? null,
+        // The proof lives on the row: the access token's `tfa` is only ever a copy of it.
+        twoFactorVerified: twoFactor,
       },
     });
     const authUser: AuthUser = { id: user.id, role: user.role, sessionId: row.id, twoFactor };

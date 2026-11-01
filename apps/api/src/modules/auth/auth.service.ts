@@ -25,6 +25,7 @@ import { PasswordService } from './password.service';
 import { type ClientInfo, type IssuedSession, SessionService } from './session.service';
 import { TwoFactorChallenges } from './two-factor/two-factor-challenges';
 import { TwoFactorConfig } from './two-factor/two-factor.config';
+import { twoFactorRequired } from './two-factor/two-factor.errors';
 
 /** One message for every failed login: it never tells whether the email has an account. */
 export const LOGIN_FAILED_MESSAGE = 'Email or password is incorrect';
@@ -195,7 +196,9 @@ export class AuthService {
   /**
    * Change password (RULEBOOK §5): the current password is checked under the same limits as login, since a stolen
    * session must not become a way to guess it. Success ends every session on every device and starts a fresh one
-   * for this device, which the caller sets as cookies.
+   * for this device, which the caller sets as cookies. The access token's session row must still be alive (401
+   * otherwise), and for an enrolled user it must have proved the second factor (403 TWO_FACTOR_REQUIRED, nothing
+   * changed): a token outlives its row, and the new session inherits the row's proof, never the token's claim.
    */
   async changePassword(
     actor: AuthUser,
@@ -205,9 +208,21 @@ export class AuthService {
   ): Promise<IssuedSession> {
     const user = await this.prisma.user.findUnique({
       where: { id: actor.id },
-      select: { id: true, email: true, role: true, isBlocked: true, passwordHash: true },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        isBlocked: true,
+        passwordHash: true,
+        twoFactor: { select: { enabledAt: true } },
+      },
     });
     if (!user || user.isBlocked) throw new UnauthorizedException('Authentication required');
+    // A session ended by enable (or anything else) must not come back as a fresh one, let alone a verified one.
+    const proof = await this.sessions.liveProof(actor.sessionId, user.id);
+    if (proof === null) throw new UnauthorizedException('Session expired, log in again');
+    const enrolled = this.twoFactor.enabled && user.twoFactor?.enabledAt != null;
+    if (enrolled && !proof) throw twoFactorRequired(); // nothing changed, nothing counted
 
     const verdict = await this.limiter.check(user.email, client.ip);
     if (!verdict.allowed)
@@ -236,11 +251,13 @@ export class AuthService {
       });
       return this.sessions.endAllForUser(user.id, tx);
     });
-    // This device keeps what its session proved: a password change is no second factor, and never takes one away.
+    // This device keeps what its session row proved, while the user is enrolled: a password change is no second
+    // factor, and never takes one away.
     const fresh = { id: user.id, role: user.role };
-    const session = actor.twoFactor
-      ? await this.sessions.startVerified(fresh, client)
-      : await this.sessions.start(fresh, client);
+    const session =
+      proof && enrolled
+        ? await this.sessions.startVerified(fresh, client)
+        : await this.sessions.start(fresh, client);
     await this.audit.record({
       action: 'auth.password_changed',
       actorId: user.id,

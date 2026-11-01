@@ -155,17 +155,20 @@ model User {
 /// Refresh-token session. Rotation: each refresh creates a new row in the same family and revokes the old one.
 /// Presenting a revoked token = reuse => revoke the whole family.
 model Session {
-  id        String    @id @default(uuid(7)) @db.Uuid
-  userId    String    @map("user_id") @db.Uuid
-  familyId  String    @map("family_id") @db.Uuid
-  tokenHash String    @unique @map("token_hash")
-  expiresAt DateTime  @map("expires_at") @db.Timestamptz
-  revokedAt DateTime? @map("revoked_at") @db.Timestamptz
-  userAgent String?   @map("user_agent")
-  ip        String?
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                String    @id @default(uuid(7)) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  familyId          String    @map("family_id") @db.Uuid
+  tokenHash         String    @unique @map("token_hash")
+  expiresAt         DateTime  @map("expires_at") @db.Timestamptz
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz
+  /// The family proved a second factor (DECISIONS "Admin two-factor login"): set only when it starts after the code
+  /// step or enable; a refresh copies it and never raises it.
+  twoFactorVerified Boolean   @default(false) @map("two_factor_verified")
+  userAgent         String?   @map("user_agent")
+  ip                String?
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([familyId])
