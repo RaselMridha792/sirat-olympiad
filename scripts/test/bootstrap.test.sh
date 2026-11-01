@@ -53,13 +53,15 @@ cat > "$F/bin/swapon" << 'EOF'
 echo "swapon $*" >> /fake/state/calls
 case "$1" in --show) cat /fake/state/swap 2> /dev/null ;; *) echo "/swapfile file 4G 0B -2" > /fake/state/swap ;; esac
 EOF
-printf '#!/bin/sh\necho "fallocate $*" >> /fake/state/calls\n' > "$F/bin/fallocate"
+# Like the real one, it leaves the file (empty here), so the chmod after it works.
+printf '#!/bin/sh\necho "fallocate $*" >> /fake/state/calls\nfor last; do :; done\n: > "$last"\n' > "$F/bin/fallocate"
 printf '#!/bin/sh\necho "mkswap $*" >> /fake/state/calls\n' > "$F/bin/mkswap"
 chmod +x "$F"/bin/*
 export PATH="$F/bin:$PATH"
 
-# The repository bootstrap clones: a bare copy of this checkout.
-git config --global --add safe.directory '*'
+# The repository bootstrap clones: a bare copy of this checkout, owned by root here. For every user, since deploy
+# clones it (on the VPS, deploy clones over SSH and owns its clone).
+git config --system --add safe.directory '*'
 git clone -q --bare "$WORK/in/repo.bundle" /srv/origin.git
 chmod -R a+rX /srv/origin.git
 export BOOTSTRAP_REPO_URL=/srv/origin.git BOOTSTRAP_SKIP_DOCKER=1
@@ -134,5 +136,9 @@ check "both timers enabled" bash -c "[ $s = 0 ] && grep -qx sirat-backup.timer /
 s=0; run || s=$?
 check "and the run after that changes nothing" bash -c "[ $s = 0 ] && grep -qx 'bootstrap: 0 change(s) made' $WORK/out.log"
 
+if [ "$failures" -gt 0 ]; then
+  echo "bootstrap's last output:"
+  tail -n 40 "$WORK/out.log"
+fi
 echo "bootstrap tests: $passed passed, $failures failed"
 [ "$failures" = 0 ]
