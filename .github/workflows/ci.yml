@@ -185,8 +185,6 @@ jobs:
       DATABASE_URL: postgresql://sirat:ci-only-password@localhost:5432/sirat_test
       DIRECT_URL: postgresql://sirat:ci-only-password@localhost:5432/sirat_test
       TEST_DATABASE_URL: postgresql://sirat:ci-only-password@localhost:5432/sirat_test
-      # The app under test connects as the runtime role, as production will after L8 (test/load-env.ts).
-      TEST_APP_DATABASE_URL: postgresql://sirat_app:ci-only-app-password@localhost:5432/sirat_test
       SHADOW_DATABASE_URL: postgresql://sirat:ci-only-password@localhost:5432/sirat_shadow
       REDIS_CACHE_URL: redis://localhost:6379
       # The AppModule wiring tests boot the real app, which validates these at startup.
@@ -207,8 +205,6 @@ jobs:
       - run: pnpm db:generate
       - name: Create shadow database for the drift check
         run: PGPASSWORD=ci-only-password psql -h localhost -U sirat -d sirat_test -c "CREATE DATABASE sirat_shadow"
-      - name: The runtime role sirat_app with a throwaway CI password (its rights come from the migration)
-        run: PGPASSWORD=ci-only-password psql -h localhost -U sirat -d sirat_test -c "CREATE ROLE sirat_app LOGIN PASSWORD 'ci-only-app-password'"
       - name: Migrations match schema.prisma (fails on drift)
         working-directory: apps/api
         run: >-
@@ -217,6 +213,17 @@ jobs:
           --to-schema-datamodel prisma/schema.prisma
           --shadow-database-url "$SHADOW_DATABASE_URL"
           --exit-code
+      # The migrate job's own steps: the migration creates sirat_app, then runtime-role.ts gives it a login with a
+      # throwaway password. The app under test then connects as sirat_app, as production will after L8 (test/load-env.ts).
+      - name: The runtime role sirat_app, as the migrate job sets it up
+        working-directory: apps/api
+        run: |
+          password=$(openssl rand -hex 32)
+          echo "TEST_APP_DATABASE_URL=postgresql://sirat_app:${password}@localhost:5432/sirat_test" >> "$GITHUB_ENV"
+          pnpm exec prisma migrate deploy
+          out=$(POSTGRES_APP_PASSWORD="$password" pnpm exec tsx prisma/runtime-role.ts)
+          echo "$out"
+          grep -qF 'runtime role ready: sirat_app (login and password set)' <<<"$out"
       - name: Apply migrations to a fresh DB, then constraint/seed/rate-limit/app tests
         run: pnpm --filter @sirat/api test:int
 
