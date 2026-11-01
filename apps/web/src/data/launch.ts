@@ -39,6 +39,7 @@ export const LAUNCH = {
   '/admin/exams/new': 'live',
   '/admin/leaderboard': 'live',
   '/admin/payments': 'live',
+  '/admin/security': 'live',
   '/admin/settings': 'live',
   '/admin/tasks': 'live',
   '/admin/teams': 'live',
