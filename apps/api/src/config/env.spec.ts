@@ -262,6 +262,17 @@ describe('TOTP_ENCRYPTION_KEY (admin two-factor login)', () => {
     expect(() => validateEnv(without({ NODE_ENV: 'test' }))).not.toThrow();
   });
 
+  it('the worker never needs it: a missing key stops the API, not the jobs (A2)', () => {
+    const worker = {
+      ...without(),
+      EMAIL_PROVIDER: 'mailpit',
+      MAILPIT_URL: 'http://mailpit:8025',
+      EMAIL_FROM: 'Sirat <no-reply@sirat.test>',
+    };
+    expect(() => validateWorkerEnv(worker)).not.toThrow();
+    expect(() => validateEnv(worker)).toThrow(/TOTP_ENCRYPTION_KEY is required in production/);
+  });
+
   it('takes 32 bytes as base64, base64url or 64 hex', () => {
     for (const value of [
       key().toString('base64'),
