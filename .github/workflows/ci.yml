@@ -217,13 +217,30 @@ jobs:
       # throwaway password. The app under test then connects as sirat_app, as production will after L8 (test/load-env.ts).
       - name: The runtime role sirat_app, as the migrate job sets it up
         working-directory: apps/api
+        env:
+          PGPASSWORD: ci-only-password # throwaway CI container, not a secret
         run: |
           password=$(openssl rand -hex 32)
+          echo "::add-mask::$password"
           echo "TEST_APP_DATABASE_URL=postgresql://sirat_app:${password}@localhost:5432/sirat_test" >> "$GITHUB_ENV"
           pnpm exec prisma migrate deploy
-          out=$(POSTGRES_APP_PASSWORD="$password" pnpm exec tsx prisma/runtime-role.ts)
+          # The migrations alone protect the append-only tables and the migration log, and allow no temporary tables
+          # (runtime-role.ts re-asserts the same, so the tests below cannot tell the two apart).
+          wrong=$(psql -h localhost -U sirat -d sirat_test -tAc "
+            SELECT c.relname FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_proc p ON p.oid = t.tgfoid
+            WHERE NOT t.tgisinternal AND p.proname LIKE '%\_append\_only'
+              AND (has_table_privilege('sirat_app', c.oid, 'UPDATE') OR has_table_privilege('sirat_app', c.oid, 'DELETE'))
+            UNION SELECT '_prisma_migrations' WHERE has_table_privilege('sirat_app', 'public._prisma_migrations', 'SELECT')
+            UNION SELECT 'TEMPORARY for PUBLIC' WHERE has_database_privilege('public', current_database(), 'TEMPORARY')")
+          [ -z "$wrong" ] || { echo "::error::the migrations leave too many rights: $wrong"; exit 1; }
+          # Undo one thing per repair step: the tests below fail if runtime-role.ts skips one.
+          psql -h localhost -U sirat -d sirat_test -q -c "GRANT UPDATE, DELETE ON audit_logs TO sirat_app" \
+            -c "GRANT TEMPORARY ON DATABASE sirat_test TO PUBLIC" -c "ALTER DATABASE sirat_test RESET lock_timeout" \
+            -c "ALTER ROLE sirat_app SET statement_timeout = 0"
+          out=$(POSTGRES_APP_PASSWORD="$password" pnpm exec tsx prisma/runtime-role.ts 2>&1)
           echo "$out"
           grep -qF 'runtime role ready: sirat_app (login and password set)' <<<"$out"
+          grep -qF 'runtime role: cleared 1 role-level setting(s) of sirat_app' <<<"$out"
       - name: Apply migrations to a fresh DB, then constraint/seed/rate-limit/app tests
         run: pnpm --filter @sirat/api test:int
 

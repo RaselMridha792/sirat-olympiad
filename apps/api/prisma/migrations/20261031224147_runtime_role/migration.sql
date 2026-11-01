@@ -61,6 +61,7 @@ END
 $$;
 
 -- Every table or sequence a later migration creates gets the same data rights. A later append-only table needs its own
--- REVOKE in its migration; the catalog test (test/db-runtime-role.int-spec.ts) finds them by their trigger.
+-- REVOKE in its migration: CI checks the migrations' result before runtime-role.ts runs, and the catalog test
+-- (test/db-runtime-role.int-spec.ts) finds them by their trigger in a local run.
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO sirat_app;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO sirat_app;
