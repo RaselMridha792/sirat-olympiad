@@ -35,10 +35,11 @@ import { type ClientInfo, SessionService } from './session.service';
 const EMAIL_LINK_TIER = { default: { limit: 300, ttl: 60_000 } };
 const FORGOT_TIER = { default: { limit: 120, ttl: 60_000 } };
 /**
- * Renewal is anonymous too (the access cookie has expired), so it counts per client IP. Set above nginx's per-IP
- * api zone (30 r/s): behind nginx the API never refuses a renewal first.
+ * Renewal is anonymous too (the access cookie has expired), so it counts per client IP (an IPv6 client by its /64).
+ * Set at nginx's per-IP api zone (200 r/s, 12,000 a minute, LAUNCH-PLAN L4): behind nginx the API never refuses a
+ * renewal first, even for a school or a mobile operator's address shared by thousands.
  */
-const REFRESH_TIER = { default: { limit: 3_000, ttl: 60_000 } };
+const REFRESH_TIER = { default: { limit: 12_000, ttl: 60_000 } };
 
 const clientInfo = (req: Request): ClientInfo => ({
   ip: req.ip ?? null,
