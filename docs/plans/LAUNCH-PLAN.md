@@ -244,15 +244,15 @@ The superuser password also sits in every app container through `env_file`. The 
 - **`prisma/runtime-role.ts`**, run by the migrate job after `migrate deploy`:
   - sets the role's login and password with a SCRAM verifier computed locally, so the plaintext never reaches Postgres or its log;
   - manages only the fixed name `sirat_app`;
-  - re-applies the three database timeouts, which closes the restore gap of section 4;
+  - puts back a missing database timeout (a present one stays as a migration set it), which closes the restore gap of section 4;
   - has an `--ensure` mode for restores (section 4);
-  - prints one line and never a value.
+  - prints one line (plus a warning when it cleared role settings) and never a value.
 - **A boot line** in the API and the worker: `database role=<name> superuser=<bool>`. In L2 it warns; after L8 production refuses to boot as a superuser.
 - **Tests:**
   - the integration suite runs the app as `sirat_app` when `TEST_APP_DATABASE_URL` is set (A2 and CI set it), so a missing grant fails in CI, not in production;
   - a catalog test checks every table's privileges;
   - as `sirat_app`, each of these fails with 42501: TRUNCATE, DISABLE TRIGGER, `session_replication_role`, DDL, `COPY … TO PROGRAM`, reading `_prisma_migrations`, UPDATE/DELETE on the append-only tables;
-  - mutation checks on the default privileges, the append-only REVOKE and the timeout re-apply.
+  - mutation checks on the default privileges, the append-only REVOKE and the missing-timeout rule.
 - **Keys, in L2:** the `sirat_app` password key in the root `.env.example` and in the migrate service's environment (optional until L8), and `TEST_APP_DATABASE_URL` in `apps/api/.env.example`.
 - **The shared dev cluster:** roles belong to the whole Postgres cluster, so there is one `sirat_app` password for every session's databases.
   - On a cluster with the development marker, `runtime-role.ts` sets the password only while the role has none; with an empty key it skips that step with one line and never fails the migrate job. So stack turns from any worktree keep working after L2, and none can reset another's password. Without the marker (production, from L8), an empty key fails.

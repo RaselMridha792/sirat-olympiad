@@ -115,7 +115,8 @@ git merge --ff-only "$sha"
 $DC build                          # new images; nothing restarts yet
 $DC run --rm migrate               # migrate deploy, runtime role, config seed with the NEW image; the OLD API keeps serving.
                                    # Its own output must end with "config seed done". If it fails, STOP: the old API is
-                                   # still up; follow "Migration failed" below. (`$DC logs migrate` shows an older run.)
+                                   # still up; follow "Migration failed" below, or "The runtime role step failed" when the
+                                   # last line starts with `runtime role:`. (`$DC logs migrate` shows an older run.)
 $DC up -d                          # recreates web/api with the new images; migrate runs again (no-op)
 git diff --quiet "$prev" HEAD -- infra/nginx || $DC exec nginx nginx -c /etc/nginx/sirat/nginx.conf -s reload   # the folder mount sees the new files; a changed site template or entrypoint hook needs `$DC up -d --no-deps --force-recreate nginx`
 for _ in $(seq 1 60); do [ "$($DC ps --format '{{.Health}}' api | grep -vc '^healthy$')" = 0 ] && break; sleep 5; done   # wait until every API replica is healthy
@@ -134,7 +135,7 @@ Migrations must stay backward-compatible: the old API keeps serving between `run
 3. Mark it rolled back: `$DC run --rm migrate node_modules/.bin/prisma migrate resolve --rolled-back <migration_name>` (works with the new or the old image).
 4. Fix forward (a corrected migration in a new commit, then deploy again) or roll back the code (`git checkout --detach <deploy-tag>`, `$DC build`, `$DC up -d`). **No deploys during a live exam window** except a critical fix agreed with the owner.
 
-**The runtime role step failed** (the output's last line starts with `runtime role:`): every migration is applied and nothing needs `migrate resolve`. Fix what the line names (`POSTGRES_APP_PASSWORD` must be 32–128 letters, digits, `-` or `_`: `openssl rand -hex 32`; or the database error code), then run `$DC run --rm migrate` again. The old API keeps serving meanwhile.
+**The runtime role step failed** (the output's last line starts with `runtime role:`): every migration is applied and nothing needs `migrate resolve`. Fix what the line names (`POSTGRES_APP_PASSWORD` must be 32–128 letters, digits, `-` or `_`: `openssl rand -hex 32`; or the database error code; `55P03` means another migrate run held the database for over 30 s), then run `$DC run --rm migrate` again. The old API keeps serving meanwhile.
 
 ## 3. Scale API replicas
 
