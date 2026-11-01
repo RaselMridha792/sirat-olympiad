@@ -68,7 +68,7 @@ export interface HostFacts {
 }
 
 export interface QueueFacts {
-  name: 'email' | 'payments' | 'exam';
+  name: 'email' | 'payments' | 'exam' | 'housekeeping';
   workers: number;
   waiting: number;
   oldestWaitingSeconds: number | null;

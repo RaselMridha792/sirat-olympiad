@@ -12,6 +12,7 @@ describe('opsEnv', () => {
       SECURITY_ALERT_EMAILS_PER_HOUR: 6,
       EXAM_QUEUE_NAME: undefined,
       PAYMENTS_QUEUE_NAME: undefined,
+      HOUSEKEEPING_QUEUE_NAME: undefined,
     });
     expect(
       opsEnv({
@@ -36,6 +37,7 @@ describe('opsEnv', () => {
     [{ ...base, SECURITY_ALERT_EMAILS_PER_HOUR: '6.5' }, 'SECURITY_ALERT_EMAILS_PER_HOUR'],
     [{ ...base, SECURITY_ALERT_EMAIL: 'not an address' }, 'SECURITY_ALERT_EMAIL'],
     [{ ...base, EXAM_QUEUE_NAME: 'exam queue' }, 'EXAM_QUEUE_NAME'],
+    [{ ...base, HOUSEKEEPING_QUEUE_NAME: 'house keeping' }, 'HOUSEKEEPING_QUEUE_NAME'],
   ])('refuses a bad setting by name, never by value (%#)', (env, name) => {
     let message = '';
     try {

@@ -460,3 +460,27 @@ HSTS comes from nginx only: 300 s for launch, without `includeSubDomains`. The r
 - **Load it**, outside an exam window: `$DC exec nginx nginx -c /etc/nginx/sirat/nginx.conf -t && $DC exec nginx nginx -c /etc/nginx/sirat/nginx.conf -s reload`. The certs folder is inside the folder mount, so a reload sees the new files.
 - **Renew it:** it lasts 90 days, so put the renewal date in the calendar. Go back to the Origin CA certificate and Full (strict) once the proxy is on again.
 - **HTTP-01 does not work** with `sites/tls` as written: port 80 redirects the token path, and on 443 `location /` sends it to Next. It would need a code change.
+
+## 16. Nightly session and token cleanup (L13)
+
+- **What it deletes:** every night at 03:30 Asia/Dhaka, the worker's `housekeeping` queue runs `session-cleanup`. There is one scheduler, so one run however many workers start.
+  - `sessions` rows that expired, or were revoked, more than 30 days ago. A rotated row counts as revoked. These rows keep IPs and browsers.
+  - `auth_tokens` 7 days after they expired, used or not.
+  - Nothing else: never users, payments, registrations, submissions or the append-only logs.
+- **How:**
+  - batches of 1,000 (`FOR UPDATE SKIP LOCKED`, 5 s each), at most 50 batches per table a night; the rest waits for the next night;
+  - 3 attempts. A job that failed for good is kept 7 days, and `ops-check` reports it as a `failed_jobs` warning.
+- **Check that it ran:** one audit row per run, with counts only.
+
+```bash
+$DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+select created_at, meta from audit_logs where action = 'housekeeping.session_cleanup' order by created_at desc limit 7;
+SQL
+```
+
+- The worker also logs `session cleanup done` with the same counts.
+- `"more": true` means the run reached the cap. That is normal right after a long pause. If it stays true night after night, the cap is too low for the traffic.
+- **No manual trigger:** a run is idempotent, so the next night catches up.
+- **Indexes:** `sessions(expires_at)`, `sessions(revoked_at)` and `auth_tokens(expires_at)` came with a plain `CREATE INDEX`, fine while the tables were young. A later index on a big `sessions` table must use `CREATE INDEX CONCURRENTLY`, in a migration of its own: Prisma runs each migration in a transaction, and `CONCURRENTLY` cannot run inside one. A plain build would lock writes, and so logins and refreshes, until it finished.
+- **At worker start** the log says `housekeeping scheduler set` (id, pattern, time zone). Every start says so, but Redis keeps one scheduler: `$DC exec -T redis-queue redis-cli ZRANGE bull:housekeeping:repeat 0 -1` lists exactly `session-cleanup`.
+- **After a purge,** a refresh token replayed more than 30 days after its rotation gets 401, like any unknown token. It no longer ends its family or writes `auth.refresh_reuse` (DECISIONS A2.1b #9).
