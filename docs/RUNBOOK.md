@@ -51,9 +51,9 @@ Signing secret: the API refuses to start (in every `NODE_ENV`) when `JWT_ACCESS_
 **The two-factor key (admin 2FA, DECISIONS "Admin two-factor login"):**
 - **The stack:** every worktree's root `.env` needs `TOTP_ENCRYPTION_KEY`, since the stack's api runs with `NODE_ENV=production` and refuses to start without it. Add it once without printing it: `printf 'TOTP_ENCRYPTION_KEY=%s\n' "$(openssl rand -base64 32)" >> .env`.
 - **Host-side `pnpm dev:api`:** the same line in `apps/api/.env` turns 2FA on for that API. Without it 2FA is off there: nothing is enforced, and the 2FA routes answer 503 (development only).
-- **Enrolments follow the key:** it decrypts the stored secrets. An admin who enrolled under one key gets no code accepted under another (a recovery code or `admin:2fa-reset` still works, §20). So dev enrolments must be redone after a stack turn from a worktree with a different key, unless every worktree uses the same value.
+- **Enrolments follow the key:** it decrypts the stored secrets. An admin who enrolled under one key gets no code accepted under another (a recovery code or `admin:2fa-reset` still works, §21). So dev enrolments must be redone after a stack turn from a worktree with a different key, unless every worktree uses the same value.
 - **Tests:** the integration tests ignore the key in `apps/api/.env` (`test/load-env.ts`). Only the 2FA suites set their own throwaway key; every other suite runs with 2FA off.
-- **Admins on the stack:** with the key set, an admin from `admin:create` logs in but gets 403 `TWO_FACTOR_REQUIRED` on the admin pages until they enrol (§20).
+- **Admins on the stack:** with the key set, an admin from `admin:create` logs in but gets 403 `TWO_FACTOR_REQUIRED` on the admin pages until they enrol (§21).
 
 Fixtures: 3 verified students with paid registrations, `student1@fixtures.invalid` … `student3@fixtures.invalid`, password = your `FIXTURE_PASSWORD` in `apps/api/.env`. They refuse to run unless `NODE_ENV` is development/test, the confirmation is set for that run, the URL is local with no `host`/`hostaddr` parameter, and the connected Postgres server carries `sirat.environment=development` (only the dev override sets it; after pulling this change once, recreate the dev Postgres with `$DCD up -d postgres`, data is kept). PowerShell: `$env:ALLOW_DEV_FIXTURES='yes-this-is-not-production'; pnpm --filter @sirat/api db:fixtures:dev`. Each student has a distinct phone (`01700000001`…`01700000003`) and a paid 400 BDT payment that went initiated → pending → paid, like a real one.
 
@@ -749,7 +749,30 @@ The steps and the k6 commands: `loadtests/README.md`, "On the VPS". The rules ar
 - **CI** runs the script on faked commands (`scripts/test/load-staging.test.sh`): the window opens only for the listed addresses, with its timer, and closes on a signal, on an error and by `close`; a dry run changes nothing; no secret is printed.
 - **A rehearsal against real Docker,** on a PC with the release's images: `SIRAT_TAG=<tag> [PARTS="exam registration"] bash scripts/test/run-load-staging-rehearsal.sh`. It runs up, exam, k6 inside, the report and down, then the registration staging with payments' fake, on 127.0.0.1:18088. It leaves nothing behind. The window is not part of it (no DOCKER-USER chain there).
 
-## 20. Admin two-factor login: enrolment and a lost authenticator
+## 20. Rounds and promotion (core C6a)
+
+- **Where:** `/admin/rounds` (admins only). Round 1 is the quiz; add Round 2 (video, with its window) and the final after it, in order. Times are Bangladesh time.
+- **Before promoting from Round 1:**
+  - The Round 1 exam of the category (or the one for all categories) has its results **published** (exam's results panel).
+  - Exactly one published Round 1 exam covers each category: archive a test or replaced exam first (else "More than one published Round 1 exam…").
+  - Round 2 exists.
+- **Promote, one category at a time:**
+  1. "Promote", choose the category and N, then "Preview": the counts, the tie count (students tied with the last place also go through) and the last place.
+  2. Type the number that will go through, then "Promote now".
+  3. It cannot be undone, and each category is promoted from a round once (audited `round.promoted`, counts only).
+- **"Someone changed this in the meantime":** the results were re-published or a score changed after the preview. Preview again.
+- **A student who already had an entry in the next round** keeps it as it was (its video and score, `promotion_run_id` empty) and still counts in the run's "went through" number. A promotion never overwrites an entry.
+- **From the video round:** after its close and once every sent video has a jury score (C6b). Students without a video are eliminated.
+- **Check the counts** (no names):
+
+```bash
+$DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+select r.sort_order, r.name, e.status, count(*) from round_entries e join rounds r on r.id = e.round_id group by 1, 2, 3 order by 1, 3;
+select r.name as from_round, p.category, p.top_n, p.promoted_count, p.eliminated_count, p.created_at from promotion_runs p join rounds r on r.id = p.from_round_id order by p.created_at;
+SQL
+```
+
+## 21. Admin two-factor login: enrolment and a lost authenticator
 
 Admins and managers sign in with a password and a 6-digit code from an authenticator app (DECISIONS "Admin two-factor login"; 06-API "Two-factor login"). Production requires `TOTP_ENCRYPTION_KEY` in `.env`; the api logs `two-factor=on` at boot.
 

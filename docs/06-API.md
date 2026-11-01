@@ -37,7 +37,7 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | leaderboard | `GET /leaderboard?exam=&page=&pageSize=&q=` | Auth | Published snapshot only; rank, name, institution. Results (below). Built (E3) |
 | | `GET /admin/leaderboard?exam=&page=&pageSize=&q=` | Role(admin, manager) | The snapshot with email, score and time, also before publishing. Built (E3) |
 | | `GET /admin/exams/:id/results`, `POST /admin/exams/:id/results/{build,publish,unpublish}`, `GET /admin/exams/:id/attempts[/:attemptId]` | admin | Results (below). Built (E3) |
-| rounds | `GET /rounds/me` | Auth | |
+| rounds | `GET /rounds/me` | Role(student, ambassador) | Rounds (below). Built (core C6a) |
 | | `POST /rounds/:id/video` | Owner | Inside round window |
 | certificates | `GET /certificates/mine`, `GET /certificates/:id/pdf` | Owner | |
 | | `GET /certificates/verify/:code` | Public | |
@@ -53,7 +53,7 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `GET /admin/settings`, `PUT /admin/settings/:key` | admin | Single writer (`expected`), audited. Built (payments PR 3) |
 | | `GET /admin/payments`, `GET /admin/payments/:id`, `POST /admin/payments/:id/{recheck,reconcile}` | admin | Audited. Built (payments PR 3), below |
 | | `GET /admin/stats` | admin/manager | Admin statistics (below). Counts only, cached 60 s. Built (core) |
-| | `POST /admin/rounds/:id/promote` | admin | Idempotent, audited |
+| | `GET/POST /admin/rounds`, `GET/PATCH /admin/rounds/:id`, `POST /admin/rounds/:id/promotion/preview`, `POST /admin/rounds/:id/promotion` | admin | Rounds (below): one promotion per round and category, audited. Built (core C6a) |
 | | `GET/POST /admin/jury/*` | jury/admin | Judge recorded |
 | | `GET/POST /admin/announcements`, `PATCH /admin/announcements/:id`, `POST /admin/announcements/:id/{archive,restore}` | admin | Announcements (below). Built (core C4) |
 | | `GET /admin/ambassadors`, `POST /admin/ambassadors/:userId/{approve,revoke}` | admin | Ambassadors (below). Built (core C5a) |
@@ -79,7 +79,7 @@ TOTP for admins and managers. While 2FA is on (`TOTP_ENCRYPTION_KEY` set; produc
 
 - Signed-in step-ups answer 400, never 401, so the web never takes them for an expired session. Only the login's code step answers 401.
 - `tfa` claim: `startVerified` after the code step or enable; a refresh copies the user's current state (enrolled or not); change-password keeps this session's claim. Enable, disable and both resets end the user's other sessions, so a live session of an enrolled user always proved the code. An access token already issued stays valid until it expires (15 min).
-- Break-glass without the API: `pnpm --filter @sirat/api admin:2fa-reset --email <address> --reason "<why>"` (`node dist/cli/admin-2fa-reset.js` on the VPS; RUNBOOK §20).
+- Break-glass without the API: `pnpm --filter @sirat/api admin:2fa-reset --email <address> --reason "<why>"` (`node dist/cli/admin-2fa-reset.js` on the VPS; RUNBOOK §21).
 
 ## Registration and payment (payments PR 2 and 3; plan: `docs/plans/PAYMENTS-PLAN.md` 6.1–6.7)
 
@@ -242,7 +242,7 @@ POST for the export keeps the reason and the search out of URLs (nginx logs quer
 
 | Method + path | Request | Answers |
 |---|---|---|
-| `GET /users/me` | — | `StudentProfile`: name, email, phone, district, institution, education type, category, role, `emailVerifiedAt`, `createdAt`, grade level (id, label), `currentRound` (null until rounds exist) |
+| `GET /users/me` | — | `StudentProfile`: name, email, phone, district, institution, education type, category, role, `emailVerifiedAt`, `createdAt`, grade level (id, label), `currentRound` (the round of `GET /rounds/me`: id and name) |
 | `GET /content/profile-options` | — | `ProfileOptions`: grade levels (id, label, category, in order), the 5 education types and the 64 districts (payments' `registration.ts`, one list for registration and profile) |
 | `PATCH /users/me` | Any of `name` (2–100), `phone` (any BD form, stored `01XXXXXXXXX`), `district` (one of 64), `institution` (2–150), `educationType` (one of 5); at least one; none can be cleared. The same limits as the registration form | 200 `StudentProfile`. 400 `Validation failed` (details: the field messages) or `nothing_to_update`; any other field (`email`, `gradeLevelId`, `role`, `category`, `promoCode` …) → 400. 409 `PHONE_REGISTERED` (`ApiError.code`, the owner's text in `REGISTRATION_MESSAGES`) when another account has the number or a registration in progress holds it, also when two people claim it at once (the UNIQUE index decides). Audit `user.profile_updated` with the changed field names only, never the values |
 | `POST /admin/users/:id/grade-level` (admin) | `{ gradeLevelId, reason }` (reason 3–200) | 200 `StudentProfile` of that student; the category follows the grade table. 409 `has_attempt` once the student has any exam attempt (a category decides the exam), `not_a_student` for staff; 400 `grade_level_unknown`; 404 unknown user. Audit `user.grade_corrected` (old and new label, category, reason) in the same transaction. The admin is re-read |
@@ -316,6 +316,30 @@ The database keeps the limits and the status rules (`*_core_ambassador_tasks_che
 
 The database keeps the name length and the code format (`*_core_ambassador_teams_checks`); `teams.name`, `teams.join_code` and `teams.owner_id` are unique, and `team_members.user_id` is unique (one team per student).
 
+## Rounds (core C6a; plan: `docs/plans/CORE-PLAN.md` §7, owner Q4 defaults, lead's review)
+
+Shapes `AdminRound`, `RoundCreateRequest`, `RoundUpdateRequest`, `RoundCriterion`, `DEFAULT_VIDEO_CRITERIA`, `PromotionQuery`, `PromotionPreview`, `PromotionRequest`, `PromotionResult`, `MyRound`, `ROUND_LIMITS`, `ROUND_REFUSALS` (`core.ts`). Every admin route re-reads the admin (admin only: managers, jury, students and ambassadors get 403). Writes are audited (`round.created`, `round.updated` with the field names, `round.promoted` with the counts only, never a student).
+
+| Method + path | Request | Answers |
+|---|---|---|
+| `GET /admin/rounds` | — | `{ items: AdminRound[] }`: every round in order (at most 10, so no paging), with the criteria (video rounds), `scored`, the entries by status and the promotions out of it |
+| `GET /admin/rounds/:id` | — | `AdminRound`; 404 |
+| `POST /admin/rounds` | `{ name (2–60), type (video, final), opensAt?, closesAt?, criteria? (1–20 of { key, en, bn }) }` | 201. Round 1 (quiz) exists; a round is appended (the server's next `sort_order`, under a lock). A video round needs both times; a final round has both or neither; the close follows the opening and lies in the future (400 `bad_window`). Criteria only for a video round, keys unique (400 `bad_criteria`); left out, the old ten (0–10 each). 409 `after_final` (nothing follows the final), `too_many_rounds` (10) |
+| `PATCH /admin/rounds/:id` | any of `name`, `opensAt`, `closesAt`, `criteria`; `expectedUpdatedAt` | 200. Row lock: 409 `stale`, `nothing_to_update`. Round 1: the name only (409 `quiz_round`). Once open, the start stays (409 `window_started`) and the close only moves later (409 `window_shortened`); once closed, it stays (409 `window_closed`). Criteria: video rounds only (409 `not_video_round`), frozen once a jury score exists (409 `criteria_frozen`). The type and the order never change |
+| `POST /admin/rounds/:id/promotion/preview` | `{ topN (1–25,000), category }` | 200 `PromotionPreview`, nothing written: the source, `candidates`, `promoted`, **`tieCount`** (promoted beyond N because of a tie at the cut), `eliminated`, the cut (rank, score, time), and `expected` |
+| `POST /admin/rounds/:id/promotion` | `{ topN, category, expected }` (the preview's) | 201 `PromotionResult`. 409 `stale` when the source changed since the preview (another results version, a changed score) |
+| `GET /rounds/me` (student, ambassador, re-read) | — | `MyRound`: the latest round with an own entry and its status; with none, Round 1 and `entryStatus: null`. The home and `/users/me` `currentRound` read the same |
+
+**Promotion** (one category from a round to the next):
+- **From a quiz round:** the category's rows of the **published** snapshot of the round's one published exam (for that category or for all), ranked inside the category in exam's order (score, then time; equal score and time share a rank). 409 `no_exam`, `ambiguous_source` (two published exams cover the category; an archived exam is never a source), `results_not_published`.
+- **From a video round:** after its close (409 `window_not_closed`), with every sent video scored (409 `unscored_entries`), ranked by the jury average; an entry without a video is eliminated.
+- **The cut:** rank ≤ N goes through, **ties at the cut included** (owner Q4a default). 409 `no_entries` when nobody would.
+- **One transaction under the round's row lock:** a `promotion_runs` row; the next round's entries (`pending`, `INSERT … SELECT … ON CONFLICT (user_id, round_id) DO NOTHING`: an existing entry, its video and score are never overwritten); the source round's entries set to `promoted` or `eliminated` (Round 1's are created then, for everyone on the snapshot); the audit row.
+- **One run per (round, category)** (UNIQUE; 409 `already_promoted`, also on the preview). Nothing after the last round (409 `no_next_round`). A student whose snapshot row has no category is in no category's promotion.
+- **`promotion_runs` is append-only** (`*_core_rounds_append_only`): UPDATE, DELETE and TRUNCATE are refused (TRUNCATE only passes in a database named `*_test`), and `sirat_app` has no UPDATE or DELETE on it. A student who already had an entry in the next round keeps it and is counted in `promoted`.
+
+The database keeps the limits (`*_core_rounds_checks`): round name 2–60, at most 10 rounds, the window order, 1–20 criteria, a video round with its window and criteria; an entry's score 0–100, the video link ≤ 500 with its time; a run's top N 1–25,000, counts ≥ 0, from ≠ to, and the source (`exam` with its exam and results version, or `jury`).
+
 ## Admin statistics (core; lead 2026-11-01)
 
 `GET /admin/stats` (admin and manager, re-read: a demoted or blocked user gets 403; jury, students and ambassadors get 403, and the web does not call it for jury) → `AdminStats` (`dashboard.ts`). **Counts only**: no name, email, phone, id or money sum. Read from payments' and exam's tables, never written.
@@ -324,7 +348,7 @@ The database keeps the name length and the code format (`*_core_ambassador_teams
 |---|---|
 | `totals.registered`, `paid`, `pendingPayments` | `registrations`; payments `paid`; payments `initiated` + `pending` |
 | `totals.activeAttempts`, `submittedAttempts` | exam attempts `in_progress`; `submitted` + `expired` + `scored` |
-| `totals.secondRound`, `finalists` | `null` until rounds exist (core C6) |
+| `totals.secondRound`, `finalists` | entries in the round with `sort_order` 2 and in the final round; `null` while that round does not exist (core C6a) |
 | `registrationsDaily` | `registrations.created_at` per Asia/Dhaka calendar day, the last 45 days, oldest first, with 0 for an empty day |
 | `byCategory` | student and ambassador accounts per category |
 | `registrationAttempts` | `pending_registrations` per status (`open`, `completed`, `abandoned`, `conflict`) |

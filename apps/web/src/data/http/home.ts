@@ -9,6 +9,7 @@ import type { DataSource } from '../source.ts';
 import { studentAnnouncements } from './announcements.ts';
 import { studentExams } from './exams.ts';
 import { studentProfile } from './profile.ts';
+import { studentRound } from './rounds.ts';
 import { getJson, isRecord, type ApiGet } from './request.ts';
 
 /*
@@ -69,21 +70,29 @@ export function studentHome(get: ApiGet): Pick<DataSource['student'], 'getHome'>
   const profile = studentProfile(get);
   const exams = studentExams(get);
   const announcements = studentAnnouncements(get);
+  const rounds = studentRound(get);
   return {
     async getHome(): Promise<StudentHome> {
       // The profile is required (the page needs the name). Every other section falls back on its own, so a
       // payments or exams hiccup never turns the whole home into the error state (lead, C5a).
-      const [me, list, latest, registration] = await Promise.all([
+      const [me, list, latest, registration, round] = await Promise.all([
         profile.getProfile(),
         orElse(exams.listExams(), []),
         orElse(announcements.listAnnouncements({ page: 1, pageSize: 3 }), { items: [] }),
         orElse(getJson(get, '/registrations/me', isMyRegistration), null),
+        orElse(rounds.getMyRound(), null),
       ]);
       const next = pickNextExam(list);
       const detail = next ? await orElse(exams.getExam(next.id), null) : null;
       return {
         user: { name: me.name, category: me.category },
-        currentRound: null,
+        currentRound: round && {
+          id: round.round.id,
+          name: round.round.name,
+          type: round.round.type,
+          sortOrder: round.round.sortOrder,
+          entryStatus: round.entryStatus,
+        },
         nextExam:
           next && detail
             ? {
