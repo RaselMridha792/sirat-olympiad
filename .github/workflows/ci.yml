@@ -32,6 +32,8 @@ jobs:
         run: git ls-files -s -- '*.sh' | awk '$1 != "100755" { print; bad = 1 } END { exit bad }'
       - name: No pipe into an early-exiting reader under pipefail (SIGPIPE made backup.sh --verify fail at random)
         run: bash scripts/test/check-early-exit-pipes.sh
+      - name: shellcheck on every shell script (warnings and errors)
+        run: shellcheck -S warning $(git ls-files '*.sh')
       - run: pnpm format:check
       - run: pnpm --filter @sirat/shared build
       - run: pnpm db:generate
@@ -336,6 +338,27 @@ jobs:
           echo "$out"
           [ "$s" -ne 0 ] && grep -q 'already exists' <<< "$out" || { echo "::error::deploy.sh --first did not refuse a host with data containers"; exit 1; }
           rm -f .env.deploy
+      - name: prelaunch-check.sh --local on this development stack - what must pass, what must fail, and no value printed (L12)
+        run: |
+          printf 'DEPLOY_PROJECT=sirat\nDEPLOY_COMPOSE_FILES=infra/docker-compose.yml infra/docker-compose.dev.yml\nDEPLOY_RELEASE_DIR=%s\n' \
+            "$RUNNER_TEMP/sirat-release" > .env.deploy
+          chmod 600 .env.deploy .env
+          out=$(scripts/prelaunch-check.sh --local 2>&1 || true)
+          echo "$out"
+          rm -f .env.deploy
+          bad=$(grep -vE '^(PASS|FAIL|N/A|MANUAL) {1,4}[a-zA-Z.]|^prelaunch-check: ' <<< "$out" || true)
+          [ -z "$bad" ] || { echo "::error::a line that is not PASS, FAIL, N/A or MANUAL"; exit 1; }
+          for v in $(grep -E '^(JWT_ACCESS_SECRET|POSTGRES_PASSWORD)=' .env | cut -d= -f2-); do
+            ! grep -qF -- "$v" <<< "$out" || { echo "::error::a secret value reached the output"; exit 1; }
+          done
+          for line in 'PASS    migrations are up to date' 'PASS    the worker is healthy' 'PASS    no published exam yet' \
+            'PASS    the registration fee is 400 BDT (40000 paisa)' 'PASS    registration_open is false' 'PASS    the page CSP is sent' \
+            'FAIL    no development marker on Postgres' 'FAIL    no Mailpit in the project' 'FAIL    APP_URL is https' \
+            'N/A     the newest off-server backup is under 26 h old (on the VPS only)'; do
+            grep -qxF -- "$line" <<< "$out" || { echo "::error::expected: $line"; exit 1; }
+          done
+      - name: bootstrap.sh in an Ubuntu 24.04 container - dry run, no lockout, the setup, idempotent (L12)
+        run: bash scripts/test/run-bootstrap-test.sh
       - name: Backups are encrypted, checked and uploaded; a killed dump, a bad remote or a shrunken dump fails (L6)
         # Its own compose project (sirat-backup-test), a throwaway age key and an rclone local remote; see the script.
         run: bash scripts/test/run-backup-test.sh
