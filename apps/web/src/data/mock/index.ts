@@ -866,6 +866,7 @@ export function createMockSource(state: MockState | null): DataSource {
                 createdAt: e.createdAt,
                 updatedAt: e.createdAt,
               })),
+              keyCorrections: [],
             };
           },
           () => null,
@@ -894,6 +895,10 @@ export function createMockSource(state: MockState | null): DataSource {
               publishedAt: e.resultsPublishedAt,
               canBuild: open,
               canPublish: open && snapshot,
+              keyCorrectedAt: null,
+              rescorePending: 0,
+              snapshotStale: false,
+              lastCorrection: null,
             };
           },
           () => null,
