@@ -51,7 +51,7 @@ export class ExamJobs {
 
   /**
    * Scores one finalized attempt. Returns false if there is nothing to score (not submitted yet, or already scored).
-   * One transaction holding the exam row FOR SHARE: an answer-key correction takes it FOR UPDATE, so a score is either
+   * One transaction holding the exam row FOR SHARE: an answer-key correction takes it FOR NO KEY UPDATE, so a score is either
    * written before the correction (and the re-scoring job fixes it) or computed with the corrected key (E7b). Nothing
    * on the submit or time-up path updates the exam row, so this never waits behind a student.
    */

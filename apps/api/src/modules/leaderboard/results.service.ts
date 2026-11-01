@@ -362,8 +362,10 @@ export class ResultsService {
   /**
    * E7b: corrects a published question's key. The question row stays as it was (frozen once published); the
    * correction is a new append-only row, and its key is the one in effect from now on. Refused while results are
-   * published (unpublish first), so live results never change underneath. Under the exam row's lock (FOR UPDATE):
-   * a scoring holding it FOR SHARE finishes first, and every later one reads the new key. The created_at is the
+   * published (unpublish first), so live results never change underneath. Under the exam row's lock (FOR NO KEY
+   * UPDATE): a scoring holding it FOR SHARE finishes first, and every later one reads the new key. Not FOR UPDATE:
+   * that would also stop every exam start (the attempt's foreign key takes FOR KEY SHARE) for as long as the
+   * correction runs; FOR NO KEY UPDATE leaves starts alone. The created_at is the
    * database's clock after the lock (as every scored_at is), so an attempt scored before the correction always counts
    * as waiting for its re-scoring, and a snapshot taken before it is stale.
    */
@@ -375,7 +377,9 @@ export class ResultsService {
   ): Promise<AnswerKeyCorrectionView> {
     const created = await this.prisma.$transaction(async (tx) => {
       await assertAdmin(tx, actor.id);
-      const exam = await lockExam(tx, examId);
+      await tx.$queryRaw`SELECT 1 FROM "exams" WHERE "id" = ${examId}::uuid FOR NO KEY UPDATE`;
+      const exam = await tx.exam.findUnique({ where: { id: examId } });
+      if (!exam) throw new NotFoundException('Exam not found');
       assertFresh(exam.updatedAt, dto.expectedUpdatedAt);
       if (exam.status === 'draft') throw refuseCorrection('exam_draft');
       if (exam.status === 'archived') throw refuseCorrection('exam_archived');

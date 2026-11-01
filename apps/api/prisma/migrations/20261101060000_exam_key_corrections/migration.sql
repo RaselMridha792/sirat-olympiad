@@ -22,6 +22,9 @@ CREATE INDEX "answer_key_corrections_question_id_created_at_idx" ON "answer_key_
 -- CreateIndex
 CREATE INDEX "answer_key_corrections_exam_id_created_at_idx" ON "answer_key_corrections"("exam_id", "created_at" DESC);
 
+-- CreateIndex
+CREATE INDEX "answer_key_corrections_created_by_id_idx" ON "answer_key_corrections"("created_by_id");
+
 -- AddForeignKey
 ALTER TABLE "answer_key_corrections" ADD CONSTRAINT "answer_key_corrections_exam_id_fkey" FOREIGN KEY ("exam_id") REFERENCES "exams"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 

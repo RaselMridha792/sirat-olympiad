@@ -806,5 +806,6 @@ model AnswerKeyCorrection {
 
   @@index([questionId, createdAt(sort: Desc)])
   @@index([examId, createdAt(sort: Desc)])
+  @@index([createdById]) // the foreign key's index (db-constraints' catalog check)
   @@map("answer_key_corrections")
 }

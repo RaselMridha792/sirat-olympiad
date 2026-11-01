@@ -368,7 +368,7 @@ describe('a correction from start to published results', () => {
   });
 });
 
-describe('the exam row lock orders a correction and a scoring (FOR UPDATE against FOR SHARE)', () => {
+describe('the exam row lock orders a correction and a scoring (FOR NO KEY UPDATE against FOR SHARE)', () => {
   it('a scoring that holds the exam first is counted as waiting for its re-scoring', async () => {
     const { exam, questions } = await closedExam(1);
     const attempt = await submittedAttempt(exam.id, [questions[0]!.id], [2]);
@@ -408,10 +408,10 @@ describe('the exam row lock orders a correction and a scoring (FOR UPDATE agains
     const attempt = await submittedAttempt(exam.id, [questions[0]!.id], [0]); // A: wrong now, right after
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
-    // A correction's transaction, held open: the exam FOR UPDATE and the new row.
+    // A correction's transaction, held open: the exam FOR NO KEY UPDATE and the new row.
     const holder = prisma.$transaction(
       async (tx) => {
-        await tx.$queryRaw`SELECT 1 FROM "exams" WHERE "id" = ${exam.id}::uuid FOR UPDATE`;
+        await tx.$queryRaw`SELECT 1 FROM "exams" WHERE "id" = ${exam.id}::uuid FOR NO KEY UPDATE`;
         await tx.answerKeyCorrection.create({
           data: {
             examId: exam.id,
@@ -430,12 +430,36 @@ describe('the exam row lock orders a correction and a scoring (FOR UPDATE agains
     await sleep(100);
     const scoring = watch(jobs.score(attempt.id));
     await sleep(700);
-    expect(scoring.state.done).toBe(false); // waits for the correction's FOR UPDATE
+    expect(scoring.state.done).toBe(false); // waits for the correction's lock
     release();
     await holder;
     expect(await scoring.settled).toBe(true);
     expect(await scores([attempt.id])).toEqual([1]);
     expect(await resultsOf(exam.id)).toMatchObject({ rescorePending: 0 });
+  });
+});
+
+describe('a correction never makes a student wait', () => {
+  it('lets a student start the exam while a correction holds the exam row', async () => {
+    const { exam } = await seedExam(env, prisma, { count: 2 }); // open now
+    const student = await loginAs(env, prisma);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    // The correction's transaction, held open (the same lock correctKey takes).
+    const holder = prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT 1 FROM "exams" WHERE "id" = ${exam.id}::uuid FOR NO KEY UPDATE`;
+        await gate;
+      },
+      { timeout: 30_000 },
+    );
+    await sleep(100);
+    // The attempt's foreign key takes FOR KEY SHARE on the exam row: compatible, so the start does not wait.
+    const start = call(env, 'POST', `/exams/${exam.id}/attempts`, student.cookie);
+    const first = await Promise.race([start, sleep(5_000).then(() => 'still waiting' as const)]);
+    release();
+    await holder;
+    expect(first === 'still waiting' ? first : first.status).toBe(201);
   });
 });
 
