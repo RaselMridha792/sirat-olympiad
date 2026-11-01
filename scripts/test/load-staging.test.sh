@@ -85,6 +85,7 @@ lpw=$(sed -n 's/^PASSWORD=//p' "$STAGING_DIR/k6.env")
 expect "throwaway secrets were made" '[ "${#pw}" -ge 32 ] && [ "${#lpw}" -ge 16 ]'
 expect "no secret in the output" '! grep -qF -- "$pw" <<< "$out" && ! grep -qF -- "$lpw" <<< "$out"'
 expect "payments are off and the JWT secret is not the example's" 'grep -qx "PAYSTATION_ENV=" "$STAGING_DIR/staging.env" && ! grep -q "change-me" "$STAGING_DIR/staging.env"'
+expect "production-mode cookies stay Secure for the exam simulation" 'grep -qx "COOKIE_SECURE=true" "$STAGING_DIR/staging.env"'
 expect "the release tag is the deployed one" 'grep -qx "SIRAT_TAG=abc123" "$STAGING_DIR/release.env"'
 expect "the generators get this server's address" 'grep -qx "BASE_URL=http://203.0.113.10:8088" "$STAGING_DIR/k6.env"'
 expect "compose: project sirat-staging, the staging overlay, no build" 'grep -q "docker compose -p sirat-staging .*loadtests/staging.compose.yml up -d --no-build --wait api worker web nginx" "$STATE/log"'
@@ -173,6 +174,7 @@ out=$(FAKE_UID=1000 bash "$LS" k6 registration 2>&1); st=$?
 expect "k6 registration refused before up --registration" '[ "$st" = 1 ]'
 out=$(FAKE_UID=1000 bash "$LS" up --registration 2>&1); st=$?
 expect "up --registration exits 0" '[ "$st" = 0 ]'
+expect "the registration staging's resume cookie is not Secure (payments' k6 jar, plain http)" 'grep -qx "COOKIE_SECURE=false" "$STAGING_DIR/staging.env"'
 without_fake() { grep "docker compose -p sirat-staging" "$STATE/log" | grep -v "fake-paystation.compose.yml"; }
 expect "it adds the fake to every compose call" '[ -z "$(without_fake)" ]'
 expect "builds only the fake" 'grep -q "fake-paystation.compose.yml build fake-paystation$" "$STATE/log" && ! grep -qE " build (migrate|api|worker|web)" "$STATE/log"'

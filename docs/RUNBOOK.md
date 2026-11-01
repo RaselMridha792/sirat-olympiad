@@ -356,6 +356,7 @@ scripts/prelaunch-check.sh
 | `certificate` | the origin certificate ends within 14 days | section 3 of LAUNCH-PLAN / the TLS steps in this runbook |
 | `backup_age` | no off-server backup in 26 h (critical) | `journalctl -u sirat-backup.service -n 50` (section 5) |
 | `time_sync` | the clock is not synchronised | `timedatectl`; `systemctl restart systemd-timesyncd` |
+| `trusted_generators` | load-test generators may set any client address: `infra/nginx/loadtest-realip.local.conf` exists (a warning), and past its `# expires` line, or without a readable one, it is critical | no load test running: `scripts/loadtest-generators.sh off` (after a staging window: `sudo scripts/load-staging.sh close`); `scripts/loadtest-generators.sh status` shows it |
 | `monitor` (heartbeat only) | ops-check could not run | the api container: `$DC ps api`, `$DC logs --tail=50 api` |
 
 **The exam window, step by step** (E6; the load test behind it: `loadtests/README.md`):
@@ -723,3 +724,4 @@ The steps and the k6 commands: `loadtests/README.md`, "On the VPS". The rules ar
   3. `scripts/load-staging.sh down` (refused while the window's timer is active), which removes the stack, its volumes and its settings;
   4. `scripts/prelaunch-check.sh` again: the real-IP lines must show Cloudflare addresses once the trusted generators are off.
 - **CI** runs the script on faked commands (`scripts/test/load-staging.test.sh`): the window opens only for the listed addresses, with its timer, and closes on a signal, on an error and by `close`; a dry run changes nothing; no secret is printed.
+- **A rehearsal against real Docker,** on a PC with the release's images: `SIRAT_TAG=<tag> [PARTS="exam registration"] bash scripts/test/run-load-staging-rehearsal.sh`. It runs up, exam, k6 inside, the report and down, then the registration staging with payments' fake, on 127.0.0.1:18088. It leaves nothing behind. The window is not part of it (no DOCKER-USER chain there).

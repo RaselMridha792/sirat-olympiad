@@ -152,14 +152,20 @@ case "$cmd" in
     run install -d -m 700 "$STAGING_DIR"
     pw=$(hex 24)
     fixture_pw=$(hex 16)
+    # The exam simulation runs in production mode (Secure cookies; k6 keeps them itself). The registration surge runs
+    # in development mode (payments' fake requires it) with payments' k6 script, whose cookie jar does not send Secure
+    # cookies over plain http: its resume cookie must not be Secure. The API refuses that in production.
+    secure=$([ "$registration" = 1 ] && echo false || echo true)
     if [ "$DRY" = 0 ]; then
       umask 077
       sed -e "s|^APP_URL=.*|APP_URL=http://localhost:$STAGING_PORT|" -e "s|change-me-fake|$pw|g" \
+        -e "s|^COOKIE_SECURE=.*|COOKIE_SECURE=$secure|" \
         -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$pw|" -e "s|^JWT_ACCESS_SECRET=.*|JWT_ACCESS_SECRET=$(hex 32)|" \
         -e "s|^POSTGRES_APP_PASSWORD=.*|POSTGRES_APP_PASSWORD=$(hex 32)|" -e "s|^EMAIL_PROVIDER=.*|EMAIL_PROVIDER=mailpit|" \
         -e "s|^EMAIL_FROM=.*|EMAIL_FROM=Sirat staging <no-reply@staging.invalid>|" -e "s|^PAYSTATION_ENV=.*|PAYSTATION_ENV=|" \
         -e "s|^SECURITY_ALERT_EMAIL=.*|SECURITY_ALERT_EMAIL=|" .env.example > "$STAGING_ENV_FILE"
       grep -q '^POSTGRES_APP_PASSWORD=' "$STAGING_ENV_FILE" || printf 'POSTGRES_APP_PASSWORD=%s\n' "$(hex 32)" >> "$STAGING_ENV_FILE"
+      grep -q '^COOKIE_SECURE=' "$STAGING_ENV_FILE" || printf 'COOKIE_SECURE=%s\n' "$secure" >> "$STAGING_ENV_FILE"
       printf 'MAILPIT_URL=http://127.0.0.1:9\n' >> "$STAGING_ENV_FILE"
       printf 'SIRAT_TAG=%s\n' "$tag" > "$STAGING_DIR/release.env"
       printf 'NODE_ENV=test\nALLOW_DEV_FIXTURES=yes-this-is-not-production\nFIXTURE_PASSWORD=%s\nDATABASE_URL=postgresql://%s:%s@127.0.0.1:5432/%s\n' \

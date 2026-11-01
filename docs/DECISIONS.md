@@ -2,6 +2,21 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-01 — The VPS load test runs on a staging stack behind a timed firewall window (E6 kit; exam session, RULEBOOK §13, LAUNCH-PLAN L14)
+
+1. **A staging project, `sirat-staging`,** from the deployed release's images, never a build (only payments' fake PayStation is built, as test code that no release image holds). Its own volumes and throwaway settings in `/var/lib/sirat/staging` (700); Postgres carries the test marker; payments are off or on the fake. It never reads the clone's `.env` (the overlay replaces `env_file`, as the drill's does) and never touches project `sirat`.
+2. **The load fixtures run in a container that shares staging Postgres's network** (`--network container:<postgres>`), with the migrate image (it holds tsx and the dependencies) and the clone's fixtures and `src` mounted read-only. So `127.0.0.1` there is staging's own Postgres: the fixtures' local-URL guard and the server's test marker both still hold, and the server needs no node.
+3. **The firewall window** (`sudo scripts/load-staging.sh window`):
+   - nginx's staging port (8088) is dropped from outside by the DOCKER-USER guard (L12) until a window inserts one `RETURN` rule per generator address, above the guard's `DROP`;
+   - at most 4 single public IPv4 addresses (A2's limit for trusted generators); private, loopback and network ranges are refused;
+   - the window runs in the foreground and closes on Ctrl-C, a lost session (SIGHUP), any error and the end of its minutes (a trap); a `systemd-run` timer, started before the first rule, closes it too if the script is killed;
+   - `up` refuses to start when the DOCKER-USER guard is not active, since the published port would otherwise be open from the start.
+4. **Trusted generators:** the window switches A2's `scripts/loadtest-generators.sh` on for the same addresses (as the clone's owner, never root) and off again when it closes, then reloads staging's nginx, which reads the same folder. k6 then sends each simulated student's address in `CF-Connecting-IP` (`IP_HEADER`).
+5. **The registration surge runs inside the stack** (`up --registration`, `k6 registration`): the payer must reach the fake's checkout at `http://fake-paystation:18090`, which only the project's network has. Payments' overlay runs api and worker in development mode there (the API refuses the fake in production), so the exam simulation stays on a plain `up`.
+6. **CI** runs the script on faked commands (iptables, systemd-run, docker and the rest): 59 checks, no Docker and no root. A dry run prints every change and makes none.
+7. **A forgotten trusted generator cannot go unnoticed** (A2's suggestion): monitor.sh reads the minutes left on `infra/nginx/loadtest-realip.local.conf`'s `# expires` line, and ops-check's `trusted_generators` check warns while the file exists and goes critical past the expiry (or without a readable expiry line). Nothing else enforces the expiry: nginx keeps trusting the file until `off`.
+8. **The registration staging's cookies are not Secure** (`COOKIE_SECURE=false`, only there): payments' k6 script uses k6's cookie jar, which does not send Secure cookies over plain http, so the result page could never read its registration. The first rehearsal failed exactly there (`current 200`: 0 of 1,275). The API allows it because that staging runs in development mode; the exam staging stays in production mode with Secure cookies, which the exam simulation keeps itself.
+
 ## 2026-11-01 — Exam simulation, local k6 (E6; exam session, EXAM-PLAN 6.2; provisional until the VPS)
 
 1. **The scenario** (`loadtests/exam-simulation.js`). One iteration is one student, as the exam room does it:

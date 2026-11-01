@@ -4,7 +4,7 @@
 # them), a clone of this checkout's HEAD in a Docker volume (so compose's relative bind mounts name a path the daemon
 # has). Everything it made is removed at the end, payments' fake image included. Announce it on a shared machine: it
 # runs the whole stack and k6 for about ten minutes.
-# Usage: SIRAT_TAG=<tag> bash scripts/test/run-load-staging-rehearsal.sh
+# Usage: SIRAT_TAG=<tag> [PARTS="exam registration"] bash scripts/test/run-load-staging-rehearsal.sh
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 : "${SIRAT_TAG:?SIRAT_TAG names the images to rehearse with (never latest on a shared machine)}"
@@ -38,6 +38,6 @@ dk run --rm --name "$TOOLS" \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$VOL:$MOUNT" \
   -v "$(hostpath "$tmp"):/work/in:ro" \
-  -e CLONE_DIR="$MOUNT/sirat" -e OUT=/work/out -e TAG="$SIRAT_TAG" \
+  -e CLONE_DIR="$MOUNT/sirat" -e OUT=/work/out -e TAG="$SIRAT_TAG" -e PARTS="${PARTS:-exam registration}" \
   alpine:3.22 sh -c 'apk add --no-cache -q bash git coreutils iproute2 docker-cli docker-cli-compose > /dev/null &&
     mkdir -p /work/out && git clone -q /work/in/repo.bundle "$CLONE_DIR" && bash "$CLONE_DIR/scripts/test/load-staging-rehearsal.sh"'

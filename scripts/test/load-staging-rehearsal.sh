@@ -33,6 +33,9 @@ gone() {
     [ -z "$(docker network ls -q --filter "name=^${P}_default\$")" ] && [ ! -d "$STAGING_DIR" ]
 }
 
+# PARTS (default "exam registration"): which parts to run.
+PARTS=" ${PARTS:-exam registration} "
+if [[ $PARTS == *" exam "* ]]; then
 echo "== the exam simulation's staging"
 t0=$SECONDS
 bash "$LS" up --tag "$TAG" --users 60 2>&1 | indent
@@ -63,7 +66,9 @@ bash "$LS" status 2>&1 | indent
 bash "$LS" down 2>&1 | indent
 expect "down: no container, volume, network or settings left" 'gone'
 echo "   exam part: $((SECONDS - t0)) s"
+fi
 
+if [[ $PARTS == *" registration "* ]]; then
 echo "== the registration surge's staging (payments' fake PayStation)"
 t1=$SECONDS
 bash "$LS" up --registration --tag "$TAG" 2>&1 | indent
@@ -78,6 +83,7 @@ bash "$LS" down 2>&1 | indent
 expect "down: no container, volume, network or settings left" 'gone'
 expect "down removes the fake's image too" '! docker image inspect "sirat-fake-paystation:$TAG" > /dev/null 2>&1'
 echo "   registration part: $((SECONDS - t1)) s"
+fi
 
 echo "load-staging rehearsal: $fails failed"
 [ "$fails" = 0 ]
