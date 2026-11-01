@@ -24,6 +24,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 8. **Tests:**
    - `ambassador-points.int-spec.ts` (11): awards and amounts, repeats, three concurrent runs, revoked referrers, the 0 setting, the 2-day window and the back-fill, the two schedulers from two workers, settings changes with `expected` and their audit, two admins at once (one 409), threshold refusals, adjustments up and down with `created_by`, refusals, admin only.
    - unit: the first run, the bound window value, the setting fallback; the ops queue rule; web: the data pick, the problem mapper, the threshold rule.
+
 ## 2026-11-01 — A busy database answers 503 SERVICE_BUSY, never 500; the registration start retries once (Claude; lead, A2's conditions)
 
 1. **Found:** k6 at 25 starts/s while every CPU thread was busy, with a pool of 5 like production. 180 starts answered 500, all Prisma P2028 (start's interactive transaction ran out of maxWait or timeout); the global filter turned every non-HTTP error into 500.
