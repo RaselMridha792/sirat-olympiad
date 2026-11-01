@@ -8,6 +8,35 @@ One short entry per non-obvious technical or product decision. Newest first. For
 2. **The run then fails** (`exam sweep: n item(s) failed`), so the worker logs it and L11's `failed_jobs` check alerts (an ops alert at the first failure, hourly while it repeats). The next minute's sweep tries the item again. No per-attempt state: the log names the id, which an ops alert cannot carry (numbers only).
 3. **A finalize that loses its row to `SKIP LOCKED` is not an error:** the holder wins (a late client submit, another sweep), and the next sweep takes the row if it is still unfinished. Both are now tested: a row held by another transaction is skipped, then finalized by the next sweep; an attempt whose finalize throws does not stop a later one.
 4. **The test flake was the clock, not the finalize.** "Two finalizes, exactly one winner" got 0 winners once, under load: the test waited by this machine's clock, while finalize decides "due" with Postgres's `now()`, and the database container's clock can trail the host's. The test now waits on the database's clock. Worker jobs do not go through the HTTP busy-503 filter (#52), hence the isolation here.
+## 2026-11-01 — Deploys: SHA-tagged images, a release file and deploy.sh (L9; exam session, LAUNCH-PLAN §2, owner Q4 default)
+
+1. **Images are `sirat-<service>:<sha>`** (`image: sirat-<service>:${SIRAT_TAG:-latest}`). `latest` is the old compose default name, so CI and the shared dev stack see no change. On the VPS, `deploy.sh` writes `SIRAT_TAG` (and the previous one) to `/var/lib/sirat/release.env`, and the RUNBOOK's `$DC` reads it as a second `--env-file`. A command run by hand therefore uses the live images, and with `--no-build` (and `--no-deps` for app services) it never builds or touches a data service.
+2. **A deploy never starts or recreates a data service.**
+   - Each data container's `com.docker.compose.config-hash` label must equal `compose config --hash` for the commit; otherwise it stops with "data-service change pending: apply it as its own step".
+   - `--first` starts them once on a fresh host, and refuses if any data container exists.
+3. **Settings in `.env.deploy`** (git-ignored, mode 600, like `.env.monitor`), with the compose project always explicit. The CI gate reads the exact commit's CI run on main through the GitHub API, with a read-only token.
+4. **Rehearsal mode** (refused for project `sirat`) accepts commits of a local branch and skips the CI gate, and says so in its first line.
+5. **The order:** build while the live release serves; a backup only when the release adds migrations (none for the first release, which has no data); migrate (`config seed done` required); then `up --wait`. A failed backup or migrate stops before the switch, so the live API keeps serving.
+6. **The smoke after the switch decides the rollback.** It checks:
+   - exact 200s through the internal listener;
+   - the public URL as `maintenance.sh status` says;
+   - each API's PayStation boot line against `.env`, compared and never printed;
+   - the worker healthy;
+   - `prisma migrate status` with nothing pending or failed. "Missing from the local migrations directory" is accepted, since after a rollback the database keeps newer migrations.
+
+   A failure goes back to the live release with no build and says loudly that migrations stay applied. A failed first release turns maintenance on instead.
+7. **A rollback by hand warns about an exam window but does not refuse;** a deploy refuses within 30 minutes of one. A rollback is the incident fix.
+8. **Image pruning keeps the last 3 releases** (the live and the previous one always). It removes only `<sha>` tags this script recorded, never `latest` and never a volume.
+9. **The rehearsal runs on this machine's Docker** (the Q4 default without a VM).
+   - Project `sirat-rh`, its own clone in a Docker volume mounted at the daemon's own path for that volume. Compose's relative bind mounts then name a path the daemon has, and file modes are real Linux ones.
+   - The site name is a network alias of nginx, so the tools container reaches `https://sirat-rh.test` with real TLS (the self-signed certificate is trusted there).
+   - The RUNBOOK's create-admin uses a hidden prompt; with no terminal, the rehearsal uses `--password-stdin`.
+10. **CI checks the refusals on its own stack** (the development marker, a second `--first`). The full paths run in the rehearsal.
+11. **Found by the rehearsal:**
+    - **The smoke waits for nginx first.** Recreated containers get new addresses, and Docker may give an old one to another container. nginx re-resolves its upstreams only every 10 s, so right after a healthy `up --wait` the home page could answer 502. The smoke now waits up to 30 s (`DEPLOY_SETTLE_SECONDS`) for three good rounds through the internal listener before it judges.
+    - **`--rollback` writes the release file as soon as the containers have switched,** before its smoke. The file never names a release that is not running, even when the smoke then fails.
+    - **The first release must be the commit `--first` ran on,** because the data services take their settings from that commit's compose file. `--first` names it, and a refusal for a first release repeats it.
+    - **An automatic rollback ends with the reason:** the failed checks and the app containers' states, which the rollback's own output would otherwise bury.
 
 ## 2026-11-01 — A busy database answers 503 SERVICE_BUSY, never 500; the registration start retries once (Claude; lead, A2's conditions)
 
