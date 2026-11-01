@@ -20,6 +20,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - **On the record:** the export's own audit row keeps the filters with the account only as a kind (`email`/`system`), the row count and the reason.
    - **Limits:** at most 50,000 rows, 5 exports per admin per hour.
 7. **Web:** one `ExportCsvButton` (students and audit); its texts are picked in the client from a fixed table, so no message travels as a prop. `ExportUsersButton` is a thin wrapper.
+
 ## 2026-11-01 — The checkout time limit is PayStation's link lifetime: 10 minutes (Claude; S12, plan Q5/D3, lead)
 
 1. **Measured (S12, sandbox, API only, no payment):** an unpaid checkout link works for about 9 minutes. At 10 it shows "Invalid or Expired Token".
