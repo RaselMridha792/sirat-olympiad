@@ -61,6 +61,11 @@ export type FakeOptions = {
   merchantId?: string;
   password?: string;
   ipnUrl?: string;
+  /**
+   * The base the checkout links use, when the payer reaches the fake by another name than it listens on (a container
+   * listening on 0.0.0.0, reached as http://fake-paystation:18090). Default: http://<host>:<port>.
+   */
+  publicUrl?: string;
 };
 
 const json = (res: ServerResponse, body: unknown, status = 200) => {
@@ -120,6 +125,7 @@ export async function startFakePaystation(options: FakeOptions = {}): Promise<Fa
     const text = await readBody(req);
     if (scenario.delayMs) await new Promise((r) => setTimeout(r, scenario.delayMs));
 
+    if (req.method === 'GET' && path === '/__fake/health') return json(res, { ok: true });
     if (req.method === 'POST' && path === '/__fake/scenario') {
       Object.assign(scenario, JSON.parse(text || '{}') as FakeScenario);
       return json(res, { ok: true, scenario });
@@ -255,7 +261,9 @@ export async function startFakePaystation(options: FakeOptions = {}): Promise<Fa
   await new Promise<void>((resolve) =>
     server.listen(options.port ?? 0, options.host ?? '127.0.0.1', resolve),
   );
-  url = `http://${options.host ?? '127.0.0.1'}:${(server.address() as AddressInfo).port}`;
+  url =
+    options.publicUrl?.replace(/\/$/, '') ??
+    `http://${options.host ?? '127.0.0.1'}:${(server.address() as AddressInfo).port}`;
 
   const get = (invoiceNumber: string) => {
     const c = checkouts.get(invoiceNumber);

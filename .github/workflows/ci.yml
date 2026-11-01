@@ -424,9 +424,35 @@ jobs:
           out=$($DCD exec -T api node dist/cli/ops-alert.js --kind ops.alert_test --meta ci=1)
           echo "$out"
           echo "$out" | grep -q '^ops-alert: ops.alert_test recorded$' || { echo "::error::ops-alert did not run"; exit 1; }
+      - name: The fake PayStation for load and staging stacks (dev/test only) - its own image, internal only, and the api runs on it
+        # Last on purpose: it restarts api and worker with PAYSTATION_ENV=fake (infra/fake-paystation.compose.yml).
+        run: |
+          FAKE="$DCD -f infra/fake-paystation.compose.yml"
+          $FAKE up -d --build --no-deps fake-paystation api worker
+          for _ in $(seq 1 60); do
+            states=$($FAKE ps --format '{{.Service}}={{.Health}}' fake-paystation api worker | sort -u)
+            grep -q -v '=healthy$' <<< "$states" || break
+            sleep 5
+          done
+          echo "$states"
+          if grep -v '=healthy$' <<< "$states"; then
+            $FAKE logs --tail=100 fake-paystation api; echo "::error::fake-paystation, api or worker not healthy"; exit 1
+          fi
+          # Internal only: no published port (`compose port` prints ":0" and exits 0 then, so read the bindings).
+          binds=$(docker inspect -f '{{json .HostConfig.PortBindings}}' "$($FAKE ps -q fake-paystation)")
+          if [ "$binds" != "{}" ] && [ "$binds" != "null" ]; then echo "::error::the fake publishes a port: $binds"; exit 1; fi
+          # It answers inside the project, by its service name.
+          $FAKE exec -T api node -e "fetch('http://fake-paystation:18090/__fake/health').then((r) => r.json()).then((b) => process.exit(b.ok ? 0 : 1), () => process.exit(1))"
+          # The api accepted PAYSTATION_ENV=fake: payments are configured, so the info shows the fee (it caches 30 s).
+          for _ in $(seq 1 12); do
+            info=$(curl -fsS http://127.0.0.1:8080/api/registrations/info)
+            grep -q '"fee":{"amountMinor":' <<< "$info" && break
+            sleep 5
+          done
+          grep -q '"fee":{"amountMinor":' <<< "$info" || { echo "::error::the api is not on the fake PayStation: $info"; exit 1; }
       - name: Logs on failure
         if: failure()
         run: $DCD ps -a; $DCD logs --tail=200
       - name: Tear down
         if: always()
-        run: $DCD down -v
+        run: $DCD -f infra/fake-paystation.compose.yml down -v --remove-orphans
