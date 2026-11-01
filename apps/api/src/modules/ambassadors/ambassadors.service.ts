@@ -25,6 +25,7 @@ type Tx = Prisma.TransactionClient;
 
 const DEFAULT_PAGE_SIZE = 20;
 const RECENT_REFERRALS = 5;
+const TASKS_ON_PANEL = 20;
 /** A new code that collides with an existing one makes the whole approval run again (a P2002 aborts the transaction). */
 const CODE_TRIES = 3;
 const STUDENT_ROLES = ['student', 'ambassador'] as const;
@@ -195,7 +196,7 @@ export class AmbassadorsService {
     if (!user || user.isBlocked) throw new ForbiddenException(['account_blocked']);
     if (user.role !== 'ambassador') throw new ForbiddenException('Forbidden resource'); // revoked since login
     const profile = user.ambassador;
-    const [referralCount, sum, thresholds, recent] = await Promise.all([
+    const [referralCount, sum, thresholds, recent, assignments] = await Promise.all([
       this.prisma.user.count({ where: { referredById: userId } }),
       this.prisma.pointLedger.aggregate({ where: { userId }, _sum: { amount: true } }),
       this.thresholds(),
@@ -204,6 +205,19 @@ export class AmbassadorsService {
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: RECENT_REFERRALS,
         select: { name: true, institution: true, createdAt: true },
+      }),
+      // Own assignments of tasks that are not archived (C5b-2); the proof itself is not sent back.
+      this.prisma.taskAssignment.findMany({
+        where: { userId, task: { archivedAt: null } },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: TASKS_ON_PANEL,
+        select: {
+          id: true,
+          status: true,
+          reviewNote: true,
+          submittedAt: true,
+          task: { select: { title: true, description: true, points: true } },
+        },
       }),
     ]);
     const points = sum._sum.amount ?? 0;
@@ -214,7 +228,15 @@ export class AmbassadorsService {
       points,
       rank: rankOf(points, thresholds),
       team: null, // core C5b
-      tasks: [], // core C5b
+      tasks: assignments.map((a) => ({
+        id: a.id,
+        title: a.task.title,
+        description: a.task.description,
+        points: a.task.points,
+        status: a.status,
+        reviewNote: a.reviewNote,
+        submittedAt: a.submittedAt?.toISOString() ?? null,
+      })),
       recentReferrals: recent.map((r) => ({
         name: r.name,
         institution: r.institution,

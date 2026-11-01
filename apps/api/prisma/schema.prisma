@@ -617,6 +617,8 @@ model AdminTask {
   description  String
   points       Int
   createdById  String           @map("created_by_id") @db.Uuid
+  /// Tasks are never deleted: an archived task takes no new assignments or submissions (core C5b-2).
+  archivedAt   DateTime?        @map("archived_at") @db.Timestamptz
   createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   createdBy    User             @relation(fields: [createdById], references: [id])
@@ -632,6 +634,11 @@ model TaskAssignment {
   taskId       String     @map("task_id") @db.Uuid
   userId       String     @map("user_id") @db.Uuid
   status       TaskStatus @default(assigned)
+  /// The ambassador's proof, plain text (a minor's free text: never logged or audited; core C5b-2).
+  proofText    String?    @map("proof_text")
+  submittedAt  DateTime?  @map("submitted_at") @db.Timestamptz
+  /// The admin's note when rejecting; the ambassador sees it and may submit again.
+  reviewNote   String?    @map("review_note")
   approvedById String?    @map("approved_by_id") @db.Uuid
   approvedAt   DateTime?  @map("approved_at") @db.Timestamptz
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
@@ -643,6 +650,7 @@ model TaskAssignment {
   @@unique([taskId, userId])
   @@index([userId])
   @@index([approvedById])
+  @@index([status, submittedAt]) // the admins' review queue (core C5b-2)
   @@map("task_assignments")
 }
 
