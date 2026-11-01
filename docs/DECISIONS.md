@@ -20,6 +20,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - **On the record:** the export's own audit row keeps the filters with the account only as a kind (`email`/`system`), the row count and the reason.
    - **Limits:** at most 50,000 rows, 5 exports per admin per hour.
 7. **Web:** one `ExportCsvButton` (students and audit); its texts are picked in the client from a fixed table, so no message travels as a prop. `ExportUsersButton` is a thin wrapper.
+
 ## 2026-11-01 — Nightly session and token cleanup (Claude; L13, LAUNCH-PLAN §9, A2's notes, lead review)
 
 1. **The rule is A2.1b #9 as recorded:**
