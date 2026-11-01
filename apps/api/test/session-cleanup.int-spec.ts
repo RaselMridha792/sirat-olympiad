@@ -9,7 +9,7 @@ import type { ConfigService } from '@nestjs/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import type { PrismaClient } from '@prisma/client';
-import { Queue, QueueEvents } from 'bullmq';
+import { Queue } from 'bullmq';
 import Redis from 'ioredis';
 import type { EnvVars } from '../src/config/env';
 import { AuditService } from '../src/modules/audit/audit.service';
@@ -284,8 +284,6 @@ describe('the nightly scheduler', () => {
     ];
     const redis = new Redis(process.env.REDIS_QUEUE_URL as string, QUEUE_REDIS_OPTIONS);
     const queue = new Queue(queueName, { connection: redis });
-    const eventsRedis = redis.duplicate(); // BullMQ never closes a connection it was given
-    const events = new QueueEvents(queueName, { connection: eventsRedis });
     try {
       for (const w of workers) await w.onModuleInit();
       const schedulers = await queue.getJobSchedulers(0, 10, true);
@@ -297,25 +295,29 @@ describe('the nightly scheduler', () => {
 
       const now = new Date();
       await due(now, 2, 1);
-      await events.waitUntilReady();
-      const job = await queue.add(HOUSEKEEPING_JOBS.sessionCleanup, {}, HOUSEKEEPING_JOB_OPTIONS);
-      expect(await job.waitUntilFinished(events, 20_000)).toMatchObject({ sessions: 2, tokens: 1 });
-      // The scrub job, waited on by its effect (its audit row), not by waitUntilFinished: with removeOnComplete the
-      // job can be gone before the wait starts ("Missing key for job").
-      const scrubRuns = () =>
-        prisma.auditLog.count({ where: { action: 'housekeeping.attempt_scrub' } });
-      const before = await scrubRuns();
+      // Wait on the effect (the worker ran the cleanup), not on the job: with the real options the job's key is
+      // removed on completion, and reading it back after that races (BullMQ "Missing key for job").
+      const run = jest.spyOn(cleanup, 'run');
+      await queue.add(HOUSEKEEPING_JOBS.sessionCleanup, {}, HOUSEKEEPING_JOB_OPTIONS);
+      for (let i = 0; i < 400 && run.mock.results.length === 0; i += 1)
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(run).toHaveBeenCalledTimes(1);
+      await expect(run.mock.results[0]!.value).resolves.toMatchObject({ sessions: 2, tokens: 1 });
+
+      // The scrub job, waited on the same way (its effect, not its key).
+      const scrubRun = jest.spyOn(scrub, 'run');
       await queue.add(HOUSEKEEPING_JOBS.attemptScrub, {}, HOUSEKEEPING_JOB_OPTIONS);
-      const deadline = Date.now() + 20_000;
-      while ((await scrubRuns()) === before && Date.now() < deadline)
-        await new Promise((r) => setTimeout(r, 200));
-      expect(await scrubRuns()).toBe(before + 1);
+      for (let i = 0; i < 400 && scrubRun.mock.results.length === 0; i += 1)
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(scrubRun).toHaveBeenCalledTimes(1);
+      await expect(scrubRun.mock.results[0]!.value).resolves.toMatchObject({
+        abandoned: expect.any(Number),
+        dead: expect.any(Number),
+      });
     } finally {
       for (const w of workers) await w.onApplicationShutdown();
-      await events.close();
       await queue.obliterate({ force: true });
       await queue.close();
-      eventsRedis.disconnect();
       redis.disconnect();
     }
   });
