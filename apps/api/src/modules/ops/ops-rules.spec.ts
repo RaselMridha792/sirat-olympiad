@@ -29,6 +29,7 @@ const host = (over: Partial<HostFacts> = {}): HostFacts => ({
   certificateDaysLeft: 60,
   backupAgeHours: 1,
   timeSynced: true,
+  trustedGeneratorsMinutesLeft: null,
   ...over,
 });
 const queue = (name: QueueFacts['name'], over: Partial<QueueFacts> = {}): QueueFacts => ({
@@ -56,7 +57,7 @@ describe('ops thresholds (one run)', () => {
   it('a healthy server is ok on every check', () => {
     const { results } = once(host());
     expect(summarize(results)).toEqual({ critical: [], warn: [] });
-    expect(results).toHaveLength(16);
+    expect(results).toHaveLength(17);
   });
 
   it.each<[string, Partial<HostFacts>, OpsCheck, CheckLevel]>([
@@ -81,6 +82,25 @@ describe('ops thresholds (one run)', () => {
     ['backup 27 h old', { backupAgeHours: 27 }, 'backup_age', 'critical'],
     ['no backup found', { backupAgeHours: null }, 'backup_age', 'critical'],
     ['clock not synced', { timeSynced: false }, 'time_sync', 'warn'],
+    ['trusted generators off', { trustedGeneratorsMinutesLeft: null }, 'trusted_generators', 'ok'],
+    [
+      'trusted generators on, 90 min left',
+      { trustedGeneratorsMinutesLeft: 90 },
+      'trusted_generators',
+      'warn',
+    ],
+    [
+      'trusted generators on, expiring now',
+      { trustedGeneratorsMinutesLeft: 0 },
+      'trusted_generators',
+      'warn',
+    ],
+    [
+      'trusted generators past their expiry',
+      { trustedGeneratorsMinutesLeft: -1 },
+      'trusted_generators',
+      'critical',
+    ],
   ])('%s', (_label, over, check, level) => {
     expect(levelOf(once(host(over)).results, check)).toBe(level);
   });

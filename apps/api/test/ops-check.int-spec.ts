@@ -46,6 +46,7 @@ const host: HostFacts = {
   certificateDaysLeft: 90,
   backupAgeHours: 1,
   timeSynced: true,
+  trustedGeneratorsMinutesLeft: null,
 };
 
 const queue = (name: string) => {

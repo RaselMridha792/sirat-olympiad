@@ -33,7 +33,8 @@ export type SecurityAlertKind =
   | 'ops.api_p95' // a server check (ops-check, L11): see RUNBOOK §7
   | 'ops.certificate' // a server check (ops-check, L11): see RUNBOOK §7
   | 'ops.backup_age' // a server check (ops-check, L11): see RUNBOOK §7
-  | 'ops.time_sync'; // a server check (ops-check, L11): see RUNBOOK §7;
+  | 'ops.time_sync' // a server check (ops-check, L11): see RUNBOOK §7
+  | 'ops.trusted_generators'; // the load-test generators are trusted (A2's L14): see RUNBOOK §7;
 
 /** Alert categories: each has its own hourly email cap (LAUNCH-PLAN §6, owner Q2) and its own subject. */
 export const ALERT_CATEGORIES = ['security', 'payments', 'ops'] as const;
@@ -66,6 +67,7 @@ export const ALERT_CATEGORY: Record<SecurityAlertKind, AlertCategory> = {
   'ops.certificate': 'ops',
   'ops.backup_age': 'ops',
   'ops.time_sync': 'ops',
+  'ops.trusted_generators': 'ops',
 };
 
 const SUBJECT_PREFIX: Record<AlertCategory, string> = {
@@ -115,6 +117,8 @@ const TITLES: Record<SecurityAlertKind, string> = {
   'ops.certificate': 'The TLS certificate expires soon',
   'ops.backup_age': 'No database backup in the last 26 hours',
   'ops.time_sync': 'The server clock is not synchronised',
+  'ops.trusted_generators':
+    'Load-test generators are trusted to set client addresses (loadtest-realip): switch them off',
 };
 
 /**
