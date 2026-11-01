@@ -15,6 +15,7 @@ import {
 import { AdjustPointsButton } from '@/components/admin/AdjustPointsButton';
 import { AmbassadorButton } from '@/components/admin/AmbassadorButton';
 import { AmbassadorPointsEditor } from '@/components/admin/AmbassadorPointsEditor';
+import { AssignTaskButton } from '@/components/admin/AssignTaskButton';
 import { rankTone } from '@/components/status';
 import { getData } from '@/data';
 import { hrefWith, parsePageQuery, totalPages, type SearchParams } from '@/data/query';
@@ -51,10 +52,13 @@ export default async function AdminAmbassadorsPage({
     getData(params),
   ]);
   const query = parsePageQuery(params, PAGE_SIZE);
-  const [list, points] = await Promise.all([
+  const [list, points, tasks] = await Promise.all([
     data.admin.listAmbassadors(query),
     data.admin.getAmbassadorPoints(),
+    data.admin.listTasks({ page: 1, pageSize: 50, status: 'active' }),
   ]);
+  // Ids and titles only go to the "Assign task" dialogs (client components).
+  const activeTasks = tasks.items.map((t) => ({ id: t.id, title: t.title }));
   const pages = totalPages(list.total, list.pageSize);
 
   return (
@@ -196,6 +200,9 @@ export default async function AdminAmbassadorsPage({
               className: 'px-5 py-3 text-right',
               render: (a) => (
                 <div className="flex flex-wrap justify-end gap-1">
+                  {a.approvedAt ? (
+                    <AssignTaskButton locale={locale} userId={a.userId} tasks={activeTasks} />
+                  ) : null}
                   <AdjustPointsButton locale={locale} userId={a.userId} />
                   <AmbassadorButton
                     locale={locale}

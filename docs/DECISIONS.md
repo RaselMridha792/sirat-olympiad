@@ -13,6 +13,31 @@ One short entry per non-obvious technical or product decision. Newest first. For
 5. **The drill runs on loopback only** (it refuses any port bound beyond 127.0.0.1) and wipes only containers that carry its project label, never project `sirat`.
 6. **The drill never builds:** its images must be of the dump's code (`--tag`). A first local run failed for that reason: the PC's `latest` images predated L2.
 7. **The round trip** (admin A, a dump, admin B; A logs in, B does not; then the beside mode over the running drill) runs from a tools container, with the clone in a Docker volume so compose's relative bind mounts name a path the daemon has (as in L9's rehearsal). CI runs it in the docker job.
+## 2026-11-01 — Ambassador tasks (core C5b-2; lead's plan, defaults and rules)
+
+1. **Approval is final** (lead's default): one transaction with a row lock writes the ledger row `task:<assignmentId>` (task points, `task_id`, `created_by`) `ON CONFLICT DO NOTHING` and sets `approved`. A double click or three admins at once award once; a mistake is corrected with "Adjust points" (C5b-1), so the ledger stays append-only.
+2. **Rejection** keeps the assignment open: the ambassador sees the note and may submit again.
+3. **Proof is plain text only, no uploads** (lead): a pasted link is shown as text and never made clickable (a later change would be deliberate, with an allow-list).
+   - **A minor's free text:** the proof is never logged and never written to an audit row. Audit rows keep ids and statuses only; the admin's note is not audited either.
+   - The panel never sends the proof back; only admins see it, in the review queue.
+4. **Submits are rate-limited** (lead): 10 per 10 minutes per ambassador on the route, on top of the per-user API limit, because a rejected task can be submitted again.
+5. **Who:**
+   - **Tasks:** admins create, edit (`expectedUpdatedAt`), archive and restore them; never deleted.
+   - **Assignment:** approved, unblocked ambassadors only, all or nothing; an existing assignment is skipped (UNIQUE).
+   - **Submitting:** an ambassador submits only their own assignment (another's is 404), and is re-read like the panel (a revoked one gets 403).
+6. **Points** come from the task when it is approved, so an edit counts for later approvals only.
+7. **Schema** (one generated and one CHECKs migration):
+   - `admin_tasks.archived_at`; `task_assignments.proof_text`, `submitted_at`, `review_note`, and an index `(status, submitted_at)` for the queue.
+   - CHECKs for the limits and the status rules (enum columns compared as `::text`).
+   - `db-constraints.int-spec` got a longer task title (`'t'` → `'Task'`) for the new title CHECK.
+8. **Web:**
+   - `/admin/tasks`: Active, Archived and To review.
+   - "Assign task" on /admin/ambassadors rows: the active tasks, ids and titles only.
+   - "Send proof" on the ambassador panel, with the reject note shown.
+   - `AmbassadorOverview.tasks[].id` is now the assignment (for submitting), with `reviewNote` and `submittedAt`.
+9. **Tests:**
+   - `ambassador-tasks.int-spec.ts` (10): task life cycle and refusals; assignment eligibility; submit, the queue and one award; three concurrent approvals award once; reject and resubmit with no proof or note in any audit row; own-assignment, archived and revoked refusals; the submit limit; admin only; the CHECKs.
+   - web: the area file picks, the problem mapper.
 
 ## 2026-11-01 — Bootstrap and the pre-launch checks (L12; exam session, LAUNCH-PLAN §2 and §7, owner Q4 default)
 
