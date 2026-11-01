@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Eye, FileText, Lock, Search } from 'lucide-react';
+import { Eye, FileText, Lock, Plus, Search } from 'lucide-react';
 import { EXAM_STATUSES, type AdminExamCard } from '@sirat/shared';
 import {
   Badge,
@@ -19,6 +19,7 @@ import type { Locale } from '@/i18n';
 import { common, type CommonMessages } from '@/i18n/common';
 import { formatDate, formatDateTime, formatNumber } from '@/i18n/format';
 import type { Messages } from '@/i18n/messages';
+import { adminExamAuthoringMessages } from '@/i18n/messages/admin-exam-authoring';
 import { adminExamsMessages } from '@/i18n/messages/admin-exams';
 import { getMessages } from '@/i18n/server';
 import { requireAccess } from '@/lib/session';
@@ -34,8 +35,8 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 /**
- * Exam list (old admin/quiz-management). Read-only for now: add, edit, delete and the publish
- * toggle stay hidden until their endpoints exist; "View" opens the detail with the answer keys.
+ * Exam list (old admin/quiz-management). "New exam" opens the settings form (E5b); "View" opens the detail with the
+ * answer keys, where the questions, publishing and the results are managed.
  */
 export default async function AdminExamsPage({
   searchParams,
@@ -44,9 +45,10 @@ export default async function AdminExamsPage({
 }) {
   await requireAccess('/admin/exams');
   const params = await searchParams;
-  const [{ locale, m }, { m: c }, data] = await Promise.all([
+  const [{ locale, m }, { m: c }, { m: a }, data] = await Promise.all([
     getMessages(adminExamsMessages),
     getMessages(common),
+    getMessages(adminExamAuthoringMessages),
     getData(params),
   ]);
   const query = parsePageQuery(params, PAGE_SIZE);
@@ -69,6 +71,14 @@ export default async function AdminExamsPage({
       <PageHeader
         title={m.title}
         subtitle={m.count(formatNumber(locale, list.total), list.total)}
+        actions={
+          <Link href="/admin/exams/new" className={buttonClasses()}>
+            <span className="inline-flex items-center gap-2">
+              <Plus size={16} aria-hidden="true" />
+              {a.newExam}
+            </span>
+          </Link>
+        }
       />
 
       <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">

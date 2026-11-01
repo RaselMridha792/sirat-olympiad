@@ -21,6 +21,22 @@ One short entry per non-obvious technical or product decision. Newest first. For
 7. **Tests:** `admin-stats.int-spec.ts` (6) and the `dhakaDays` unit spec.
    - `admin-stats.int-spec.ts` covers every count as a difference around its own rows (the test database is shared), the Dhaka day edges, the burst computing once, the cache serving the same `asOf`, the Postgres fallback, the roles, and the counts-only scan.
    - web: `http/stats.test.ts` (picks at every level, shape refusals).
+## 2026-11-01 — Exam authoring screens (E5b; exam session, EXAM-PLAN §5, on E1's API)
+
+1. **Times are Bangladesh time whatever the admin's browser clock:** the form converts with a fixed UTC+6 (no daylight saving time in Bangladesh) and sends UTC. A wall-clock time that does not exist (30 February) is refused before sending. Announcements use the browser's clock; exam windows must not move with an admin abroad.
+2. **One settings form for new and edit, on its own pages** (`/admin/exams/new`, `/admin/exams/[id]/edit`), not a dialog on the detail page.
+   - The edit page gets the settings only (`pickSettings`: no questions, so no answer keys), with `updatedAt` as the version it sends back; the e2e checks the page for a question canary.
+   - A published exam shows every field, the frozen ones read-only with why. Only the title and a later close are sent; the latter needs a reason (3–200 characters).
+   - The patch carries only what changed: an unchanged frozen field is never sent, so it cannot be refused.
+3. **The question dialog letters options by their place** (A, B, C...): removing one never leaves a gap, and the correct choice follows its option. Two options that read the same (case and spaces aside) are refused in the browser, though the API would take them.
+4. **What the buttons offer follows the API's rules** (`questionRules`, `stateActions`):
+   - **a draft:** add, edit in place, delete;
+   - **a published exam:** an edit says "Save as version n+1"; add and retire only with a random draw, and retire only while more than the questions per attempt stay active;
+   - **an archive:** nothing.
+
+   The server still decides, and a refusal lists every reason it gave (publish can fail several checks at once).
+5. **No round field** until rounds have an API (core C6): a new exam has none.
+6. **A browser e2e, `e2e:exam-admin`,** run on the exam session's own throwaway database. Like `e2e:exam`, it is a by-hand stack test, not a CI step.
 
 ## 2026-11-01 — Registration surge, local k6 (Claude; payments PR 5, plan step 13; provisional until the VPS)
 
