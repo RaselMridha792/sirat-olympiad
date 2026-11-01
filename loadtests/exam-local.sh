@@ -152,7 +152,7 @@ if [ "$SCENARIO" = login ]; then
     ( while sleep 15; do dstats >> "$OUT/docker-stats-$r.txt" 2> /dev/null || true; done ) &
     stats_pid=$!
     st=0
-    PASSWORD=$FIXTURE_PASSWORD dk run --rm --name "$P-k6" --network "${P}_default" \
+    PASSWORD=$FIXTURE_PASSWORD dk run --rm --name "$P-k6" --network "${P}_default" --user "$(id -u):$(id -g)" \
       -v "$(hostpath "$PWD/loadtests"):/scripts:ro" -v "$(hostpath "$OUT"):/out" \
       -e PASSWORD -e BASE_URL=http://api:4000 -e "USERS=$USERS" -e "RATE=$r" -e "HOLD=${LOGIN_HOLD:-60s}" -e "SMOKE=$SMOKE" \
       "$K6_IMAGE" run --quiet --summary-export "/out/login-$r.json" /scripts/login-surge.js > "$OUT/k6-login-$r.log" 2>&1 || st=$?
@@ -163,6 +163,8 @@ if [ "$SCENARIO" = login ]; then
       console.log([p("http_req_duration{name:login}"), p("http_req_duration{name:me}"),
         f ? (100 * (f.value ?? f.rate ?? 0)).toFixed(2) + " %" : "-", d ? d.count : 0].join("|"));
     ' "$(hostpath "$OUT/login-$r.json")" 2> /dev/null || echo "-|-|-|-")
+    # No summary is a broken run, never a row of zeros.
+    [ -s "$OUT/login-$r.json" ] || { say "rate $r/s: no k6 summary (see $OUT/k6-login-$r.log)" >&2; st=1; }
     IFS="|" read -r lp mp er dr <<< "$row"
     printf '%-6s %-10s %-10s %-9s %-8s %s\n' "$r" "$lp" "$mp" "$er" "$dr" "$(peaks "$OUT/docker-stats-$r.txt")" >> "$OUT/login-table.txt"
     say "rate $r/s: k6 exit $st (99 = a threshold failed); login p95 $lp, errors $er"
