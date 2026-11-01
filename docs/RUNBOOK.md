@@ -66,10 +66,17 @@ pnpm --filter @sirat/api db:fixtures:dev                   # 4. the same three s
 Web session: the dashboards read the real session (`GET /api/auth/me` from the web server; `API_INTERNAL_URL`, default `http://localhost:4000`, compose sets `http://api:4000`), so `pnpm dev:web` needs `pnpm dev:api` running (the stack's API is not published on :4000; with the full stack, use its own web through nginx at http://127.0.0.1:8080). Log in at `/login` as a fixture student; the admin pages need an admin from the create-admin CLI. Without a session a dashboard page goes to `/refresh`, then `/login`; with the API down it shows the error page, never `/login`. Dashboard data comes from the mock in development; `DATA_SOURCE=http pnpm dev:web` reads the local API instead (methods not connected yet show the error state, as in production).
 
 Page checks and e2e (`apps/web/scripts`; Node and a local Chrome or Edge, no other tool):
-- `check:leak` (dev server) and `check:prod` / `check:api-down` (`next start` with `API_INTERNAL_URL`): set `CHECK_STUDENT_EMAIL`/`CHECK_STUDENT_PASSWORD` (a fixture student) and `CHECK_ADMIN_EMAIL`/`CHECK_ADMIN_PASSWORD`; CI runs all three (job "Dashboard pages").
+- `check:leak` (dev server) and `check:prod` / `check:api-down` (`next start` with `API_INTERNAL_URL`): set `CHECK_STUDENT_EMAIL`/`CHECK_STUDENT_PASSWORD` (a fixture student) and `CHECK_ADMIN_EMAIL`/`CHECK_ADMIN_PASSWORD`; `check:leak` also needs `CHECK_AMBASSADOR_EMAIL`/`CHECK_AMBASSADOR_PASSWORD` (a fixture student an admin approved as an ambassador, only in a throwaway database: CI approves `student2@fixtures.invalid` through the API). CI runs all three (job "Dashboard pages").
 - `pnpm --filter @sirat/web e2e [http://127.0.0.1:8080]` runs against the whole local stack with `E2E_STUDENT_PASSWORD` (the fixture password) and optionally `E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD`; it reads the reset email from Mailpit. The local stack (project `sirat`, same ports) is shared between sessions: announce `up -d --build`, smoke tests and e2e runs before starting and when done. The reset case sets the student's password to the same value again and ends that student's sessions. It refuses a base URL or `MAILPIT_URL` that is not 127.0.0.1, localhost or ::1.
 - `pnpm --filter @sirat/web e2e:exam [http://127.0.0.1:8080]` (exam room): needs `E2E_STUDENT_PASSWORD` and an admin (`E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD`). The admin publishes a 15-minute exam for all categories through the API (`E2E exam <time>`; it stays published, closed after its 15-minute window, because an exam is archived only after its results are published); a fixture student takes it in the browser up to the 6th violation, and every response, the HTML and localStorage are searched for explanations, correct keys, scores and question ids. Same stack rules as `e2e`; loopback URLs only.
-- `pnpm --filter @sirat/web e2e:register <baseUrl>` (registration and payment, payments PR 4): needs an admin (`E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD`, who opens registration for the run and closes it again) and an API with `PAYSTATION_ENV=fake`, never the sandbox or live gateway. Locally without the stack: the fake (`pnpm --filter @sirat/api exec tsx test/fake-paystation/run.ts` with `FAKE_PAYSTATION_IPN_URL=<baseUrl>/api/payments/paystation/ipn`), the API and its worker with `PAYSTATION_ENV=fake`, `PAYSTATION_BASE_URL=http://127.0.0.1:18090`, `PAYSTATION_CALLBACK_URL=<baseUrl>/api/payments/paystation/callback` and `APP_URL=<baseUrl>` set in the environment (they win over `apps/api/.env`, which stays untouched), and `next dev` with `API_INTERNAL_URL` pointing at that API (the dev `/api` rewrite follows it, so a session on its own API port can use its own web). It leaves two `e2e-…@test.invalid` students behind.
+- `pnpm --filter @sirat/web e2e:register <baseUrl>` (registration and payment, payments PR 4): needs an admin (`E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD`, who opens registration for the run and closes it again) and an API with `PAYSTATION_ENV=fake`, never the sandbox or live gateway. Locally without the stack: the fake (`pnpm --filter @sirat/api exec tsx test/fake-paystation/run.ts` with `FAKE_PAYSTATION_IPN_URL=<baseUrl>/api/payments/paystation/ipn`), the API and its worker with `PAYSTATION_ENV=fake`, `PAYSTATION_BASE_URL=http://127.0.0.1:18090`, `PAYSTATION_CALLBACK_URL=<baseUrl>/api/payments/paystation/callback` and `APP_URL=<baseUrl>` set in the environment (they win over `apps/api/.env`, which stays untouched), and `next dev` with `API_INTERNAL_URL` pointing at that API and `DATA_SOURCE=http` (the dev `/api` rewrite follows `API_INTERNAL_URL`, so a session on its own API port can use its own web; the free-book step reads real data). It leaves two `e2e-…@test.invalid` students behind.
+
+Load test of registration and payment (`loadtests/registration-surge.js`, payments PR 5; k6 is a separate binary, not a dependency). Locally it runs on throwaway containers, never on the shared stack, `sirat` or `sirat_pay`:
+- Containers (`--rm`, so nothing stays): `docker run -d --rm --name sirat-pay-load-pg -e POSTGRES_USER=load -e POSTGRES_PASSWORD=<any> -e POSTGRES_DB=sirat_load -p 127.0.0.1:54433:5432 postgres:17-alpine`, the same for `redis:7-alpine` (`-p 127.0.0.1:54380:6379`) and `axllent/mailpit:v1.32.0` (`-p 127.0.0.1:54025:8025`). On Windows, pick ports outside `netsh interface ipv4 show excludedportrange protocol=tcp`.
+- Environment for the API and the worker (it wins over `apps/api/.env`, which stays untouched): `DATABASE_URL` and `DIRECT_URL` to that database, `REDIS_CACHE_URL=redis://127.0.0.1:54380/0`, `REDIS_QUEUE_URL=redis://127.0.0.1:54380/1`, `PAYSTATION_ENV=fake`, `PAYSTATION_BASE_URL=http://127.0.0.1:18090`, `PAYSTATION_CALLBACK_URL`/`PAYSTATION_IPN_URL` on the API's own port, `EMAIL_PROVIDER=mailpit`, `MAILPIT_URL=http://127.0.0.1:54025`.
+- Then `prisma migrate deploy` and `pnpm --filter @sirat/api db:seed` with that environment, open registration in that database only (`update settings set value = 'true'::jsonb where key = 'registration_open'`), start the fake with `FAKE_PAYSTATION_IPN_URL=http://127.0.0.1:<api port>/api/payments/paystation/ipn`, then `node --env-file=.env dist/main.js` and `dist/worker.js`, and run `k6 run -e BASE_URL=http://127.0.0.1:<api port> loadtests/registration-surge.js` (options: `loadtests/README.md`).
+- Afterwards: `docker stop sirat-pay-load-pg sirat-pay-load-redis sirat-pay-load-mail` (`--rm` removes them and their data).
+- On the VPS (DoD #17): a staging stack with the fake, k6 from another machine through nginx. Through nginx the generator's single address meets the start limit (300/min per IP): keep `RATE` at 4 or less per generator machine, or use more machines.
 
 ## 1. Status and logs
 
@@ -79,7 +86,20 @@ $DC logs -f --tail=200 api        # also: worker web nginx postgres pgbouncer re
 $DC restart api                    # restart one service
 scripts/healthcheck.sh https://<domain>
 df -h; free -m; docker stats --no-stream
+scripts/monitor.sh --dry-run       # the server checks now: the host facts, and each critical or warning check (raises nothing)
+cat /var/lib/sirat/monitor-state.json   # the checks' state kept between runs (levels and when they last alerted)
 ```
+
+**Server checks (L11):**
+- **Schedule** (cron, set up by L12): `scripts/monitor.sh` every 5 minutes, and `scripts/monitor.sh --digest` at 08:00 Asia/Dhaka.
+- **Configuration:** `.env.monitor` in the clone (git-ignored, `chmod 600`; names in `infra/monitor/monitor.env.example`): the compose project, the env files (the VPS adds `/var/lib/sirat/release.env`) and the heartbeat URL.
+- **What a run does:**
+  1. collects the host facts;
+  2. runs `ops-check` in the api container, which adds the queues, workers, failed jobs, the reconciliation schedule and the queue Redis memory, decides each check's level (thresholds: LAUNCH-PLAN §6), and raises an `ops.<check>` alert on a change, hourly while it holds, and once when resolved;
+  3. pings the heartbeat: success with no critical check, `/fail` with the check names otherwise.
+- **A run that cannot reach ops-check** counts as critical (`monitor`).
+- **During a deploy** (`deploy.sh` holds `/var/lib/sirat/deploy.lock`), `/fail` is held back.
+- **The digest** comes every morning (alerts of the last 24 h by kind, the backup age, the disk, payments by status). A morning without it means the alert email path is broken.
 
 ## 2. Deploy and rollback
 
@@ -121,7 +141,31 @@ $DC up -d --no-recreate --scale api=6 api   # VERIFIED (1 -> 2): nginx picks up 
 
 ## 4. Maintenance mode
 
-TODO: Nginx `maintenance.html` toggle (return 503 with a friendly page for `/` and `/api`). Document the exact commands here when built.
+**The switch (L5):** while the flag file `infra/nginx/maintenance/on` exists (in the clone, git-ignored), nginx answers the public site with a 503:
+- pages, whatever the method: the bilingual page `infra/nginx/pages/maintenance.html` ("we'll be right back", and "if you just paid, your payment is safe; we confirm it automatically");
+- other `/api` calls: JSON `{"statusCode":503,"code":"MAINTENANCE",...}`;
+- both with `Cache-Control: no-store` (Cloudflare keeps neither), `Retry-After: 120` and the security headers.
+
+**Still passing:** `/healthz`, the PayStation IPN (it records and queues; PayStation retries) and the callback (it records the return; the result page it leads to shows the maintenance page). The worker keeps confirming payments. nginx looks for the file on every request: no reload, no restart.
+
+```bash
+scripts/maintenance.sh on        # maintenance: on (since <UTC time>)
+scripts/maintenance.sh status    # maintenance: on (since ...) | maintenance: off
+scripts/maintenance.sh off
+# Checks from the server go through the internal listener, which the switch never affects:
+$DC exec -T nginx wget -qO- http://127.0.0.1:8081/api/ready   # {"status":"ready"} while visitors see the page
+curl -s -o /dev/null -w '%{http_code}\n' https://<domain>/    # 503 while on, 200 after off
+```
+
+- **The script** touches only the flag file and never runs up, down or restart. It refuses `on` while the page is not world-readable: nginx's workers read it, so keep the clone at umask 022.
+- **The same page replaces nginx's own 502/504** on pages and on the PayStation callback (the status stays 502/504), so a deploy gap or a stopped web shows it too. Other `/api` calls keep their JSON errors.
+- **When:**
+  - the kill switches, in order: `registration_open=false`, then maintenance on, then `deploy.sh --rollback` (L9);
+  - a restore (section 5);
+  - a critical fix during an incident.
+
+  Not during a live exam window without the owner: students keep answering in the browser, but their final submit would get the MAINTENANCE answer.
+- **Tests:** `infra/nginx/test/check-maintenance.sh` (its own containers and fake upstreams; CI's docker job), and a CI step on the stack.
 
 ## 5. Backup and restore
 
@@ -174,13 +218,17 @@ bash scripts/test/run-backup-test.sh               # the tests (own compose proj
   That keeps 7 daily and 4 weekly copies (RULEBOOK §6) plus 2 days of hourly ones.
 - **"The dump is much smaller than the last one":** the run stops when a dump is under half the size of the last one, because a sudden drop usually means lost data. After a deliberate big delete (the first run of the session and token cleanup job, a test-data wipe), check that the drop is expected, then run `sudo /srv/sirat/scripts/backup.sh --accept-smaller` once by hand. It logs that it was used; the timer never passes it, and the next timed runs compare with that copy.
 
-**Restore** (until L7): stop traffic first, restore a decrypted dump (refuses a truncated dump; one transaction), then migrate and start again.
+**Restore** (until L7): maintenance on, stop the app (nginx keeps running and shows the page), restore a decrypted dump (refuses a truncated dump; one transaction), migrate, start the app, check it through the internal listener, then maintenance off.
 
 ```bash
-$DC stop nginx web api
+scripts/maintenance.sh on                 # section 4; visitors get the maintenance page
+$DC stop web api worker                   # the worker too: no job writes during the restore
 scripts/restore.sh <decrypted>.dump  # DESTRUCTIVE, asks for YES (truncated-dump refusal VERIFIED; full restore not yet rehearsed)
-$DC run --rm migrate && $DC exec redis-cache redis-cli FLUSHALL && $DC up -d && scripts/healthcheck.sh https://<domain>
+$DC run --rm --no-deps migrate && $DC exec redis-cache redis-cli FLUSHALL && $DC up -d --no-deps api worker web
+$DC exec -T nginx wget -qO- http://127.0.0.1:8081/api/ready   # {"status":"ready"}
+scripts/maintenance.sh off && scripts/healthcheck.sh https://<domain>
 ```
+While the API is stopped, PayStation's IPN gets nginx's JSON 502 and is retried; reconciliation catches anything missed once the worker is back.
 After a restore drill, also check the free book's cover: `GET /api/book/cover/<id>` (the id is `settings.book_cover_image_id`) returns the image. Covers live in Postgres (`book_images`), so the dump carries them; there is no file directory to restore.
 
 Credentials are read inside the postgres container; nothing secret is typed on the host. Hardening (L7): restore into a fresh database instead of `--clean` over the live schema, and a scripted drill. Before every exam: a fresh backup and a **restore drill on another machine**.
@@ -190,6 +238,26 @@ Credentials are read inside the postgres container; nothing secret is typed on t
 `scripts/bootstrap.sh` (scaffold prints the steps; implement and rehearse). Needs: repo, `.env`, latest backup.
 
 ## 7. Exam-day incident steps
+
+**Ops alert → what to do** (`[Sirat] Ops alert:`; `level: 2` critical, `1` warning, `0` resolved; the same kinds are in the heartbeat's `/fail` body):
+
+| Check | Means | First steps |
+|---|---|---|
+| `disk` | 80% used (warning), 90% (critical) | `df -h`; `docker system df`; prune old images (`docker image prune -a` after a deploy); old local backups are only 3 |
+| `swap`, `memory`, `cpu` | swap in use; memory or CPU above 85% on two checks (memory over 95%: critical) | `docker stats --no-stream`; find the service; scale or restart it (section 3); before an exam, L14's sizing |
+| `containers` | a service not running or unhealthy on two checks | `$DC ps -a`; `$DC logs --tail=100 <service>`; `$DC up -d --no-build <service>` |
+| `workers` | a job queue (email, payments, exam) has no worker on two checks | `$DC ps worker`; `$DC logs --tail=100 worker`; `$DC up -d --no-build worker`. Payments are confirmed only by the worker: critical |
+| `queue_backlog` | over 500 waiting, or the oldest over 5 min (warning); a payments or email job waiting 15 min while workers are connected (critical: a stuck worker) | worker logs; restart the worker; the queue Redis memory |
+| `failed_jobs` | jobs failed for good since the last check (a payment verify job: critical) | worker logs by job name; payments: the review list (section 11) |
+| `reconciliation` | the payments reconciliation is more than 3 intervals late | worker running? `$DC logs worker \| grep reconcile` |
+| `queue_redis_memory` | the queue Redis over 300 MB (warning), 400 MB of 512 (critical) | failed jobs piling up; `redis-cli INFO memory` in `redis-queue` |
+| `http_5xx` | over 2% (warning) or 10% (critical) of at least 50 requests in 5 min | `$DC logs --since 10m nginx api`; `/api/ready`; recent deploy? |
+| `app_errors` | API 5xx or web render errors in the logs | `$DC logs --since 10m api web` |
+| `api_p95` | the API's p95 over 1 s | "Site slow" below |
+| `certificate` | the origin certificate ends within 14 days | section 3 of LAUNCH-PLAN / the TLS steps in this runbook |
+| `backup_age` | no off-server backup in 26 h (critical) | `journalctl -u sirat-backup.service -n 50` (section 5) |
+| `time_sync` | the clock is not synchronised | `timedatectl`; `systemctl restart systemd-timesyncd` |
+| `monitor` (heartbeat only) | ops-check could not run | the api container: `$DC ps api`, `$DC logs --tail=50 api` |
 
 **Site slow:** `docker stats` (CPU/RAM) → PgBouncer waiting clients (`SHOW POOLS;`) → slow queries (log > 500 ms) → queue depth/failed jobs (BullMQ) → API p95 in monitoring → consider `--scale api=N`, then tell the owner.
 **Site down:** `$DC ps` → Nginx logs → `df -h` (disk full?) → Postgres/Redis health → restart failing service → if data loss suspected, restore plan (section 5).

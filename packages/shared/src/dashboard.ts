@@ -71,7 +71,8 @@ export interface StudentHome {
   nextExam: (StudentExamCard & Pick<ExamRecord, 'graceSeconds'>) | null;
   latestAnnouncements: AnnouncementItem[];
   /** Payments' GET /registrations/me (MyRegistration in registration.ts); core C4 renders it on the home page. */
-  registration: MyRegistration;
+  /** null: payments' answer could not be read just now (the card says so; the rest of the home still shows). */
+  registration: MyRegistration | null;
 }
 
 export type StudentProfile = Pick<

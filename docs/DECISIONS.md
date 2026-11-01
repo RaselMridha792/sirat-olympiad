@@ -31,6 +31,128 @@ One short entry per non-obvious technical or product decision. Newest first. For
      - a SCRAM login on a scratch role that is dropped after;
      - eleven statements `sirat_app` must not run (each fails with 42501).
 5. **The boot line** `database role=<name> superuser=<bool>` in the API and the worker makes the RUNBOOK §9 item readable from the logs. In production it warns while the role is a superuser; from L8 a superuser is refused.
+## 2026-11-01 — Registration surge, local k6 (Claude; payments PR 5, plan step 13; provisional until the VPS)
+
+1. **The scenario** (`loadtests/registration-surge.js`). One iteration is one student, as the browser would do it:
+   - the register page, then `start`;
+   - 80 % open the checkout and pay, then come back through the callback twice;
+   - the result page polls on its own schedule until "completed".
+   It runs only against the fake PayStation, and stops if the checkout is anything else. No admin is needed; registration must already be open.
+2. **Where:** throwaway containers (`sirat-pay-load-*`, `--rm`) with this worktree's API and worker. Nothing touched `sirat` or `sirat_pay`.
+   - The PC (12 logical threads) is shared with the other sessions. These numbers are provisional regressions only.
+   - DoD #17 closes only on the VPS (plan 8.1).
+3. **The rate:** 4 starts/s is 14,400 an hour, more than half of all 25k students in one hour. No registration peak is written down anywhere: if the owner expects a different launch burst, the VPS run uses that.
+4. **Results** (p95 in ms; errors are our API's, 4xx/5xx; "completed" = paid students who saw "completed" while the page polled):
+
+   | Run | API p95 | start | info | callback | current | Errors | Completed | Settle p95 | PC CPU (median / p90) |
+   |---|---|---|---|---|---|---|---|---|---|
+   | 2/s, 3 min | 132 | 240 | 14 | 48 | 37 | 0 of 2,088 | 325 of 325 | 2.3 s | 56 % average |
+   | 4/s, 5 min | 261 | **819** | 70 | 177 | 132 | 0 of 6,749 | 1,053 of 1,053 | 2.5 s | 78 / 98 % |
+   | 4/s, 3 min (repeat) | 231 | **756** | 63 | 159 | 82 | 0 of 4,008 | 620 of 620 | 2.5 s | 61 / 99.5 % |
+
+5. **Reading the numbers:**
+   - The API as a whole passes in every run (p95 < 500 ms, errors 0 %).
+   - `start` alone misses 500 ms at 4/s. On the server side it is the same (797 ms): it is not k6.
+   - At rest `start` costs about 60 ms: the argon2id hash is 26 ms here (19 MiB, t=2), one DB round trip is 1.6 ms (about ten of them), plus the gateway call. There is no global lock in it (row locks only on the student's own attempt).
+   - During the 4/s runs the PC hit 98–100 % CPU at its 90th percentile, while this API and worker used about 5 % of the machine. So the tail comes with the shared PC's load. On the VPS, `start` is measured again at the target rate.
+   - If it still misses there, the first step is more API replicas (RUNBOOK §3), not a weaker argon2 (it is at the OWASP minimum).
+6. **No growing queue:**
+   - The settle time stays at one poll interval (p95 2.3–2.5 s; the page reads every 2 s).
+   - After the runs the worker queue had nothing waiting or active.
+7. **Limits to remember on the VPS:**
+   - Through nginx the generator's single address meets the start limit (300/min per IP). Keep `RATE` at 4 or less per generator machine.
+   - PayStation's IPNs come from a few addresses, and the IPN limit is 600/min per IP. Above 10 payments/s per PayStation address, IPNs get 429. They are only a hint: the callback and reconciliation still settle the payment. The VPS run checks this with the real nginx.
+
+## 2026-11-01 — Ambassadors: admin approval, server promo codes and the panel (core C5a; plan `docs/plans/CORE-PLAN.md` section 6, Q2 default)
+
+1. **A promo code is attribution only** (lead, owner decision). It records who brought a registration and changes no fee, amount or payment. Anything that would make it a discount goes to the lead and the owner first.
+2. **Approval** follows Q2's default (OPEN-QUESTIONS #12 is still open). An admin makes a paid student an ambassador from the student's detail or the ambassadors list; there is no application form.
+   - **One transaction:** re-read the admin, lock the user `FOR UPDATE`, refuse `wrong_role`, `blocked` or `not_paid_student`; create the profile with a server code (`SR-` + 6 Crockford characters from `crypto.randomInt`) or re-approve the old row; role → `ambassador`; audit `ambassador.approved` with the reason.
+   - **A code collision** (P2002) aborts the Postgres transaction, so the whole transaction is retried, at most 3 times.
+   - **Already approved:** 200, nothing is written.
+3. **Revoking keeps the row:** `approved_at` → NULL, role → `student`, audit `ambassador.revoked`.
+   - Payments' `referrer()` accepts a code only while `approved_at` is set, so the code stops working for new registrations at once.
+   - Earlier referrals and points stay. The code (UNIQUE) is never given to anyone else, and a re-approval gives the same code back.
+4. **The panel** (`GET /ambassador/me`) re-reads the role and the block on every call, so a revoked ambassador with an old token gets 403.
+   - Referrals show only the name, institution and date.
+   - Points and rank come from `point_ledger` and `rank_thresholds`; team and tasks stay empty until C5b.
+5. **Database:** one hand-written migration, `*_core_ambassador_checks`. It adds the promo-code format CHECK (payments' DTO pattern) and append-only triggers on `point_ledger`: UPDATE, DELETE and TRUNCATE are refused, except TRUNCATE in a `*_test` database.
+   - Payments' `db:fixtures:dev --clean` still works on a dev database (checked on a throwaway one named `sirat`, with ledger rows): it deletes only registrations, payments and attempts, and no ledger row depends on them.
+6. **Web:**
+   - **The panel:** the held branch `feat/ui-ambassador` was merged in (lead's OK), not rewritten; its page now calls `requireAccess`. `data/http/ambassador.ts` reads the panel and the admin list with shape checks and explicit picks.
+   - **Admin:** approve and revoke buttons with a reason dialog, in the student detail and the ambassadors list, through `lib/api.ts`.
+   - **The student home falls back per section.** Only the profile is required. Exams, announcements and the registration card each show their own empty or "could not be loaded" state when their call fails, so an outage in one area does not take the whole home down.
+     - `DashboardHome.registration` is null when payments' answer could not be read.
+     - A redirect or not-found raised inside a section is passed on, never swallowed.
+     - Payments' book card (#42) reads its own data, so the home wraps it (`BookSection`): when `GET /book-order/me` fails, only that card says it cannot be shown. Checked in a control run: without the wrapper the whole home failed.
+7. **The leak check** follows the lead's conditions:
+   - `check:leak` also scans the pages only an ambassador may open, with `CHECK_AMBASSADOR_EMAIL` / `_PASSWORD`; missing variables fail the run.
+   - In CI the admin approves `student2@fixtures.invalid` through the real endpoint, in the job's throwaway database only (no fourth fixture user). A failed approve fails the job with its HTTP status and refusal code.
+   - The ambassador's password is the fixture password, set and masked in the same step as the others.
+8. **The role in the access token** (lead's review):
+   - **The window:** the web's session reads the role from the database (`GET /auth/me`, cached up to 30 s), but the API's guard reads it from the access token. A token issued before an approval still says `student` until it is renewed (at most the access TTL, 15 minutes).
+   - **What the student sees:** within 30 s of the approval the Ambassador menu item appears. The panel's 403 sends them once through `/refresh` (`isRoleBehind`); the new token carries the new role and the panel opens. No error state and no wait. `/refresh`'s own loop guard ends at `/login`.
+   - **After a revoke:** an old ambassador token gets the same renewal and then the not-found page. Within 30 s the menu item is gone.
+   - Checked end to end on the real API with a throwaway database. In a control run without the renewal the panel did not render: the refused read goes to its error state until the token expires.
+9. **Tests:**
+   - `ambassadors.int-spec.ts` (9): only admins; each refusal; one transaction (role, profile and audit together); an idempotent approve; revoke and re-approve; the list and the panel from rows; a revoked ambassador's old token; the CHECK and the ledger triggers.
+   - **The promo rule** runs through payments' real `RegistrationService.referrer()`, the same check `POST /registrations/start` makes, in any letter case. It does not run the whole start route: that needs a full form and the gateway, and payments' own tests cover it.
+   - **web:** `http/ambassador.test.ts` (canaries, shape refusals, the admin pick), `ambassador-problem.test.ts`, and `http/home.test.ts` (each section falls back on its own; a redirect is not swallowed).
+
+## 2026-11-01 — Maintenance switch: a flag file nginx checks on every request (L5; exam session, LAUNCH-PLAN §7)
+
+1. **The flag** is `infra/nginx/maintenance/on`, inside the folder compose already mounts at `/etc/nginx/sirat`: no compose change and no reload, because nginx looks for the file on every request. The folder stays in git (`.gitkeep`), so the mount always has it; the flag itself is ignored. `scripts/maintenance.sh on|off|status` touches only that file.
+2. **Server level, public servers only** (`infra/nginx/maintenance.conf`, included by sites/tls and sites/plain). The internal listener never includes it, so checks from the server always reach the app.
+3. **What passes:** `/healthz`, the PayStation IPN and the callback.
+   - The lead asked for both PayStation paths; §7 named only the IPN. The callback only records the return and redirects to the result page, which then shows the maintenance page, and letting it through queues the status check sooner.
+   - A map on the raw `$request_uri` decides `pass`, `json` or `page`. A request passes only when the path it sent is exactly an exception: on `$uri`, a path that nginx normalises into one (`/dashboard/../api/payments/paystation/ipn`) passed, and nginx sends the path upstream as sent. The callback takes one plain segment (letters, digits, `_`, `-`).
+   - Regexes only: `map` compares plain strings without regard to case, so `/API/...` passed to the web (found by the test).
+4. **Pages get the page through `error_page`:** it keeps the status and turns any method into GET (a static file answers a POST with 405). That internal redirect runs the server-level check again, so the page's own path is exempt. Other `/api` calls get JSON `code: MAINTENANCE` in the API's error shape.
+5. **The same page replaces nginx's own 502/504** on pages and on the callback, with the status kept so checks see the real code. Other `/api` calls, the IPN included, keep the JSON errors: PayStation retries.
+6. **Both answers** carry `Cache-Control: no-store` (Cloudflare must not keep them), `Retry-After: 120` and each security header once.
+7. **The text:** a generic bn/en "we'll be right back" with the "your payment is safe" line and no contact details (LAUNCH-PLAN §10 default; Rasel checks the Bangla). Plain HTML with inline styles and no scripts or fonts, so it needs nothing from the web container.
+
+## 2026-11-01 — Free book on the web (Claude; payments PR 6b, plan §16.4, lead's rules)
+
+1. **`/dashboard/book`:** the title and the cover, then the address form, pre-filled from the student's own name, phone and district.
+   - The form posts and waits for hydration.
+   - Once an order exists, every save sends the version the page showed (`expectedVersion`). An old tab then gets 409 `BOOK_ORDER_CHANGED`; it never overwrites a newer address (lead, 2026-11-01).
+   - After shipping the page is read only (409 `BOOK_ORDER_SHIPPED` if a stale form tries).
+2. **The result page sends a paid student to log in, then to the book:** `/login?next=/dashboard/book`. There is no session after paying (D2), and A2's `safeNext` accepts the path (`links.test.ts`).
+3. **The dashboard card** (`components/book/BookOrderCard.tsx`) is a server component core's home composes with one line (`<BookOrderCard data={data} locale={locale} />`); whoever lands second adds it (lead). It shows the status and the district only, never the address.
+4. **Admin only** (`/admin/book`, `/admin/book-orders`):
+   - the title with `expected` and a reason;
+   - the cover with a local preview and a quick size and type check before sending (the API decides by the bytes);
+   - the orders list with GET filters;
+   - "Export for courier" (the current status and district, saved as a file; the page reminds the admin to delete it afterwards);
+   - "Mark shipped" for the ticked confirmed orders, after a confirmation that says it cannot be undone.
+5. **`lib/api.ts`:** a `FormData` body keeps the browser's multipart type (the cover upload); JSON bodies still get `application/json` (A2's file, one line plus a test).
+6. **Data layer:** `data/http/book.ts` picks fields one by one. A cover URL is accepted only as our own `/api/book/cover/<uuid>` path, so a page never loads an image from elsewhere. The mock serves the demo student's order, and `?mock=leak` covers the student methods.
+7. **`e2e:register`** now continues after "Registration complete": it logs in from the result page, confirms an address on `/dashboard/book` and changes it. The dev web needs `DATA_SOURCE=http` for that step (RUNBOOK §0).
+
+## 2026-11-01 — Server checks: ops-check, monitor.sh and the daily digest (L11; exam session, A2's plan and handover)
+
+1. **Thresholds in TypeScript** (`apps/api/src/modules/ops/ops-rules.ts`, the launch defaults of LAUNCH-PLAN §6): pure functions with table tests for every threshold, the two-run rules (CPU, memory, containers, workers) and the alert transitions. L14 retunes the numbers after k6.
+2. **Alerts on transitions:** an `ops.<check>` alert when a check changes level, an hourly reminder while it stays warn or critical, and one "resolved" alert (`level: 0`). They go through the ops category's own cap (L10); the digest counts the held-back ones from the audit log.
+3. **State in a file on the host,** kept by `monitor.sh` (`/var/lib/sirat/monitor-state.json`) and handed to ops-check on stdin: no table and no cache key. A lost state means one repeated alert at worst.
+4. **ops-check reads the app facts from the queue Redis only:**
+   - workers per queue;
+   - waiting jobs and the oldest one's age;
+   - jobs failed for good since the last run (BullMQ keeps a job in "failed" only after its last attempt);
+   - payments' reconciliation, from its job scheduler's next run time: late by more than 3 intervals is critical;
+   - the queue Redis memory.
+
+   It touches no payments file.
+5. **Host facts in bash** (`scripts/monitor.sh`):
+   - plain awk only (Ubuntu's mawk has no capture groups); nginx's access line is split on double quotes, so retried upstreams (`"0.002, 0.004"`) and nginx's own answers (`"-"`) parse;
+   - memory from MemAvailable, so the page cache does not count;
+   - the backup age from a root-owned, world-readable `/var/lib/sirat/last-backup` (`created_at` and `sha256` only), which `backup.sh` writes after each upload that worked: the backup directory stays root-only, and a failed run never makes the check look fresh.
+6. **The heartbeat:** success only with no critical check; otherwise `/fail` with the check names (never values). ops-check that cannot run counts as critical (`monitor`). While `deploy.sh` holds its lock, `/fail` is held back.
+7. **The digest:** once per Asia/Dhaka day, guarded by an `ops.digest` audit row carrying the date (YYYYMMDD), not by a cache key that could be evicted. Counts and kinds only.
+8. **The ops commands read their settings explicitly** (`apps/api/src/cli/ops-env.ts`). `validateEnv` cannot run outside the Nest app: it converts numbers through decorator metadata, which tsx does not emit and which needs `reflect-metadata`.
+   - This also fixes L10's `ops-alert`, whose `main()` failed on every numeric setting; its integration test called `raiseOpsAlert` directly and never ran `main()`. Both commands now ran end to end against the test database and Redis.
+   - Their email queue is created after the Redis clients connect: BullMQ connected the client itself first, so `connect()` threw.
+9. **`healthcheck.sh`'s exact 200** came with L3 (#37), so L11 leaves it alone.
 
 ## 2026-11-01 — Free book: API, schema and the cover upload (Claude; payments PR 6a, plan §16, owner B1–B5)
 

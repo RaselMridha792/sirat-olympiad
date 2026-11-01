@@ -77,6 +77,7 @@ BACKUP_RECIPIENTS=$T/recipients.txt
 BACKUP_REMOTE=testremote:$T/remote
 RCLONE_CONFIG=$T/rclone.conf
 BACKUP_HEARTBEAT_URL=https://hc.test/ping/abc
+BACKUP_STATUS_FILE=$T/lock/last-backup
 EOF
   for line in "$@"; do printf '%s\n' "$line" >> "$T/backup.env"; done
   chmod 600 "$T/backup.env"
@@ -120,6 +121,10 @@ ok=1
 [ "$(wc -l < "$T/pings.log")" -eq 1 ] && grep -q 'https://hc.test/ping/abc$' "$T/pings.log" && ok=0
 result "$ok" "the heartbeat gets one success ping"
 ok=1
+[ "$(cat "$T/lock/last-backup")" = "$(printf 'created_at=%s\nsha256=%s' "$(field "$m" created_at)" "$(field "$m" sha256)")" ] &&
+  [ "$(stat -c '%a' "$T/lock/last-backup")" = 644 ] && ok=0
+result "$ok" "monitor.sh's status file holds only the copy's created_at and sha256, readable by all (L11)"
+ok=1
 [ "$(stat -c '%a' "$T/backups")" = 700 ] && [ "$(stat -c '%a' "$f")" = 600 ] &&
   [ -z "$(find "$T/backups" -name '.work.*' -o -name '*.dump')" ] && ok=0
 result "$ok" "the copies are owner-only and no plain dump is left"
@@ -135,13 +140,15 @@ fi
 rm -f "$T/plain.dump"
 result "$ok" "the throwaway key decrypts the upload and the restored counts match the manifest"
 
-# 3. A dump killed midway.
+# 3. A dump killed midway (and the status file stays as it was: a failed run never looks fresh).
+cp "$T/lock/last-backup" "$T/status.before"
 : > "$T/pings.log"
 status=0; KILL_DUMP=1 run_backup || status=$?
 ok=1
 [ "$status" -ne 0 ] && [ "$(copies)" -eq 1 ] && [ -z "$(find "$T/backups" -name '.work.*')" ] &&
   [ "$(find "$T/remote/hourly" -type f | wc -l)" -eq 2 ] && last_ping | grep -q '/fail$' && ok=0
 result "$ok" "a dump killed midway leaves no new copy (nor its .work.* after the next run's start), pings /fail"
+result "$(cmp -s "$T/status.before" "$T/lock/last-backup" && echo 0 || echo 1)" "a failed run leaves the status file unchanged"
 
 # 3b. The ops alert (L10): raised through the API with the step's number; when the API cannot raise it, the run still
 #     fails with /fail.
@@ -258,8 +265,9 @@ config "BACKUP_REMOTE=none"
 : > "$T/pings.log"
 status=0; run_backup || status=$?
 ok=1
-[ "$status" -eq 0 ] && grep -q 'NOT off the server' "$T/out.log" && [ ! -s "$T/pings.log" ] && ok=0
-result "$ok" "BACKUP_REMOTE=none keeps a local copy, says it is not off the server, and pings nothing"
+[ "$status" -eq 0 ] && grep -q 'NOT off the server' "$T/out.log" && [ ! -s "$T/pings.log" ] &&
+  ! grep -q "created_at=$(field "$(newest manifest.json)" created_at)" "$T/lock/last-backup" && ok=0
+result "$ok" "BACKUP_REMOTE=none keeps a local copy, says it is not off the server, pings nothing, and is not the last backup"
 
 # 11. The configuration.
 config

@@ -58,7 +58,9 @@ export interface ApiInit extends RequestInit {
 function send(path: string, init: RequestInit): Promise<Response> {
   const method = (init.method ?? 'GET').toUpperCase();
   const headers = new Headers(init.headers);
-  if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  // JSON by default; a FormData body (a file upload) keeps the browser's multipart type with its boundary.
+  if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type'))
+    headers.set('Content-Type', 'application/json');
   if (method !== 'GET') headers.set('X-Requested-With', 'sirat-web');
   return fetch(`/api${path}`, { ...init, headers, credentials: 'same-origin', cache: 'no-store' });
 }

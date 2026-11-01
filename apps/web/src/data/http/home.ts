@@ -71,14 +71,16 @@ export function studentHome(get: ApiGet): Pick<DataSource['student'], 'getHome'>
   const announcements = studentAnnouncements(get);
   return {
     async getHome(): Promise<StudentHome> {
+      // The profile is required (the page needs the name). Every other section falls back on its own, so a
+      // payments or exams hiccup never turns the whole home into the error state (lead, C5a).
       const [me, list, latest, registration] = await Promise.all([
         profile.getProfile(),
-        exams.listExams(),
-        announcements.listAnnouncements({ page: 1, pageSize: 3 }),
-        getJson(get, '/registrations/me', isMyRegistration),
+        orElse(exams.listExams(), []),
+        orElse(announcements.listAnnouncements({ page: 1, pageSize: 3 }), { items: [] }),
+        orElse(getJson(get, '/registrations/me', isMyRegistration), null),
       ]);
       const next = pickNextExam(list);
-      const detail = next ? await exams.getExam(next.id) : null;
+      const detail = next ? await orElse(exams.getExam(next.id), null) : null;
       return {
         user: { name: me.name, category: me.category },
         currentRound: null,
@@ -97,8 +99,26 @@ export function studentHome(get: ApiGet): Pick<DataSource['student'], 'getHome'>
               }
             : null,
         latestAnnouncements: latest.items,
-        registration: pickRegistration(registration),
+        registration: registration && pickRegistration(registration),
       };
     },
   };
+}
+
+/** Next's own control flow (redirect to /refresh after a 401, notFound): never swallowed by a fallback. */
+export const isNextControlFlow = (e: unknown) =>
+  typeof e === 'object' &&
+  e !== null &&
+  'digest' in e &&
+  typeof e.digest === 'string' &&
+  /^NEXT_(REDIRECT|HTTP_ERROR_FALLBACK|NOT_FOUND)/.test(e.digest);
+
+/** A section's value, or its fallback when the section fails (any error but Next's control flow). */
+async function orElse<T, F>(promise: Promise<T>, fallback: F): Promise<T | F> {
+  try {
+    return await promise;
+  } catch (e) {
+    if (isNextControlFlow(e)) throw e;
+    return fallback;
+  }
 }

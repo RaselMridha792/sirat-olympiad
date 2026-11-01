@@ -27,6 +27,8 @@ export const unavailableSource: DataSource = {
     getReview: fail,
     listAnnouncements: fail,
     getAmbassador: fail,
+    getBook: fail,
+    getBookOrder: fail,
   },
   leaderboard: { get: fail },
   admin: {
@@ -44,5 +46,7 @@ export const unavailableSource: DataSource = {
     listPayments: fail,
     getPayment: fail,
     listSettings: fail,
+    getBook: fail,
+    listBookOrders: fail,
   },
 };

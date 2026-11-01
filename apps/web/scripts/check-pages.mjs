@@ -5,7 +5,8 @@
 //   node scripts/check-pages.mjs leak [baseUrl]
 //     Dev server only. ?mock=leak injects canary fields (scores, times, other people's emails,
 //     answer keys) into every student-facing response. Each student page must still render and
-//     its HTML (including the inline RSC payload) must contain none of them.
+//     its HTML (including the inline RSC payload) must contain none of them. Pages only an ambassador
+//     may open (src/lib/access.ts) are checked the same way with CHECK_AMBASSADOR_EMAIL / _PASSWORD.
 //
 //   node scripts/check-pages.mjs prod [baseUrl]
 //     Production server whose data source is not connected yet. Every dashboard page must render the app shell,
@@ -155,20 +156,45 @@ async function leakMode() {
       continue;
     }
     checked += 1;
-    // Visible markup only: the layout legitimately ships the translated error strings in its
-    // inline RSC payload (for client error boundaries), so look outside <script> for those.
-    const visible = html.replace(/<script[\s\S]*?<\/script>/g, '');
-    if (res.status !== 200) fail(url, `HTTP ${res.status} ${res.headers.get('location') ?? ''}`);
-    if (!visible.includes('<h1')) fail(url, 'no <h1> rendered');
-    // <!--$!--> marks a Suspense boundary that errored on the server and fell back to the client.
-    if (visible.includes('<!--$!-->') || ERROR_TEXT.some((t) => visible.includes(`>${t}<`))) {
-      fail(url, 'rendered the error state');
-    }
-    if (url.startsWith('/dashboard/leaderboard') && /@example\.(com|invalid)/.test(html)) {
-      fail(url, 'an email address appears on the student leaderboard');
+    checkLeakRender(url, res, html);
+  }
+  // Pages only an ambassador may open (the panel), with an ambassador's session: the same canary scan.
+  const ambassadorOnly = STUDENT_ROUTES.filter(
+    ({ route }) =>
+      decideAccess(route, 'student').kind === 'not-found' &&
+      decideAccess(route, 'ambassador').kind === 'ok',
+  );
+  if (ambassadorOnly.length) {
+    const ambassador = `sirat_access=${await sessionFor('ambassador')}`;
+    for (const { url } of ambassadorOnly) {
+      const res = await fetch(base + withParam(url, 'mock', 'leak'), {
+        headers: { 'accept-language': 'en', cookie: ambassador },
+        redirect: 'manual',
+      });
+      const html = await res.text();
+      for (const needle of LEAK_NEEDLES)
+        if (html.includes(needle)) fail(url, `leaked canary "${needle}" (ambassador)`);
+      checked += 1;
+      checkLeakRender(url, res, html);
     }
   }
   return checked;
+}
+
+/** A page that may be opened: rendered with its heading, never the error state, no email on the leaderboard. */
+function checkLeakRender(url, res, html) {
+  // Visible markup only: the layout legitimately ships the translated error strings in its
+  // inline RSC payload (for client error boundaries), so look outside <script> for those.
+  const visible = html.replace(/<script[\s\S]*?<\/script>/g, '');
+  if (res.status !== 200) fail(url, `HTTP ${res.status} ${res.headers.get('location') ?? ''}`);
+  if (!visible.includes('<h1')) fail(url, 'no <h1> rendered');
+  // <!--$!--> marks a Suspense boundary that errored on the server and fell back to the client.
+  if (visible.includes('<!--$!-->') || ERROR_TEXT.some((t) => visible.includes(`>${t}<`))) {
+    fail(url, 'rendered the error state');
+  }
+  if (url.startsWith('/dashboard/leaderboard') && /@example\.(com|invalid)/.test(html)) {
+    fail(url, 'an email address appears on the student leaderboard');
+  }
 }
 
 /** The visible text and markup of a settled page. */
