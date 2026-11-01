@@ -57,6 +57,16 @@ beforeAll(async () => {
   gradeLevelId = (await prisma.gradeLevel.findUniqueOrThrow({ where: { sortOrder: 5 } })).id;
   redis = new Redis(process.env.REDIS_CACHE_URL as string, { maxRetriesPerRequest: 1 });
   await redis.del('registration:info', 'reg:payments-paused');
+  // The per-email and per-phone attempt counters live an hour, and some tests use fixed numbers: a rerun within the
+  // hour must not meet the last run's counts.
+  for (const pattern of ['reg:e:*', 'reg:p:*']) {
+    let cursor = '0';
+    do {
+      const [next, keys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 500);
+      if (keys.length > 0) await redis.del(...keys);
+      cursor = next;
+    } while (cursor !== '0');
+  }
 
   const { AppModule } = await import('../src/app.module');
   const { configureApp } = await import('../src/configure-app');
