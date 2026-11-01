@@ -248,7 +248,38 @@ Credentials are read inside the postgres container; nothing secret is typed on t
 
 ## 6. Rebuild on a fresh VPS (< 1 hour)
 
-`scripts/bootstrap.sh` (scaffold prints the steps; implement and rehearse). Needs: repo, `.env`, latest backup.
+`scripts/bootstrap.sh` (L12), as root on a fresh Ubuntu 24.04 host. It is idempotent: every step looks first, and a run with nothing left to do prints `0 change(s) made`. Run it again after each owner step below.
+
+```bash
+# On the new host, as root (copy the script over, or take it from any checkout).
+bash bootstrap.sh --dry-run --authorized-keys keys.pub   # what it would change; changes nothing
+bash bootstrap.sh --authorized-keys keys.pub             # keys.pub: the owner's and one backup person's public keys
+# It ends with what is left for the owner:
+#   - deploy's public key on GitHub as a READ-ONLY deploy key; run bootstrap again (it clones /srv/sirat)
+#   - the values in /srv/sirat/.env, .env.deploy (the GitHub token), .env.monitor (the heartbeat URL) and
+#     /etc/sirat/backup.env (section 5); run bootstrap again (it enables the backup timers once the remote is set)
+#   - the provider's firewall panel: only 22, 80 and 443
+# Then, as deploy (sudo -iu deploy; cd /srv/sirat):
+git fetch origin && git checkout --detach <sha on main>   # the commit to deploy first
+scripts/deploy.sh --first && scripts/deploy.sh <sha>       # section 2 (the origin certificate first: section 15)
+# A rebuild after a loss: restore the newest backup before opening (section 5). Then the checks:
+scripts/prelaunch-check.sh
+```
+
+- **What it sets up:**
+  - Docker from Docker's own apt repository;
+  - UTC with chrony (the monitor's 02:00 UTC digest is 08:00 Asia/Dhaka);
+  - swap and `vm.overcommit_memory=1`; security updates without automatic reboot;
+  - the `deploy` user, in the docker group, with SSH keys only. Root and password logins go off only once deploy has keys (no lockout), and `sshd -t` checks the change first;
+  - UFW for the host, plus `sirat-docker-user.service`: Docker's published ports bypass UFW, so from outside only 80 and 443 may reach a container;
+  - fail2ban for SSH;
+  - the clone in `/srv/sirat` through a read-only deploy key, with GitHub's host key pinned;
+  - `/var/lib/sirat`;
+  - `.env`, `.env.deploy`, `.env.monitor` and `/etc/sirat/backup.env` from their examples, mode 600, never overwritten;
+  - the four backup units;
+  - the monitor's two cron lines (`/etc/cron.d/sirat-monitor`, output in the journal under `sirat-monitor`);
+  - one sudo rule: `deploy` may run `systemctl start sirat-backup.service`, and nothing else (checked with `visudo -cf`).
+- **Tests:** `bash scripts/test/run-bootstrap-test.sh` (an Ubuntu 24.04 container; CI runs it). It covers the dry run, the no-lockout rule, the whole setup, a second run that changes nothing, and an edited `.env` that is kept. Its first full run on a real host is the VPS (owner question Q4 without a VM), timed against the one-hour target.
 
 ## 7. Exam-day incident steps
 
@@ -304,7 +335,46 @@ Credentials are read inside the postgres container; nothing secret is typed on t
 
 Client: — · PayStation support: — · Email provider: Amazon SES (AWS account / support plan: —) · Hostinger support: — · Cloudflare: — · Owner (Rasel Mridha): —
 
-## 9. Pre-exam checklist (T-7 → T-0)
+## 9. Pre-launch checklist (T-7 → T-0)
+
+**This launch (registration and payment, 15 Nov; LAUNCH-PLAN section 12):**
+- **Sat 7 Nov:** on the VPS, in the order of section 6: bootstrap, the origin certificate, `deploy.sh --first`, Cloudflare and the firewall, the first release, the first admins, an outside port scan.
+- **Sun 8 – Mon 9:** on the VPS:
+  - the rehearsals: deploy, a second deploy, a forced rollback, a reboot, maintenance on and off;
+  - the backup timers, the first off-server copy, a failure alert;
+  - the outside monitors and a fake alert;
+  - the real-IP check on the three mobile operators.
+- **Tue 10 – Wed 11:**
+  - a restore drill on another machine;
+  - k6 with simulated shared IPs;
+  - the live merchant and one real payment.
+- **Thu 12, the release candidate:** `scripts/prelaunch-check.sh` with every line PASS (registration still closed) and the MANUAL lines done. It is the last day for non-critical deploys.
+- **Fri 13:** the freeze, from 00:00 (48 h). Rehearse the kill switches in order, each checked through the internal listener:
+  1. `registration_open=false`;
+  2. maintenance on (section 4);
+  3. `deploy.sh --rollback` (section 2).
+
+  After maintenance off, the public smoke must pass.
+- **Sat 14:** Rasel's go/no-go. A fresh backup minutes before opening; then registration opens through the audited admin setting, and someone watches the alerts.
+
+**The checks:**
+- [ ] `scripts/prelaunch-check.sh` on the VPS (`--registration closed` until opening, `open` after): every line PASS, never a value printed. It checks:
+  - only nginx publishes ports;
+  - `.env` mode 600, `APP_URL` https, `COOKIE_SECURE` not false;
+  - the runtime role (not the database owner); no development marker; no Mailpit;
+  - every app container on the recorded release; migrations up to date; the worker healthy;
+  - each API's PayStation boot line (live, the client's account and prefix, https callback and IPN);
+  - no fixture users, no test invoices, no published exam, the fee 40000, `registration_open` as intended;
+  - an off-server backup under 26 h old; SES; the page CSP;
+  - real client IPs through Cloudflare; the Cloudflare list under 90 days old;
+  - disk, swap and the clock.
+
+  Its MANUAL lines are the items below.
+- [ ] Cloudflare settings and TLS (section 15); the page CSP; an outside port scan shows only 22, 80 and 443.
+- [ ] Deploy, rollback and maintenance rehearsed on the VPS (sections 2 and 4).
+- [ ] An off-server backup and a passed restore drill (section 5); the runtime role (below).
+- [ ] The outside monitors, and a fake alert received (section 7).
+- [ ] The contacts filled in (section 8); the release SHA green on `main`.
 
 See `RULEBOOK.md` section 13: load test at 1.5–2× peak, backup + restore drill, 48 h code freeze, patches before freeze, monitoring + fake alert, Cloudflare verified, email deliverability, real small PayStation payment, rollback rehearsed, owner watching dashboards.
 
