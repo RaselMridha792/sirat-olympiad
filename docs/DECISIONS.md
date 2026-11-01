@@ -21,6 +21,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 7. **Tests:** `admin-stats.int-spec.ts` (6) and the `dhakaDays` unit spec.
    - `admin-stats.int-spec.ts` covers every count as a difference around its own rows (the test database is shared), the Dhaka day edges, the burst computing once, the cache serving the same `asOf`, the Postgres fallback, the roles, and the counts-only scan.
    - web: `http/stats.test.ts` (picks at every level, shape refusals).
+
 ## 2026-11-01 — Exam authoring screens (E5b; exam session, EXAM-PLAN §5, on E1's API)
 
 1. **Times are Bangladesh time whatever the admin's browser clock:** the form converts with a fixed UTC+6 (no daylight saving time in Bangladesh) and sends UTC. A wall-clock time that does not exist (30 February) is refused before sending. Announcements use the browser's clock; exam windows must not move with an admin abroad.
