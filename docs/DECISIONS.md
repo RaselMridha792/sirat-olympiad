@@ -28,6 +28,72 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - `rounds.int-spec.ts`: rounds and their rules; frozen criteria; promotion from Round 1 (in-category rank, ties, stale, the run, nothing overwritten, already promoted, the audit counts); the student's round, the profile and the stats; the source refusals; two simultaneous runs (one wins); promotion from a video round (close, unscored, stale after a score change, statuses, videos and scores kept); admins only; the CHECKs.
    - The test cleans its own rounds, because rounds are global data in the shared test database. `admin-stats` and `users-me` follow the new values.
    - web: the area file picks, the problem mapper (a message for every code in both languages), the criteria lines, the typed count.
+## 2026-11-01 — CSV question import (E7a; payments, exam's handover, lead)
+
+1. **A multipart upload, not a JSON body** (lead approved):
+   - `POST /admin/exams/:id/questions/import?dryRun=true|false`, one field `file`, read by `FileInterceptor` (memory storage, `fileSize` 1,000,000, `files` 1, `fields` 0), as the book cover is.
+   - Interceptors run after guards, so nothing is read for an anonymous caller or a non-admin (an anonymous 1 MB upload gets 401).
+   - The global 100 KB JSON limit and `configure-app.ts` are untouched (a test keeps 101 KB at 413). A JSON body would have needed a route-only parser before the guard, and express is not a direct dependency of the API.
+   - The cap of 1,000,000 bytes stays under nginx's `client_max_body_size 1m` (1,048,576 bytes) with room for the multipart framing; change both together.
+2. **UTF-8 is checked on the raw bytes** (`TextDecoder` with `fatal`): a Windows-1252 export is refused (`not_utf8`), never shown as broken Bangla. A BOM is allowed.
+3. **All rows or none, draft exams only.** One transaction under the exam's row lock re-reads the admin, checks every row and the duplicates against the active questions, then `createMany` and one audit row. A published exam is refused as `pool_fixed` even with a random draw: the import narrows EXAM-PLAN 4.1 (which lets a random-draw pool take new questions) to drafts, as exam's handover asked, because a bulk add would reshape every remaining draw at once. The dry run takes the same lock and writes nothing.
+4. **The reader is in-house** (`common/csv-read.ts`, RFC 4180, about 50 lines; no dependency). A stray quote is refused (`bad_quote`) rather than guessed. Line breaks inside a quoted cell are kept as LF.
+5. **Control characters are refused** (`control_character`; exam's review): `CONTROL_CHARACTERS` in `@sirat/shared` (C0 and DEL, tab and line feed allowed). U+0000 is valid UTF-8 but Postgres refuses it in text and jsonb, which would turn a bad cell into a 500. Exam uses the same pattern in `QuestionDto` (E7b).
+6. **Duplicates use the publish rule** (`normaliseText` in `exam-rules.ts`, now exported): NFKC, trimmed, spaces collapsed, lower case.
+7. **The audit row holds the count and the file's sha256**, never question text.
+8. **Problems are listed by spreadsheet row** (header = row 1; 0 = the whole file) and column, at most 200 in one answer (`truncated`).
+9. **Export later:** if questions are ever exported to CSV, use `csvCell` in `common/csv.ts`, which already prefixes a cell starting with `= + - @`, a tab or CR with `'`. The import does not strip such a prefix: there is no export yet.
+
+## 2026-11-01 — Exam simulation, local k6 (E6; exam session, EXAM-PLAN 6.2; provisional until the VPS)
+
+1. **The scenario** (`loadtests/exam-simulation.js`). One iteration is one student, as the exam room does it:
+   - login, the exam list and the waiting room;
+   - start; a checkpoint every 60–120 s;
+   - the submit with the room's backoff (2, 4, 8, 16, 30 s, the same request id), then the room must show the receipt.
+
+   2 % close the tab instead, so the sweep is part of every run. Three shapes: `steady` (every start within 30 s), `surge` (starts ramp to a rate within 60 s) and `timeup` (every timer ends at `window_end`).
+2. **What passes:**
+   - the k6 thresholds: API p95 < 500 ms and errors < 0.5 %, per endpoint too; every submit gets a receipt, and the room shows it;
+   - zero lost submissions: every attempt submitted and scored; the students' own submissions equal the receipts k6 received; the sweep submitted exactly the students who left;
+   - no Postgres writes while the students only checkpoint.
+3. **Where:** its own compose project `sirat-exam-load` (`infra/docker-compose.yml` + `loadtests/exam-load.compose.yml`).
+   - PgBouncer, 2 API replicas in production mode (1 core each, as in the base file), throwaway settings; k6 on the project's network, straight to the replicas. Nothing touched `sirat` or `sirat_exam`.
+   - **The first try** ran the API on the Windows host, with k6 in a container. 19 requests failed with `dial: i/o timeout`: Docker Desktop's host forwarding held new connections for 30 s at a time. Node closes idle keep-alive after 5 s, so every checkpoint opens a new connection. The PC's CPU was at 25 % then, and the API logged no error. Nothing in the local run crosses that boundary now.
+   - **The students** come from a guarded fixture (`loadtest-fixtures.ts`): the dev fixtures' four guards, the payments rule shape, and the API's own argon2 parameters, so a login never re-hashes. A mutation check proved the test catches library defaults.
+   - **k6 keeps the session cookies itself.** They carry `Secure` in production, and k6's cookie jar does not send them over plain http.
+4. **Results** (a 3-minute exam, 30 questions; p95 in ms; PC CPU over the run; peak CPU of one container, in % of one core):
+
+   | Run | API p95 | login | start | checkpoint | submit | Errors | Lost | Checkpoint writes | PC CPU (median / p90) | Peak api / postgres |
+   |---|---|---|---|---|---|---|---|---|---|---|
+   | steady 300 | 83 | 189 | 116 | 5 | 21 | 0 of 2,149 | 0 (293 receipts, 7 by the sweep) | 0 | 10 / 18 % | 28 / 10 % |
+   | surge 300 at 5/s | 39 | 59 | 39 | 8 | 33 | 0 of 2,127 | 0 (293, 6) | — | 20 / 41 % | 24 / 13 % |
+   | surge 500 at 10/s | **2,070** | **3,650** | **3,250** | 19 | 31 | 0 of 3,585 | 0 (486, 13) | — | 41 / **100 %** | 130 / 54 % |
+   | timeup 300 | 51 | 74 | 60 | 7 | 45 | 0 of 2,031 | 0 (296, 4) | — | 22 / 38 % | 26 / 20 % |
+
+5. **Reading the numbers:**
+   - **Correctness held in every run:** no lost submission, no error, and every student who left was submitted by the sweep. Checkpoints wrote nothing to Postgres.
+   - **The time-up burst is cheap.** 296 submits landed within about 20 s of `window_end` with a p95 of 45 ms, because a submit is one small insert and the scoring runs in the worker.
+   - **The surge is the expensive phase.** Each student costs an argon2 login plus the layout draw and the attempt's insert.
+   - **The per-core rate:** at 5 starts/s, each replica used about a quarter of a core for 2.5 starts/s, so roughly 10 starts/s per API core.
+   - **Why 10/s missed:** the run kept checkpoints and submits fast (p95 19 and 31 ms) but missed on login and start. Its API spike came with the whole PC at a p90 of 100 % CPU (k6's 500 VUs, the stack and the other sessions on one machine). The shared PC was the limit, not the API's quota.
+6. **For the VPS run** (RULEBOOK §13):
+   - **The load:** k6 from other machines through nginx, against a staging stack (`scripts/load-staging.sh`, RUNBOOK §18), at 1.5–2× the expected peak: about 5,700–7,600 concurrent attempts (OPEN-QUESTIONS #24). Use a 30-minute exam with the surge at 10 starts/s.
+   - **Recommendation:** keep 4 API replicas over the 8 vCPUs, with no start jitter (D12) unless the VPS surge misses 500 ms. If it misses, raise the replicas first. Only then consider jitter (0–30 s before the client's start), which costs students time inside their window.
+
+## 2026-11-01 — The fake PayStation as a container for load and staging stacks (Claude; payments, exam's load kit, lead)
+
+1. **Its own image, never in the api image:** `apps/api/test/fake-paystation/Dockerfile` builds from that folder alone.
+   - It bundles the two source files with the workspace's esbuild version, and the final image holds one JS file on node:22-slim, running as `node`.
+   - The root `.dockerignore` still keeps `apps/api/test` out of every other image, and CI's image-contents check is unchanged.
+2. **An overlay, not a change to the main file:** `infra/fake-paystation.compose.yml` adds `fake-paystation` (internal port 18090, nothing published, read-only, a healthcheck on `GET /__fake/health`).
+   - It points api and worker at it: `PAYSTATION_ENV=fake`, placeholder credentials, the IPN straight to `http://api:4000`.
+   - The environment beats `env_file`, so real PayStation credentials in a server's `.env` are never used by such a stack.
+3. **`NODE_ENV=development` for api and worker in that stack:** the API refuses `PAYSTATION_ENV=fake` under `production`, a money safeguard that stays as it is.
+   - In the API, `development` only means debug logs (the overlay pins `LOG_LEVEL=info`), no https or Secure-cookie check, no superuser check, and no security-alert emails.
+   - It is the same image and the same code paths.
+   - The rejected alternative was a flag that allows the fake under `production`: one wrong line in the real `.env` would then mark registrations paid without money.
+4. **The fake gained** `FAKE_PAYSTATION_HOST` (0.0.0.0 in a container), `FAKE_PAYSTATION_PUBLIC_URL` (the base of its checkout links) and `GET /__fake/health`.
+5. **CI** (the stack job, last step): it builds the image, restarts api and worker on the fake, and checks that everything is healthy, that no port is published, that the health route answers by service name, and that `/api/registrations/info` through nginx shows the fee, i.e. the api accepted the fake.
 
 ## 2026-11-01 — Ambassador teams (core C5b-3; lead's plan and rules)
 
