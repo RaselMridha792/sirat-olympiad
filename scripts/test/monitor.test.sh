@@ -121,6 +121,27 @@ ok=1
   ok=0
 result "$ok" "the backup age from backup.sh's status file, the certificate and time sync"
 ok=1
+[ "$(fact trustedGeneratorsMinutesLeft)" = null ] && ok=0
+result "$ok" "no trusted-generators file (A2's loadtest-realip): null, so the check stays ok"
+generators() { # $1 = the file's first line
+  printf '%s\nset_real_ip_from 203.0.113.5;\n' "$1" > "$T/loadtest-realip.local.conf"
+  config "MONITOR_GENERATORS_FILE=$T/loadtest-realip.local.conf"
+  reset
+  FAKE_OPS_OUT="$CLEAN" run_monitor --dry-run || true
+  fact trustedGeneratorsMinutesLeft
+}
+v=$(generators "# expires $(date -u -d "@$((NOW + 90 * 60 + 30))" +%Y-%m-%dT%H:%M:%SZ)")
+ok=1; [[ "$v" =~ ^(89|90)$ ]] && ok=0
+result "$ok" "trusted generators on: the minutes until the file's expiry line ($v)"
+v=$(generators "# expires $(date -u -d "@$((NOW - 30))" +%Y-%m-%dT%H:%M:%S.000Z)")
+ok=1; [ "$v" = -1 ] && ok=0
+result "$ok" "past the expiry by 30 s: negative at once ($v), with fractional seconds parsed"
+v=$(generators "set_real_ip_from 203.0.113.9;")
+ok=1; [ "$v" = -1 ] && ok=0
+result "$ok" "a file without a readable expiry line counts as expired ($v)"
+rm -f "$T/loadtest-realip.local.conf"
+config
+ok=1
 grep -q 'exec -T api node dist/cli/ops-check.js --dry-run' "$T/calls.log" && [ ! -s "$T/pings.log" ] &&
   [ ! -e "$T/lib/monitor-state.json" ] && grep -q 'compose -p sirat-monitor-test' "$T/calls.log" && ok=0
 result "$ok" "a dry run passes --dry-run, pings nothing, keeps no state, and names the compose project"

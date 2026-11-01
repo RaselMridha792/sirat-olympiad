@@ -52,12 +52,14 @@ STATE_FILE="$(cfg MONITOR_STATE_FILE /var/lib/sirat/monitor-state.json)"
 DEPLOY_LOCK="$(cfg MONITOR_DEPLOY_LOCK /var/lib/sirat/deploy.lock)"
 BACKUP_STATUS="$(cfg MONITOR_BACKUP_STATUS /var/lib/sirat/last-backup)"
 CERT_FILE="$(cfg MONITOR_CERT_FILE infra/nginx/certs/origin.pem)"
+GENERATORS_FILE="$(cfg MONITOR_GENERATORS_FILE infra/nginx/loadtest-realip.local.conf)"
 read -r -a DISK_PATHS <<< "$(cfg MONITOR_DISK_PATHS '/ /var/lib/docker')"
 PROC="$(cfg MONITOR_PROC /proc)"
 CPU_SAMPLE="$(cfg MONITOR_CPU_SAMPLE_SECONDS 1)"
 read -r -a COMPOSE_FILES <<< "$(cfg MONITOR_COMPOSE_FILES infra/docker-compose.yml)"
 read -r -a ENV_FILES <<< "$(cfg MONITOR_COMPOSE_ENV_FILES .env)"
 case "$CERT_FILE" in /*) ;; *) CERT_FILE="$ROOT/$CERT_FILE" ;; esac
+case "$GENERATORS_FILE" in /*) ;; *) GENERATORS_FILE="$ROOT/$GENERATORS_FILE" ;; esac
 
 DC=(docker compose -p "$PROJECT")
 for f in "${ENV_FILES[@]}"; do case "$f" in /*) DC+=(--env-file "$f") ;; *) DC+=(--env-file "$ROOT/$f") ;; esac; done
@@ -148,6 +150,22 @@ backup_age_hours() { # backup.sh writes created_at=... after each upload that wo
   printf '%d' $(((NOW - $(date -u -d "$created" +%s)) / 3600))
 }
 
+# Trusted load-test generators (A2's scripts/loadtest-generators.sh): nginx takes any client address from them while
+# its file exists. Minutes until the `# expires <UTC ISO 8601>` first line; negative once past it, or when the line
+# cannot be read; nothing when the file is absent (off).
+trusted_generators_minutes_left() {
+  [ -e "$GENERATORS_FILE" ] || return 0
+  local expires=''
+  [ -r "$GENERATORS_FILE" ] && expires="$(sed -n '1s/^# expires \([0-9][0-9TZ:.+-]*\)$/\1/p' "$GENERATORS_FILE")"
+  local at
+  if [ -n "$expires" ] && at="$(date -u -d "$expires" +%s 2>/dev/null)"; then
+    # Rounded down, so a second past the expiry is already -1 (bash division truncates toward zero).
+    if [ "$at" -ge "$NOW" ]; then printf '%d' $(((at - NOW) / 60)); else printf '%d' $(((at - NOW - 59) / 60)); fi
+  else
+    printf '%d' -1
+  fi
+}
+
 time_synced() {
   local v
   v="$(timedatectl show -p NTPSynchronized --value 2>/dev/null || true)"
@@ -166,8 +184,9 @@ host_facts_json() {
   printf '"requests":%s,"responses5xx":%s,"apiP95Ms":%s,"webRenderErrors":%s,"api5xxLogged":%s,' \
     "$(num_or_null "$requests")" "$(num_or_null "$errors")" "$(num_or_null "$(p95_ms "$times")")" \
     "$(num_or_null "$(log_count web 'digest')")" "$(num_or_null "$(log_count api '"statusCode":5[0-9][0-9]')")"
-  printf '"certificateDaysLeft":%s,"backupAgeHours":%s,"timeSynced":%s}' \
-    "$(num_or_null "$(certificate_days_left)")" "$(num_or_null "$(backup_age_hours)")" "$(time_synced)"
+  printf '"certificateDaysLeft":%s,"backupAgeHours":%s,"timeSynced":%s,"trustedGeneratorsMinutesLeft":%s}' \
+    "$(num_or_null "$(certificate_days_left)")" "$(num_or_null "$(backup_age_hours)")" "$(time_synced)" \
+    "$(num_or_null "$(trusted_generators_minutes_left)")"
   rm -f "$times"
 }
 
