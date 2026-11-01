@@ -780,3 +780,21 @@ select r.name, e.status, count(*), count(e.video_url) as with_video from round_e
 select r.name, a.category, count(distinct a.judge_id) as judges from jury_assignments a join rounds r on r.id = a.round_id group by 1, 2 order by 1, 2;
 SQL
 ```
+
+## 22. Certificates (core C6c-1)
+
+- **Issue** on `/admin/certificates`: choose the type and the round, then "Issue". The answer says how many qualify now; the worker issues them within seconds (refresh the list). Asking twice is safe: anyone who has one already is skipped.
+  - Participation: after Round 1's exam results are published (§20). Archive a replaced Round 1 exam first, or its students count too.
+  - Promotion: for a round after Round 1, once its entries exist (after the promotion into it).
+  - Winners: in the final round, the winners' emails (one per line) and a reason.
+- **"The background queue does not answer"**: the queue Redis is down or slow (§7). Nothing was issued; ask again when it is back. A job that failed three times is kept 7 days, and `ops-check` reports it (queue `certificates`).
+- **Revoke** a wrong certificate on `/admin/certificates` with a reason. It stops checking online at once; it is never deleted, and the same student cannot get the same one again (one per type and round).
+- **The public check** is `/verify/<code>`, printed on the certificate. It shows only the name and the award; a revoked or unknown code shows "No valid certificate". One network can check 30 times a minute.
+- **The PDF** is not built yet (C6c-2, after the owner approves the library): students see "comes soon".
+- **Check the counts** (no names):
+
+```bash
+$DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+select r.name, c.type, count(*) filter (where c.revoked_at is null) as valid, count(c.revoked_at) as revoked from certificates c join rounds r on r.id = c.round_id group by 1, 2 order by 1, 2;
+SQL
+```
