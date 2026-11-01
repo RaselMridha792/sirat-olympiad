@@ -13,6 +13,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 5. **The drill runs on loopback only** (it refuses any port bound beyond 127.0.0.1) and wipes only containers that carry its project label, never project `sirat`.
 6. **The drill never builds:** its images must be of the dump's code (`--tag`). A first local run failed for that reason: the PC's `latest` images predated L2.
 7. **The round trip** (admin A, a dump, admin B; A logs in, B does not; then the beside mode over the running drill) runs from a tools container, with the clone in a Docker volume so compose's relative bind mounts name a path the daemon has (as in L9's rehearsal). CI runs it in the docker job.
+
 ## 2026-11-01 — Ambassador tasks (core C5b-2; lead's plan, defaults and rules)
 
 1. **Approval is final** (lead's default): one transaction with a row lock writes the ledger row `task:<assignmentId>` (task points, `task_id`, `created_by`) `ON CONFLICT DO NOTHING` and sets `approved`. A double click or three admins at once award once; a mistake is corrected with "Adjust points" (C5b-1), so the ledger stays append-only.
