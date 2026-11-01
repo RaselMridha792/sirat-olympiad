@@ -27,6 +27,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 9. **Tests:**
    - `ambassador-tasks.int-spec.ts` (10): task life cycle and refusals; assignment eligibility; submit, the queue and one award; three concurrent approvals award once; reject and resubmit with no proof or note in any audit row; own-assignment, archived and revoked refusals; the submit limit; admin only; the CHECKs.
    - web: the area file picks, the problem mapper.
+
 ## 2026-11-01 — The runtime database role sirat_app (Claude; LAUNCH-PLAN L2, OPEN-QUESTIONS #27)
 
 1. **Two roles:**
