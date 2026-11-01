@@ -18,6 +18,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    The server still decides, and a refusal lists every reason it gave (publish can fail several checks at once).
 5. **No round field** until rounds have an API (core C6): a new exam has none.
 6. **A browser e2e, `e2e:exam-admin`,** run on the exam session's own throwaway database. Like `e2e:exam`, it is a by-hand stack test, not a CI step.
+
 ## 2026-11-01 — Registration surge, local k6 (Claude; payments PR 5, plan step 13; provisional until the VPS)
 
 1. **The scenario** (`loadtests/registration-surge.js`). One iteration is one student, as the browser would do it:
