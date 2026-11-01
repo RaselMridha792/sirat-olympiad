@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { errorLogFields } from '../../common/all-exceptions.filter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AttemptStore } from './attempt-store';
 import { timeTakenSeconds } from './exam-time';
@@ -79,6 +80,10 @@ export class ExamJobs {
   /**
    * The minute sweep: (1) attempts past `ends_at + grace` with no submit are submitted from their last checkpoint (or
    * empty); (2) finalized attempts still unscored are scored; (3) closed exams with nothing unfinished get results.
+   * Each item is tried on its own: one that throws (a lock or statement timeout under load, a bad row) never stops the
+   * others, so results are never held back behind it. The run then fails, so the worker logs it and L11's failed_jobs
+   * check alerts, and the next sweep (a minute later) tries that item again. A finalize that loses its row to
+   * SKIP LOCKED is not an error: the next sweep takes the row again.
    */
   async sweep(): Promise<{ finalized: number; scored: number; built: number }> {
     const finalizeAfterSeconds = this.timing.finalizeAfterMs / 1000;
@@ -88,8 +93,18 @@ export class ExamJobs {
       WHERE a."status" = 'in_progress'
         AND a."ends_at" < now() - make_interval(secs => e."grace_seconds" + ${finalizeAfterSeconds}::float8)
       ORDER BY a."ends_at" LIMIT ${SWEEP_BATCH}`;
+    let failed = 0;
+    const each = async <T>(step: string, id: string, run: () => Promise<T>): Promise<T | null> => {
+      try {
+        return await run();
+      } catch (err) {
+        failed++;
+        this.logger.warn({ msg: 'exam sweep item failed', step, id, ...errorLogFields(err) });
+        return null;
+      }
+    };
     let finalized = 0;
-    for (const { id } of due) if (await this.finalize(id)) finalized++;
+    for (const { id } of due) if (await each('finalize', id, () => this.finalize(id))) finalized++;
 
     const unscored = await this.prisma.$queryRaw<{ id: string }[]>`
       SELECT "id" FROM "attempts"
@@ -97,7 +112,7 @@ export class ExamJobs {
         AND ("submitted_at" < now() - make_interval(secs => ${this.timing.rescoreAfterMs / 1000}::float8) OR "id" = ANY(${due.map((d) => d.id)}::uuid[]))
       LIMIT ${SWEEP_BATCH}`;
     let scored = 0;
-    for (const { id } of unscored) if (await this.score(id)) scored++;
+    for (const { id } of unscored) if (await each('score', id, () => this.score(id))) scored++;
 
     const buildAfterSeconds = this.timing.buildAfterMs / 1000;
     const closed = await this.prisma.$queryRaw<{ id: string }[]>`
@@ -109,10 +124,15 @@ export class ExamJobs {
           WHERE a."exam_id" = e."id" AND a."status" IN ('in_progress', 'submitted', 'expired'))
       LIMIT 20`;
     let built = 0;
-    for (const { id } of closed) if ((await this.buildResults(id)) === 'built') built++;
+    for (const { id } of closed)
+      if ((await each('build', id, () => this.buildResults(id))) === 'built') built++;
 
-    if (finalized || scored || built)
-      this.logger.log({ msg: 'exam sweep', finalized, scored, built });
+    if (finalized || scored || built || failed)
+      this.logger.log({ msg: 'exam sweep', finalized, scored, built, failed });
+    if (failed)
+      throw new Error(
+        `exam sweep: ${failed} item(s) failed; the others went on, and the next sweep tries again`,
+      );
     return { finalized, scored, built };
   }
 
