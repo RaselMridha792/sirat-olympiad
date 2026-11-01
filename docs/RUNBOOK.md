@@ -85,6 +85,10 @@ Load test of registration and payment (`loadtests/registration-surge.js`, paymen
 - Then `prisma migrate deploy` and `pnpm --filter @sirat/api db:seed` with that environment, open registration in that database only (`update settings set value = 'true'::jsonb where key = 'registration_open'`), start the fake with `FAKE_PAYSTATION_IPN_URL=http://127.0.0.1:<api port>/api/payments/paystation/ipn`, then `node --env-file=.env dist/main.js` and `dist/worker.js`, and run `k6 run -e BASE_URL=http://127.0.0.1:<api port> loadtests/registration-surge.js` (options: `loadtests/README.md`).
 - Afterwards: `docker stop sirat-pay-load-pg sirat-pay-load-redis sirat-pay-load-mail` (`--rm` removes them and their data).
 - On the VPS (DoD #17): a staging stack with the fake, k6 from another machine through nginx. Through nginx the generator's single address meets the start limit (300/min per IP): keep `RATE` at 4 or less per generator machine, or use more machines.
+- **The fake as a container** (load and staging stacks, never production): `infra/fake-paystation.compose.yml` adds `fake-paystation`, built from `apps/api/test/fake-paystation/Dockerfile`. It listens on port 18090 inside the project, with nothing published, and points the api and the worker at it.
+  - Add it with `docker compose --env-file .env -f infra/docker-compose.yml -f infra/fake-paystation.compose.yml up -d --build`. exam's load overlay stacks on top.
+  - That project runs api and worker with `NODE_ENV=development`, because the API refuses the fake under `production` (DECISIONS).
+  - Its checkout links use `FAKE_PAYSTATION_PUBLIC_URL` (default `http://fake-paystation:18090`, for k6 inside the project), and the payer comes back through `FAKE_PAYSTATION_CALLBACK_BASE` (default `http://nginx`).
 
 ## 1. Status and logs
 
@@ -353,6 +357,25 @@ scripts/prelaunch-check.sh
 | `backup_age` | no off-server backup in 26 h (critical) | `journalctl -u sirat-backup.service -n 50` (section 5) |
 | `time_sync` | the clock is not synchronised | `timedatectl`; `systemctl restart systemd-timesyncd` |
 | `monitor` (heartbeat only) | ops-check could not run | the api container: `$DC ps api`, `$DC logs --tail=50 api` |
+
+**The exam window, step by step** (E6; the load test behind it: `loadtests/README.md`):
+- **The day before:** `/admin/exams/<id>` shows the exam published, with the right window, duration and question count, and `scripts/monitor.sh --dry-run` shows no critical check. From then on no deploy, no `.env` change and no restart of api or worker until the window plus its grace is over (CLAUDE.md DON'T 12).
+- **During the window:** the ops alerts (`workers`, `queue_backlog`, `failed_jobs`, `api_p95`, `http_5xx`) are the watch list. Checkpoints go to the cache Redis only, so Postgres stays quiet while students write; a busy Postgres in the middle of an exam means something else is writing. Two numbers should stay at 0 (the sweep finalizes the first every minute, and the worker scores the second within seconds):
+
+  ```bash
+  $DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+  -- attempts still open more than 2 minutes after their time and grace: the sweep is not running
+  SELECT count(*) FROM attempts a JOIN exams e ON e.id = a.exam_id
+  WHERE a.status = 'in_progress' AND a.ends_at + e.grace_seconds * interval '1 second' < now() - interval '2 minutes';
+  -- submissions not scored after 5 minutes: the scoring jobs are not running
+  SELECT count(*) FROM attempts WHERE status = 'submitted' AND submitted_at < now() - interval '5 minutes';
+  SQL
+  ```
+
+  Either above 0: `$DC ps worker`, `$DC logs --since 10m worker | grep -E 'exam sweep|score'`, then `$DC up -d --no-deps --no-build worker` (the worker only; students keep writing, since the API holds the checkpoints and takes the submits). The sweep and the scoring are idempotent: once the worker is back, it catches up by itself.
+- **An outage during the window** (students could not reach the site): extend the window, while it is still open, on the exam's edit page (`windowEnd` later, with a reason; audited). Attempts already started keep their end time; only students who have not started yet gain the time. Tell the owner.
+- **After the window:** within a minute of `window_end` plus the grace the sweep has submitted every open attempt from its last checkpoint (`server_checkpoint`), or as empty when there was none (`server_empty`). Then `/admin/exams/<id>` → Results: every attempt scored → Build → check the leaderboard → Publish. The database refuses results before the window and grace are over for everyone. Unpublish takes them back down if something is wrong.
+- **A student says "my answers are gone":** the attempt's own submission is the record (`/admin/exams/<id>` → attempts: the end reason, submit time, violation count, events and, once scored, the score). The browser keeps its copy and retries a failed submit with the same request id until a receipt arrives, so a lost submit shows as `server_checkpoint` with the last checkpoint's answers, never as nothing.
 
 **Site slow:** `docker stats` (CPU/RAM) → PgBouncer waiting clients (`SHOW POOLS;`) → slow queries (log > 500 ms) → queue depth/failed jobs (BullMQ) → API p95 in monitoring → consider `--scale api=N`, then tell the owner.
 **Site down:** `$DC ps` → Nginx logs → `df -h` (disk full?) → Postgres/Redis health → restart failing service → if data loss suspected, restore plan (section 5).
