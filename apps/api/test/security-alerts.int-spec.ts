@@ -22,6 +22,19 @@ import type { PrismaService } from '../src/prisma/prisma.service';
 import { QUEUE_REDIS_OPTIONS } from '../src/redis/redis.module';
 import { testPrisma } from './helpers';
 
+// The limiter withholds an email when Redis has not answered within 300 ms (by design: no Redis, no email). On a
+// loaded machine a reply can take longer, and an alert these tests expect in the inbox was held back. The file proves
+// the audit-first order, the limits and the content, not that timeout, so every withTimeout here waits 20 times
+// longer (a dead client still fails at once: the limiter and the queue check its status first).
+jest.mock('../src/common/with-timeout', () => {
+  const actual = jest.requireActual<typeof import('../src/common/with-timeout')>(
+    '../src/common/with-timeout',
+  );
+  return {
+    withTimeout: <T>(promise: Promise<T>, ms: number) => actual.withTimeout(promise, ms * 20),
+  };
+});
+
 const MAILPIT = process.env.MAILPIT_URL ?? 'http://127.0.0.1:18025';
 const QUEUE = `email-test-${randomUUID()}`;
 const run = randomUUID().slice(0, 8);
@@ -32,6 +45,7 @@ const audit = new AuditService(prisma as unknown as PrismaService);
 let queueRedis: Redis;
 let cacheRedis: Redis;
 let emails: EmailQueue;
+let raw: Queue;
 let worker: EmailWorker;
 const background = new BackgroundTasks();
 
@@ -40,6 +54,7 @@ beforeAll(async () => {
   cacheRedis = new Redis(process.env.REDIS_CACHE_URL as string, { maxRetriesPerRequest: 1 });
   await Promise.all([queueRedis.ping(), cacheRedis.ping()]);
   emails = new EmailQueue(queueRedis, QUEUE);
+  raw = new Queue(QUEUE, { connection: queueRedis });
   const config = { get: () => process.env.REDIS_QUEUE_URL } as unknown as ConfigService<
     EnvVars,
     true
@@ -52,7 +67,6 @@ afterAll(async () => {
   await background.idle();
   await worker.onApplicationShutdown();
   await emails.onApplicationShutdown();
-  const raw = new Queue(QUEUE, { connection: queueRedis });
   await raw.obliterate({ force: true });
   await raw.close();
   const keys = await cacheRedis.keys(`alertmail-test:${run}:*`);
@@ -107,9 +121,20 @@ function holdEmailPath(limiter: AlertEmailLimiter) {
   return { state, release };
 }
 
+/** Resolves once the worker has handled every queued email (a job leaves the queue after Mailpit accepted it). */
+async function queueDrained(): Promise<void> {
+  const until = Date.now() + 20_000;
+  for (;;) {
+    const counts = await raw.getJobCounts('waiting', 'active', 'delayed', 'prioritized', 'paused');
+    if (Object.values(counts).every((c) => c === 0)) return;
+    if (Date.now() > until) throw new Error(`email queue not drained: ${JSON.stringify(counts)}`);
+    await sleep(50);
+  }
+}
+
 async function inboxOf(to: string) {
-  await background.idle();
-  await sleep(1_500); // the worker delivers to Mailpit
+  await background.idle(); // every alert's email path has finished: queued, or held back
+  await queueDrained(); // and everything queued is in Mailpit, duplicates included
   const res = await fetch(`${MAILPIT}/api/v1/search?query=${encodeURIComponent(`to:"${to}"`)}`);
   return ((await res.json()) as { messages: { ID: string; Subject: string }[] }).messages;
 }
