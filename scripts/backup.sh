@@ -133,7 +133,7 @@ trap on_exit EXIT
 
 newest_manifest() { { find "$DIR" -maxdepth 1 -name 'sirat-*.manifest.json' 2>/dev/null || true; } | sort | tail -n 1; }
 manifest_field() { # $1 = manifest, $2 = a top-level field (two-space indent, one per line)
-  sed -n "s/^  \"$2\": \"\{0,1\}\([^\",]*\)\"\{0,1\},\{0,1\}$/\1/p" "$1" | head -n 1
+  sed -n "s/^  \"$2\": \"\{0,1\}\([^\",]*\)\"\{0,1\},\{0,1\}$/\1/p" "$1" | sed -n 1p
 }
 
 # ---- --verify: the newest local copy is intact and recent ----
@@ -145,7 +145,9 @@ if [ "$MODE" = verify ]; then
   [ -f "$file" ] || fail "the newest manifest names a missing file"
   [ "$(manifest_field "$manifest" sha256)" = "$(sha256sum "$file" | cut -d' ' -f1)" ] ||
     fail "the newest copy does not match its manifest (sha256)"
-  head -c 64 "$file" | grep -q '^age-encryption.org/v1' || fail "the newest copy is not an age file"
+  # No `head | grep -q` here: grep may exit before head has written, head then dies of SIGPIPE, and pipefail made an
+  # intact copy fail about once in 3000 runs (lead, 2026-11-01).
+  [ "$(head -c 21 "$file")" = age-encryption.org/v1 ] || fail "the newest copy is not an age file"
   created="$(manifest_field "$manifest" created_at)"
   [[ "$created" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] ||
     fail "the newest manifest has no valid created_at"

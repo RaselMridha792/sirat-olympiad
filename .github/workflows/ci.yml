@@ -30,6 +30,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Shell scripts are executable in git (Windows commits drop the bit)
         run: git ls-files -s -- '*.sh' | awk '$1 != "100755" { print; bad = 1 } END { exit bad }'
+      - name: No pipe into an early-exiting reader under pipefail (SIGPIPE made backup.sh --verify fail at random)
+        run: bash scripts/test/check-early-exit-pipes.sh
       - run: pnpm format:check
       - run: pnpm --filter @sirat/shared build
       - run: pnpm db:generate

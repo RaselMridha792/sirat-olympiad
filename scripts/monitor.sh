@@ -143,7 +143,7 @@ certificate_days_left() {
 backup_age_hours() { # backup.sh writes created_at=... after each upload that worked (root-owned, world-readable)
   [ -r "$BACKUP_STATUS" ] || return 0
   local created
-  created="$(sed -n 's/^created_at=\([0-9TZ:-]*\)$/\1/p' "$BACKUP_STATUS" | head -n 1)"
+  created="$(sed -n 's/^created_at=\([0-9TZ:-]*\)$/\1/p' "$BACKUP_STATUS" | sed -n 1p)"
   [[ "$created" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || return 0
   printf '%d' $(((NOW - $(date -u -d "$created" +%s)) / 3600))
 }
@@ -188,13 +188,13 @@ if [ "$MODE" = digest ]; then
 fi
 
 STATE='null'
-if [ -s "$STATE_FILE" ] && head -c 1 "$STATE_FILE" | grep -q '{'; then STATE="$(cat "$STATE_FILE")"; fi
+if [ -s "$STATE_FILE" ] && [ "$(head -c 1 "$STATE_FILE")" = '{' ]; then STATE="$(cat "$STATE_FILE")"; fi
 ARGS=()
 [ "$MODE" = dry ] && ARGS+=(--dry-run)
 status=0
 OUT="$(printf '{"host":%s,"state":%s}' "$HOST" "$STATE" |
   timeout 120 "${DC[@]}" exec -T api node dist/cli/ops-check.js "${ARGS[@]}" 2>/dev/null)" || status=$?
-SUMMARY="$(printf '%s\n' "$OUT" | sed -n 's/^OPS //p' | head -n 1)"
+SUMMARY="$(sed -n 's/^OPS //p' <<< "$OUT" | sed -n 1p)"
 
 if [ "$status" -ne 0 ] || [ -z "$SUMMARY" ]; then
   CRITICAL=monitor
@@ -205,7 +205,7 @@ if [ "$status" -ne 0 ] || [ -z "$SUMMARY" ]; then
 else
   CRITICAL="$(printf '%s' "$SUMMARY" | sed -n 's/^critical=\([a-z_,]*\) .*/\1/p')"
   WARN="$(printf '%s' "$SUMMARY" | sed -n 's/.* warn=\([a-z_,]*\) .*/\1/p')"
-  NEXT_STATE="$(printf '%s\n' "$OUT" | sed -n 's/^STATE //p' | head -n 1)"
+  NEXT_STATE="$(sed -n 's/^STATE //p' <<< "$OUT" | sed -n 1p)"
   if [ "$MODE" = run ] && [ -n "$NEXT_STATE" ]; then
     mkdir -p "$(dirname "$STATE_FILE")"
     printf '%s\n' "$NEXT_STATE" > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
