@@ -14,6 +14,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 4. **Databases that already exist keep their row,** because the seed is insert-only. Production starts fresh and gets 10. On the shared dev databases, nobody changes the admin setting without asking.
 5. **The "already in progress" message** no longer names a number of minutes (bn and en): an admin can change the setting.
 6. **Re-measure on the client's live account** (plan §13; RUNBOOK §11).
+
 ## 2026-11-01 — "Coming soon" from a launch table (Claude; L1, LAUNCH-PLAN §8, lead review)
 
 1. **The table:** `apps/web/src/data/launch.ts` has one row per `/dashboard` and `/admin` page, `live` or `soon`.
