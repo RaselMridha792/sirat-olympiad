@@ -20,6 +20,19 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - It uses the session cleanup's batch loop, now shared (`batch-drain.ts`): 1,000 rows per batch, `FOR UPDATE SKIP LOCKED`, `SET LOCAL statement_timeout`, a cap, idempotent.
    - Counts-only log and audit (`housekeeping.attempt_scrub`). A failed run shows in ops-check as a warning on the same queue.
    - No migration: `@@index([status, updatedAt])` and the payments foreign-key index serve the scans.
+## 2026-11-01 — Bootstrap and the pre-launch checks (L12; exam session, LAUNCH-PLAN §2 and §7, owner Q4 default)
+
+1. **`bootstrap.sh` is idempotent and safe to repeat:** every step looks before it changes anything, and the owner runs it again after each of their steps. `--dry-run` lists the changes without making them. Settings files come from their examples only when missing and are never overwritten: the owner types the secrets, and the script never prints one.
+2. **No lockout:** root and password logins go off only once `deploy` has an authorized key, and `sshd -t` checks the change first (it is removed if refused).
+3. **The firewall is UFW plus a DOCKER-USER guard** (`sirat-docker-user.service`): Docker's published ports bypass UFW, so from outside only connections to 80 and 443 may reach a container. A stray `ports:` in compose then cannot expose a data service. The provider's panel firewall stays on the owner's list.
+4. **One sudo rule, exactly `deploy ALL=(root) NOPASSWD: /usr/bin/systemctl start sirat-backup.service`** (lead), checked with `visudo -cf` before it is installed. A test asserts that `sudo -l` shows nothing else.
+   - **The rule limits sudo, not real power** (lead): `deploy` is in the docker group, which is root-equivalent (it can mount the host into a container). So deploy's SSH key is a root credential: it is kept on few machines, with a passphrase, and removed from `authorized_keys` the day a person leaves.
+5. **UTC on the server;** the monitor's digest cron runs at 02:00 UTC (08:00 Asia/Dhaka), because Ubuntu's cron has no per-line timezone.
+6. **GitHub's SSH host key is pinned in deploy's `known_hosts`** (checked against GitHub's published fingerprint), not trusted on first use.
+7. **The backup timers start only once `/etc/sirat/backup.env` names a remote,** so an unconfigured host does not alert every hour.
+8. **The test is an Ubuntu 24.04 container** (no VM, Q4's default). Real: apt, users, keys, `sshd -t`, `visudo`, `sudo -l`, git. Faked: systemd, the clock, UFW and swap, which a container cannot run. The first full run on a real host is the VPS.
+9. **`prelaunch-check.sh` prints PASS, FAIL, N/A or MANUAL lines and never a value.** `--local` marks the VPS-only checks N/A; CI runs it against its development stack and asserts what must pass, what must fail, and that no `.env` value reaches the output.
+10. **`check-early-exit-pipes.sh` no longer takes `||` for a pipe** (it flagged `x || grep -q`, found while writing bootstrap). shellcheck now runs in CI on every script, at warning level.
 
 ## 2026-11-01 — The runtime database role sirat_app (Claude; LAUNCH-PLAN L2, OPEN-QUESTIONS #27)
 
