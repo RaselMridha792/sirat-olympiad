@@ -10,6 +10,7 @@ import { PaymentStatus, type PrismaClient } from '@prisma/client';
 import { EDUCATION_TYPES, REGISTRATION_MESSAGES } from '@sirat/shared';
 import Redis from 'ioredis';
 import { seedConfig } from '../prisma/seed';
+import { RedisThrottlerStorage } from '../src/common/throttler/redis-throttler.storage';
 import { PasswordService } from '../src/modules/auth/password.service';
 import { startFakePaystation, type FakePaystation } from './fake-paystation/fake-paystation';
 import {
@@ -538,9 +539,24 @@ describe("this browser's attempt: current, resume, retry, cancel", () => {
 describe('shared IPs: a school lab or a mobile operator NAT starting together (lead, 2026-10-31)', () => {
   it('300 different students start from one IP within a minute; the 301st start from it is refused', async () => {
     const shared = ip();
-    const results: number[] = [];
+    // The throttler's window is a fixed minute in Redis from the first hit. 300 starts (argon2 each) can take longer
+    // than that on a loaded machine, and a new window would let the 301st through. So the first start goes alone, its
+    // window keys (captured as the storage writes them) get a long TTL, and all 301 count in that one window.
+    const windows: string[] = [];
+    const original = RedisThrottlerStorage.prototype.increment;
+    const increment = jest
+      .spyOn(RedisThrottlerStorage.prototype, 'increment')
+      .mockImplementation(function (this: RedisThrottlerStorage, key, ttl, limit, block, name) {
+        windows.push(`throttle:${name}:${key}:hits`); // the storage's own key layout (prefix 'throttle:')
+        return original.call(this, key, ttl, limit, block, name);
+      });
+    const results: number[] = [(await start(form(), { from: shared })).status];
+    increment.mockRestore();
+    expect(windows.length).toBeGreaterThan(0);
+    for (const key of windows) expect(await redis.pexpire(key, 600_000)).toBe(1);
+
     const batch = 25;
-    for (let i = 0; i < 300; i += batch) {
+    for (let i = 1; i < 300; i += batch) {
       const statuses = await Promise.all(
         Array.from({ length: Math.min(batch, 300 - i) }, () =>
           start(form(), { from: shared }).then((r) => r.status),
@@ -548,6 +564,7 @@ describe('shared IPs: a school lab or a mobile operator NAT starting together (l
       );
       results.push(...statuses);
     }
+    expect(results).toHaveLength(300);
     expect(results.filter((s) => s !== 201)).toEqual([]);
     const next = await start(form(), { from: shared });
     expect(next.status).toBe(429);
