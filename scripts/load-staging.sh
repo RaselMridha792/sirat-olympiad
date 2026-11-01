@@ -166,6 +166,9 @@ case "$cmd" in
         -e "s|^SECURITY_ALERT_EMAIL=.*|SECURITY_ALERT_EMAIL=|" .env.example > "$STAGING_ENV_FILE"
       grep -q '^POSTGRES_APP_PASSWORD=' "$STAGING_ENV_FILE" || printf 'POSTGRES_APP_PASSWORD=%s\n' "$(hex 32)" >> "$STAGING_ENV_FILE"
       grep -q '^COOKIE_SECURE=' "$STAGING_ENV_FILE" || printf 'COOKIE_SECURE=%s\n' "$secure" >> "$STAGING_ENV_FILE"
+      # A production-mode stack (every up without --registration) gets Secure cookies, whatever the example says.
+      [ "$registration" = 1 ] || grep -qx 'COOKIE_SECURE=true' "$STAGING_ENV_FILE" ||
+        fail "COOKIE_SECURE is not true in $STAGING_ENV_FILE for a production-mode staging"
       printf 'MAILPIT_URL=http://127.0.0.1:9\n' >> "$STAGING_ENV_FILE"
       printf 'SIRAT_TAG=%s\n' "$tag" > "$STAGING_DIR/release.env"
       printf 'NODE_ENV=test\nALLOW_DEV_FIXTURES=yes-this-is-not-production\nFIXTURE_PASSWORD=%s\nDATABASE_URL=postgresql://%s:%s@127.0.0.1:5432/%s\n' \

@@ -42,6 +42,7 @@ bash "$LS" up --tag "$TAG" --users 60 2>&1 | indent
 expect "up: the stack is running" '[ -n "$(svc nginx)" ] && [ -n "$(svc api)" ] && [ -n "$(svc worker)" ] && [ -n "$(svc pgbouncer)" ]'
 expect "the settings are owner-only" '[ "$(stat -c %a "$STAGING_DIR")" = 700 ] && [ "$(stat -c %a "$STAGING_DIR/staging.env")" = 600 ]'
 expect "the API runs in production mode on staging's own secret" '[ "$(docker exec "$(svc api)" printenv NODE_ENV)" = production ] && [ "$(docker exec "$(svc api)" printenv JWT_ACCESS_SECRET)" = "$(sed -n "s/^JWT_ACCESS_SECRET=//p" "$STAGING_DIR/staging.env")" ]'
+expect "its cookies are Secure (production mode)" '[ "$(docker exec "$(svc api)" printenv COOKIE_SECURE)" = true ]'
 expect "nginx publishes only on loopback" '[ "$(docker port "$(svc nginx)" 80/tcp)" = "127.0.0.1:$STAGING_PORT" ]'
 expect "the app answers through staging's nginx" 'grep -q "\"status\":\"ready\"" <<< "$(inside http://nginx/api/ready)"'
 expect "Postgres carries the test marker" '[ "$(docker exec "$(svc postgres)" sh -c "psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -tAc \"SHOW sirat.environment\"")" = test ]'
@@ -74,6 +75,7 @@ t1=$SECONDS
 bash "$LS" up --registration --tag "$TAG" 2>&1 | indent
 expect "up --registration: the fake is running and healthy" '[ -n "$(svc fake-paystation)" ] && [ "$(docker inspect -f "{{.State.Health.Status}}" "$(svc fake-paystation)")" = healthy ]'
 expect "the API is on the fake (and in development mode, which the fake needs)" '[ "$(docker exec "$(svc api)" printenv PAYSTATION_ENV)" = fake ] && [ "$(docker exec "$(svc api)" printenv NODE_ENV)" = development ]'
+expect "its resume cookie is not Secure, and only in this development-mode stack" '[ "$(docker exec "$(svc api)" printenv COOKIE_SECURE)" = false ] && [ "$(docker exec "$(svc worker)" printenv NODE_ENV)" = development ]'
 expect "registration is open in staging's database" 'grep -q "\"open\":true" <<< "$(inside http://nginx/api/registrations/info)"'
 bash "$LS" k6 registration -e RATE=2 -e RAMP=10s -e HOLD=30s --quiet > "$OUT/k6-registration.log" 2>&1
 st=$?
