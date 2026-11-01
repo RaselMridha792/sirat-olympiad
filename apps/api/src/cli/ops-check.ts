@@ -61,6 +61,7 @@ const HOST_NUMBERS = [
   'api5xxLogged',
   'certificateDaysLeft',
   'backupAgeHours',
+  'trustedGeneratorsMinutesLeft',
 ] as const;
 
 export interface OpsCheckInput {

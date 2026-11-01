@@ -24,9 +24,10 @@
 //
 // Options (-e): USERS (default 300) and FIRST (default 1): students load<FIRST>..load<FIRST+USERS-1>. RAMP (steady,
 // default 30 s), RATE (surge, starts per second, default 10), CHECKPOINT_MIN/CHECKPOINT_MAX (default 60/120 s),
-// MIN_WORK (default 0.6), LEAVE_SHARE (default 0.02), MAX_DURATION (default 45m). SPREAD_IPS=1 (default) sends
-// X-Forwarded-For with one address per student, for k6 talking to the API directly (the API trusts one proxy hop).
-// Through nginx it has no effect: the generator's own address counts.
+// MIN_WORK (default 0.6), LEAVE_SHARE (default 0.02), MAX_DURATION (default 45m). SPREAD_IPS=1 (default) sends one
+// client address per student in IP_HEADER: X-Forwarded-For (the default) for k6 talking to the API directly (the API
+// trusts one proxy hop); CF-Connecting-IP through nginx, which takes it only from a trusted generator
+// (scripts/loadtest-generators.sh, LAUNCH-PLAN L14); otherwise the generator's own address counts.
 import http from 'k6/http';
 import exec from 'k6/execution';
 import { check, sleep } from 'k6';
@@ -45,6 +46,7 @@ const CHECKPOINT_MAX = Math.max(CHECKPOINT_MIN, Number(__ENV.CHECKPOINT_MAX || 1
 const MIN_WORK = Number(__ENV.MIN_WORK ?? 0.6);
 const LEAVE_SHARE = Number(__ENV.LEAVE_SHARE ?? 0.02);
 const SPREAD_IPS = (__ENV.SPREAD_IPS ?? '1') === '1';
+const IP_HEADER = (__ENV.IP_HEADER || 'x-forwarded-for').toLowerCase();
 const MAX_DURATION = __ENV.MAX_DURATION || '45m';
 /** CI's smoke: counted outcomes only (errors, checks, receipts), never a latency or other wall-time threshold. */
 const SMOKE = __ENV.SMOKE === '1';
@@ -154,7 +156,7 @@ function browser(n) {
       if (path.startsWith(c.path)) out[name] = c.value;
     return out;
   };
-  const headers = SPREAD_IPS ? { 'x-forwarded-for': ipFor(n) } : {};
+  const headers = SPREAD_IPS ? { [IP_HEADER]: ipFor(n) } : {};
   const write = { ...headers, 'content-type': 'application/json', 'x-requested-with': 'k6' };
   const send = (method, path, body, name) => {
     const params = api(name, {
