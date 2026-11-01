@@ -10,6 +10,7 @@ import { adminLeaderboard, leaderboard } from './leaderboard.ts';
 import { adminPayments } from './payments.ts';
 import { studentProfile } from './profile.ts';
 import type { ApiGet } from './request.ts';
+import { adminStats } from './stats.ts';
 import { adminUsers } from './users.ts';
 
 /**
@@ -43,6 +44,7 @@ export function createHttpSource(get: ApiGet): DataSource {
       ...adminAmbassadors(get),
       ...adminPayments(get),
       ...adminBook(get),
+      ...adminStats(get),
     },
   };
 }

@@ -49,7 +49,7 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `GET /admin/exams?page=&pageSize=&q=&status=`, `GET /admin/exams/:id`, `POST /admin/exams`, `PATCH /admin/exams/:id`, `POST /admin/exams/:id/{publish,unpublish,archive}`, `POST /admin/exams/:id/questions`, `PUT`/`DELETE /admin/exams/:id/questions/:questionId`, `GET /admin/exams/:id/questions/:questionId/versions` | admin | Exam admin (below). Lock after publish; questions versioned, never deleted once published. Built (E1) |
 | | `GET /admin/settings`, `PUT /admin/settings/:key` | admin | Single writer (`expected`), audited. Built (payments PR 3) |
 | | `GET /admin/payments`, `GET /admin/payments/:id`, `POST /admin/payments/:id/{recheck,reconcile}` | admin | Audited. Built (payments PR 3), below |
-| | `GET /admin/stats` | admin/manager | Cached |
+| | `GET /admin/stats` | admin/manager | Admin statistics (below). Counts only, cached 60 s. Built (core) |
 | | `POST /admin/rounds/:id/promote` | admin | Idempotent, audited |
 | | `GET/POST /admin/jury/*` | jury/admin | Judge recorded |
 | | `GET/POST /admin/announcements`, `PATCH /admin/announcements/:id`, `POST /admin/announcements/:id/{archive,restore}` | admin | Announcements (below). Built (core C4) |
@@ -248,9 +248,26 @@ The database refuses out-of-range text and an archive time before creation (`*_c
 | `POST /admin/ambassadors/:userId/approve` (admin, re-read) | `{ reason }` (3–200) | 200 `AmbassadorState`. One transaction locks the student, then creates the profile with a server code (`SR-` + 6 Crockford characters; a collision draws again, at most 3 times) or re-approves the old code, sets `role` to `ambassador` and writes `ambassador.approved` (code, reason). Already approved: 200 and nothing changes. 409 `not_paid_student` (no registration), `blocked`, `wrong_role` (staff); 404. The client never chooses a code (`promoCode` in the body → 400) |
 | `POST /admin/ambassadors/:userId/revoke` (admin) | `{ reason }` | 200: `approved_at` cleared, `role` back to `student`, `ambassador.revoked` audited. Earlier referrals and points stay. 409 `not_ambassador` |
 | `GET /admin/ambassadors` (admin) | `page`, `pageSize` (≤ 50), `q` (name, email or the exact code), `status` (`approved`, `revoked`) | `Paginated<AdminAmbassadorRow>` with `referralCount`, `points` and `rankName` from the rows and `rank_thresholds` |
-| `GET /ambassador/me` (ambassador) | — | `AmbassadorOverview`: code, referral count, the 5 latest referrals (name, institution, date; no contact details), points, rank (current and next threshold); `team` null and `tasks` empty until C5b. The user is re-read, so a revoked ambassador is refused (403) even with a token minted before the revocation. A newly approved student sees the panel after the next token renewal (≤ 15 min) |
+| `GET /ambassador/me` (ambassador) | — | `AmbassadorOverview`: code, referral count, the 5 latest referrals (name, institution, date; no contact details), points, rank (current and next threshold); `team` null and `tasks` empty until C5b. The user is re-read, so a revoked ambassador is refused (403) even with a token minted before the revocation. A newly approved student's token still says `student`: the panel answers that 403 by renewing the token once (`/refresh`), so the panel opens at once |
 
 The database refuses a code outside `^[A-Za-z0-9_-]{3,40}$`, and `point_ledger` refuses UPDATE, DELETE and TRUNCATE (except TRUNCATE in a `*_test` database) (`*_core_ambassador_checks`).
+
+## Admin statistics (core; lead 2026-11-01)
+
+`GET /admin/stats` (admin and manager, re-read: a demoted or blocked user gets 403; jury, students and ambassadors get 403, and the web does not call it for jury) → `AdminStats` (`dashboard.ts`). **Counts only**: no name, email, phone, id or money sum. Read from payments' and exam's tables, never written.
+
+| Field | Counted from |
+|---|---|
+| `totals.registered`, `paid`, `pendingPayments` | `registrations`; payments `paid`; payments `initiated` + `pending` |
+| `totals.activeAttempts`, `submittedAttempts` | exam attempts `in_progress`; `submitted` + `expired` + `scored` |
+| `totals.secondRound`, `finalists` | `null` until rounds exist (core C6) |
+| `registrationsDaily` | `registrations.created_at` per Asia/Dhaka calendar day, the last 45 days, oldest first, with 0 for an empty day |
+| `byCategory` | student and ambassador accounts per category |
+| `registrationAttempts` | `pending_registrations` per status (`open`, `completed`, `abandoned`, `conflict`) |
+| `paymentsByStatus`, `paymentsNeedingReview` | payments per status (`refunded` is never entered); payments with a `review_reason` (payments' "needs review" filter) |
+| `ambassadors` | profiles with `approved_at` set, and cleared; students with `referred_by_id` |
+
+All counts come from one `REPEATABLE READ` snapshot, so the totals agree with the breakdowns. The answer is cached in the cache Redis for 60 s (`asOf` is when it was computed); a single-flight lock makes a burst of admins compute once (the others wait up to 5 s for that result). If Redis does not answer, every call reads Postgres. No new index on the other teams' tables: the 45-day `GROUP BY` on `registrations` runs at most once a minute.
 
 ## DTO and security rules
 
