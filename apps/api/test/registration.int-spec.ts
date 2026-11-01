@@ -560,7 +560,13 @@ describe('shared IPs: a school lab or a mobile operator NAT starting together (l
         windows.push(`throttle:${name}:${key}:hits`); // the storage's own key layout (prefix 'throttle:')
         return original.call(this, key, ttl, limit, block, name);
       });
-    const results: number[] = [(await start(form(), { from: shared })).status];
+    // A busy database answers 503 SERVICE_BUSY (#52): nothing applied, but the request still counts against the
+    // IP's minute, like any other. So each of the 300 is either accepted or busy, never throttled; the 301st is.
+    const outcome = async (r: Response) =>
+      r.status === 503 && ((await r.json()) as { code?: string }).code === 'SERVICE_BUSY'
+        ? 'busy'
+        : r.status;
+    const results: (number | 'busy')[] = [await outcome(await start(form(), { from: shared }))];
     increment.mockRestore();
     expect(windows.length).toBeGreaterThan(0);
     for (const key of windows) expect(await redis.pexpire(key, 600_000)).toBe(1);
@@ -569,13 +575,13 @@ describe('shared IPs: a school lab or a mobile operator NAT starting together (l
     for (let i = 1; i < 300; i += batch) {
       const statuses = await Promise.all(
         Array.from({ length: Math.min(batch, 300 - i) }, () =>
-          start(form(), { from: shared }).then((r) => r.status),
+          start(form(), { from: shared }).then(outcome),
         ),
       );
       results.push(...statuses);
     }
     expect(results).toHaveLength(300);
-    expect(results.filter((s) => s !== 201)).toEqual([]);
+    expect(results.filter((s) => s !== 201 && s !== 'busy')).toEqual([]);
     const next = await start(form(), { from: shared });
     expect(next.status).toBe(429);
     expect((await start(form(), { from: ip() })).status).toBe(201); // another IP is not affected

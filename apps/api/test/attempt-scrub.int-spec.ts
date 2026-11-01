@@ -6,6 +6,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { PaymentStatus, Prisma, RegistrationAttemptStatus } from '@prisma/client';
+import { EDUCATION_TYPES } from '@sirat/shared';
 import { AuditService } from '../src/modules/audit/audit.service';
 import { AttemptScrub } from '../src/modules/housekeeping/attempt-scrub';
 import {
@@ -14,7 +15,14 @@ import {
 } from '../src/modules/housekeeping/session-cleanup';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { makeRegistrationAttempt, makeUser, paymentData } from './helpers';
-import { bootPaymentsApp, checkout, startRegistration, type PaymentsApp } from './payments-app';
+import {
+  PASSWORD,
+  bootPaymentsApp,
+  caller,
+  checkout,
+  startRegistration,
+  type PaymentsApp,
+} from './payments-app';
 
 let env: PaymentsApp;
 
@@ -189,5 +197,81 @@ describe('money is never lost', () => {
         .status,
     ).toBe(RegistrationAttemptStatus.conflict);
     expect(await env.prisma.user.count({ where: { email: s.email } })).toBe(0);
+  });
+});
+
+describe('a student who comes back after the form was cleared (the browser kept its cookie)', () => {
+  /** A real start, expired, then cleared by the nightly job 40 days later. */
+  async function scrubbedStart() {
+    const startRequestId = randomUUID();
+    const s = await startRegistration(env, { startRequestId });
+    const p = await env.prisma.payment.findUniqueOrThrow({ where: { id: s.paymentId } });
+    await env.verifier.verify(s.paymentId, 'reconcile', new Date(p.expiresAt.getTime() + 1_000));
+    await scrubWith().run(new Date(p.expiresAt.getTime() + 40 * DAY));
+    expect(await formOf(s.attemptId)).toBeNull();
+    return { ...s, startRequestId };
+  }
+  const status = async (id: string) =>
+    (await env.prisma.pendingRegistration.findUniqueOrThrow({ where: { id } })).status;
+  const payments = (id: string) =>
+    env.prisma.payment.count({ where: { pendingRegistrationId: id } });
+
+  it('the result page offers no retry; retry answers START_OVER, gives the attempt up and starts no payment', async () => {
+    const s = await scrubbedStart();
+    const call = caller(env.base);
+
+    const current = await call('GET', '/registrations/current', { cookie: s.cookie });
+    expect(current.status).toBe(200);
+    expect(await current.json()).toMatchObject({ canRetry: false, canResume: false });
+
+    const retry = await call('POST', '/registrations/current/retry', { cookie: s.cookie });
+    expect(retry.status).toBe(409);
+    expect(await retry.json()).toMatchObject({ code: 'START_OVER' });
+    expect(await status(s.attemptId)).toBe(RegistrationAttemptStatus.abandoned);
+    expect(await payments(s.attemptId)).toBe(1);
+    // Given up: the page now finds no registration and offers a new one.
+    expect((await call('GET', '/registrations/current', { cookie: s.cookie })).status).toBe(404);
+  });
+
+  it('resume answers START_OVER too, and gives the attempt up', async () => {
+    const s = await scrubbedStart();
+    const resume = await caller(env.base)('POST', '/registrations/current/resume', {
+      cookie: s.cookie,
+    });
+    expect(resume.status).toBe(409);
+    expect(await resume.json()).toMatchObject({ code: 'START_OVER' });
+    expect(await status(s.attemptId)).toBe(RegistrationAttemptStatus.abandoned);
+  });
+
+  it('the same form sent again asks for a new request id, and the new start registers (the old attempt given up)', async () => {
+    const s = await scrubbedStart();
+    const body = (startRequestId: string) => ({
+      startRequestId,
+      name: 'TEST Payer',
+      phone: s.phone,
+      email: s.email,
+      password: PASSWORD,
+      district: 'Dhaka',
+      institution: 'Sirat Test School',
+      educationType: EDUCATION_TYPES[0],
+      gradeLevelId: env.gradeLevelId,
+    });
+    const replay = await caller(env.base)('POST', '/registrations/start', {
+      body: body(s.startRequestId),
+    });
+    expect(replay.status).toBe(400);
+    expect(await replay.json()).toMatchObject({ code: 'START_REQUEST_REUSED' });
+    expect(await payments(s.attemptId)).toBe(1);
+
+    const fresh = await caller(env.base)('POST', '/registrations/start', {
+      body: body(randomUUID()),
+    });
+    expect(fresh.status).toBe(201);
+    expect(await status(s.attemptId)).toBe(RegistrationAttemptStatus.abandoned);
+    expect(
+      await env.prisma.pendingRegistration.count({
+        where: { email: s.email, status: RegistrationAttemptStatus.open },
+      }),
+    ).toBe(1);
   });
 });
