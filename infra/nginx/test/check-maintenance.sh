@@ -126,8 +126,8 @@ start() { # start <container> <site> [docker run options]: nginx as compose runs
 }
 start "$name-plain" plain --network "$net"
 start "$name-tls" tls --network "$net"
-p_plain=$(dk port "$name-plain" 80/tcp | head -1 | sed 's/.*://')
-p_tls=$(dk port "$name-tls" 443/tcp | head -1 | sed 's/.*://')
+p_plain=$(dk port "$name-plain" 80/tcp | sed -n '1s/.*://p')
+p_tls=$(dk port "$name-tls" 443/tcp | sed -n '1s/.*://p')
 
 # fetch <site> <path> [curl options]: prints the status; headers in $tmp/h, body in $tmp/b. --path-as-is sends
 # dot segments as written, so nginx (not curl) normalises them.
@@ -188,7 +188,7 @@ maintenance_json() { # maintenance_json <site> <path> [curl options]
     grep -q '"code":"MAINTENANCE"' "$tmp/b" && answer_headers "$1"
 }
 internal_reaches() { # internal_reaches <api|web> <container> <path>: through the internal listener, inside the container
-  dk exec "$2" curl -s --max-time 10 "http://127.0.0.1:8081$3" | grep -Eq "upstream[^a-z]+$1"
+  grep -Eq "upstream[^a-z]+$1" <<< "$(dk exec "$2" curl -s --max-time 10 "http://127.0.0.1:8081$3")"
 }
 wait_for() { # wait_for <status>: a host bind mount can show a new file a moment later (Docker Desktop)
   for _ in $(seq 1 20); do
@@ -270,7 +270,7 @@ done
 
 # 5. Upstreams down: no fake upstreams on this container's network (the default bridge has no Docker DNS).
 start "$name-down" tls
-p_down=$(dk port "$name-down" 443/tcp | head -1 | sed 's/.*://')
+p_down=$(dk port "$name-down" 443/tcp | sed -n '1s/.*://p')
 check "down: a page gets the maintenance page with nginx's 502" page 502 down /dashboard
 check "down: a static asset gets it too" page 502 down /_next/static/chunks/main.js
 check "down: the PayStation callback gets the page, not JSON" page 502 down /api/payments/paystation/callback/T261101ABCDEFGHIJ
