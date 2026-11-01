@@ -301,7 +301,7 @@ Credentials are read inside the postgres container; nothing secret is typed on t
 
 ## 6. Rebuild on a fresh VPS (< 1 hour)
 
-`scripts/bootstrap.sh` (L12), as root on a fresh Ubuntu 24.04 host. It is idempotent: every step looks first, and a run with nothing left to do prints `0 change(s) made`. Run it again after each owner step below.
+`scripts/bootstrap.sh` (L12), as root on a fresh Ubuntu 24.04 or 26.04 host. It is idempotent: every step looks first, and a run with nothing left to do prints `0 change(s) made`. Run it again after each owner step below.
 
 ```bash
 # On the new host, as root (copy the script over, or take it from any checkout).
@@ -323,7 +323,7 @@ scripts/prelaunch-check.sh
   - Docker from Docker's own apt repository;
   - UTC with chrony (the monitor's 02:00 UTC digest is 08:00 Asia/Dhaka);
   - swap and `vm.overcommit_memory=1`; security updates without automatic reboot;
-  - the `deploy` user, in the docker group, with SSH keys only. Root and password logins go off only once deploy has keys (no lockout), and `sshd -t` checks the change first;
+  - the `deploy` user, in the docker group, with SSH keys only. Root and password logins go off only once deploy has keys (no lockout), and `sshd -t` checks the change first. The drop-in is `00-sirat.conf`, read before a cloud image's `50-cloud-init.conf` (sshd keeps the first value it reads). Every run checks with `sshd -T` that passwords, root and keyboard-interactive logins are really off; if an earlier file overrides them, it removes its drop-in, reloads ssh and stops;
   - UFW for the host, plus `sirat-docker-user.service`: Docker's published ports bypass UFW, so from outside only 80 and 443 may reach a container;
   - fail2ban for SSH;
   - the clone in `/srv/sirat` through a read-only deploy key, with GitHub's host key pinned;
