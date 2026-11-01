@@ -1,0 +1,40 @@
+# The exam load test only (loadtests/exam-local.sh, project sirat-exam-load; never project sirat). The stack as on the
+# server (PgBouncer, API replicas, production mode) with small sizes and its own throwaway settings. Only Postgres is
+# published, on 127.0.0.1, for the load fixtures run from the host; it carries the test marker they require. k6 joins the
+# project's network and talks to the API replicas directly (nginx's per-IP limits would only see the one generator).
+services:
+  # The run's own settings, never the clone's .env: exam-local.sh sets LOAD_ENV_FILE, and compose refuses without it.
+  api:
+    env_file: !override ['${LOAD_ENV_FILE:?LOAD_ENV_FILE is set by loadtests/exam-local.sh}']
+    deploy:
+      replicas: ${API_REPLICAS:-2}
+
+  worker:
+    env_file: !override ['${LOAD_ENV_FILE:?LOAD_ENV_FILE is set by loadtests/exam-local.sh}']
+
+  postgres:
+    ports: ['127.0.0.1:${LOAD_PG_PORT:-54533}:5432']
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=1GB
+      - -c
+      - maintenance_work_mem=128MB
+      - -c
+      - work_mem=8MB
+      # Test marker: the load fixtures refuse any server without it (production never sets it).
+      - -c
+      - sirat.environment=test
+    deploy: { resources: { limits: { cpus: '2', memory: 2G } } }
+
+  redis-cache:
+    command: ['redis-server', '/usr/local/etc/redis/redis-cache.conf', '--maxmemory', '256mb']
+    deploy: { resources: { limits: { cpus: '0.5', memory: 512M } } }
+
+  redis-queue:
+    command: ['redis-server', '/usr/local/etc/redis/redis-queue.conf', '--maxmemory', '256mb']
+    deploy: { resources: { limits: { cpus: '0.5', memory: 512M } } }

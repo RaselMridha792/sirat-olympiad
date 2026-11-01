@@ -444,8 +444,10 @@ jobs:
           # It answers inside the project, by its service name.
           $FAKE exec -T api node -e "fetch('http://fake-paystation:18090/__fake/health').then((r) => r.json()).then((b) => process.exit(b.ok ? 0 : 1), () => process.exit(1))"
           # The api accepted PAYSTATION_ENV=fake: payments are configured, so the info shows the fee (it caches 30 s).
+          # `|| true`: the step runs under bash -e, and a 502 while nginx still holds the recreated api's old address
+          # (up to 10 s) would otherwise end the step instead of retrying.
           for _ in $(seq 1 12); do
-            info=$(curl -fsS http://127.0.0.1:8080/api/registrations/info)
+            info=$(curl -fsS http://127.0.0.1:8080/api/registrations/info || true)
             grep -q '"fee":{"amountMinor":' <<< "$info" && break
             sleep 5
           done

@@ -2,6 +2,42 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-01 — Exam simulation, local k6 (E6; exam session, EXAM-PLAN 6.2; provisional until the VPS)
+
+1. **The scenario** (`loadtests/exam-simulation.js`). One iteration is one student, as the exam room does it:
+   - login, the exam list and the waiting room;
+   - start; a checkpoint every 60–120 s;
+   - the submit with the room's backoff (2, 4, 8, 16, 30 s, the same request id), then the room must show the receipt.
+
+   2 % close the tab instead, so the sweep is part of every run. Three shapes: `steady` (every start within 30 s), `surge` (starts ramp to a rate within 60 s) and `timeup` (every timer ends at `window_end`).
+2. **What passes:**
+   - the k6 thresholds: API p95 < 500 ms and errors < 0.5 %, per endpoint too; every submit gets a receipt, and the room shows it;
+   - zero lost submissions: every attempt submitted and scored; the students' own submissions equal the receipts k6 received; the sweep submitted exactly the students who left;
+   - no Postgres writes while the students only checkpoint.
+3. **Where:** its own compose project `sirat-exam-load` (`infra/docker-compose.yml` + `loadtests/exam-load.compose.yml`).
+   - PgBouncer, 2 API replicas in production mode (1 core each, as in the base file), throwaway settings; k6 on the project's network, straight to the replicas. Nothing touched `sirat` or `sirat_exam`.
+   - **The first try** ran the API on the Windows host, with k6 in a container. 19 requests failed with `dial: i/o timeout`: Docker Desktop's host forwarding held new connections for 30 s at a time. Node closes idle keep-alive after 5 s, so every checkpoint opens a new connection. The PC's CPU was at 25 % then, and the API logged no error. Nothing in the local run crosses that boundary now.
+   - **The students** come from a guarded fixture (`loadtest-fixtures.ts`): the dev fixtures' four guards, the payments rule shape, and the API's own argon2 parameters, so a login never re-hashes. A mutation check proved the test catches library defaults.
+   - **k6 keeps the session cookies itself.** They carry `Secure` in production, and k6's cookie jar does not send them over plain http.
+4. **Results** (a 3-minute exam, 30 questions; p95 in ms; PC CPU over the run; peak CPU of one container, in % of one core):
+
+   | Run | API p95 | login | start | checkpoint | submit | Errors | Lost | Checkpoint writes | PC CPU (median / p90) | Peak api / postgres |
+   |---|---|---|---|---|---|---|---|---|---|---|
+   | steady 300 | 83 | 189 | 116 | 5 | 21 | 0 of 2,149 | 0 (293 receipts, 7 by the sweep) | 0 | 10 / 18 % | 28 / 10 % |
+   | surge 300 at 5/s | 39 | 59 | 39 | 8 | 33 | 0 of 2,127 | 0 (293, 6) | — | 20 / 41 % | 24 / 13 % |
+   | surge 500 at 10/s | **2,070** | **3,650** | **3,250** | 19 | 31 | 0 of 3,585 | 0 (486, 13) | — | 41 / **100 %** | 130 / 54 % |
+   | timeup 300 | 51 | 74 | 60 | 7 | 45 | 0 of 2,031 | 0 (296, 4) | — | 22 / 38 % | 26 / 20 % |
+
+5. **Reading the numbers:**
+   - **Correctness held in every run:** no lost submission, no error, and every student who left was submitted by the sweep. Checkpoints wrote nothing to Postgres.
+   - **The time-up burst is cheap.** 296 submits landed within about 20 s of `window_end` with a p95 of 45 ms, because a submit is one small insert and the scoring runs in the worker.
+   - **The surge is the expensive phase.** Each student costs an argon2 login plus the layout draw and the attempt's insert.
+   - **The per-core rate:** at 5 starts/s, each replica used about a quarter of a core for 2.5 starts/s, so roughly 10 starts/s per API core.
+   - **Why 10/s missed:** the run kept checkpoints and submits fast (p95 19 and 31 ms) but missed on login and start. Its API spike came with the whole PC at a p90 of 100 % CPU (k6's 500 VUs, the stack and the other sessions on one machine). The shared PC was the limit, not the API's quota.
+6. **For the VPS run** (RULEBOOK §13):
+   - **The load:** k6 from other machines through nginx, against a staging stack (`scripts/load-staging.sh`, RUNBOOK §18), at 1.5–2× the expected peak: about 5,700–7,600 concurrent attempts (OPEN-QUESTIONS #24). Use a 30-minute exam with the surge at 10 starts/s.
+   - **Recommendation:** keep 4 API replicas over the 8 vCPUs, with no start jitter (D12) unless the VPS surge misses 500 ms. If it misses, raise the replicas first. Only then consider jitter (0–30 s before the client's start), which costs students time inside their window.
+
 ## 2026-11-01 — The fake PayStation as a container for load and staging stacks (Claude; payments, exam's load kit, lead)
 
 1. **Its own image, never in the api image:** `apps/api/test/fake-paystation/Dockerfile` builds from that folder alone.
