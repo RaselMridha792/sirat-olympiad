@@ -19,7 +19,7 @@ import { PasswordService } from '../password.service';
 import { type ClientInfo, type IssuedSession, SessionService } from '../session.service';
 import { hashRecoveryCode, newRecoveryCodes, normalizeRecoveryCode } from './recovery-codes';
 import type { SecretBox } from './secret-box';
-import { TwoFactorChallenges } from './two-factor-challenges';
+import { CHALLENGE_MAX_ATTEMPTS, TwoFactorChallenges } from './two-factor-challenges';
 import { removeTwoFactor } from './two-factor-reset';
 import { TWO_FACTOR_ROLES, TwoFactorConfig } from './two-factor.config';
 import {
@@ -111,10 +111,11 @@ export class TwoFactorService {
   }
 
   /**
-   * The login's code step. The challenge (from the cookie) names the user; the login limits apply as to a password
-   * (a lock refuses even the right code). A wrong code counts there, and on the challenge (5 use it up). A right one
-   * takes the challenge once (GETDEL) and uses the code once (a conditional update), so two parallel right codes give
-   * exactly one session. Only then are the failure counts reset and the session started, with `tfa` true.
+   * The login's code step. The challenge (from the cookie) names the user, and every code first reserves one of its 5
+   * attempts atomically, so parallel guesses never get more than 5 codes checked. The login limits apply as to a
+   * password (a lock refuses even the right code), and a wrong code counts there. A right one takes the challenge once
+   * (GETDEL) and uses the code once (a conditional update), so two parallel right codes give exactly one session. Only
+   * then are the failure counts reset and the session started, with the proof.
    */
   async verifyLogin(
     challengeId: unknown,
@@ -123,8 +124,9 @@ export class TwoFactorService {
   ): Promise<IssuedSession> {
     const box = this.requireBox();
     const id = typeof challengeId === 'string' ? challengeId : '';
-    const userId = id ? await this.challenges.peek(id) : null;
-    if (!userId) throw new ChallengeEndedException(challengeInvalid());
+    const reserved = id ? await this.challenges.reserve(id) : null;
+    if (!reserved) throw new ChallengeEndedException(challengeInvalid());
+    const { userId, attempt } = reserved;
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -138,14 +140,15 @@ export class TwoFactorService {
     const factor = user?.twoFactor;
     if (!user || user.isBlocked || !factor?.enabledAt) {
       // Blocked, or 2FA reset since the password: this challenge can never succeed.
-      await this.challenges.claim(id);
+      await this.challenges.discard(id);
       throw new ChallengeEndedException(challengeInvalid());
     }
 
     await this.checkLimits(user.email, client);
     const proof = await this.prove(box, user.id, factor, input);
     if (!proof) {
-      const usedUp = await this.challenges.fail(id);
+      const usedUp = attempt >= CHALLENGE_MAX_ATTEMPTS;
+      if (usedUp) await this.challenges.discard(id);
       await this.countFailure(user, 'login', input, client, { challengeUsedUp: usedUp });
       throw usedUp ? new ChallengeEndedException(loginCodeInvalid()) : loginCodeInvalid();
     }
