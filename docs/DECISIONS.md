@@ -2,6 +2,34 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-01 — Ambassador teams (core C5b-3; lead's plan and rules)
+
+1. **Shape (CORE-PLAN D7):**
+   - One team per ambassador (`teams.owner_id` UNIQUE) and one team per student (`team_members.user_id` UNIQUE; the lead is a member).
+   - At most 10 members, counted under a row lock on the team, so two joins at once never pass 10.
+2. **Members are minors** (lead):
+   - The student view carries first names only (the first word of the name), never a last name or an email.
+   - Only the lead sees the join code.
+   - Admins see full names and emails in a team's detail.
+   - Audit rows keep ids only; `team.renamed` keeps the reason, never the old or new name.
+3. **The join code** is `TM-` + 6 Crockford characters (32^6, about 1.07 billion codes), CITEXT UNIQUE, with a CHECK for the format. It looks unlike a promo code, so a student does not mix them up. A collision runs the creation again (P2002).
+4. **The join throttle** (lead):
+   - 10 attempts per 10 minutes per user (the route's tier) and 60 per IP (a cache-Redis counter in the service, fail-open like the throttler).
+   - Every attempt counts before anything is looked up, refusals (404, 409) included.
+   - Guessing therefore stays slow: with 1,000 teams, one IP needs about a million tries, some 3,000 hours, on average.
+5. **A revoked or blocked lead** (lead): the team takes no new members (409 `team_closed`) and its members keep it; the admin list shows it as closed. No dissolve or hand-over in v1 (a later admin action if asked).
+6. **Leaving** (lead): members may leave; the lead may not (409 `owner_cannot_leave`), so a team always has its lead.
+7. **Admin rename** (lead): moderation for an unsuitable name, with a reason (3–200) and `expectedUpdatedAt` under a row lock, audited.
+8. **Schema** (one generated and one CHECKs migration): `teams.join_code` (CITEXT, UNIQUE); `teams.name` becomes CITEXT, so names are unique in any case; CHECKs for the name length (3–60) and the code format.
+9. **Web:**
+   - `/dashboard/team` for students and ambassadors: join with a code, the team with first names, leave; an ambassador without a team can start one and copy its code.
+   - The ambassador panel links to it.
+   - `/admin/teams` (admin only): search, the members, rename.
+   - A nav entry in both shells, the access and launch rows.
+10. **Tests:**
+    - `ambassador-teams.int-spec.ts` (9): create and the code; join in any case, first names only, leave, the lead may not; 12 joins at once stop at 10; a revoked lead closes the team; the per-user and per-IP limits with refusals counted; admin list, detail and rename with no names in the audit row; admins only; the CHECKs and the uniques.
+    - web: the area file picks (first names, the code for the lead only, a malformed id never sent), the problem mapper.
+
 ## 2026-11-01 — Ambassador tasks (core C5b-2; lead's plan, defaults and rules)
 
 1. **Approval is final** (lead's default): one transaction with a row lock writes the ledger row `task:<assignmentId>` (task points, `task_id`, `created_by`) `ON CONFLICT DO NOTHING` and sets `approved`. A double click or three admins at once award once; a mistake is corrected with "Adjust points" (C5b-1), so the ledger stays append-only.
