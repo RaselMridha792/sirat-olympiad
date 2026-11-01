@@ -38,7 +38,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - Role changes are not built. When they are, a change away from admin or manager should remove the factor, since the login reads the 2FA row only for those roles.
 10. **Ops:**
     - Compose pins `NODE_ENV=production` for the api, so the stack requires the key and enforces 2FA.
-    - CI's docker job and the drill, rehearsal and exam-load scripts give their throwaway `.env` a random key.
+    - CI's docker job, the drill, the rehearsal, exam-load and the VPS load staging (`load-staging.sh up`) give their throwaway `.env` a random key.
     - The integration tests ignore a key in `apps/api/.env` (`test/load-env.ts`): only the 2FA suites set their own, so every other admin suite runs with 2FA off.
 
 ## 2026-11-01 — The VPS load test runs on a staging stack behind a timed firewall window (E6 kit; exam session, RULEBOOK §13, LAUNCH-PLAN L14)

@@ -174,6 +174,9 @@ case "$cmd" in
         -e "s|^SECURITY_ALERT_EMAIL=.*|SECURITY_ALERT_EMAIL=|" .env.example > "$STAGING_ENV_FILE"
       grep -q '^POSTGRES_APP_PASSWORD=' "$STAGING_ENV_FILE" || printf 'POSTGRES_APP_PASSWORD=%s\n' "$(hex 32)" >> "$STAGING_ENV_FILE"
       grep -q '^COOKIE_SECURE=' "$STAGING_ENV_FILE" || printf 'COOKIE_SECURE=%s\n' "$secure" >> "$STAGING_ENV_FILE"
+      # Production mode requires the admin 2FA key (the example has it commented out): a throwaway one. Nothing here
+      # signs an admin in; the exam comes from the fixtures.
+      printf 'TOTP_ENCRYPTION_KEY=%s\n' "$(hex 32)" >> "$STAGING_ENV_FILE"
       # A production-mode stack (every up without --registration) gets Secure cookies, whatever the example says.
       [ "$registration" = 1 ] || grep -qx 'COOKIE_SECURE=true' "$STAGING_ENV_FILE" ||
         fail "COOKIE_SECURE is not true in $STAGING_ENV_FILE for a production-mode staging"
