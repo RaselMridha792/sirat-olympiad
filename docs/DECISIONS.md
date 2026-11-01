@@ -27,6 +27,21 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - `jury.int-spec.ts`: the video (inside the window, changed, shown back, no link in the audit row, the refusals); assignment; scoring (blind, only the judge's categories, after the close, the average of the latest totals, bad scores, 404s, stopped by the promotion, the counts); the total out of 100 with four criteria; jury only, a demoted and a blocked judge; the CHECKs and append-only, with the migration's SQL in a `…xtest` scratch database.
    - `video-url.spec.ts`: the allowed links and 14 refusals (look-alike hosts, a user name, a port, a backslash, javascript, protocol-relative).
    - web: the area file, the refusal helper, the total and the window helpers.
+## 2026-11-01 — A CI exam smoke that counts outcomes, never time (E6 follow-up; exam session, lead's conditions)
+
+1. **Every PR runs 20 students through a 1-minute exam** in the docker job: `loadtests/exam-local.sh` with `SMOKE=1 NO_BUILD=1 LOAD_TAG=latest`.
+   - It runs on the images the job just built, in its own project `sirat-exam-load`, with nothing published, and is removed at the end.
+   - It costs about 3.5–4 minutes: the exam, the 30 s grace, and up to one minute for the sweep to submit the students who left.
+2. **Only counted outcomes fail it:**
+   - errors over 0.5 %;
+   - a failed check;
+   - a submit without a receipt, or a receipt the waiting room does not show;
+   - an attempt not submitted or not scored;
+   - receipts not equal to the students' own submissions, or sweep submissions not equal to the students who left.
+
+   No latency limit and no timed write window: a shared CI runner's timing proves nothing, and a wall-time assert would only add flakes.
+3. **The runner's fixtures now run in a container** that shares Postgres's network (the migrate image, with the clone's fixtures and `src` mounted read-only), as in the VPS kit. The docker job has no pnpm, and the local runner no longer publishes Postgres on 127.0.0.1.
+4. **Validated locally before the PR:** a build run, and then CI's path with no build (220 s). Each had 20 attempts submitted and scored, receipts equal to the own submissions, and the sweep taking exactly the leavers.
 
 ## 2026-11-01 — Rounds and promotion (core C6a; the C6 plan the lead approved, owner Q4 defaults)
 
