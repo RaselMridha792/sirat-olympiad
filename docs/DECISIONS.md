@@ -39,6 +39,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
      - fourteen statements `sirat_app` must not run, each in a rolled-back transaction (each fails with 42501).
    - Unit tests keep the script's CREATE ROLE attributes and its timeouts equal to the migrations', and prove that it loads Prisma Client only after the `DIRECT_URL` check (a preload hook fails any load of it, by name or by file). An int test proves that `QUIET_SESSION` reaches the server.
 5. **The boot line** `database role=<name> superuser=<bool>` in the API and the worker makes the RUNBOOK §9 item readable from the logs. In production it warns while the role is a superuser; from L8 a superuser is refused.
+
 ## 2026-11-01 — Ambassador points: the referral sweep, the settings and adjustments (core C5b-1; lead's plan and review)
 
 1. **Who writes points:** a worker job, never payments' settle (their code is not touched).
