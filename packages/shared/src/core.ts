@@ -1,6 +1,6 @@
 import type { Category, Role } from './index';
 import type { AdminUserQuery, AnnouncementItem, PageQuery } from './dashboard';
-import type { AnnouncementRecord } from './records';
+import type { AnnouncementRecord, EntryStatus, RoundRecord, RoundType } from './records';
 
 /*
  * Shapes of the core session's endpoints that are not dashboard reads (docs/plans/CORE-PLAN.md). Dashboard read
@@ -379,4 +379,171 @@ export interface TeamRenameRequest {
   name: string;
   reason: string;
   expectedUpdatedAt: string;
+}
+
+// ───────────── Rounds and promotion (core C6a) ─────────────
+
+export const ROUND_LIMITS = {
+  nameMin: 2,
+  nameMax: 60,
+  /** Rounds in all, Round 1 included (rounds_sort_order_check). */
+  maxRounds: 10,
+  criteriaMin: 1,
+  criteriaMax: 20,
+  criterionKeyMax: 40,
+  criterionLabelMax: 80,
+  /** Points a judge gives per criterion (0 to this). */
+  criterionMax: 10,
+  topNMax: 25_000,
+} as const;
+
+/** A criterion key: lower case, digits and underscores, starting with a letter. */
+export const CRITERION_KEY_PATTERN = /^[a-z][a-z0-9_]{1,39}$/;
+
+/** Refusal codes in ApiError.details for rounds and promotion. */
+export const ROUND_REFUSALS = [
+  'stale',
+  'nothing_to_update',
+  'after_final',
+  'too_many_rounds',
+  'bad_window',
+  'bad_criteria',
+  'window_started',
+  'window_shortened',
+  'window_closed',
+  'quiz_round',
+  'not_video_round',
+  'criteria_frozen',
+  'no_next_round',
+  'no_exam',
+  'ambiguous_source',
+  'results_not_published',
+  'window_not_closed',
+  'unscored_entries',
+  'no_entries',
+  'already_promoted',
+] as const;
+export type RoundRefusal = (typeof ROUND_REFUSALS)[number];
+
+/** One jury criterion of a video round; the labels are shown to judges in both languages. */
+export interface RoundCriterion {
+  key: string;
+  en: string;
+  bn: string;
+}
+
+/** The old Zero Olympiad's ten criteria (0–10 each, total 0–100): a new video round's default (owner Q4 default). */
+export const DEFAULT_VIDEO_CRITERIA: readonly RoundCriterion[] = [
+  { key: 'content_relevance', en: 'Content Relevance', bn: 'বিষয়বস্তুর প্রাসঙ্গিকতা' },
+  { key: 'creativity', en: 'Creativity and Innovation', bn: 'সৃজনশীলতা ও উদ্ভাবন' },
+  { key: 'clarity', en: 'Clarity and Communication', bn: 'স্পষ্টতা ও যোগাযোগ' },
+  { key: 'impact', en: 'Impact and Call to Action', bn: 'প্রভাব ও কাজের আহ্বান' },
+  { key: 'presentation', en: 'Presentation and Visual Appeal', bn: 'উপস্থাপনা ও দৃশ্যমান আকর্ষণ' },
+  { key: 'technical_quality', en: 'Technical Quality', bn: 'কারিগরি মান' },
+  { key: 'research', en: 'Research and Data Usage', bn: 'গবেষণা ও তথ্যের ব্যবহার' },
+  { key: 'engagement', en: 'Engagement and Storytelling', bn: 'আকর্ষণ ও গল্প বলা' },
+  { key: 'inclusivity', en: 'Inclusivity and Diversity', bn: 'অন্তর্ভুক্তি ও বৈচিত্র্য' },
+  { key: 'overall', en: 'Overall Learning and Execution', bn: 'সামগ্রিক শিক্ষা ও বাস্তবায়ন' },
+];
+
+/** One promotion out of a round, per category. */
+export interface AdminPromotionRun {
+  id: string;
+  category: Category;
+  toRoundId: string;
+  topN: number;
+  promoted: number;
+  eliminated: number;
+  createdAt: string;
+}
+
+/** GET /admin/rounds (all rounds, at most 10, in order) and GET /admin/rounds/:id. */
+export type AdminRound = Pick<
+  RoundRecord,
+  'id' | 'name' | 'sortOrder' | 'type' | 'opensAt' | 'closesAt'
+> & {
+  /** Video rounds only. */
+  criteria: RoundCriterion[] | null;
+  /** A jury score exists, so the criteria can no longer change. */
+  scored: boolean;
+  /** This round's entries by status. */
+  entries: Record<EntryStatus, number>;
+  promotions: AdminPromotionRun[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** POST /admin/rounds: Round 1 (quiz) exists; admins add video and final rounds after it, in order. */
+export interface RoundCreateRequest {
+  name: string;
+  type: Exclude<RoundType, 'quiz'>;
+  /** Required for a video round (the submission window); optional for a final round (both or neither). */
+  opensAt?: string;
+  closesAt?: string;
+  /** Video rounds; DEFAULT_VIDEO_CRITERIA when left out. */
+  criteria?: RoundCriterion[];
+}
+
+/** PATCH /admin/rounds/:id: the fields sent change; `expectedUpdatedAt` is the version the admin saw. */
+export interface RoundUpdateRequest {
+  name?: string;
+  opensAt?: string;
+  closesAt?: string;
+  criteria?: RoundCriterion[];
+  expectedUpdatedAt: string;
+}
+
+/** The body of both promotion calls. */
+export interface PromotionQuery {
+  /** Everyone ranked at or above this goes through, ties at the cut included (owner Q4a default). */
+  topN: number;
+  category: Category;
+}
+
+/** Echoed back by the run: refused (409 `stale`) when the source changed after the preview. */
+export interface PromotionExpected {
+  promoted: number;
+  sourceKey: string;
+}
+
+/** POST /admin/rounds/:id/promotion/preview: counts only, no names (exam's admin leaderboard has the list). */
+export interface PromotionPreview {
+  from: Pick<RoundRecord, 'id' | 'name' | 'type'>;
+  to: Pick<RoundRecord, 'id' | 'name' | 'type'>;
+  category: Category;
+  topN: number;
+  source:
+    | { kind: 'exam'; examId: string; examTitle: string; generation: number }
+    | { kind: 'jury' };
+  /** Ranked rows of this category in the source. */
+  candidates: number;
+  promoted: number;
+  /** Promoted beyond topN because they tie with the student at the cut (lead: the admin sees why N + k). */
+  tieCount: number;
+  eliminated: number;
+  /** The last promoted rank and its score; null when nobody would be promoted. */
+  cut: { rank: number; score: number; timeTakenSeconds: number | null } | null;
+  expected: PromotionExpected;
+}
+
+/** POST /admin/rounds/:id/promotion. */
+export interface PromotionRequest extends PromotionQuery {
+  expected: PromotionExpected;
+}
+
+export interface PromotionResult {
+  runId: string;
+  promoted: number;
+  eliminated: number;
+  toRound: Pick<RoundRecord, 'id' | 'name'>;
+}
+
+/** GET /rounds/me (student, ambassador): the student's current round and own entry. */
+export interface MyRound {
+  round: Pick<RoundRecord, 'id' | 'name' | 'type' | 'sortOrder' | 'opensAt' | 'closesAt'>;
+  /** null: no entry yet (Round 1 before its promotion). */
+  entryStatus: EntryStatus | null;
+  /** The student's own video link, shown back as text (core C6b). */
+  videoUrl: string | null;
+  videoSubmittedAt: string | null;
 }

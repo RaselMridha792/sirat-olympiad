@@ -65,6 +65,8 @@ describe('GET /users/me and the options', () => {
   it("answers the session user's own profile, nothing more", async () => {
     const s = await student();
     const res = await call<StudentProfile>(env, 'GET', '/users/me', s.cookie);
+    // No round entry yet: the first round (core C6a).
+    const round1 = await prisma.round.findUniqueOrThrow({ where: { sortOrder: 1 } });
     expect(res.status).toBe(200);
     expect(res.json).toMatchObject({
       name: 'Rahim Uddin',
@@ -72,7 +74,7 @@ describe('GET /users/me and the options', () => {
       phone: s.user.phone,
       district: 'Dhaka',
       gradeLevel: { id: grades[0]!.id, label: grades[0]!.label },
-      currentRound: null,
+      currentRound: { id: round1.id, name: round1.name },
     });
     expect(res.text).not.toMatch(/passwordHash|password_hash|\$argon2|not-a-real-hash|isBlocked/);
   });

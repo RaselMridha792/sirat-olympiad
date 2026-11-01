@@ -121,8 +121,9 @@ describe('the counts', () => {
       pendingPayments: 2,
       activeAttempts: 1,
       submittedAttempts: 2,
-      secondRound: null,
-      finalists: null,
+      // Nothing here enters a round: no change, or null while the round does not exist (core C6a).
+      secondRound: before.totals.secondRound === null ? null : 0,
+      finalists: before.totals.finalists === null ? null : 0,
     });
     expect(d.paymentsByStatus).toEqual({
       initiated: 1,
