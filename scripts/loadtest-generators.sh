@@ -14,6 +14,8 @@
 # `set_real_ip_from <ip>;` per address. nginx.conf includes loadtest-realip*.conf, so no file means no generator. Each
 # change is tested with `nginx -t` in the running nginx container, then nginx is reloaded; a failure puts the previous
 # file back (or none) and reloads nothing. Nothing removes the file at its expiry: status says when it has expired.
+# A change returns once nginx's new workers run (`applied`). Old workers keep their open keep-alive connections, and
+# with them the old list, until those close: stop k6 before `off`.
 # Run as the deploy user from the clone. Compose runs as the VPS `$DC`, built the way scripts/deploy.sh builds it:
 #   docker compose --env-file .env [--env-file /var/lib/sirat/release.env] -f infra/docker-compose.yml
 # Tests only: SIRAT_NGINX_CONTAINER=<container> runs the nginx commands with `docker exec <container>` instead
@@ -134,11 +136,32 @@ apply() { # apply on|off: nginx -t, then a reload. On a failure, `on` puts the p
     printf '%s\n' "$out" >&2
     fail "nginx -t failed (above): $after"
   fi
+  local before
+  before=$(workers)
   if ! out=$(in_nginx "${NGINX[@]}" -s reload 2>&1); then
     if [ "$mode" = on ]; then restore; fi
     printf '%s\n' "$out" >&2
     fail "the reload failed (above): $after"
   fi
+  reloaded "$before" || fail "nginx did not start new workers within 10 s (check: \$DC exec nginx ps)"
+  say applied
+}
+workers() { # the PIDs of nginx's workers that accept new connections, on one line
+  in_nginx ps -o pid,args 2>/dev/null | sed -n 's/^ *\([0-9][0-9]*\) nginx: worker process$/\1/p' | sort | tr '\n' ' '
+}
+reloaded() { # reloaded <workers before>: wait until every accepting worker is a new one. `-s reload` only signals the
+  # master, so until its new workers run, a new connection can still reach an old worker with the old list.
+  local before=" $1" now pid fresh i
+  for ((i = 0; i < 40; i++)); do
+    now=$(workers)
+    fresh=1
+    for pid in $now; do
+      if [[ $before == *" $pid "* ]]; then fresh=0; fi
+    done
+    if [ -n "$now" ] && [ "$fresh" = 1 ]; then return 0; fi
+    sleep 0.25
+  done
+  return 1
 }
 
 cmd_on() { # cmd_on <hours> <address>...

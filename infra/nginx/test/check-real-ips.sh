@@ -94,6 +94,17 @@ req() {
   fi
 }
 is() { [ "$1" = "$2" ] || { echo "  got: $1" >&2; return 1; }; }
+eventually() { # eventually <expected> <req args...>: the request answers <expected> within 10 s (a reload is not instant)
+  local expected=$1 got=''
+  shift
+  for _ in $(seq 1 50); do
+    got=$(req "$@")
+    [ "$got" = "$expected" ] && return 0
+    sleep 0.2
+  done
+  echo "  got: $got" >&2
+  return 1
+}
 
 # ---- the restore ----
 check "the trusted peer's CF-Connecting-IP is the client address upstream" \
@@ -149,13 +160,15 @@ gen() { SIRAT_NGINX_CONTAINER="$run-nginx" "$clone/scripts/loadtest-generators.s
 check "before: a generator's CF-Connecting-IP is ignored" \
   is "$(req generator 192.0.2.50 /api/whoami)" "200 real=$generator_ip"
 out=$(gen on "$generator_ip" --hours 1 2>&1) && pass "loadtest-generators.sh on" || fail "loadtest-generators.sh on: $out"
+check "on waits for the new workers (applied)" grep -q '^loadtest-generators: applied$' <<< "$out"
 check "on: the generator's CF-Connecting-IP is the client address" \
-  is "$(req generator 192.0.2.50 /api/whoami)" "200 real=192.0.2.50"
+  eventually "200 real=192.0.2.50" generator 192.0.2.50 /api/whoami
 out=$(gen status 2>&1)
 check "status names the generator and an expiry" grep -q "on (expires .*) $generator_ip" <<< "$out"
 out=$(gen off 2>&1) && pass "loadtest-generators.sh off" || fail "loadtest-generators.sh off: $out"
+check "off waits for the new workers (applied)" grep -q '^loadtest-generators: applied$' <<< "$out"
 check "off: the generator's CF-Connecting-IP is ignored again" \
-  is "$(req generator 192.0.2.51 /api/whoami)" "200 real=$generator_ip"
+  eventually "200 real=$generator_ip" generator 192.0.2.51 /api/whoami
 check "status after off" is "$(gen status 2>&1)" "loadtest-generators: off"
 code=0
 gen on 10.0.0.0/8 > /dev/null 2>&1 || code=$?

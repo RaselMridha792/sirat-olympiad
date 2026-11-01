@@ -486,6 +486,7 @@ scripts/loadtest-generators.sh off                                     # right a
 ```
 - Each generator connects straight to the server on 443, with SNI and Host set to the public host (k6 `hosts` maps the domain to the server's address), and sends `CF-Connecting-IP: <simulated client address>`.
 - Each change runs `nginx -t` before the reload, and a failure puts the previous state back (exit 1).
+- Each change returns once nginx's new workers run (`applied`). Old workers keep their open keep-alive connections, and with them the old trust, until those close: stop k6 before `off`.
 - Nothing turns it off at the expiry, so run `off`. The file is `infra/nginx/loadtest-realip.local.conf` (git-ignored); while it exists, `deploy.sh` still sees a clean clone.
 
 ## 11. Payments: the review list, refunds and manual reconciliation (PayStation has no refund API)
