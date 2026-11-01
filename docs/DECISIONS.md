@@ -21,6 +21,37 @@ One short entry per non-obvious technical or product decision. Newest first. For
 7. **Tests:** `admin-stats.int-spec.ts` (6) and the `dhakaDays` unit spec.
    - `admin-stats.int-spec.ts` covers every count as a difference around its own rows (the test database is shared), the Dhaka day edges, the burst computing once, the cache serving the same `asOf`, the Postgres fallback, the roles, and the counts-only scan.
    - web: `http/stats.test.ts` (picks at every level, shape refusals).
+## 2026-11-01 — Registration surge, local k6 (Claude; payments PR 5, plan step 13; provisional until the VPS)
+
+1. **The scenario** (`loadtests/registration-surge.js`). One iteration is one student, as the browser would do it:
+   - the register page, then `start`;
+   - 80 % open the checkout and pay, then come back through the callback twice;
+   - the result page polls on its own schedule until "completed".
+   It runs only against the fake PayStation, and stops if the checkout is anything else. No admin is needed; registration must already be open.
+2. **Where:** throwaway containers (`sirat-pay-load-*`, `--rm`) with this worktree's API and worker. Nothing touched `sirat` or `sirat_pay`.
+   - The PC (12 logical threads) is shared with the other sessions. These numbers are provisional regressions only.
+   - DoD #17 closes only on the VPS (plan 8.1).
+3. **The rate:** 4 starts/s is 14,400 an hour, more than half of all 25k students in one hour. No registration peak is written down anywhere: if the owner expects a different launch burst, the VPS run uses that.
+4. **Results** (p95 in ms; errors are our API's, 4xx/5xx; "completed" = paid students who saw "completed" while the page polled):
+
+   | Run | API p95 | start | info | callback | current | Errors | Completed | Settle p95 | PC CPU (median / p90) |
+   |---|---|---|---|---|---|---|---|---|---|
+   | 2/s, 3 min | 132 | 240 | 14 | 48 | 37 | 0 of 2,088 | 325 of 325 | 2.3 s | 56 % average |
+   | 4/s, 5 min | 261 | **819** | 70 | 177 | 132 | 0 of 6,749 | 1,053 of 1,053 | 2.5 s | 78 / 98 % |
+   | 4/s, 3 min (repeat) | 231 | **756** | 63 | 159 | 82 | 0 of 4,008 | 620 of 620 | 2.5 s | 61 / 99.5 % |
+
+5. **Reading the numbers:**
+   - The API as a whole passes in every run (p95 < 500 ms, errors 0 %).
+   - `start` alone misses 500 ms at 4/s. On the server side it is the same (797 ms): it is not k6.
+   - At rest `start` costs about 60 ms: the argon2id hash is 26 ms here (19 MiB, t=2), one DB round trip is 1.6 ms (about ten of them), plus the gateway call. There is no global lock in it (row locks only on the student's own attempt).
+   - During the 4/s runs the PC hit 98–100 % CPU at its 90th percentile, while this API and worker used about 5 % of the machine. So the tail comes with the shared PC's load. On the VPS, `start` is measured again at the target rate.
+   - If it still misses there, the first step is more API replicas (RUNBOOK §3), not a weaker argon2 (it is at the OWASP minimum).
+6. **No growing queue:**
+   - The settle time stays at one poll interval (p95 2.3–2.5 s; the page reads every 2 s).
+   - After the runs the worker queue had nothing waiting or active.
+7. **Limits to remember on the VPS:**
+   - Through nginx the generator's single address meets the start limit (300/min per IP). Keep `RATE` at 4 or less per generator machine.
+   - PayStation's IPNs come from a few addresses, and the IPN limit is 600/min per IP. Above 10 payments/s per PayStation address, IPNs get 429. They are only a hint: the callback and reconciliation still settle the payment. The VPS run checks this with the real nginx.
 
 ## 2026-11-01 — Ambassadors: admin approval, server promo codes and the panel (core C5a; plan `docs/plans/CORE-PLAN.md` section 6, Q2 default)
 
