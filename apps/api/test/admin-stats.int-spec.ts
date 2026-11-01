@@ -6,7 +6,7 @@
 import type { PrismaClient } from '@prisma/client';
 import type { AdminStats } from '@sirat/shared';
 import type Redis from 'ioredis';
-import { dhakaDays, STATS_KEY } from '../src/modules/admin/admin-stats.service';
+import { AdminStatsService, dhakaDays, STATS_KEY } from '../src/modules/admin/admin-stats.service';
 import { newPromoCode } from '../src/modules/ambassadors/promo-code';
 import { REDIS_CACHE } from '../src/redis/redis.module';
 import { bootCoreApp, call, registeredStudent, sessionFor, type CoreApp } from './core-helpers';
@@ -37,6 +37,7 @@ afterAll(async () => {
 });
 
 const stats = (cookie = admin.cookie) => call<AdminStats>(env, 'GET', '/admin/stats', cookie);
+const LOCK_KEY = `${STATS_KEY}:lock`;
 
 /** A fresh computation: the cached copy is dropped first. */
 async function fresh(): Promise<AdminStats> {
@@ -184,15 +185,39 @@ describe('the counts', () => {
 
 describe('the cache', () => {
   it('computes once for a burst of admins, then serves the same answer for the TTL', async () => {
-    await redis.del(STATS_KEY);
-    const from = env.appPrisma.statements.length;
-    const burst = await Promise.all(Array.from({ length: 6 }, () => stats()));
+    await redis.del(STATS_KEY, LOCK_KEY);
+    const service = env.app.get(AdminStatsService);
+    const realCompute = service.compute.bind(service);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    // The leader's computation waits until the whole burst has tried the lock, however slow the runner is.
+    const compute = jest.spyOn(service, 'compute').mockImplementation(async (now?: Date) => {
+      await gate;
+      return realCompute(now);
+    });
+    const realSet = redis.set.bind(redis) as (...args: unknown[]) => Promise<unknown>;
+    let lockTries = 0;
+    const set = jest.spyOn(redis, 'set').mockImplementation((async (...args: unknown[]) => {
+      const answer = await realSet(...args);
+      if (args[0] === LOCK_KEY) lockTries += 1;
+      return answer;
+    }) as never);
+    let burst: Awaited<ReturnType<typeof stats>>[];
+    try {
+      const pending = Promise.all(Array.from({ length: 6 }, () => stats()));
+      for (let i = 0; i < 400 && lockTries < 6; i += 1)
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(lockTries).toBe(6);
+      release();
+      burst = await pending;
+      expect(compute).toHaveBeenCalledTimes(1);
+    } finally {
+      release();
+      compute.mockRestore();
+      set.mockRestore();
+    }
     expect(burst.map((r) => r.status)).toEqual([200, 200, 200, 200, 200, 200]);
     expect(new Set(burst.map((r) => r.json.asOf)).size).toBe(1);
-    const daily = env.appPrisma.statements
-      .slice(from)
-      .filter((q) => q.includes("AT TIME ZONE 'Asia/Dhaka'"));
-    expect(daily).toHaveLength(1);
 
     await registeredStudent(prisma, { category: 'activist' });
     const cached = await stats();
@@ -200,6 +225,33 @@ describe('the cache', () => {
     expect(cached.json.totals.registered).toBe(burst[0]!.json.totals.registered);
     expect(await redis.ttl(STATS_KEY)).toBeGreaterThan(0);
     expect(await redis.ttl(STATS_KEY)).toBeLessThanOrEqual(60);
+  });
+
+  it('a request that takes the lock after the leader finished uses the result instead of computing again', async () => {
+    await redis.del(STATS_KEY, LOCK_KEY);
+    const first = await stats();
+    expect(first.status).toBe(200);
+    const service = env.app.get(AdminStatsService);
+    const compute = jest.spyOn(service, 'compute');
+    // Its first look misses, as if it read just before the leader wrote; the lock is free by then.
+    const realGet = redis.get.bind(redis) as (key: string) => Promise<string | null>;
+    let missed = false;
+    const get = jest.spyOn(redis, 'get').mockImplementation((async (key: string) => {
+      if (key === STATS_KEY && !missed) {
+        missed = true;
+        return null;
+      }
+      return realGet(key);
+    }) as never);
+    try {
+      const late = await stats();
+      expect(missed).toBe(true);
+      expect(late.json.asOf).toBe(first.json.asOf);
+      expect(compute).not.toHaveBeenCalled();
+    } finally {
+      get.mockRestore();
+      compute.mockRestore();
+    }
   });
 
   it('reads Postgres when the cache does not answer', async () => {
