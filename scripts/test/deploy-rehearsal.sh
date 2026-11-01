@@ -33,9 +33,12 @@ git_c() { in_clone git "$@"; }
 DC=(docker compose -p "$P" --env-file "$CLONE_DIR/.env" --env-file "$STATE/release.env"
   -f "$CLONE_DIR/infra/docker-compose.yml" -f "$CLONE_DIR/infra/deploy/rehearsal.compose.yml")
 dc() { in_clone "${DC[@]}" "$@"; }
-deploy() { # deploy <args>: output in $OUT/last.log, status returned
+DEPLOY_N=0
+deploy() { # deploy <args>: output in $OUT/last.log (and in full in $OUT/deploy-<n>.log), status returned
   local s=0
+  DEPLOY_N=$((DEPLOY_N + 1))
   in_clone bash scripts/deploy.sh "$@" > "$OUT/last.log" 2>&1 || s=$?
+  cp "$OUT/last.log" "$OUT/deploy-$DEPLOY_N.log"
   sed 's/^/        | /' "$OUT/last.log" | tail -n 12
   return "$s"
 }
@@ -285,7 +288,7 @@ echo "10. the CI gate and an exam window"
 in_clone sh -c "sed 's/^DEPLOY_REHEARSAL=1$/DEPLOY_REHEARSAL=0/' .env.deploy > /home/deploy/prod.env && chmod 600 /home/deploy/prod.env"
 s=0; (cd "$CLONE_DIR" && su-exec deploy env HOME=/home/deploy SIRAT_DEPLOY_ENV=/home/deploy/prod.env bash scripts/deploy.sh "$C") > "$OUT/last.log" 2>&1 || s=$?
 check "without rehearsal mode, C is refused as not on origin/main" test "$s" -ne 0 -a -n "$(grep -F 'is not on origin/main' "$OUT/last.log")"
-pg "insert into exams (id, title, window_start, window_end, duration_minutes, questions_per_attempt, status) values (gen_random_uuid(), 'rehearsal window', now() - interval '5 minutes', now() + interval '20 minutes', 10, 1, 'published')" > /dev/null
+pg "insert into exams (id, title, window_start, window_end, duration_minutes, questions_per_attempt, status, published_at) values (gen_random_uuid(), 'rehearsal window', now() - interval '5 minutes', now() + interval '20 minutes', 10, 1, 'published', now() - interval '10 minutes')" > /dev/null
 s=0; deploy "$A" > /dev/null || s=$?
 check "an exam window open now: a deploy is refused" test "$s" -ne 0 -a -n "$(grep -F 'exam window is open' "$OUT/last.log")"
 pg "delete from exams where title = 'rehearsal window'" > /dev/null || note "could not delete the test exam (a throwaway database)"

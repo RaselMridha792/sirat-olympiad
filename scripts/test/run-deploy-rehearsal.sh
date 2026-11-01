@@ -4,7 +4,8 @@
 # steps are in deploy-rehearsal.sh. Release A is this checkout's HEAD, so commit first.
 # Announce it before running: image builds take CPU for about 30-50 minutes, the stack 1.5-2 GB of RAM, and nginx
 # listens on 127.0.0.1:18080/18443. It never touches project sirat. Everything it made is removed at the end.
-# Usage: bash scripts/test/run-deploy-rehearsal.sh   (docker and git; Git Bash on Windows works)
+# Usage: [REHEARSAL_LOGS=<dir>] bash scripts/test/run-deploy-rehearsal.sh   (docker and git; Git Bash on Windows works)
+#   REHEARSAL_LOGS keeps every deploy's full output and the request loop's log (no secret is ever in them).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 # Git Bash on Windows: docker gets container paths as written (dk); host paths are converted as usual.
@@ -37,6 +38,7 @@ cleanup() {
     done < "$tmp/out/shas"
   fi
   dk volume rm "$VOL" > /dev/null 2>&1 || true
+  if [ -n "${REHEARSAL_LOGS:-}" ]; then mkdir -p "$REHEARSAL_LOGS" && cp -r "$tmp/out/." "$REHEARSAL_LOGS/" || true; fi
   rm -rf "$tmp"
 }
 trap cleanup EXIT

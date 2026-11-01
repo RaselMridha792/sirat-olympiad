@@ -197,11 +197,14 @@ inner() { # inner <path>: "<status> <body>" through nginx's internal listener
   dc exec -T nginx curl -s -m 10 -w '\n%{http_code}' "http://127.0.0.1:8081$1" | awk '{lines[NR]=$0} END {printf "%s", lines[NR]; for (i = 1; i < NR; i++) printf " %s", lines[i]}'
 }
 PUBLIC_PENDING=0
+# Each failed check prints its line now and is kept, so an automatic rollback can repeat it at the end.
+SMOKE_FAILS=()
+bad() { echo "deploy: smoke: $*" >&2; SMOKE_FAILS+=("$*"); ok=0; } # ok: smoke's own variable
 smoke() { # smoke <tag>
   local tag=$1 ok=1 out cid line want
-  out=$(inner /api/ready); [ "$out" = '200 {"status":"ready"}' ] || { echo "deploy: smoke: /api/ready through the internal listener: ${out%% *}" >&2; ok=0; }
-  out=$(inner /api/health); [ "${out%% *}" = 200 ] || { echo "deploy: smoke: /api/health through the internal listener: ${out%% *}" >&2; ok=0; }
-  out=$(inner /); [ "${out%% *}" = 200 ] || { echo "deploy: smoke: the home page through the internal listener: ${out%% *}" >&2; ok=0; }
+  out=$(inner /api/ready); [ "$out" = '200 {"status":"ready"}' ] || bad "/api/ready through the internal listener: ${out%% *}"
+  out=$(inner /api/health); [ "${out%% *}" = 200 ] || bad "/api/health through the internal listener: ${out%% *}"
+  out=$(inner /); [ "${out%% *}" = 200 ] || bad "the home page through the internal listener: ${out%% *}"
 
   local public
   public="$(cfg DEPLOY_PUBLIC_URL "$(envval APP_URL)")"
@@ -209,12 +212,12 @@ smoke() { # smoke <tag>
   if grep -q '^maintenance: on' <<< "$(scripts/maintenance.sh status)"; then
     PUBLIC_PENDING=1
     out=$(curl -s -m 10 -o /dev/null -w '%{http_code}' "$public/healthz")
-    [ "$out" = 200 ] || { echo "deploy: smoke: public /healthz during maintenance: $out" >&2; ok=0; }
+    [ "$out" = 200 ] || bad "public /healthz during maintenance: $out"
     out=$(curl -s -m 10 -w ' %{http_code}' "$public/api/ready")
-    [[ "$out" == *'"code":"MAINTENANCE"'*' 503' ]] || { echo "deploy: smoke: public /api/ready during maintenance is not the MAINTENANCE answer" >&2; ok=0; }
+    [[ "$out" == *'"code":"MAINTENANCE"'*' 503' ]] || bad "public /api/ready during maintenance is not the MAINTENANCE answer"
     say "smoke: maintenance is on: the public app check waits for maintenance off (scripts/maintenance.sh off, then scripts/healthcheck.sh $public)"
   else
-    scripts/healthcheck.sh "$public" || ok=0
+    scripts/healthcheck.sh "$public" || bad "the public healthcheck ($public)"
   fi
 
   # Every API replica's PayStation boot line must match this .env (values compared, never printed).
@@ -223,32 +226,32 @@ smoke() { # smoke <tag>
   label=$(envval PAYSTATION_ACCOUNT_LABEL)
   prefix=$(envval PAYSTATION_INVOICE_PREFIX)
   for cid in $(dc ps -q api); do
-    [ "$(docker inspect -f '{{.Config.Image}}' "$cid")" = "sirat-api:$tag" ] || { echo "deploy: smoke: an api container does not run sirat-api:$tag" >&2; ok=0; }
+    [ "$(docker inspect -f '{{.Config.Image}}' "$cid")" = "sirat-api:$tag" ] || bad "an api container does not run sirat-api:$tag"
     logs=$(docker logs "$cid" 2>&1 || true)
     line=$(grep -E 'PayStation (env=|disabled)' <<< "$logs" | sed -n 1p || true)
     if [ -n "$pay_env" ]; then
       for want in "env=$pay_env " "callback=https://" "ipn=https://"; do
-        [[ "$line" == *"$want"* ]] || { echo "deploy: smoke: an API's PayStation boot line does not match .env (${want%%=*})" >&2; ok=0; }
+        [[ "$line" == *"$want"* ]] || bad "an API's PayStation boot line does not match .env (${want%%=*})"
       done
-      [ -z "$label" ] || [[ "$line" == *"account=$label "* ]] || { echo "deploy: smoke: an API's PayStation account label does not match .env" >&2; ok=0; }
-      [ -z "$prefix" ] || [[ "$line" == *"invoicePrefix=$prefix "* ]] || { echo "deploy: smoke: an API's PayStation invoice prefix does not match .env" >&2; ok=0; }
+      [ -z "$label" ] || [[ "$line" == *"account=$label "* ]] || bad "an API's PayStation account label does not match .env"
+      [ -z "$prefix" ] || [[ "$line" == *"invoicePrefix=$prefix "* ]] || bad "an API's PayStation invoice prefix does not match .env"
     else
-      [[ "$line" == *'PayStation disabled'* ]] || { echo "deploy: smoke: PAYSTATION_ENV is blank but an API's boot line does not say disabled" >&2; ok=0; }
-      grep -q 'payments are DISABLED' <<< "$logs" || { echo "deploy: smoke: an API did not warn that payments are DISABLED" >&2; ok=0; }
-      if registration_open; then echo "deploy: smoke: payments are disabled while registration_open is true" >&2; ok=0; fi
+      [[ "$line" == *'PayStation disabled'* ]] || bad "PAYSTATION_ENV is blank but an API's boot line does not say disabled"
+      grep -q 'payments are DISABLED' <<< "$logs" || bad "an API did not warn that payments are DISABLED"
+      if registration_open; then bad "payments are disabled while registration_open is true"; fi
     fi
   done
 
   cid=$(container_of worker)
   [ -n "$cid" ] && [ "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$cid")" = healthy ] ||
-    { echo "deploy: smoke: the worker is not healthy" >&2; ok=0; }
+    bad "the worker is not healthy"
   # Nothing pending and nothing failed. After a rollback the database may hold newer migrations than this release
   # knows ("missing from the local migrations directory"): expected, since migrations stay applied.
   out=$(dc_at "$tag" run --rm --no-deps migrate node_modules/.bin/prisma migrate status 2>&1 || true)
   if ! grep -q 'Database schema is up to date' <<< "$out" &&
     { grep -qiE 'not yet been applied|have failed|failed migration' <<< "$out" || ! grep -q 'missing from the local migrations directory' <<< "$out"; }; then
-    echo "deploy: smoke: prisma migrate status shows pending or failed migrations" >&2
-    ok=0
+    tail -n 8 <<< "$out" >&2
+    bad "prisma migrate status shows pending or failed migrations"
   fi
   [ "$ok" = 1 ]
 }
@@ -345,10 +348,20 @@ if ! out=$(dc_at "$SHA" run --rm --no-deps migrate 2>&1) || ! grep -q 'config se
 fi
 
 rollback_after_switch() { # rollback_after_switch <why>
-  echo "deploy: FAILED after the switch ($1): rolling back to ${LIVE:-nothing}" >&2
+  # Kept before the rollback's own output buries them: the failed checks and the app containers' states.
+  local why=$1 failed=("${SMOKE_FAILS[@]}") state
+  state=$(dc ps -a --format '{{.Service}} {{.State}} {{.Health}}' "${APPS[@]}" 2> /dev/null || true)
+  explain() {
+    local f
+    echo "deploy: why $SHA failed: $why" >&2
+    for f in "${failed[@]}"; do echo "deploy:   - $f" >&2; done
+    [ -z "$state" ] || while IFS= read -r f; do echo "deploy:   app container: $f" >&2; done <<< "$state"
+  }
+  echo "deploy: FAILED after the switch ($why): rolling back to ${LIVE:-nothing}" >&2
   record "$SHA" failed
   if [ -z "$LIVE" ]; then
     scripts/maintenance.sh on > /dev/null
+    explain
     fail "the first release failed: maintenance is ON; fix it and deploy again"
   fi
   local started=$SECONDS
@@ -359,6 +372,7 @@ rollback_after_switch() { # rollback_after_switch <why>
     echo "deploy: THE ROLLBACK TO $LIVE ALSO FAILED: act now (RUNBOOK section 2)" >&2
   fi
   echo "deploy: !!! MIGRATIONS STAY APPLIED: the database keeps $SHA's migrations; $LIVE runs on that schema !!!" >&2
+  explain
   exit 1
 }
 
