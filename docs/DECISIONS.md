@@ -2,6 +2,19 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-01 — The checkout time limit is PayStation's link lifetime: 10 minutes (Claude; S12, plan Q5/D3, lead)
+
+1. **Measured (S12, sandbox, API only, no payment):** an unpaid checkout link works for about 9 minutes. At 10 it shows "Invalid or Expired Token".
+   - v1 keeps answering `processing` for that invoice, so PayStation never tells us "expired".
+   - With the old 60 minutes, "Continue payment" sent a student to a dead page for about 50 minutes.
+2. **The rule was already set** (plan Q5, D3; the owner's): the time limit equals the link lifetime, never shorter. The lead applied it; it is not a new policy.
+   - The seeded `payment_expiry_minutes` is now 10, and an invalid stored value falls back to 10.
+   - After 10 minutes the student sees "Try again", which makes a new invoice.
+3. **Nothing paid is lost:** a payment finished at 9:59 whose IPN comes after our expiry is still settled. The IPN asks for a check inside the 48 h late watch, and the check marks it paid (`late_success`, with its account). `payments-hooks.int-spec` covers exactly that sequence.
+4. **Databases that already exist keep their row,** because the seed is insert-only. Production starts fresh and gets 10. On the shared dev databases, nobody changes the admin setting without asking.
+5. **The "already in progress" message** no longer names a number of minutes (bn and en): an admin can change the setting.
+6. **Re-measure on the client's live account** (plan §13; RUNBOOK §11).
+
 ## 2026-11-01 — Nightly session and token cleanup (Claude; L13, LAUNCH-PLAN §9, A2's notes, lead review)
 
 1. **The rule is A2.1b #9 as recorded:**

@@ -350,6 +350,11 @@ After go-live, confirm in the nginx access log that client addresses are real us
 
 **The free book's courier list:** `GET /api/admin/book-orders/export.csv?status=confirmed` (admin only; audited with the filter and the row count). It holds minors' addresses and phone numbers: hand it to the courier, then delete the downloaded file. Nothing is stored on the server. After the pickup, mark those orders shipped (`POST /api/admin/book-orders/ship`); from then on the student cannot change the address. **Marked shipped by mistake:** it cannot be undone (the trigger `book_orders_locked_after_shipping` locks the order, by design). Do not edit the database: record the case in the courier sheet (the order code, what was wrong, the right address from the student) and handle it by hand with the courier.
 
+**The checkout time limit** (`payment_expiry_minutes`, default 10) equals PayStation's checkout-link lifetime. In the sandbox the link dies after about 10 minutes (S12), and v1 then still says `processing`. A longer limit would offer "Continue payment" on a dead link.
+- **Re-measure it on the client's live account** in the account-switch check (PAYMENTS-PLAN §13): make one unpaid checkout, and open its link every minute until it says "Invalid or Expired Token".
+- If the lifetime differs, set the setting to it in `/admin/settings` (it is audited). Never set it shorter than the lifetime (D3).
+- A payment finished just before the limit is not lost: the IPN, the callback or reconciliation within the 48 h late watch still marks it paid (`late_success`).
+
 **Changing the fee or the registration window:** `PUT /admin/settings/:key` with the value the form showed as `expected` (409 if someone changed it meanwhile); the fee needs a reason. Payments already started keep their amount.
 
 ## 12. Email (Amazon SES)
