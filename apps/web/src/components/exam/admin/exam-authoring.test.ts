@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { decideAccess } from '../../../lib/access.ts';
 import { ApiRequestError, SessionExpiredError } from '../../../lib/api.ts';
 import {
   addOption,
@@ -389,6 +390,27 @@ test('what the question buttons offer in each state', () => {
     removal: null,
     canRemoveNow: false,
   });
+});
+
+test('a published or archived exam never offers a delete (questions are versioned or retired)', () => {
+  for (const status of ['published', 'archived'] as const)
+    for (const randomDraw of [false, true])
+      for (const active of [1, 10, 50])
+        assert.notEqual(
+          questionRules({ status, randomDraw, questionsPerAttempt: 10 }, active).removal,
+          'delete',
+          `${status} ${randomDraw} ${active}`,
+        );
+});
+
+test('the authoring pages are admin only, as the API (a manager has no write path)', () => {
+  const id = '0b6f7d2e-8f1c-4c1e-9a55-1f2d3c4b5a69';
+  for (const path of ['/admin/exams/new', `/admin/exams/${id}/edit`, `/admin/exams/${id}`]) {
+    assert.deepEqual(decideAccess(path, 'admin'), { kind: 'ok' }, path);
+    for (const role of ['manager', 'jury'] as const)
+      assert.deepEqual(decideAccess(path, role), { kind: 'not-found' }, `${role} ${path}`);
+    assert.equal(decideAccess(path, 'student').kind, 'redirect', path);
+  }
 });
 
 test('every reason a write was refused comes back, known codes only', () => {

@@ -1,14 +1,16 @@
 // Browser end-to-end test of exam authoring (E5b) against the whole stack behind nginx (APP_URL), with the shared CDP
 // driver. An admin, in the browser: the settings form (its own checks first, then a draft), questions through the
-// dialog (its checks, add, edit in place, delete), publish (refused with the reason, then done), a published edit
-// that becomes version 2, an unpublish the server refuses, the settings of a published exam (frozen fields, a later
-// close with a reason), a change made elsewhere refused as stale, and an archive. The settings page must carry no
-// question or answer key.
+// dialog (its checks, add, edit in place, delete; markup shows as plain text), publish (refused with the reason, then
+// done), no delete once published (the API refuses one too), a published edit that becomes version 2, an unpublish
+// the server refuses, the settings of a published exam (frozen fields, a later close with a reason), a change made
+// elsewhere refused as stale, a random-draw exam's retire (down to the minimum, kept in the history), and an archive.
+// The settings page must carry no question or answer key.
 //
 //   E2E_ADMIN_EMAIL=... E2E_ADMIN_PASSWORD=... pnpm --filter @sirat/web e2e:exam-admin [baseUrl]
 //
-// The local stack is shared: say so before running this (RUNBOOK §0). It leaves one published exam
-// ("E2E authoring <time>", open for about 90 minutes) and one archived draft behind. Loopback URLs only.
+// The local stack is shared: say so before running this (RUNBOOK §0). It leaves two published exams ("E2E authoring
+// <time>", open for about 90 minutes; "E2E authoring pool <time>", opening tomorrow) and one archived draft behind.
+// Loopback URLs only.
 import { randomBytes } from 'node:crypto';
 import { apiLogin, cspReport, launchBrowser } from './lib/cdp.mjs';
 import { isLoopbackUrl } from './lib/local-only.mjs';
@@ -63,6 +65,16 @@ async function adminApi(cookies, method, path, body) {
   const text = await res.text();
   if (!res.ok) throw new Error(`${method} ${path} answered ${res.status}: ${text.slice(0, 200)}`);
   return text ? JSON.parse(text) : null;
+}
+
+/** The status and refusal codes of a call that is expected to be refused. */
+async function adminRefusal(cookies, method, path) {
+  const res = await fetch(`${BASE}/api${path}`, {
+    method,
+    headers: { cookie: cookieHeader(cookies), 'x-requested-with': 'sirat-web' },
+  });
+  const body = await res.json().catch(() => null);
+  return { status: res.status, details: Array.isArray(body?.details) ? body.details : [] };
 }
 
 /** Bangladesh wall-clock time for a datetime-local input, `minutes` from now (whole minutes). */
@@ -203,20 +215,33 @@ try {
     },
   );
 
-  await step('three questions are added through the dialog', async () => {
-    for (const n of [1, 2, 3]) {
-      await clickWhenReady(button('Add question'));
-      await fillQuestion(
-        `E2E authoring question ${n} ${CANARY}`,
-        [`Alpha ${n}`, `Beta ${n}`, `Gamma ${n}`, `Delta ${n}`],
-        n % 4,
+  // Question 3 carries markup: it must show as typed, never become elements (CLAUDE.md DON'T 13).
+  const MARKUP = '<b>bold</b> <img src="x" onerror="window.__sirat_xss = 1">';
+  await step(
+    'three questions are added through the dialog; markup shows as plain text',
+    async () => {
+      for (const n of [1, 2, 3]) {
+        await clickWhenReady(button('Add question'));
+        await fillQuestion(
+          `E2E authoring question ${n} ${n === 3 ? MARKUP : ''} ${CANARY}`,
+          [`Alpha ${n}`, `Beta ${n}`, `Gamma ${n}`, n === 3 ? '<i>Delta</i> 3' : `Delta ${n}`],
+          n % 4,
+        );
+        await clickWhenReady(inDialog('Save'));
+        await page.waitFor(dialogClosed);
+        await page.waitFor(text(`E2E authoring question ${n}`));
+      }
+      await page.waitFor(text('Questions (3)'));
+      check(await page.evaluate(text(MARKUP)), 'the markup is shown as typed');
+      check(await page.evaluate(text('<i>Delta</i> 3')), 'an option with markup is shown as typed');
+      check(
+        await page.evaluate(
+          `!document.querySelector('section[aria-labelledby="exam-questions"] :is(b, i), img[src="x"]') && !window.__sirat_xss`,
+        ),
+        'markup became elements',
       );
-      await clickWhenReady(inDialog('Save'));
-      await page.waitFor(dialogClosed);
-      await page.waitFor(text(`E2E authoring question ${n}`));
-    }
-    await page.waitFor(text('Questions (3)'));
-  });
+    },
+  );
 
   await step('publishing 3 questions for 2 per attempt is refused, with the reason', async () => {
     await clickWhenReady(button('Publish'));
@@ -257,6 +282,34 @@ try {
     check(await page.evaluate(`!!(${button('Unpublish')})`), 'Unpublish is offered');
     check(await page.evaluate(`!(${button('Add question')})`), 'no adding to a fixed set');
   });
+
+  await step(
+    'published without a random draw: no delete or retire, and the API refuses a delete',
+    async () => {
+      check(
+        await page.evaluate(
+          `!document.querySelector('button[aria-label^="Delete question"], button[aria-label^="Retire question"]')`,
+        ),
+        'a delete or retire button is offered',
+      );
+      check(
+        await page.evaluate(`!!document.querySelector('button[aria-label="Edit question 1"]')`),
+        'edit stays offered',
+      );
+      const exam = await adminApi(cookies, 'GET', `/admin/exams/${examId}`);
+      const refused = await adminRefusal(
+        cookies,
+        'DELETE',
+        `/admin/exams/${examId}/questions/${exam.questions[0].id}`,
+      );
+      check(
+        refused.status === 409 && refused.details.includes('pool_fixed'),
+        `DELETE answered ${refused.status} ${refused.details.join(',')}`,
+      );
+      const after = await adminApi(cookies, 'GET', `/admin/exams/${examId}`);
+      check(after.questions.length === 2, `${after.questions.length} active questions`);
+    },
+  );
 
   await step('a published edit says it makes version 2, and does', async () => {
     await clickWhenReady(`document.querySelector('button[aria-label="Edit question 2"]')`);
@@ -338,6 +391,66 @@ try {
       await page.waitFor(text('Someone changed this exam since you opened it'));
       const after = await adminApi(cookies, 'GET', `/admin/exams/${examId}`);
       check(after.title === elsewhere, `title ${after.title}`);
+    },
+  );
+
+  await step(
+    'published with a random draw: retire (never delete) down to the minimum, kept in the history',
+    async () => {
+      const tomorrow = Date.now() + 86_400_000;
+      let pool = await adminApi(cookies, 'POST', '/admin/exams', {
+        title: `E2E authoring pool ${new Date().toISOString()}`,
+        category: null,
+        roundId: null,
+        windowStart: new Date(tomorrow).toISOString(),
+        windowEnd: new Date(tomorrow + 3_600_000).toISOString(),
+        durationMinutes: 10,
+        questionsPerAttempt: 2,
+        graceSeconds: 30,
+        randomDraw: true,
+      });
+      for (const n of [1, 2, 3])
+        await adminApi(cookies, 'POST', `/admin/exams/${pool.id}/questions`, {
+          text: `E2E pool question ${n}`,
+          options: ['A', 'B'].map((key) => ({ key, text: `Pool option ${key}${n}` })),
+          correctKey: 'A',
+          explanation: null,
+          keepOptionOrder: false,
+        });
+      pool = await adminApi(cookies, 'GET', `/admin/exams/${pool.id}`);
+      await adminApi(cookies, 'POST', `/admin/exams/${pool.id}/publish`, {
+        expectedUpdatedAt: pool.updatedAt,
+      });
+      const third = pool.questions[2];
+
+      await page.goto(`${BASE}/admin/exams/${pool.id}`);
+      await page.waitFor(text('Students get 2 of the 3 active questions.'));
+      check(
+        await page.evaluate(`!document.querySelector('button[aria-label^="Delete question"]')`),
+        'Delete is offered in a published exam',
+      );
+      check(await page.evaluate(`!!(${button('Add question')})`), 'a pool can grow');
+      await clickWhenReady(`document.querySelector('button[aria-label="Retire question 3"]')`);
+      await clickWhenReady(inDialog('Retire'));
+      await page.waitFor(text('Questions (2)'));
+      await page.waitFor(
+        text('At least as many questions as each attempt needs must stay active.'),
+      );
+      check(
+        await page.evaluate(
+          `[...document.querySelectorAll('button[aria-label^="Retire question"]')].every((b) => b.disabled)`,
+        ),
+        'retiring below the questions per attempt is offered',
+      );
+      const versions = await adminApi(
+        cookies,
+        'GET',
+        `/admin/exams/${pool.id}/questions/${third.id}/versions`,
+      );
+      check(
+        versions.length === 1 && versions[0].isActive === false && versions[0].deactivatedAt,
+        `the retired question: ${JSON.stringify(versions.map((v) => [v.version, v.isActive]))}`,
+      );
     },
   );
 
