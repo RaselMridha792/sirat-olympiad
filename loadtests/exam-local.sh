@@ -2,12 +2,14 @@
 # The exam simulation (loadtests/exam-simulation.js) on this machine, in its own compose project only (E6; EXAM-PLAN
 # 6.2). Provisional numbers that catch regressions; the real ones come from the VPS run (RULEBOOK §13).
 #
-#   bash loadtests/exam-local.sh [steady|surge|timeup]
+#   bash loadtests/exam-local.sh [steady|surge|timeup|login]
 #   env: USERS (300), DURATION exam minutes (3), QUESTIONS (30), RAMP (30 s), RATE (10/s), MIN_WORK (0.6),
 #        API_REPLICAS (2), LOAD_OUT (the output folder), KEEP_IMAGES=1 (keep the built images for the next run);
 #        CHECKPOINT_MIN, CHECKPOINT_MAX and LEAVE_SHARE go to k6 as they are
 #        NO_BUILD=1 LOAD_TAG=<tag>: use the existing sirat-*:<tag> images (never removed then), e.g. CI's :latest
 #        SMOKE=1: correctness only (CI): no latency thresholds and no write window, only counted outcomes
+#        login: loadtests/login-surge.js at each of LOGIN_RATES ("10 20 40 60" logins/s), LOGIN_HOLD (60s) each;
+#        a table of p95 and errors per rate (the knee of argon2 on these cores); no exam
 #
 # What it does:
 #   - builds this checkout's migrate, api and worker images as sirat-*:exam-load (the build cache makes a rerun quick);
@@ -28,7 +30,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 SCENARIO=${1:-steady}
-case "$SCENARIO" in steady | surge | timeup) ;; *) echo "usage: $0 [steady|surge|timeup]" >&2; exit 2 ;; esac
+case "$SCENARIO" in steady | surge | timeup | login) ;; *) echo "usage: $0 [steady|surge|timeup|login]" >&2; exit 2 ;; esac
 USERS=${USERS:-300}
 DURATION=${DURATION:-3}
 QUESTIONS=${QUESTIONS:-30}
@@ -125,6 +127,57 @@ fixtures() {
     -v "$(hostpath "$PWD/apps/api/src"):/repo/apps/api/src:ro" \
     "sirat-migrate:$TAG" node_modules/.bin/tsx prisma/fixtures/loadtest-fixtures.ts "$@"
 }
+# The peak CPU per container while a step runs (docker stats every 15 s; 100 % = one core).
+dstats() {
+  local ids
+  mapfile -t ids < <(dk ps -q --filter "label=com.docker.compose.project=$P")
+  dk stats --no-stream --format '{{.Name}} {{.CPUPerc}} {{.MemUsage}}' "${ids[@]}"
+}
+peaks() { # peaks <file>: "api 130% postgres 54% ..."
+  awk '{ sub(/-[0-9]+$/, "", $1); sub(/^'"$P"'-/, "", $1); c = $2 + 0; if (c > m[$1]) m[$1] = c }
+    END { for (k in m) printf "%s %.0f%%  ", k, m[k] }' "$1"
+}
+
+if [ "$SCENARIO" = login ]; then
+  say "$USERS students"
+  fixtures --users "$USERS" > "$OUT/fixtures.log" 2>&1 || { say "the fixtures failed (see $OUT/fixtures.log)" >&2; exit 1; }
+  dc up -d --wait --no-deps api worker >> "$OUT/setup.log" 2>&1 || { say "api or worker did not start (see $OUT/setup.log)" >&2; exit 1; }
+  say "ready after $((SECONDS - t0)) s; logins at ${LOGIN_RATES:-10 20 40 60}/s, ${LOGIN_HOLD:-60s} each"
+  # One k6 run per rate, so each has its own summary; the students are logged in again and again in turn.
+  # 429s get their own column: a throttle must never read as CPU.
+  printf '%-6s %-10s %-10s %-9s %-5s %-8s %s\n' rate/s "login p95" "me p95" errors 429s dropped "peak CPU (api, postgres)" > "$OUT/login-table.txt"
+  fails=0
+  for r in ${LOGIN_RATES:-10 20 40 60}; do
+    [[ $r =~ ^[0-9]+$ ]] || { say "LOGIN_RATES: whole numbers" >&2; exit 2; }
+    : > "$OUT/docker-stats-$r.txt"
+    ( while sleep 15; do dstats >> "$OUT/docker-stats-$r.txt" 2> /dev/null || true; done ) &
+    stats_pid=$!
+    st=0
+    PASSWORD=$FIXTURE_PASSWORD dk run --rm --name "$P-k6" --network "${P}_default" --user "$(id -u):$(id -g)" \
+      -v "$(hostpath "$PWD/loadtests"):/scripts:ro" -v "$(hostpath "$OUT"):/out" \
+      -e PASSWORD -e BASE_URL=http://api:4000 -e "USERS=$USERS" -e "RATE=$r" -e "HOLD=${LOGIN_HOLD:-60s}" -e "SMOKE=$SMOKE" \
+      "$K6_IMAGE" run --quiet --summary-export "/out/login-$r.json" /scripts/login-surge.js > "$OUT/k6-login-$r.log" 2>&1 || st=$?
+    kill "$stats_pid" 2> /dev/null || true
+    row=$(node -e '
+      const m = require(process.argv[1]).metrics, p = (k) => (m[k] && m[k]["p(95)"] !== undefined ? Math.round(m[k]["p(95)"]) + " ms" : "-");
+      const f = m["http_req_failed{kind:api}"], d = m.dropped_iterations, t = m.responses_429;
+      console.log([p("http_req_duration{name:login}"), p("http_req_duration{name:me}"),
+        f ? (100 * (f.value ?? f.rate ?? 0)).toFixed(2) + " %" : "-", t ? t.count : 0, d ? d.count : 0].join("|"));
+    ' "$(hostpath "$OUT/login-$r.json")" 2> /dev/null || echo "-|-|-|-|-")
+    # No summary is a broken run, never a row of zeros.
+    [ -s "$OUT/login-$r.json" ] || { say "rate $r/s: no k6 summary (see $OUT/k6-login-$r.log)" >&2; st=1; }
+    IFS="|" read -r lp mp er tr dr <<< "$row"
+    printf '%-6s %-10s %-10s %-9s %-5s %-8s %s\n' "$r" "$lp" "$mp" "$er" "$tr" "$dr" "$(peaks "$OUT/docker-stats-$r.txt")" >> "$OUT/login-table.txt"
+    say "rate $r/s: k6 exit $st (99 = a threshold failed); login p95 $lp, errors $er, 429s $tr"
+    [ "$st" = 0 ] || [ "$st" = 99 ] || fails=$((fails + 1))
+  done
+  cat "$OUT/login-table.txt"
+  # A rate past the knee only misses its thresholds (99); anything else is a broken run.
+  say "$fails broken run(s); $((SECONDS - t0)) s in all"
+  [ "$fails" = 0 ]
+  exit
+fi
+
 say "$USERS students and the exam"
 fixtures --users "$USERS" --exam --questions "$QUESTIONS" --duration "$DURATION" --window-end-in "$window_in" \
   > "$OUT/fixtures.log" 2>&1 || { say "the fixtures failed (see $OUT/fixtures.log)" >&2; exit 1; }
@@ -165,11 +218,6 @@ if command -v typeperf > /dev/null 2>&1; then
   typeperf '\Processor(_Total)\% Processor Time' -si 5 > "$OUT/cpu.csv" 2> /dev/null &
   cpu_pid=$!
 fi
-dstats() {
-  local ids
-  mapfile -t ids < <(dk ps -q --filter "label=com.docker.compose.project=$P")
-  dk stats --no-stream --format '{{.Name}} {{.CPUPerc}} {{.MemUsage}}' "${ids[@]}"
-}
 ( while sleep 15; do dstats >> "$OUT/docker-stats.txt" 2> /dev/null || true; done ) &
 stats_pid=$!
 
@@ -265,8 +313,7 @@ if [ -s "$OUT/cpu.csv" ]; then
     awk '{ v[NR] = $1 } END { if (NR) printf "median %.0f %%, p90 %.0f %% (%d samples)", v[int((NR + 1) / 2)], v[int(NR * 0.9 + 0.5)], NR }')"
 fi
 if [ -s "$OUT/docker-stats.txt" ]; then
-  say "peak CPU per container (docker stats, 100 % = one core): $(awk '{ sub(/-[0-9]+$/, "", $1); sub(/^'"$P"'-/, "", $1);
-    c = $2 + 0; if (c > m[$1]) m[$1] = c } END { for (k in m) printf "%s %.0f%%  ", k, m[k] }' "$OUT/docker-stats.txt")"
+  say "peak CPU per container (docker stats, 100 % = one core): $(peaks "$OUT/docker-stats.txt")"
 fi
 say "$fails check(s) failed; $((SECONDS - t0)) s in all"
 [ "$fails" = 0 ]

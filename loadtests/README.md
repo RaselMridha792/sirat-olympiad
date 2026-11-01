@@ -77,6 +77,29 @@ SMOKE=1 NO_BUILD=1 LOAD_TAG=latest USERS=20 DURATION=1 RAMP=5 CHECKPOINT_MIN=21 
 - **What it asserts:** only counted outcomes. The k6 limits are errors < 0.5 %, checks and every receipt shown in the room; the runner checks every attempt submitted and scored, the receipts equal to the students' own submissions, and the sweep's submissions equal to the students who left.
 - **What it leaves out:** latency limits and the timed write window, since a shared CI runner's timing proves nothing.
 
+## `login-surge.js` (RULEBOOK §13 scenario 2)
+
+Students log in as the web does: `POST /api/auth/login` (the argon2 verify runs inside it), then `GET /api/auth/me` with the new session.
+
+- **The load:** a constant arrival rate, `RATE` logins per second for `HOLD`, over the load students in turn.
+- **Thresholds:** login and me p95 < 500 ms (not with `SMOKE=1`), errors < 0.5 %, checks, and no dropped iteration. A VU shortage would hide the load instead of measuring it.
+- **What it measures:** argon2's cost on the cores it runs on, so the number that counts comes from the VPS. Run it at several rates to find the knee.
+
+```bash
+bash loadtests/exam-local.sh login                                    # this PC: 10, 20, 40, 60 logins/s, 60 s each
+LOGIN_RATES="5 10" LOGIN_HOLD=30s bash loadtests/exam-local.sh login   # a quick proof of the script
+```
+
+The runner prints a table of each rate's login and me p95, errors, dropped iterations and the peak CPU per container. A rate past the knee only misses its thresholds; the run fails only if something breaks.
+
+On the VPS, inside staging's network (no window, no root):
+
+```bash
+scripts/load-staging.sh up --users 2000
+for r in 10 20 40 60; do scripts/load-staging.sh k6 login -e USERS=2000 -e RATE=$r -e HOLD=60s; done
+scripts/load-staging.sh down
+```
+
 ## On the VPS (`scripts/load-staging.sh`, RUNBOOK §19)
 
 RULEBOOK §13: at 1.5–2× the expected peak, with a 30-minute exam, k6 from other machines. The target is a staging stack, `sirat-staging`, which `scripts/load-staging.sh` builds from the deployed release's images:
