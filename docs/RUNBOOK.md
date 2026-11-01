@@ -110,7 +110,8 @@ scripts/deploy.sh "$sha"          # preflight, build, a backup if it adds migrat
 scripts/deploy.sh --rollback      # back to the previous release (its images are kept), no build
 cat /var/lib/sirat/release.env    # the live release (SIRAT_TAG) and the one before it
 tail /var/lib/sirat/releases.log  # every deploy, refusal, failure and rollback
-scripts/deploy.sh --first         # once, on a fresh host: the data services, then nginx (refuses if a data container exists)
+scripts/deploy.sh --first         # once, on a fresh host, with the clone at the commit to deploy first (it names it):
+                                  # the data services, then nginx (refuses if a data container exists)
 ```
 
 - **A deploy:**

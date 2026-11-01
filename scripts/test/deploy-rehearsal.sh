@@ -85,6 +85,8 @@ in_clone rm -rf "apps/api/prisma/migrations/$M_BAD"
 in_clone sed -i "s/DEFAULT_POOL_SIZE: '40'/DEFAULT_POOL_SIZE: '41'/" infra/docker-compose.yml
 E=$(commit "rehearsal E: a PgBouncer pool change")
 printf '%s\n' "$A" "$B" "$C" "$D" "$E" > "$OUT/shas"
+# --first starts the data services from the clone's commit, which must be the first release's (A).
+git_c checkout -q --detach "$A"
 note "A=${A:0:7} B=${B:0:7} C=${C:0:7} D=${D:0:7} E=${E:0:7}"
 
 # Throwaway secrets, never printed; a self-signed certificate the tools container trusts.
@@ -139,6 +141,7 @@ check "before --first: refused (no data services)" test "$s" -ne 0 -a -n "$(grep
 echo "1. first start and release A"
 s=0; deploy --first || s=$?
 check "--first starts the data services and nginx" test "$s" = 0
+check "--first names the commit to deploy first" said "deploy this same commit first: scripts/deploy.sh $A"
 docker network connect "${P}_default" "$(hostname)"
 dc up -d --no-deps mailpit > /dev/null 2>&1
 DATA0=$(data_state)
@@ -148,6 +151,7 @@ started=$SECONDS
 s=0; deploy "$A" || s=$?
 check "release A deploys ($((SECONDS - started)) s)" test "$s" = 0
 check "release A is live, on every app container" all_on "$A"
+all_on "$A" || { echo "  release A is not live: stopping here"; exit 1; }
 check "the first release took no backup" test "$(backups)" = 0
 check "the public URL answers (healthcheck.sh)" in_clone scripts/healthcheck.sh "https://$HOST"
 
@@ -171,6 +175,7 @@ kill "$LOOP" 2> /dev/null || true
 wait "$LOOP" 2> /dev/null || true
 check "release B deploys under load (${took} s)" test "$s" = 0
 check "release B is live, on every app container" all_on "$B"
+all_on "$B" || { echo "  release B is not live: stopping here"; exit 1; }
 check "B adds a migration: one backup first" test "$(backups)" = 1
 check "the migration is applied" test "$(pg "select count(*) from _prisma_migrations where migration_name = '$M_OK' and finished_at is not null")" = 1
 total=$(wc -l < "$OUT/loop.log")
