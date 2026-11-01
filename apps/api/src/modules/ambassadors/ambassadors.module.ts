@@ -3,10 +3,13 @@ import {
   AdminAmbassadorPointsController,
   AdminAmbassadorsController,
   AdminTasksController,
+  AdminTeamsController,
   AmbassadorController,
+  TeamsController,
 } from './ambassadors.controller';
 import { AmbassadorPointsService } from './ambassador-points.service';
 import { AmbassadorTasksService } from './ambassador-tasks.service';
+import { TeamsService } from './teams.service';
 import { AmbassadorsService } from './ambassadors.service';
 
 /**
@@ -21,7 +24,9 @@ import { AmbassadorsService } from './ambassadors.service';
     AdminAmbassadorsController,
     AdminAmbassadorPointsController,
     AdminTasksController,
+    AdminTeamsController,
+    TeamsController,
   ],
-  providers: [AmbassadorsService, AmbassadorPointsService, AmbassadorTasksService],
+  providers: [AmbassadorsService, AmbassadorPointsService, AmbassadorTasksService, TeamsService],
 })
 export class AmbassadorsModule {}

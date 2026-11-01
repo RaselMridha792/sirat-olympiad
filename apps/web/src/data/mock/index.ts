@@ -3,6 +3,7 @@ import {
   BD_DISTRICTS,
   type AdminAnnouncement,
   type AdminTaskReviewRow,
+  type AdminTeamRow,
   type AdminTaskRow,
   EXAM_VIOLATION_WARNINGS,
   type AdminLeaderboardRow,
@@ -496,6 +497,28 @@ export function createMockSource(state: MockState | null): DataSource {
           () => emptyPage<AnnouncementItem>(query),
         ),
 
+      getMyTeam: () =>
+        run(
+          () => {
+            const w = getWorld();
+            const isOwner = w.me.role === 'ambassador';
+            return {
+              id: w.team.id,
+              name: w.team.name,
+              memberCount: w.team.memberCount,
+              isOwner,
+              joinCode: isOwner ? 'TM-7K3QXD' : null,
+              members: [
+                w.me,
+                ...w.users.filter((u) => u.role === 'student').slice(0, w.team.memberCount - 1),
+              ].map((u, i) => ({
+                firstName: u.name.split(' ')[0] ?? u.name,
+                isOwner: isOwner && i === 0,
+              })),
+            };
+          },
+          () => null,
+        ),
       getAmbassador: () =>
         run(
           (): AmbassadorOverview => {
@@ -875,6 +898,52 @@ export function createMockSource(state: MockState | null): DataSource {
           () => null,
         ),
 
+      listTeams: (query) =>
+        run(
+          () => {
+            const w = getWorld();
+            const rows = w.ambassadors.slice(0, 6).map((a, i) => ({
+              id: `tm-${i}`,
+              name: i === 0 ? w.team.name : `${a.user.name.split(' ')[0]}'s team`,
+              owner: { userId: a.user.id, name: a.user.name },
+              open: true,
+              memberCount: i === 0 ? w.team.memberCount : 3 + (i % 5),
+              createdAt: a.user.createdAt,
+              updatedAt: a.user.createdAt,
+            }));
+            return paginate(rows, query);
+          },
+          () => emptyPage<AdminTeamRow>(query),
+        ),
+      getTeam: (id) =>
+        run(
+          () => {
+            const w = getWorld();
+            const i = Number(id.replace(/^tm-/, ''));
+            const a = w.ambassadors[i];
+            if (!a || !/^tm-\d+$/.test(id)) return null;
+            const members = [
+              a.user,
+              ...w.users.filter((u) => u.role === 'student').slice(i * 3, i * 3 + 3),
+            ];
+            return {
+              id,
+              name: i === 0 ? w.team.name : `${a.user.name.split(' ')[0]}'s team`,
+              owner: { userId: a.user.id, name: a.user.name },
+              open: true,
+              memberCount: members.length,
+              createdAt: a.user.createdAt,
+              updatedAt: a.user.createdAt,
+              members: members.map((u) => ({
+                userId: u.id,
+                name: u.name,
+                email: u.email,
+                joinedAt: u.createdAt,
+              })),
+            };
+          },
+          () => null,
+        ),
       listTasks: (query) =>
         run(
           () => {

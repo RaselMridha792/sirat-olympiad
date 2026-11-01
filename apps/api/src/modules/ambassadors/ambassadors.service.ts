@@ -196,7 +196,7 @@ export class AmbassadorsService {
     if (!user || user.isBlocked) throw new ForbiddenException(['account_blocked']);
     if (user.role !== 'ambassador') throw new ForbiddenException('Forbidden resource'); // revoked since login
     const profile = user.ambassador;
-    const [referralCount, sum, thresholds, recent, assignments] = await Promise.all([
+    const [referralCount, sum, thresholds, recent, assignments, membership] = await Promise.all([
       this.prisma.user.count({ where: { referredById: userId } }),
       this.prisma.pointLedger.aggregate({ where: { userId }, _sum: { amount: true } }),
       this.thresholds(),
@@ -219,6 +219,14 @@ export class AmbassadorsService {
           task: { select: { title: true, description: true, points: true } },
         },
       }),
+      this.prisma.teamMember.findUnique({
+        where: { userId },
+        select: {
+          team: {
+            select: { id: true, name: true, ownerId: true, _count: { select: { members: true } } },
+          },
+        },
+      }),
     ]);
     const points = sum._sum.amount ?? 0;
     return {
@@ -227,7 +235,14 @@ export class AmbassadorsService {
       referralCount,
       points,
       rank: rankOf(points, thresholds),
-      team: null, // core C5b
+      team: membership
+        ? {
+            id: membership.team.id,
+            name: membership.team.name,
+            memberCount: membership.team._count.members,
+            isOwner: membership.team.ownerId === userId,
+          }
+        : null,
       tasks: assignments.map((a) => ({
         id: a.id,
         title: a.task.title,

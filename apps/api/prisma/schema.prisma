@@ -587,16 +587,19 @@ model RankThreshold {
   @@map("rank_thresholds")
 }
 
+/// One team per ambassador; students join with its code (core C5b-3, CORE-PLAN D7).
 model Team {
   id        String       @id @default(uuid(7)) @db.Uuid
-  name      String       @unique
-  ownerId   String       @map("owner_id") @db.Uuid
+  /// Free text from a minor, shown to other minors: unique in any letter case; an admin can rename it.
+  name      String       @unique @db.Citext
+  /// Server-made `TM-` + 6 Crockford characters; matched in any letter case.
+  joinCode  String       @unique @map("join_code") @db.Citext
+  ownerId   String       @unique @map("owner_id") @db.Uuid
   createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   owner     User         @relation(fields: [ownerId], references: [id])
   members   TeamMember[]
 
-  @@index([ownerId])
   @@map("teams")
 }
 
@@ -609,7 +612,7 @@ model TeamMember {
   user      User     @relation(fields: [userId], references: [id])
 
   @@id([teamId, userId])
-  @@index([userId])
+  @@unique([userId]) // one team per student (D7)
   @@map("team_members")
 }
 
