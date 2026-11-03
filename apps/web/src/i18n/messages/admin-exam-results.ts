@@ -21,6 +21,18 @@ export const adminExamResultsMessages = defineMessages({
       noSnapshot: 'No snapshot built yet.',
       published: (when: string) => `Published to students ${when}`,
       notPublished: 'Not published to students.',
+      keyCorrected: (n: string, from: string, to: string, when: string) =>
+        `The answer key of question ${n} was corrected from ${from} to ${to} (${when}).`,
+      rescorePending: (n: string) =>
+        `Re-scoring after the correction: ${n} attempts still waiting. Reload this page in a moment.`,
+      rescored: (attempts: string, changed: string) =>
+        `${attempts} attempts re-scored with the corrected key; ${changed} scores changed.`,
+      snapshotStale: 'The snapshot is older than the correction: build it again before publishing.',
+      corrections: {
+        heading: (n: string) => `Answer-key corrections (${n})`,
+        item: (n: string, from: string, to: string) => `Question ${n}: ${from} → ${to}`,
+        by: (name: string, when: string) => `${name}, ${when}`,
+      },
       build: 'Build the snapshot',
       buildQueued: 'The build is queued. Reload this page in a moment to see the snapshot.',
       publish: 'Publish results',
@@ -42,6 +54,10 @@ export const adminExamResultsMessages = defineMessages({
         window_open: 'The exam window (with its grace time) is still open.',
         attempts_unfinished: 'Some attempts are not scored yet. Try again in a minute.',
         no_snapshot: 'Build the snapshot first.',
+        rescore_pending:
+          'Attempts are still being re-scored after the answer-key correction. Try again in a minute.',
+        snapshot_stale:
+          'The snapshot is older than the latest answer-key correction. Build it again first.',
         results_published: 'The results are already published.',
         stale: 'This exam changed since the page was loaded. Reload and try again.',
         generic: 'That did not work. Please try again.',
@@ -122,6 +138,18 @@ export const adminExamResultsMessages = defineMessages({
       noSnapshot: 'এখনো ফলাফলের তালিকা তৈরি হয়নি।',
       published: (when: string) => `শিক্ষার্থীদের জন্য প্রকাশিত: ${when}`,
       notPublished: 'শিক্ষার্থীদের জন্য প্রকাশিত নয়।',
+      keyCorrected: (n: string, from: string, to: string, when: string) =>
+        `প্রশ্ন ${n}-এর সঠিক উত্তর ${from} থেকে ${to} করা হয়েছে (${when})।`,
+      rescorePending: (n: string) =>
+        `সংশোধনের পর নম্বর আবার হিসাব হচ্ছে: ${n}টি অংশগ্রহণ এখনো বাকি। কিছুক্ষণ পরে পেজটি রিলোড করুন।`,
+      rescored: (attempts: string, changed: string) =>
+        `${attempts}টি অংশগ্রহণের নম্বর নতুন উত্তর দিয়ে আবার হিসাব হয়েছে; ${changed}টির নম্বর বদলেছে।`,
+      snapshotStale: 'ফলাফলের তালিকাটি সংশোধনের আগের: প্রকাশের আগে আবার তৈরি করুন।',
+      corrections: {
+        heading: (n: string) => `সঠিক উত্তরের সংশোধন (${n})`,
+        item: (n: string, from: string, to: string) => `প্রশ্ন ${n}: ${from} → ${to}`,
+        by: (name: string, when: string) => `${name}, ${when}`,
+      },
       build: 'ফলাফলের তালিকা তৈরি করুন',
       buildQueued: 'তালিকা তৈরির কাজ সারিতে আছে। কিছুক্ষণ পরে পেজটি রিলোড করুন।',
       publish: 'ফলাফল প্রকাশ করুন',
@@ -144,6 +172,9 @@ export const adminExamResultsMessages = defineMessages({
         attempts_unfinished:
           'কিছু অংশগ্রহণের নম্বর এখনো দেওয়া হয়নি। এক মিনিট পরে আবার চেষ্টা করুন।',
         no_snapshot: 'আগে ফলাফলের তালিকা তৈরি করুন।',
+        rescore_pending:
+          'সঠিক উত্তরের সংশোধনের পর নম্বর এখনো আবার হিসাব হচ্ছে। এক মিনিট পরে আবার চেষ্টা করুন।',
+        snapshot_stale: 'ফলাফলের তালিকাটি সর্বশেষ সংশোধনের আগের। আগে আবার তৈরি করুন।',
         results_published: 'ফলাফল আগেই প্রকাশিত হয়েছে।',
         stale: 'পেজ খোলার পরে এই পরীক্ষায় পরিবর্তন হয়েছে। রিলোড করে আবার চেষ্টা করুন।',
         generic: 'কাজটি হয়নি। আবার চেষ্টা করুন।',

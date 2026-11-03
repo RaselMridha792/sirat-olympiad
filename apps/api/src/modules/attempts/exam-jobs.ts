@@ -1,6 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { errorLogFields } from '../../common/all-exceptions.filter';
 import { PrismaService } from '../../prisma/prisma.service';
+import { correctedKeys, databaseNow, effectiveKey } from '../exams/answer-keys';
 import { AttemptStore } from './attempt-store';
 import { timeTakenSeconds } from './exam-time';
 import { answersValid, optionCounts, parseLayout } from './layout';
@@ -15,14 +17,20 @@ export interface ExamJobTiming {
   buildAfterMs: number;
   /** A finalized attempt still unscored this long after its submit lost its scoring job; the sweep scores it. */
   rescoreAfterMs: number;
+  /** E7b: an answer-key correction whose attempts are still unre-scored this long after it lost its job (or the job
+   * failed for good); the sweep re-scores the exam. */
+  keyRescoreAfterMs: number;
 }
 export const DEFAULT_EXAM_JOB_TIMING: ExamJobTiming = {
   finalizeAfterMs: 30_000,
   buildAfterMs: 60_000,
   rescoreAfterMs: 5 * 60_000,
+  keyRescoreAfterMs: 2 * 60_000,
 };
 
 const SWEEP_BATCH = 500;
+/** Attempts re-scored per transaction after an answer-key correction (E7b). */
+export const RESCORE_BATCH = 500;
 
 export type BuildOutcome = 'built' | 'not_ready';
 
@@ -41,40 +49,136 @@ export class ExamJobs {
     @Inject(EXAM_JOB_TIMING) private readonly timing: ExamJobTiming,
   ) {}
 
-  /** Scores one finalized attempt. Returns false if there is nothing to score (not submitted yet, or already scored). */
+  /**
+   * Scores one finalized attempt. Returns false if there is nothing to score (not submitted yet, or already scored).
+   * One transaction holding the exam row FOR SHARE: an answer-key correction takes it FOR NO KEY UPDATE, so a score is either
+   * written before the correction (and the re-scoring job fixes it) or computed with the corrected key (E7b). Nothing
+   * on the submit or time-up path updates the exam row, so this never waits behind a student.
+   */
   async score(attemptId: string): Promise<boolean> {
-    const attempt = await this.prisma.attempt.findUnique({
-      where: { id: attemptId },
-      select: {
-        status: true,
-        layout: true,
-        questionCount: true,
-        submission: { select: { answers: true } },
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const attempt = await tx.attempt.findUnique({
+        where: { id: attemptId },
+        select: {
+          examId: true,
+          status: true,
+          layout: true,
+          questionCount: true,
+          submission: { select: { answers: true } },
+        },
+      });
+      if (!attempt?.submission || (attempt.status !== 'submitted' && attempt.status !== 'expired'))
+        return false;
+      await tx.$queryRaw`SELECT 1 FROM "exams" WHERE "id" = ${attempt.examId}::uuid FOR SHARE`;
+      const scoredAt = await databaseNow(tx);
+      const layout = parseLayout(attempt.layout);
+      const versions = await keyedVersions(tx, layout.q);
+      const score = scoreAnswers(
+        layout,
+        versions,
+        storedAnswers(attempt.submission.answers, attempt.questionCount),
+      );
+      const updated = await tx.attempt.updateMany({
+        where: { id: attemptId, status: { in: ['submitted', 'expired'] } },
+        data: { status: 'scored', score, scoredAt },
+      });
+      return updated.count === 1;
     });
-    if (!attempt?.submission || (attempt.status !== 'submitted' && attempt.status !== 'expired'))
-      return false;
-    const layout = parseLayout(attempt.layout);
-    const rows = await this.prisma.question.findMany({
-      where: { id: { in: layout.q } },
-      select: { id: true, options: true, correctKey: true },
+  }
+
+  /**
+   * E7b: the rescore-exam job (and the sweep's catch-up). Re-scores the attempts scored before the exam's newest
+   * answer-key correction, in batches; each batch is one transaction that also writes its counts in an audit row
+   * (`answer_key.rescored`, meta { correctionId, attempts, changed }), so the totals the admin's results panel shows
+   * (summed over those rows) stay right across a retry, a run that failed half-way, or the job and the sweep running at
+   * once. A failure throws, so the job is retried and one that failed for good shows in ops-check's failed_jobs.
+   * `correctionId` is the job's, for the log; the batches always work for the newest correction.
+   */
+  async rescoreAfterCorrection(
+    examId: string,
+    correctionId: string | null,
+  ): Promise<{ attempts: number; changed: number }> {
+    const result = await this.rescore(examId);
+    this.logger.log({
+      msg: 'exam rescored after an answer-key correction',
+      examId,
+      correctionId,
+      ...result,
     });
-    const versions = new Map<string, KeyedVersion>(
-      rows.map((r) => [
-        r.id,
-        { options: r.options as KeyedVersion['options'], correctKey: r.correctKey },
-      ]),
-    );
-    const score = scoreAnswers(
-      layout,
-      versions,
-      storedAnswers(attempt.submission.answers, attempt.questionCount),
-    );
-    const updated = await this.prisma.attempt.updateMany({
-      where: { id: attemptId, status: { in: ['submitted', 'expired'] } },
-      data: { status: 'scored', score, scoredAt: new Date() },
-    });
-    return updated.count === 1;
+    return result;
+  }
+
+  /**
+   * E7b: re-scores, with the keys in effect now, every scored attempt of the exam scored before its newest correction.
+   * Each batch holds the exam row FOR SHARE (a new correction waits, and a batch after it reads the new key) and takes
+   * its attempts FOR UPDATE SKIP LOCKED (two runs never take the same row). A re-scored attempt gets a scored_at after
+   * the correction, so it is never taken again and the results status counts it as done. Idempotent: the score is
+   * recomputed from the submission and the layout. Returns how many attempts this run re-scored and how many changed.
+   */
+  async rescore(examId: string): Promise<{ attempts: number; changed: number }> {
+    let attempts = 0;
+    let changed = 0;
+    for (let first = true; ; first = false) {
+      const batch = await this.prisma.$transaction(
+        async (tx) => {
+          await tx.$queryRaw`SELECT 1 FROM "exams" WHERE "id" = ${examId}::uuid FOR SHARE`;
+          const newest = await tx.answerKeyCorrection.findFirst({
+            where: { examId },
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            select: { id: true, createdAt: true },
+          });
+          if (!newest) return null;
+          const ids = await tx.$queryRaw<{ id: string }[]>`
+            SELECT "id" FROM "attempts"
+            WHERE "exam_id" = ${examId}::uuid AND "status" = 'scored' AND "scored_at" < ${newest.createdAt}
+            ORDER BY "id" LIMIT ${RESCORE_BATCH} FOR UPDATE SKIP LOCKED`;
+          // A first run with nothing to do still records its (zero) counts, so the panel shows "0 changed".
+          if (ids.length === 0 && !first) return null;
+          const rows = await tx.attempt.findMany({
+            where: { id: { in: ids.map((r) => r.id) } },
+            select: {
+              id: true,
+              score: true,
+              layout: true,
+              questionCount: true,
+              submission: { select: { answers: true } },
+            },
+          });
+          const layouts = rows.map((r) => parseLayout(r.layout));
+          const versions = await keyedVersions(tx, [...new Set(layouts.flatMap((l) => l.q))]);
+          // The same clock as the correction's created_at, and never at or before it (or the row would stay waiting).
+          const scoredAt = new Date(
+            Math.max((await databaseNow(tx)).getTime(), newest.createdAt.getTime() + 1),
+          );
+          let batchChanged = 0;
+          for (const [i, row] of rows.entries()) {
+            const score = scoreAnswers(
+              layouts[i]!,
+              versions,
+              storedAnswers(row.submission?.answers ?? null, row.questionCount),
+            );
+            if (score !== row.score) batchChanged++;
+            await tx.attempt.update({ where: { id: row.id }, data: { score, scoredAt } });
+          }
+          await tx.auditLog.create({
+            data: {
+              action: 'answer_key.rescored',
+              actorId: null,
+              entityType: 'exam',
+              entityId: examId,
+              meta: { correctionId: newest.id, attempts: rows.length, changed: batchChanged },
+            },
+          });
+          return { count: rows.length, changed: batchChanged };
+        },
+        { timeout: 60_000 },
+      );
+      if (!batch) break;
+      attempts += batch.count;
+      changed += batch.changed;
+      if (batch.count === 0) break;
+    }
+    return { attempts, changed };
   }
 
   /**
@@ -114,6 +218,21 @@ export class ExamJobs {
     let scored = 0;
     for (const { id } of unscored) if (await each('score', id, () => this.score(id))) scored++;
 
+    // E7b: an exam whose newest answer-key correction is keyRescoreAfterMs old and still has attempts scored before it
+    // lost its re-scoring job (or the job failed): re-score it here. Idempotent, so a job still running is harmless.
+    const stale = await this.prisma.$queryRaw<{ exam_id: string; correction_id: string }[]>`
+      SELECT c."exam_id", c."id" AS "correction_id"
+      FROM (SELECT DISTINCT ON ("exam_id") "exam_id", "id", "created_at" FROM "answer_key_corrections"
+            ORDER BY "exam_id", "created_at" DESC, "id" DESC) c
+      WHERE c."created_at" < now() - make_interval(secs => ${this.timing.keyRescoreAfterMs / 1000}::float8)
+        AND EXISTS (SELECT 1 FROM "attempts" a
+                    WHERE a."exam_id" = c."exam_id" AND a."status" = 'scored' AND a."scored_at" < c."created_at")
+      LIMIT 5`;
+    let rescored = 0;
+    for (const { exam_id, correction_id } of stale)
+      if (await each('rescore', exam_id, () => this.rescoreAfterCorrection(exam_id, correction_id)))
+        rescored++;
+
     const buildAfterSeconds = this.timing.buildAfterMs / 1000;
     const closed = await this.prisma.$queryRaw<{ id: string }[]>`
       SELECT e."id" FROM "exams" e
@@ -122,13 +241,19 @@ export class ExamJobs {
         AND NOT EXISTS (
           SELECT 1 FROM "attempts" a
           WHERE a."exam_id" = e."id" AND a."status" IN ('in_progress', 'submitted', 'expired'))
+        AND NOT EXISTS (
+          -- E7b: never a snapshot of scores taken before the newest answer-key correction.
+          SELECT 1 FROM "attempts" a
+          JOIN (SELECT "exam_id", max("created_at") AS "at" FROM "answer_key_corrections" GROUP BY "exam_id") c
+            ON c."exam_id" = a."exam_id"
+          WHERE a."exam_id" = e."id" AND a."status" = 'scored' AND a."scored_at" < c."at")
       LIMIT 20`;
     let built = 0;
     for (const { id } of closed)
       if ((await each('build', id, () => this.buildResults(id))) === 'built') built++;
 
-    if (finalized || scored || built || failed)
-      this.logger.log({ msg: 'exam sweep', finalized, scored, built, failed });
+    if (finalized || scored || rescored || built || failed)
+      this.logger.log({ msg: 'exam sweep', finalized, scored, rescored, built, failed });
     if (failed)
       throw new Error(
         `exam sweep: ${failed} item(s) failed; the others went on, and the next sweep tries again`,
@@ -190,7 +315,9 @@ export class ExamJobs {
 
   /**
    * One snapshot generation of the exam's results (EXAM-PLAN 3.12; DECISIONS leaderboard query form). Only once the
-   * window has closed for everyone and no attempt is unfinished; blocked accounts are left out.
+   * window has closed for everyone, no attempt is unfinished and none waits for its re-scoring after the newest
+   * answer-key correction (E7b); blocked accounts are left out. The exam row is held FOR UPDATE, so no correction and
+   * no re-scoring batch lands while the snapshot is taken.
    */
   async buildResults(examId: string): Promise<BuildOutcome> {
     return this.prisma.$transaction(
@@ -202,7 +329,12 @@ export class ExamJobs {
                  AND e."window_end" + make_interval(secs => e."grace_seconds") < now()
                  AND NOT EXISTS (
                    SELECT 1 FROM "attempts" a
-                   WHERE a."exam_id" = e."id" AND a."status" IN ('in_progress', 'submitted', 'expired')) AS "ready"
+                   WHERE a."exam_id" = e."id" AND a."status" IN ('in_progress', 'submitted', 'expired'))
+                 AND NOT EXISTS (
+                   SELECT 1 FROM "attempts" a
+                   JOIN (SELECT max("created_at") AS "at" FROM "answer_key_corrections"
+                         WHERE "exam_id" = ${examId}::uuid) c ON true
+                   WHERE a."exam_id" = e."id" AND a."status" = 'scored' AND a."scored_at" < c."at") AS "ready"
           FROM "exams" e WHERE e."id" = ${examId}::uuid
           FOR UPDATE`;
         if (!exam?.ready) return 'not_ready';
@@ -228,4 +360,22 @@ export class ExamJobs {
       { timeout: 130_000 },
     );
   }
+}
+
+/** The question versions of a layout, each with the key in effect (its newest correction's, else its own; E7b). */
+async function keyedVersions(
+  db: Prisma.TransactionClient,
+  questionIds: string[],
+): Promise<Map<string, KeyedVersion>> {
+  const rows = await db.question.findMany({
+    where: { id: { in: questionIds } },
+    select: { id: true, options: true, correctKey: true },
+  });
+  const corrected = await correctedKeys(db, questionIds);
+  return new Map<string, KeyedVersion>(
+    rows.map((r) => [
+      r.id,
+      { options: r.options as KeyedVersion['options'], correctKey: effectiveKey(corrected, r) },
+    ]),
+  );
 }

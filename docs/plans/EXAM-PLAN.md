@@ -408,7 +408,7 @@ The database enforces the frozen columns (2.4), so a bug in the API cannot reset
   4. write the audit row (old and new id).
 - The partial unique allows one active version, and `(lineage_id, version)` is unique, so two admins saving at once get one success and one 409.
 - Attempts keep the exact version ids in their layout. Scoring and review use those versions.
-- Answer-key correction for attempts already taken (re-scoring everyone) is P1 (E7): a separate, audited action, not an edit.
+- Answer-key correction for attempts already taken (re-scoring everyone) is P1 (E7): a separate, audited action, not an edit. Built in E7b: append-only `answer_key_corrections`, the newest per question is the key in effect, a re-scoring job per correction, Build and Publish blocked until it is done (DECISIONS "Answer-key correction after publish (E7b)").
 
 ### 4.4 Audit actions
 

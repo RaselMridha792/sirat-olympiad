@@ -20,11 +20,14 @@ export const EXAM_JOBS = {
   score: 'score-attempt',
   sweep: 'sweep',
   build: 'build-results',
+  rescore: 'rescore-exam',
 } as const;
 export type ExamJobName = (typeof EXAM_JOBS)[keyof typeof EXAM_JOBS];
 export interface ExamJobData {
   attemptId?: string;
   examId?: string;
+  /** rescore-exam: the correction that asked for it (for the audit row). */
+  correctionId?: string;
 }
 
 /** 5 tries with backoff from 10 s; a failed job is kept 3 days for inspection (the sweep scores lost ones anyway). */
@@ -55,6 +58,19 @@ export class ExamQueue implements OnApplicationShutdown {
   /** Job id `score.<attemptId>`: one scoring job per attempt while it waits. */
   score(attemptId: string): Promise<boolean> {
     return this.add(EXAM_JOBS.score, { attemptId }, `score.${attemptId}`);
+  }
+
+  /**
+   * E7b: re-scores an exam after an answer-key correction. One job per correction (its id is in the job id), so a
+   * second correction queues its own run; the job is idempotent, and the minute sweep queues it again if this one was
+   * lost (the results status shows the attempts still waiting).
+   */
+  rescore(examId: string, correctionId: string): Promise<boolean> {
+    return this.add(
+      EXAM_JOBS.rescore,
+      { examId, correctionId },
+      `rescore.${examId}.${correctionId}`,
+    );
   }
 
   /** A rebuild asked by an admin; the id carries the time, so a later rebuild is a new job. */
