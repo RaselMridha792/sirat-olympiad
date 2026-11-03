@@ -10,6 +10,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 - **The judges' blindness test** checks every identifying field of the students: name, user id, email, phone and institution.
 - **Not changed:** judges sign in without 2FA (the design covers admins and managers); it is on Rasel's list for later, with "not required" as the default.
 - **Who:** the sweep and its fixes by A2; the lead chose which to fix and how.
+
 ## 2026-11-01 — Certificates without the PDF (core C6c-1; the C6 plan, the lead's notes, owner Q4 defaults)
 
 1. **Issuing is a queue job** (DO 8): the admin asks, the API answers 202 with how many qualify now, and the worker runs one idempotent `INSERT … SELECT … ON CONFLICT (user_id, type, round_id) DO NOTHING`. It is on a new `certificates` queue (C6c-2's render joins it), in `ops-check` like the others.
