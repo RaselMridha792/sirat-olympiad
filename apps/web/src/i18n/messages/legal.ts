@@ -2,8 +2,9 @@ import { site } from '../../content/site.ts';
 import { defineMessages } from '../messages.ts';
 
 /**
- * The programme's name in the three policies. The client has not confirmed it: when the brand is decided (core's
- * brand key), change it here and in `site.name` in one sweep. `home` and `about` are core's and still spell it out.
+ * The programme's name in the three policies, from one place. The client has not confirmed it. Core's homepage PR
+ * moves the name (bn and en) into content/site.ts: whichever of the two PRs merges second points BRAND at that key,
+ * so the homepage and these texts never spell it differently.
  */
 const BRAND = { en: site.name, bn: 'সিরাত লিডারশিপ অলিম্পিয়াড' } as const;
 
@@ -99,6 +100,7 @@ export const legalMessages = defineMessages({
             'When you pay: PayStation tells us the invoice number, the amount, whether the payment went through, and its transaction reference. You enter card or mobile wallet details on PayStation’s own page, and they never reach us.',
             'When you take an exam: your answers, when you started and submitted, your score and the time you took. The exam page also records when you leave it for another tab or app, when developer tools are opened, and when your connection drops and comes back.',
             'In a video round: the link to the video you send.',
+            'For the free book, if you ask for it after registering: the name and mobile number of the person who receives it, the district, upazila and address, and a note for the delivery if you add one.',
             'To keep accounts safe: records of sign-ins, including the browser they came from, and a record of what the organiser’s staff do in the admin area. IP addresses have their own section below.',
           ],
         },
@@ -115,7 +117,8 @@ export const legalMessages = defineMessages({
             'The public: nothing. Every page with your information needs you, or the organiser’s staff, to be signed in.',
             'Other students: after the results of an exam are published, signed-in participants can see its leaderboard. It shows each student’s rank, name and institution, and nothing else: never your score, time, mobile number or email.',
             'You: after the results are published, you can see your own score, your answers and the correct answers on your dashboard.',
-            'Judges in a video round see an entry number, the category and your video link, never your name or contact details.',
+            'Judges in a video round see an entry number, the group and your video link, never your name or contact details.',
+            'The free book’s delivery details: you and the organiser’s administrators.',
             'Ambassadors: an ambassador whose promo code you used sees only how many students used it, not who they are. If you join an ambassador team, the other members see only your first name.',
             'Certificates: anyone you give your certificate code to can check it. The check shows only your name and the award.',
             'The organiser’s staff: administrators can see registration details, payments and exam records so that they can run the olympiad; managers can see the full leaderboard with emails and scores. Administrators sign in with a password and a code from an authenticator app, and their actions are recorded.',
@@ -128,6 +131,7 @@ export const legalMessages = defineMessages({
             'PayStation takes your payment. You enter card or mobile wallet details on PayStation’s page; we never see them.',
             'Amazon Web Services sends our two kinds of email (confirming your email address and resetting your password) through its email service, Amazon SES.',
             'Hostinger provides the server this website and its database run on.',
+            'The courier that delivers the free book receives the recipient’s name, mobile number and address, in a list the organiser’s administrators send it.',
           ],
         },
         {
@@ -144,6 +148,7 @@ export const legalMessages = defineMessages({
             'Your account, your exam answers and results, and your payment records are kept; they are not deleted automatically. You can ask us to delete your account (see “Your rights” below).',
             'A registration you started but did not finish: the form, with your password, is deleted 30 days after your last step. When a registration is completed, that copy of the form is deleted at once.',
             'Sign-in sessions are deleted 30 days after they end, and the links we email you are deleted 7 days after they expire.',
+            'The free book’s delivery details can be changed until the book is sent, and are locked after that. They are not deleted automatically.',
             'Encrypted backup copies of the database are kept outside the server; the oldest is about five weeks old.',
             'Security and audit records are kept (see “IP addresses” above).',
           ],
@@ -191,8 +196,8 @@ export const legalMessages = defineMessages({
         {
           heading: 'Who can take part',
           paragraphs: [
-            'Students from class 5 up to postgraduate level can take part, in the classes listed on the registration form.',
-            'Your category (Activist, Ambassador or Achiever) follows the class you choose when you register, so please choose your real class. The organiser can correct the class, and with it the category, before your first exam.',
+            'Students in the classes listed on the registration form can take part.',
+            'Each student competes in a group set from the details given at registration, so please give true details. The organiser can correct them, and with them the group, before your first exam.',
           ],
         },
         {
@@ -238,7 +243,7 @@ export const legalMessages = defineMessages({
         {
           heading: 'Rounds and certificates',
           paragraphs: [
-            'Top students of each category may go on to further rounds, as the organiser announces. In a video round, judges score the videos without seeing names.',
+            'Top students of each group may go on to further rounds, as the organiser announces. In a video round, judges score the videos without seeing names.',
             'Certificates are issued online. Anyone with a certificate’s code can check that it is real.',
           ],
         },
@@ -387,6 +392,7 @@ export const legalMessages = defineMessages({
             'পেমেন্টের সময়: PayStation আমাদের জানায় ইনভয়েস নম্বর, টাকার পরিমাণ, পেমেন্ট সফল হয়েছে কি না আর লেনদেনের রেফারেন্স। কার্ড বা মোবাইল ওয়ালেটের তথ্য আপনি PayStation-এর নিজের পাতায় দেন, তা আমাদের কাছে কখনো আসে না।',
             'পরীক্ষার সময়: আপনার উত্তর, কখন শুরু করলেন আর কখন জমা দিলেন, আপনার নম্বর আর কত সময় লাগল। পরীক্ষার পাতা আরও রেকর্ড রাখে কখন আপনি অন্য ট্যাব বা অ্যাপে গেলেন, কখন ডেভেলপার টুলস খোলা হলো, আর কখন ইন্টারনেট চলে গেল ও ফিরে এল।',
             'ভিডিও রাউন্ডে: আপনার পাঠানো ভিডিওর লিংক।',
+            'বিনা মূল্যের বইয়ের জন্য, রেজিস্ট্রেশনের পরে আপনি চাইলে: যিনি বইটি নেবেন তাঁর নাম আর মোবাইল নম্বর, জেলা, উপজেলা আর ঠিকানা, আর আপনি লিখলে ডেলিভারির জন্য একটি নোট।',
             'অ্যাকাউন্ট নিরাপদ রাখতে: লগইনের রেকর্ড, কোন ব্রাউজার থেকে এসেছে সহ, আর অ্যাডমিন অংশে আয়োজকের কর্মীরা কী করেন তার রেকর্ড। IP ঠিকানা নিয়ে নিচে আলাদা অংশ আছে।',
           ],
         },
@@ -403,7 +409,8 @@ export const legalMessages = defineMessages({
             'সবার জন্য খোলা কিছু নয়: আপনার তথ্য আছে এমন প্রতিটি পাতা দেখতে আপনাকে, বা আয়োজকের কর্মীদের, লগইন করতে হয়।',
             'অন্য শিক্ষার্থীরা: কোনো পরীক্ষার ফল প্রকাশের পরে লগইন করা অংশগ্রহণকারীরা তার লিডারবোর্ড দেখতে পারে। সেখানে প্রত্যেক শিক্ষার্থীর অবস্থান, নাম আর শিক্ষাপ্রতিষ্ঠান দেখা যায়, এর বেশি কিছু নয়: আপনার নম্বর, সময়, মোবাইল নম্বর বা ইমেইল কখনো নয়।',
             'আপনি: ফল প্রকাশের পরে নিজের ড্যাশবোর্ডে আপনার নম্বর, আপনার উত্তর আর সঠিক উত্তর দেখতে পাবেন।',
-            'ভিডিও রাউন্ডের বিচারকেরা দেখেন একটি এন্ট্রি নম্বর, ক্যাটাগরি আর আপনার ভিডিওর লিংক। আপনার নাম বা যোগাযোগের তথ্য কখনো দেখেন না।',
+            'ভিডিও রাউন্ডের বিচারকেরা দেখেন একটি এন্ট্রি নম্বর, গ্রুপ আর আপনার ভিডিওর লিংক। আপনার নাম বা যোগাযোগের তথ্য কখনো দেখেন না।',
+            'বিনা মূল্যের বইয়ের ডেলিভারির তথ্য: আপনি আর আয়োজকের অ্যাডমিনরা।',
             'অ্যাম্বাসেডর: যাঁর প্রোমো কোড আপনি ব্যবহার করেছেন, তিনি শুধু দেখেন কতজন কোডটি ব্যবহার করেছে, কারা করেছে তা নয়। কোনো অ্যাম্বাসেডর দলে যোগ দিলে দলের অন্য সদস্যরা শুধু আপনার নামের প্রথম অংশ দেখে।',
             'সার্টিফিকেট: আপনি যাকে সার্টিফিকেটের কোড দেবেন, তিনি সেটি যাচাই করতে পারবেন। যাচাইয়ে শুধু আপনার নাম আর পুরস্কার দেখা যায়।',
             'আয়োজকের কর্মীরা: অলিম্পিয়াড চালানোর জন্য অ্যাডমিনরা রেজিস্ট্রেশনের তথ্য, পেমেন্ট আর পরীক্ষার রেকর্ড দেখতে পারেন; ম্যানেজাররা ইমেইল আর নম্বরসহ পুরো লিডারবোর্ড দেখতে পারেন। অ্যাডমিনরা পাসওয়ার্ড আর একটি অথেনটিকেটর অ্যাপের কোড দিয়ে লগইন করেন, আর তাঁদের প্রতিটি কাজের রেকর্ড থাকে।',
@@ -416,6 +423,7 @@ export const legalMessages = defineMessages({
             'PayStation আপনার পেমেন্ট নেয়। কার্ড বা মোবাইল ওয়ালেটের তথ্য আপনি PayStation-এর পাতায় দেন; আমরা তা কখনো দেখি না।',
             'Amazon Web Services তাদের ইমেইল সেবা Amazon SES দিয়ে আমাদের দুই ধরনের ইমেইল পাঠায় (ইমেইল নিশ্চিত করা আর পাসওয়ার্ড রিসেট)।',
             'Hostinger সেই সার্ভার দেয়, যেখানে এই ওয়েবসাইট আর তার ডেটাবেস চলে।',
+            'যে কুরিয়ার বিনা মূল্যের বই পৌঁছে দেয়, সে প্রাপকের নাম, মোবাইল নম্বর আর ঠিকানা পায়, আয়োজকের অ্যাডমিনদের পাঠানো তালিকায়।',
           ],
         },
         {
@@ -432,6 +440,7 @@ export const legalMessages = defineMessages({
             'আপনার অ্যাকাউন্ট, পরীক্ষার উত্তর ও ফল, আর পেমেন্টের রেকর্ড রাখা হয়; এগুলো নিজে থেকে মোছা হয় না। আপনি অ্যাকাউন্ট মুছে ফেলতে বলতে পারেন (নিচে “আপনার অধিকার” দেখুন)।',
             'যে রেজিস্ট্রেশন শুরু করে শেষ করেননি: পাসওয়ার্ডসহ ফর্মটি আপনার শেষ ধাপের ৩০ দিন পরে মুছে ফেলা হয়। রেজিস্ট্রেশন সম্পূর্ণ হলে ফর্মের সেই কপি সঙ্গে সঙ্গে মোছা হয়।',
             'লগইন সেশন শেষ হওয়ার ৩০ দিন পরে মুছে ফেলা হয়, আর ইমেইলে পাঠানো লিংক মেয়াদ শেষের ৭ দিন পরে।',
+            'বিনা মূল্যের বইয়ের ডেলিভারির তথ্য বই পাঠানোর আগে পর্যন্ত বদলানো যায়, তারপর আর বদলানো যায় না। এগুলো নিজে থেকে মোছা হয় না।',
             'ডেটাবেসের এনক্রিপ্ট করা ব্যাকআপ কপি সার্ভারের বাইরে রাখা হয়; সবচেয়ে পুরোনোটি প্রায় পাঁচ সপ্তাহের।',
             'নিরাপত্তা আর অডিটের রেকর্ড রেখে দেওয়া হয় (ওপরে “IP ঠিকানা” দেখুন)।',
           ],
@@ -479,8 +488,8 @@ export const legalMessages = defineMessages({
         {
           heading: 'কারা অংশ নিতে পারে',
           paragraphs: [
-            'পঞ্চম শ্রেণি থেকে স্নাতকোত্তর পর্যন্ত শিক্ষার্থীরা অংশ নিতে পারে, রেজিস্ট্রেশন ফর্মে দেওয়া শ্রেণিগুলো অনুযায়ী।',
-            'আপনার ক্যাটাগরি (অ্যাক্টিভিস্ট, অ্যাম্বাসেডর বা অ্যাচিভার) রেজিস্ট্রেশনে বেছে নেওয়া শ্রেণি থেকে ঠিক হয়, তাই আপনার আসল শ্রেণিটি বেছে নিন। প্রথম পরীক্ষার আগে আয়োজক শ্রেণি, আর সেই সঙ্গে ক্যাটাগরি, ঠিক করে দিতে পারেন।',
+            'রেজিস্ট্রেশন ফর্মে দেওয়া শ্রেণিগুলোর শিক্ষার্থীরা অংশ নিতে পারে।',
+            'রেজিস্ট্রেশনে দেওয়া তথ্য থেকে প্রত্যেক শিক্ষার্থীর গ্রুপ ঠিক হয়, তাই সঠিক তথ্য দিন। প্রথম পরীক্ষার আগে আয়োজক সেই তথ্য, আর সেই সঙ্গে গ্রুপ, ঠিক করে দিতে পারেন।',
           ],
         },
         {
@@ -526,7 +535,7 @@ export const legalMessages = defineMessages({
         {
           heading: 'রাউন্ড আর সার্টিফিকেট',
           paragraphs: [
-            'আয়োজকের ঘোষণা অনুযায়ী প্রতিটি ক্যাটাগরির সেরা শিক্ষার্থীরা পরের রাউন্ডে যেতে পারে। ভিডিও রাউন্ডে বিচারকেরা নাম না দেখেই ভিডিওতে নম্বর দেন।',
+            'আয়োজকের ঘোষণা অনুযায়ী প্রতিটি গ্রুপের সেরা শিক্ষার্থীরা পরের রাউন্ডে যেতে পারে। ভিডিও রাউন্ডে বিচারকেরা নাম না দেখেই ভিডিওতে নম্বর দেন।',
             'সার্টিফিকেট অনলাইনে দেওয়া হয়। সার্টিফিকেটের কোড থাকলে যে কেউ যাচাই করতে পারে সেটি আসল কি না।',
           ],
         },
