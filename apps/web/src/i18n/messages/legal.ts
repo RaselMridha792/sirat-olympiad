@@ -1,4 +1,11 @@
+import { site } from '../../content/site.ts';
 import { defineMessages } from '../messages.ts';
+
+/**
+ * The programme's name in the three policies. The client has not confirmed it: when the brand is decided (core's
+ * brand key), change it here and in `site.name` in one sweep. `home` and `about` are core's and still spell it out.
+ */
+const BRAND = { en: site.name, bn: 'সিরাত লিডারশিপ অলিম্পিয়াড' } as const;
 
 /*
  * The public entry page and the legal pages (core plan section 3). The privacy, terms and refund texts are our own
@@ -77,13 +84,12 @@ export const legalMessages = defineMessages({
     },
     privacy: {
       title: 'Privacy policy',
-      metaDescription:
-        'What personal information the Sirat Leadership Olympiad collects, why, who can see it and how long it is kept.',
+      metaDescription: `What personal information the ${BRAND.en} collects, why, who can see it and how long it is kept.`,
       sections: [
         {
           heading: 'About this policy',
           paragraphs: [
-            'The Sirat Leadership Olympiad is run by the organiser named at the bottom of this page. This policy explains what we collect through this website, why we collect it, who can see it and how long we keep it. We have written it to match how the website really works.',
+            `The ${BRAND.en} is run by the organiser named at the bottom of this page. This policy explains what we collect through this website, why we collect it, who can see it and how long we keep it. We have written it to match how the website really works.`,
           ],
         },
         {
@@ -93,7 +99,7 @@ export const legalMessages = defineMessages({
             'When you pay: PayStation tells us the invoice number, the amount, whether the payment went through, and its transaction reference. You enter card or mobile wallet details on PayStation’s own page, and they never reach us.',
             'When you take an exam: your answers, when you started and submitted, your score and the time you took. The exam page also records when you leave it for another tab or app, when developer tools are opened, and when your connection drops and comes back.',
             'In a video round: the link to the video you send.',
-            'To keep accounts safe: records of sign-ins, including the IP address and the browser they came from, and a record of what the organiser’s staff do in the admin area.',
+            'To keep accounts safe: records of sign-ins, including the browser they came from, and a record of what the organiser’s staff do in the admin area. IP addresses have their own section below.',
           ],
         },
         {
@@ -106,13 +112,30 @@ export const legalMessages = defineMessages({
         {
           heading: 'Who can see it',
           paragraphs: [
-            'Other students: after the results of an exam are published, signed-in participants can see its leaderboard, which shows each student’s rank, name and institution only. Your score, time, mobile number and email are never shown to other students.',
+            'The public: nothing. Every page with your information needs you, or the organiser’s staff, to be signed in.',
+            'Other students: after the results of an exam are published, signed-in participants can see its leaderboard. It shows each student’s rank, name and institution, and nothing else: never your score, time, mobile number or email.',
             'You: after the results are published, you can see your own score, your answers and the correct answers on your dashboard.',
             'Judges in a video round see an entry number, the category and your video link, never your name or contact details.',
             'Ambassadors: an ambassador whose promo code you used sees only how many students used it, not who they are. If you join an ambassador team, the other members see only your first name.',
             'Certificates: anyone you give your certificate code to can check it. The check shows only your name and the award.',
             'The organiser’s staff: administrators can see registration details, payments and exam records so that they can run the olympiad; managers can see the full leaderboard with emails and scores. Administrators sign in with a password and a code from an authenticator app, and their actions are recorded.',
-            'Service providers that handle data for us: PayStation (payments), Amazon Web Services’ email service (the emails we send you) and Hostinger (the server this website runs on).',
+          ],
+        },
+        {
+          heading: 'Service providers',
+          paragraphs: [
+            'A few companies handle data on our behalf, only for these jobs:',
+            'PayStation takes your payment. You enter card or mobile wallet details on PayStation’s page; we never see them.',
+            'Amazon Web Services sends our two kinds of email (confirming your email address and resetting your password) through its email service, Amazon SES.',
+            'Hostinger provides the server this website and its database run on.',
+          ],
+        },
+        {
+          heading: 'IP addresses',
+          paragraphs: [
+            'We store the IP address your device uses: with each sign-in session, in our security and audit records (for example failed sign-ins, and what the organiser’s staff do), and for a short time in the counters that limit repeated sign-in attempts.',
+            'We use it to keep accounts safe, to spot misuse and fraud, and to stop repeated attempts.',
+            'Sign-in sessions are deleted 30 days after they end, and the sign-in counters expire within two days. Security and audit records are kept. The server’s own logs also contain IP addresses; they are overwritten as they fill up.',
           ],
         },
         {
@@ -122,12 +145,14 @@ export const legalMessages = defineMessages({
             'A registration you started but did not finish: the form, with your password, is deleted 30 days after your last step. When a registration is completed, that copy of the form is deleted at once.',
             'Sign-in sessions are deleted 30 days after they end, and the links we email you are deleted 7 days after they expire.',
             'Encrypted backup copies of the database are kept outside the server; the oldest is about five weeks old.',
+            'Security and audit records are kept (see “IP addresses” above).',
           ],
         },
         {
-          heading: 'Students under 18',
+          heading: 'Students under 18 and their parents',
           paragraphs: [
-            'Many participants are under 18. If you are under 18, please register with the knowledge and consent of a parent or guardian. A parent or guardian can write to us at any time to see, correct or delete their child’s information.',
+            'Many participants are under 18. If you are under 18, a parent or guardian should know about and agree to your registration.',
+            'A parent or guardian can write to us at any time to see, correct or delete their child’s information. They have the same rights as every participant (see “Your rights” below).',
             'We collect only what the olympiad needs: no date of birth, no photo and no details about parents or guardians.',
           ],
         },
@@ -155,13 +180,12 @@ export const legalMessages = defineMessages({
     },
     terms: {
       title: 'Terms and conditions',
-      metaDescription:
-        'The rules for registering for and taking part in the Sirat Leadership Olympiad.',
+      metaDescription: `The rules for registering for and taking part in the ${BRAND.en}.`,
       sections: [
         {
           heading: 'About these terms',
           paragraphs: [
-            'These terms are the rules for registering for and taking part in the Sirat Leadership Olympiad. By registering, you agree to them. If you are under 18, please read them with a parent or guardian.',
+            `These terms are the rules for registering for and taking part in the ${BRAND.en}. By registering, you agree to them. If you are under 18, please read them with a parent or guardian.`,
           ],
         },
         {
@@ -242,8 +266,7 @@ export const legalMessages = defineMessages({
     },
     refund: {
       title: 'Refund policy',
-      metaDescription:
-        'When the Sirat Leadership Olympiad registration fee can be refunded, and how to ask.',
+      metaDescription: `When the ${BRAND.en} registration fee can be refunded, and how to ask.`,
       sections: [
         {
           heading: 'The registration fee',
@@ -349,13 +372,12 @@ export const legalMessages = defineMessages({
     },
     privacy: {
       title: 'গোপনীয়তা নীতি',
-      metaDescription:
-        'সিরাত লিডারশিপ অলিম্পিয়াড কোন ব্যক্তিগত তথ্য নেয়, কেন নেয়, কারা দেখতে পায় আর কত দিন রাখে।',
+      metaDescription: `${BRAND.bn} কোন ব্যক্তিগত তথ্য নেয়, কেন নেয়, কারা দেখতে পায় আর কত দিন রাখে।`,
       sections: [
         {
           heading: 'এই নীতি সম্পর্কে',
           paragraphs: [
-            'সিরাত লিডারশিপ অলিম্পিয়াড পরিচালনা করেন এই পাতার নিচে লেখা আয়োজক। এই ওয়েবসাইটে আমরা কী তথ্য নিই, কেন নিই, কারা তা দেখতে পায় আর কত দিন রাখি, এই নীতিতে তা বলা হয়েছে। ওয়েবসাইট আসলে যেভাবে কাজ করে, ঠিক সেভাবেই লিখেছি।',
+            `${BRAND.bn} পরিচালনা করেন এই পাতার নিচে লেখা আয়োজক। এই ওয়েবসাইটে আমরা কী তথ্য নিই, কেন নিই, কারা তা দেখতে পায় আর কত দিন রাখি, এই নীতিতে তা বলা হয়েছে। ওয়েবসাইট আসলে যেভাবে কাজ করে, ঠিক সেভাবেই লিখেছি।`,
           ],
         },
         {
@@ -365,7 +387,7 @@ export const legalMessages = defineMessages({
             'পেমেন্টের সময়: PayStation আমাদের জানায় ইনভয়েস নম্বর, টাকার পরিমাণ, পেমেন্ট সফল হয়েছে কি না আর লেনদেনের রেফারেন্স। কার্ড বা মোবাইল ওয়ালেটের তথ্য আপনি PayStation-এর নিজের পাতায় দেন, তা আমাদের কাছে কখনো আসে না।',
             'পরীক্ষার সময়: আপনার উত্তর, কখন শুরু করলেন আর কখন জমা দিলেন, আপনার নম্বর আর কত সময় লাগল। পরীক্ষার পাতা আরও রেকর্ড রাখে কখন আপনি অন্য ট্যাব বা অ্যাপে গেলেন, কখন ডেভেলপার টুলস খোলা হলো, আর কখন ইন্টারনেট চলে গেল ও ফিরে এল।',
             'ভিডিও রাউন্ডে: আপনার পাঠানো ভিডিওর লিংক।',
-            'অ্যাকাউন্ট নিরাপদ রাখতে: লগইনের রেকর্ড, তার IP ঠিকানা আর কোন ব্রাউজার থেকে এসেছে সহ, আর অ্যাডমিন অংশে আয়োজকের কর্মীরা কী করেন তার রেকর্ড।',
+            'অ্যাকাউন্ট নিরাপদ রাখতে: লগইনের রেকর্ড, কোন ব্রাউজার থেকে এসেছে সহ, আর অ্যাডমিন অংশে আয়োজকের কর্মীরা কী করেন তার রেকর্ড। IP ঠিকানা নিয়ে নিচে আলাদা অংশ আছে।',
           ],
         },
         {
@@ -378,13 +400,30 @@ export const legalMessages = defineMessages({
         {
           heading: 'কারা দেখতে পায়',
           paragraphs: [
-            'অন্য শিক্ষার্থীরা: কোনো পরীক্ষার ফল প্রকাশের পরে লগইন করা অংশগ্রহণকারীরা তার লিডারবোর্ড দেখতে পারে। সেখানে প্রত্যেক শিক্ষার্থীর শুধু অবস্থান, নাম আর শিক্ষাপ্রতিষ্ঠান দেখা যায়। আপনার নম্বর, সময়, মোবাইল নম্বর বা ইমেইল অন্য শিক্ষার্থীরা কখনো দেখে না।',
+            'সবার জন্য খোলা কিছু নয়: আপনার তথ্য আছে এমন প্রতিটি পাতা দেখতে আপনাকে, বা আয়োজকের কর্মীদের, লগইন করতে হয়।',
+            'অন্য শিক্ষার্থীরা: কোনো পরীক্ষার ফল প্রকাশের পরে লগইন করা অংশগ্রহণকারীরা তার লিডারবোর্ড দেখতে পারে। সেখানে প্রত্যেক শিক্ষার্থীর অবস্থান, নাম আর শিক্ষাপ্রতিষ্ঠান দেখা যায়, এর বেশি কিছু নয়: আপনার নম্বর, সময়, মোবাইল নম্বর বা ইমেইল কখনো নয়।',
             'আপনি: ফল প্রকাশের পরে নিজের ড্যাশবোর্ডে আপনার নম্বর, আপনার উত্তর আর সঠিক উত্তর দেখতে পাবেন।',
             'ভিডিও রাউন্ডের বিচারকেরা দেখেন একটি এন্ট্রি নম্বর, ক্যাটাগরি আর আপনার ভিডিওর লিংক। আপনার নাম বা যোগাযোগের তথ্য কখনো দেখেন না।',
             'অ্যাম্বাসেডর: যাঁর প্রোমো কোড আপনি ব্যবহার করেছেন, তিনি শুধু দেখেন কতজন কোডটি ব্যবহার করেছে, কারা করেছে তা নয়। কোনো অ্যাম্বাসেডর দলে যোগ দিলে দলের অন্য সদস্যরা শুধু আপনার নামের প্রথম অংশ দেখে।',
             'সার্টিফিকেট: আপনি যাকে সার্টিফিকেটের কোড দেবেন, তিনি সেটি যাচাই করতে পারবেন। যাচাইয়ে শুধু আপনার নাম আর পুরস্কার দেখা যায়।',
             'আয়োজকের কর্মীরা: অলিম্পিয়াড চালানোর জন্য অ্যাডমিনরা রেজিস্ট্রেশনের তথ্য, পেমেন্ট আর পরীক্ষার রেকর্ড দেখতে পারেন; ম্যানেজাররা ইমেইল আর নম্বরসহ পুরো লিডারবোর্ড দেখতে পারেন। অ্যাডমিনরা পাসওয়ার্ড আর একটি অথেনটিকেটর অ্যাপের কোড দিয়ে লগইন করেন, আর তাঁদের প্রতিটি কাজের রেকর্ড থাকে।',
-            'যেসব সেবাদাতা আমাদের হয়ে তথ্য নিয়ে কাজ করে: PayStation (পেমেন্ট), Amazon Web Services-এর ইমেইল সেবা (আপনাকে পাঠানো ইমেইল) আর Hostinger (যে সার্ভারে এই ওয়েবসাইট চলে)।',
+          ],
+        },
+        {
+          heading: 'সেবাদাতা প্রতিষ্ঠান',
+          paragraphs: [
+            'কয়েকটি প্রতিষ্ঠান আমাদের হয়ে তথ্য নিয়ে কাজ করে, শুধু এই কাজগুলোর জন্য:',
+            'PayStation আপনার পেমেন্ট নেয়। কার্ড বা মোবাইল ওয়ালেটের তথ্য আপনি PayStation-এর পাতায় দেন; আমরা তা কখনো দেখি না।',
+            'Amazon Web Services তাদের ইমেইল সেবা Amazon SES দিয়ে আমাদের দুই ধরনের ইমেইল পাঠায় (ইমেইল নিশ্চিত করা আর পাসওয়ার্ড রিসেট)।',
+            'Hostinger সেই সার্ভার দেয়, যেখানে এই ওয়েবসাইট আর তার ডেটাবেস চলে।',
+          ],
+        },
+        {
+          heading: 'IP ঠিকানা',
+          paragraphs: [
+            'আপনার ডিভাইস যে IP ঠিকানা ব্যবহার করে, তা আমরা রাখি: প্রতিটি লগইন সেশনের সঙ্গে, নিরাপত্তা আর অডিটের রেকর্ডে (যেমন ব্যর্থ লগইন, আর আয়োজকের কর্মীরা কী করেন), আর অল্প সময়ের জন্য সেই হিসাবে, যা বারবার লগইনের চেষ্টা আটকায়।',
+            'অ্যাকাউন্ট নিরাপদ রাখতে, অপব্যবহার আর প্রতারণা ধরতে, আর বারবার চেষ্টা আটকাতে এটি ব্যবহার করি।',
+            'লগইন সেশন শেষ হওয়ার ৩০ দিন পরে মুছে ফেলা হয়, আর লগইনের চেষ্টার হিসাব দুই দিনের মধ্যে মুছে যায়। নিরাপত্তা আর অডিটের রেকর্ড রেখে দেওয়া হয়। সার্ভারের নিজের লগেও IP ঠিকানা থাকে; লগ ভরে গেলে পুরোনো অংশ মুছে নতুন লেখা হয়।',
           ],
         },
         {
@@ -394,12 +433,14 @@ export const legalMessages = defineMessages({
             'যে রেজিস্ট্রেশন শুরু করে শেষ করেননি: পাসওয়ার্ডসহ ফর্মটি আপনার শেষ ধাপের ৩০ দিন পরে মুছে ফেলা হয়। রেজিস্ট্রেশন সম্পূর্ণ হলে ফর্মের সেই কপি সঙ্গে সঙ্গে মোছা হয়।',
             'লগইন সেশন শেষ হওয়ার ৩০ দিন পরে মুছে ফেলা হয়, আর ইমেইলে পাঠানো লিংক মেয়াদ শেষের ৭ দিন পরে।',
             'ডেটাবেসের এনক্রিপ্ট করা ব্যাকআপ কপি সার্ভারের বাইরে রাখা হয়; সবচেয়ে পুরোনোটি প্রায় পাঁচ সপ্তাহের।',
+            'নিরাপত্তা আর অডিটের রেকর্ড রেখে দেওয়া হয় (ওপরে “IP ঠিকানা” দেখুন)।',
           ],
         },
         {
-          heading: '১৮ বছরের কম বয়সী শিক্ষার্থী',
+          heading: '১৮ বছরের কম বয়সী শিক্ষার্থী আর তাদের মা-বাবা',
           paragraphs: [
-            'অনেক অংশগ্রহণকারীর বয়স ১৮-র কম। আপনার বয়স ১৮-র কম হলে মা-বাবা বা অভিভাবকের জানা ও সম্মতি নিয়ে রেজিস্ট্রেশন করুন। মা-বাবা বা অভিভাবক যেকোনো সময় আমাদের লিখে সন্তানের তথ্য দেখতে, ঠিক করতে বা মুছে ফেলতে বলতে পারেন।',
+            'অনেক অংশগ্রহণকারীর বয়স ১৮-র কম। আপনার বয়স ১৮-র কম হলে মা-বাবা বা অভিভাবকের জানা ও সম্মতি নিয়ে রেজিস্ট্রেশন করুন।',
+            'মা-বাবা বা অভিভাবক যেকোনো সময় আমাদের লিখে সন্তানের তথ্য দেখতে, ঠিক করতে বা মুছে ফেলতে বলতে পারেন। প্রত্যেক অংশগ্রহণকারীর যে অধিকার, তাঁদেরও তা-ই (নিচে “আপনার অধিকার” দেখুন)।',
             'অলিম্পিয়াডের জন্য যা দরকার, আমরা শুধু তা-ই নিই: জন্মতারিখ, ছবি বা মা-বাবা ও অভিভাবকের কোনো তথ্য নিই না।',
           ],
         },
@@ -427,12 +468,12 @@ export const legalMessages = defineMessages({
     },
     terms: {
       title: 'শর্তাবলি',
-      metaDescription: 'সিরাত লিডারশিপ অলিম্পিয়াডে রেজিস্ট্রেশন আর অংশগ্রহণের নিয়ম।',
+      metaDescription: `${BRAND.bn}-এ রেজিস্ট্রেশন আর অংশগ্রহণের নিয়ম।`,
       sections: [
         {
           heading: 'এই শর্তাবলি সম্পর্কে',
           paragraphs: [
-            'সিরাত লিডারশিপ অলিম্পিয়াডে রেজিস্ট্রেশন আর অংশগ্রহণের নিয়ম এই শর্তাবলিতে দেওয়া আছে। রেজিস্ট্রেশন করলে আপনি এগুলো মেনে নিচ্ছেন। আপনার বয়স ১৮-র কম হলে মা-বাবা বা অভিভাবকের সঙ্গে পড়ে নিন।',
+            `${BRAND.bn}-এ রেজিস্ট্রেশন আর অংশগ্রহণের নিয়ম এই শর্তাবলিতে দেওয়া আছে। রেজিস্ট্রেশন করলে আপনি এগুলো মেনে নিচ্ছেন। আপনার বয়স ১৮-র কম হলে মা-বাবা বা অভিভাবকের সঙ্গে পড়ে নিন।`,
           ],
         },
         {
@@ -513,8 +554,7 @@ export const legalMessages = defineMessages({
     },
     refund: {
       title: 'ফেরত নীতি',
-      metaDescription:
-        'সিরাত লিডারশিপ অলিম্পিয়াডের রেজিস্ট্রেশন ফি কখন ফেরত দেওয়া যায়, আর কীভাবে চাইবেন।',
+      metaDescription: `${BRAND.bn}-এর রেজিস্ট্রেশন ফি কখন ফেরত দেওয়া যায়, আর কীভাবে চাইবেন।`,
       sections: [
         {
           heading: 'রেজিস্ট্রেশন ফি',
