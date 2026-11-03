@@ -303,7 +303,7 @@ jobs:
       - name: Through nginx - security headers, no-store on /api, and no query string or Referer in nginx's log
         run: |
           page=$(curl -fsS -D - -o /dev/null http://127.0.0.1:8080/)
-          for h in X-Content-Type-Options Referrer-Policy Content-Security-Policy-Report-Only; do
+          for h in X-Content-Type-Options Referrer-Policy Content-Security-Policy-Report-Only Permissions-Policy; do
             echo "$page" | grep -qi "^$h:" || { echo "::error::$h missing on /"; exit 1; }
           done
           api=$(curl -fsS -D - -o /dev/null http://127.0.0.1:8080/api/health)
