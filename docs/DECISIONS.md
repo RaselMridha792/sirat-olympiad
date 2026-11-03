@@ -15,6 +15,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
   - The new rule follows the API's mode instead of the build, and loosens nothing in production. An answer without `gateway` (an older API during a deploy) counts as `'paystation'`.
 - **One helper:** `goToCheckout` is the only way to a checkout: the wizard's start, retry and continue, and the result page's "Try again". A test checks that no component navigates by itself.
 - **Who:** A2, on the lead's proposal A. It touches payments' files (registration.service, registration-api.ts, RegisterWizard, PaymentResult, 06-API), for payments to review when back.
+
 ## 2026-11-03 — The admin exam preview draws like a start and writes nothing (D2, P1; exam session, the design the lead approved)
 
 1. **`GET /admin/exams/:id/preview`, admins only:** one sample draw, made with the same `drawLayout` and `renderQuestions` that a student's start uses. A preview cannot drift from what students see. The correct positions use the key in effect (E7b).
