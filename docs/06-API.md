@@ -89,9 +89,9 @@ Pay first, account second: the form waits server-side in a registration attempt;
 | Method + path | Guard | Request → response |
 |---|---|---|
 | `GET /registrations/info` | Public; 3,000/min per IP | → `{ open, opensAt, closesAt, fee: { amountMinor, currency } \| null, gradeLevels: [{ id, label }], districts, educationTypes }`. Cached 30 s; `open` is false while the fee is invalid or PayStation is not configured |
-| `POST /registrations/start` | Public; 300/min per IP (shared IPs: schools, mobile CGNAT); 10/hour per email and per phone | `{ startRequestId (uuid), name, phone, email, password, district (one of 64), institution, educationType (one of 5), gradeLevelId, promoCode? }` → **201** `{ paymentUrl, invoiceNumber, amountMinor, currency }` and the `sirat_reg` cookie (httpOnly, SameSite=Lax, Path `/api/registrations`, 7 days). Details below |
+| `POST /registrations/start` | Public; 300/min per IP (shared IPs: schools, mobile CGNAT); 10/hour per email and per phone | `{ startRequestId (uuid), name, phone, email, password, district (one of 64), institution, educationType (one of 5), gradeLevelId, promoCode? }` → **201** `{ paymentUrl, gateway, invoiceNumber, amountMinor, currency }` and the `sirat_reg` cookie (httpOnly, SameSite=Lax, Path `/api/registrations`, 7 days). Details below |
 | `GET /registrations/current` | Public (cookie); 3,000/min per IP | → `{ state: awaiting_payment \| confirming \| completed \| failed \| expired \| needs_help, invoiceNumber, amountMinor, currency, expiresAt, canResume, canRetry }`; 404 `NO_REGISTRATION` without a cookie. No personal data |
-| `POST /registrations/current/resume` | Public (cookie) | → 200 `{ paymentUrl }` while the checkout is valid; 409 `NOTHING_TO_RESUME` for a finished attempt or a checkout no longer valid |
+| `POST /registrations/current/resume` | Public (cookie) | → 200 `{ paymentUrl, gateway }` while the checkout is valid; 409 `NOTHING_TO_RESUME` for a finished attempt or a checkout no longer valid |
 | `POST /registrations/current/retry` | Public (cookie); limits as start | After the last payment failed or expired, while registration is open: a new payment with a new invoice → 201 as start; 409 `RETRY_NOT_ALLOWED` while one is active |
 | `POST /registrations/current/cancel` | Public (cookie) | 204 and the cookie cleared, only while no payment is active (409 `CANNOT_CANCEL`) |
 | `POST /registrations/current/recheck` | Public (cookie); 3,000/min per IP | "Check my payment status": **202** `{ requested }`. Asks the worker to ask PayStation about the latest payment, at most once per 10 s; `requested: false` when throttled or nothing is left to check. The page keeps polling `current`. 404 `NO_REGISTRATION` as above |
@@ -105,6 +105,12 @@ Pay first, account second: the form waits server-side in a registration attempt;
 - httpOnly, SameSite=Lax, `Secure` (`COOKIE_SECURE`; refused as false in production), Path `/api/registrations`, 7 days.
 
 Without it, or with one that matches no attempt (forged, or one the browser expired), every `current/*` route answers **404 `NO_REGISTRATION`**. A cancelled or abandoned attempt answers the same. A completed attempt shows only its state in `current`; `resume` answers 409, and `retry` and `cancel` answer 404. **Tiers:** start and retry 300/min per IP; info, current, resume and cancel 3,000/min per IP. Every non-GET needs `X-Requested-With` (CSRF).
+
+**`gateway`** (start, retry, resume) says which checkout `paymentUrl` opens:
+- `'paystation'`: the browser follows it over https only, in every build;
+- `'fake'`: the dev/CI fake server; http is allowed. The API sends it only while `PAYSTATION_ENV=fake`, which it refuses with `NODE_ENV=production`.
+
+The web refuses any other scheme, a relative URL and an unknown gateway. An answer without `gateway` counts as `'paystation'` (`apps/web/src/components/registration/checkout.ts`).
 
 **`POST /registrations/start` in detail:**
 - **403 `REGISTRATION_CLOSED`:** the switch is off, or now is outside `registration_opens_at`/`registration_closes_at`. Nothing is written.
