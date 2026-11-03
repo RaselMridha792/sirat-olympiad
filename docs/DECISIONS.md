@@ -19,6 +19,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
   - **Look:** our own design, never the old site's layout. Geometric and arabesque motifs only: **never a depiction of the Prophet ﷺ or any prophet**.
 - **Why:** the client needs a draft to react to, and its readers are Bangla first. Static server-rendered pages, no new dependency, no HTML from strings.
 - **Who:** Rasel (owner, 2026-11-03), passed on by the lead; built by core.
+
 ## 2026-11-03 — The admin exam preview draws like a start and writes nothing (D2, P1; exam session, the design the lead approved)
 
 1. **`GET /admin/exams/:id/preview`, admins only:** one sample draw, made with the same `drawLayout` and `renderQuestions` that a student's start uses. A preview cannot drift from what students see. The correct positions use the key in effect (E7b).
