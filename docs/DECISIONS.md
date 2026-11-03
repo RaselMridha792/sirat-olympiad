@@ -15,6 +15,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
   - The new rule follows the API's mode instead of the build, and loosens nothing in production. An answer without `gateway` (an older API during a deploy) counts as `'paystation'`.
 - **One helper:** `goToCheckout` is the only way to a checkout: the wizard's start, retry and continue, and the result page's "Try again". A test checks that no component navigates by itself.
 - **Who:** A2, on the lead's proposal A. It touches payments' files (registration.service, registration-api.ts, RegisterWizard, PaymentResult, 06-API), for payments to review when back.
+
 ## 2026-11-01 — Certificates without the PDF (core C6c-1; the C6 plan, the lead's notes, owner Q4 defaults)
 
 1. **Issuing is a queue job** (DO 8): the admin asks, the API answers 202 with how many qualify now, and the worker runs one idempotent `INSERT … SELECT … ON CONFLICT (user_id, type, round_id) DO NOTHING`. It is on a new `certificates` queue (C6c-2's render joins it), in `ops-check` like the others.
