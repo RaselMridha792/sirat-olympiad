@@ -352,7 +352,7 @@ jobs:
           curl -fsS -o /dev/null http://127.0.0.1:8080/
           sleep 65
           curl -fsS -o /dev/null http://127.0.0.1:8080/
-          curl -fsS -o /dev/null http://127.0.0.1:8080/bn
+          curl -fsS -o /dev/null http://127.0.0.1:8080/en
           sleep 5
           if $DCD logs web 2>&1 | grep -E 'EACCES|Failed to update prerender cache'; then
             echo "::error::the web cannot write its cache"; exit 1
