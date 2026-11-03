@@ -2,6 +2,15 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-03 — Pre-launch security sweep: four small fixes (A2; the lead's sweep, read-only first)
+
+- **`/api/ready` stays public** (the uptime monitor polls it by keyword), but each replica answers from a check at most 1 s old (`READY_CACHE_MS`). Concurrent probes share one check. A flood costs one database round trip and two Redis pings a second per replica, not one per request. The answer keeps `no-store`, and a failed check is logged once, not once per request.
+- **The login's code step (`POST /api/auth/2fa/verify`) is in nginx's auth zone**, with login and the email-link endpoints: one bucket per client for every endpoint that takes a credential. The API's own caps stay: 5 attempts per challenge, the login limits.
+- **`Permissions-Policy: camera=(), microphone=(), geolocation=()`** on every page nginx serves. No page uses them, the exam room included.
+- **The judges' blindness test** checks every identifying field of the students: name, user id, email, phone and institution.
+- **Not changed:** judges sign in without 2FA (the design covers admins and managers); it is on Rasel's list for later, with "not required" as the default.
+- **Who:** the sweep and its fixes by A2; the lead chose which to fix and how.
+
 ## 2026-11-03 — VPS specs confirmed; L14 part 1 needs no change (A2; specs read on the VPS by the lead)
 
 - **Specs, as `deploy` on the VPS:**
