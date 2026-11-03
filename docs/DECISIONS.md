@@ -10,6 +10,12 @@ One short entry per non-obvious technical or product decision. Newest first. For
 - **The judges' blindness test** checks every identifying field of the students: name, user id, email, phone and institution.
 - **Not changed:** judges sign in without 2FA (the design covers admins and managers); it is on Rasel's list for later, with "not required" as the default.
 - **Who:** the sweep and its fixes by A2; the lead chose which to fix and how.
+## 2026-11-03 — The admin exam preview draws like a start and writes nothing (D2, P1; exam session, the design the lead approved)
+
+1. **`GET /admin/exams/:id/preview`, admins only:** one sample draw, made with the same `drawLayout` and `renderQuestions` that a student's start uses. A preview cannot drift from what students see. The correct positions use the key in effect (E7b).
+2. **Nothing is written:** no attempt row, no Redis checkpoint, no cache, no audit row (it is a read, like `GET /admin/exams/:id`, which already carries the keys). Each call is a new draw; the page's "Draw again" is a refresh. A test counts attempts, audit rows and `exam:att:*`/`exam:ckpt:*` keys before and after, and checks that the response carries no attempt id, receipt, request id, token or option key.
+3. **A short pool:** a draft shows what it has, with an "n of m questions" note (lead's pick b). A published exam always has its full pool (the publish rule), so a short one is refused like a publish (`question_count`).
+4. **The web reuses the student's look:** `QuestionCard` and the question-number list moved out of `ExamRoom.tsx` first, as a refactor with no behaviour change. The preview has no controller, timer, checkpoint, submit or violation listeners. "Show answers" is off by default and shows the correct option on its own line, so the student card is not changed for it.
 
 ## 2026-11-01 — Certificates without the PDF (core C6c-1; the C6 plan, the lead's notes, owner Q4 defaults)
 

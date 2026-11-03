@@ -28,6 +28,7 @@ import {
   type AdminAttemptDetail,
   type AdminAttemptRow,
   type AdminExamLeaderboard,
+  type AdminExamPreview,
   type AdminExamView,
   type ExamEvent,
   type ExamResultsStatus,
@@ -887,6 +888,30 @@ export function createMockSource(state: MockState | null): DataSource {
                 updatedAt: e.createdAt,
               })),
               keyCorrections: [],
+            };
+          },
+          () => null,
+        ),
+
+      getExamPreview: (id) =>
+        run(
+          (): AdminExamPreview | null => {
+            const e = getWorld().exams.find((x) => x.id === id);
+            if (!e) return null;
+            // The mock draws nothing: the active questions in their stored order, options as written.
+            const questions = e.questions.filter((q) => q.isActive).slice(0, e.questionsPerAttempt);
+            return {
+              examId: e.id,
+              title: e.title,
+              status: e.status,
+              durationMinutes: e.durationMinutes,
+              questionsPerAttempt: e.questionsPerAttempt,
+              violationWarnings: EXAM_VIOLATION_WARNINGS,
+              questions: questions.map((q) => ({
+                text: q.text,
+                options: q.options.map((o) => o.text),
+              })),
+              correct: questions.map((q) => q.options.findIndex((o) => o.key === q.correctKey)),
             };
           },
           () => null,

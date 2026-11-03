@@ -21,6 +21,7 @@ import { Throttle } from '@nestjs/throttler';
 import {
   QUESTION_IMPORT_LIMITS,
   type AdminExamCard,
+  type AdminExamPreview,
   type AdminExamView,
   type AdminQuestion,
   type Paginated,
@@ -173,6 +174,12 @@ export class AdminExamsController {
     const dryRun = query.dryRun === 'true';
     if (dryRun) res.status(200);
     return this.exams.importQuestions(id, file.buffer, dryRun, actorOf(user, req));
+  }
+
+  /** D2: one sample draw as a student would see it, with the correct positions; nothing is written. */
+  @Get(':id/preview')
+  preview(@Param('id', ParseUUIDPipe) id: string): Promise<AdminExamPreview> {
+    return this.exams.preview(id);
   }
 
   @Get(':id/questions/:questionId/versions')
