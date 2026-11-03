@@ -7,6 +7,7 @@ import {
   type AdminAttemptDetail,
   type AdminAttemptRow,
   type AdminExamCard,
+  type AdminExamPreview,
   type AdminExamView,
   type AdminQuestion,
   type AnswerKeyCorrectionView,
@@ -125,6 +126,30 @@ function isResults(value: unknown): value is ExamResultsStatus {
   );
 }
 
+function isPreview(value: unknown): value is AdminExamPreview {
+  return (
+    isRecord(value) &&
+    isText(value.examId) &&
+    isText(value.title) &&
+    oneOf(EXAM_STATUSES, value.status) &&
+    isCount(value.durationMinutes) &&
+    isCount(value.questionsPerAttempt) &&
+    isCount(value.violationWarnings) &&
+    Array.isArray(value.questions) &&
+    value.questions.every(
+      (q) => isRecord(q) && isText(q.text) && Array.isArray(q.options) && q.options.every(isText),
+    ) &&
+    Array.isArray(value.correct) &&
+    value.correct.length === value.questions.length &&
+    value.correct.every(
+      (c, i) =>
+        isCount(c) &&
+        c >= 0 &&
+        c < (value.questions as Array<{ options: unknown[] }>)[i]!.options.length,
+    )
+  );
+}
+
 function isAttempt(value: unknown): value is AdminAttemptRow {
   return (
     isRecord(value) &&
@@ -238,6 +263,17 @@ const pickResults = (r: ExamResultsStatus): ExamResultsStatus => ({
   },
 });
 
+const pickPreview = (p: AdminExamPreview): AdminExamPreview => ({
+  examId: p.examId,
+  title: p.title,
+  status: p.status,
+  durationMinutes: p.durationMinutes,
+  questionsPerAttempt: p.questionsPerAttempt,
+  violationWarnings: p.violationWarnings,
+  questions: p.questions.map((q) => ({ text: q.text, options: [...q.options] })),
+  correct: [...p.correct],
+});
+
 const pickAttempt = (a: AdminAttemptRow): AdminAttemptRow => ({
   attemptId: a.attemptId,
   userId: a.userId,
@@ -259,7 +295,7 @@ export function adminExams(
   get: ApiGet,
 ): Pick<
   DataSource['admin'],
-  'listExams' | 'getExam' | 'getExamResults' | 'listAttempts' | 'getAttempt'
+  'listExams' | 'getExam' | 'getExamResults' | 'getExamPreview' | 'listAttempts' | 'getAttempt'
 > {
   return {
     /** GET /admin/exams (E1). */
@@ -286,6 +322,13 @@ export function adminExams(
       if (!UUID.test(id)) return null;
       const results = await getJsonOrNull(get, `${examPath(id)}/results`, isResults);
       return results && pickResults(results);
+    },
+
+    /** GET /admin/exams/:id/preview (D2): a fresh sample draw on every call, never cached. */
+    async getExamPreview(id) {
+      if (!UUID.test(id)) return null;
+      const preview = await getJsonOrNull(get, `${examPath(id)}/preview`, isPreview);
+      return preview && pickPreview(preview);
     },
 
     /** GET /admin/exams/:id/attempts (E3; owner Q4). */

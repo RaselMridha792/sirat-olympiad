@@ -30,6 +30,7 @@ import type {
   AdminAttemptDetail,
   AdminAttemptQuery,
   AdminAttemptRow,
+  AdminExamPreview,
   AdminExamView,
   AdminExamQuery,
   AdminExamLeaderboard,
@@ -116,6 +117,8 @@ export interface DataSource {
     getExam(id: string): Promise<AdminExamView | null>;
     /** GET /admin/exams/:id/results (counts, snapshot, what can be built or published; null = not found) */
     getExamResults(id: string): Promise<ExamResultsStatus | null>;
+    /** GET /admin/exams/:id/preview (D2: one sample draw with the correct positions; nothing written; null = not found) */
+    getExamPreview(id: string): Promise<AdminExamPreview | null>;
     /** GET /admin/exams/:id/attempts?status=&endReason=&minViolations=&q=&page= (owner Q4: violations) */
     listAttempts(examId: string, query: AdminAttemptQuery): Promise<Paginated<AdminAttemptRow>>;
     /** GET /admin/exams/:id/attempts/:attemptId (with the events and their times; null = not found) */
