@@ -10,6 +10,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 - **The judges' blindness test** checks every identifying field of the students: name, user id, email, phone and institution.
 - **Not changed:** judges sign in without 2FA (the design covers admins and managers); it is on Rasel's list for later, with "not required" as the default.
 - **Who:** the sweep and its fixes by A2; the lead chose which to fix and how.
+
 ## 2026-11-03 — Public pages Bangla-first; the homepage and About as a first draft (owner, via the lead)
 
 - **Decision:**
