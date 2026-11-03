@@ -131,6 +131,20 @@ two_factor_on() {
   done
 }
 check "every API logs two-factor=on (admin 2FA enforced)" two_factor_on
+# Each API and worker replica's newest boot line from prisma.service.ts (`database role=<name> superuser=<bool>`): the
+# app runs as the runtime role sirat_app and never as a superuser (OPEN-QUESTIONS #27, LAUNCH-PLAN L8). A missing line
+# fails too. Until L8 switches production to sirat_app this FAILs, which is right for a pre-launch gate. Names only.
+runtime_role() {
+  local s c line
+  for s in api worker; do
+    [ -n "$(service_ids "$s")" ] || return 1
+    for c in $(service_ids "$s"); do
+      line=$(grep -oE 'database role=[^ "]+ superuser=(true|false)' <<< "$(docker logs "$c" 2>&1)" | tail -n 1)
+      [ "$line" = 'database role=sirat_app superuser=false' ] || return 1
+    done
+  done
+}
+check "every API and worker logs database role=sirat_app superuser=false (L8)" runtime_role
 manual "paystation:selfcheck exits 0 on the VPS (RUNBOOK section 9)"
 
 # ---- a clean production database ----

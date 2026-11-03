@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type {
   AdminAttemptDetail,
   AdminExamCard,
+  AdminExamPreview,
   AdminExamView,
   ExamResultsStatus,
 } from '@sirat/shared';
@@ -172,6 +173,43 @@ test('admin.getExamResults picks the status and refuses a missing count', async 
   ]) {
     const bad = fakeApi({ [path]: { status: 200, body: wrong } });
     await assert.rejects(createHttpSource(bad).admin.getExamResults(EXAM), DataRequestError);
+  }
+});
+
+const preview: AdminExamPreview = {
+  examId: EXAM,
+  title: 'Round 1',
+  status: 'draft',
+  durationMinutes: 30,
+  questionsPerAttempt: 3,
+  violationWarnings: 5,
+  questions: [
+    { text: 'Q1', options: ['b', 'a'] },
+    { text: 'Q2', options: ['c', 'd', 'e'] },
+  ],
+  correct: [0, 2],
+};
+
+test('admin.getExamPreview picks the draw; malformed shapes and ids are refused', async () => {
+  const path = `/admin/exams/${EXAM}/preview`;
+  const body = {
+    ...preview,
+    attemptId: 'x',
+    questions: preview.questions.map((q) => ({ ...q, id: 'q-x', correctKey: 'A' })),
+  };
+  const get = fakeApi({ [path]: { status: 200, body } });
+  const source = createHttpSource(get).admin;
+  assert.deepEqual(await source.getExamPreview(EXAM), preview);
+  assert.equal(await source.getExamPreview('ex-1'), null);
+  assert.equal(get.calls.length, 1, 'a malformed id sends no request');
+  for (const bad of [
+    { ...preview, correct: [0] },
+    { ...preview, correct: [0, -1] },
+    { ...preview, questions: [{ text: 'Q1', options: [1, 2] }, preview.questions[1]] },
+    { ...preview, status: 'live' },
+  ]) {
+    const wrong = fakeApi({ [path]: { status: 200, body: bad } });
+    await assert.rejects(createHttpSource(wrong).admin.getExamPreview(EXAM), DataRequestError);
   }
 });
 
