@@ -1,5 +1,5 @@
 'use client';
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { Pencil, Plus, Trash2, X } from 'lucide-react';
 import { EXAM_LIMITS } from '@sirat/shared';
@@ -285,7 +285,8 @@ export function AddQuestionButton({ locale, examId }: { locale: Locale; examId: 
 
 /**
  * Edit, and delete (a draft) or retire (a published exam with a random draw), for one question. Retiring is offered
- * only while more than the questions per attempt stay active; the server checks again.
+ * only while more than the questions per attempt stay active; the server checks again. `children` join the same row
+ * (the answer-key correction, E7b).
  */
 export function QuestionActions({
   locale,
@@ -293,6 +294,7 @@ export function QuestionActions({
   question,
   number,
   rules,
+  children,
 }: {
   locale: Locale;
   examId: string;
@@ -300,6 +302,7 @@ export function QuestionActions({
   /** The question's number in the list, already formatted. */
   number: string;
   rules: QuestionRules;
+  children?: ReactNode;
 }) {
   const m = pick(adminExamAuthoringMessages, locale);
   const q = m.questions;
@@ -326,7 +329,7 @@ export function QuestionActions({
     }
   }
 
-  if (!rules.canEdit && !rules.removal) return null;
+  if (!rules.canEdit && !rules.removal && !children) return null;
   const retire = rules.removal === 'retire';
   const confirm = retire ? q.confirmRetire : q.confirmDelete;
   return (
@@ -362,6 +365,7 @@ export function QuestionActions({
             </span>
           </Button>
         ) : null}
+        {children}
         {retire && !rules.canRemoveNow ? (
           <span className="text-xs text-ink-faint">{q.retireBlocked}</span>
         ) : null}

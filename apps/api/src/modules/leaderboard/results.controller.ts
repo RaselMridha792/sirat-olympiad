@@ -13,6 +13,7 @@ import type {
   AdminAttemptDetail,
   AdminAttemptRow,
   AdminExamLeaderboard,
+  AnswerKeyCorrectionView,
   ExamLeaderboard,
   ExamResultsStatus,
   Paginated,
@@ -24,6 +25,7 @@ import { CurrentUser, Roles } from '../auth/auth.decorators';
 import type { Actor } from '../exams/admin-exams.service';
 import {
   AdminAttemptsQueryDto,
+  KeyCorrectionDto,
   LeaderboardQueryDto,
   ResultsStateChangeDto,
 } from './dto/results.dto';
@@ -100,6 +102,19 @@ export class AdminResultsController {
     @Req() req: Request,
   ): Promise<ExamResultsStatus> {
     return this.results.unpublish(id, body.expectedUpdatedAt, actorOf(user, req));
+  }
+
+  /** E7b: corrects a published question's answer key (results unpublished); the attempts are re-scored by a job. */
+  @Post(':id/questions/:questionId/key-corrections')
+  @HttpCode(201)
+  correctKey(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('questionId', ParseUUIDPipe) questionId: string,
+    @Body() body: KeyCorrectionDto,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ): Promise<AnswerKeyCorrectionView> {
+    return this.results.correctKey(id, questionId, body, actorOf(user, req));
   }
 
   @Get(':id/attempts')

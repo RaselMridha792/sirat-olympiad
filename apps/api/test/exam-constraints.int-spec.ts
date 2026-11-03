@@ -5,7 +5,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
-import { examData, makeUser, testPrisma, truncateAll } from './helpers';
+import { applyReferenceData, examData, makeUser, testPrisma, truncateAll } from './helpers';
 import {
   OPTIONS,
   makeAttempt,
@@ -18,6 +18,8 @@ const prisma: PrismaClient = testPrisma();
 
 beforeAll(async () => {
   await truncateAll(prisma);
+  // Round 1 etc. come from the baseline data migration: other files (rounds.int-spec.ts) rely on them.
+  await applyReferenceData(prisma);
 });
 afterAll(async () => {
   await prisma.$disconnect();

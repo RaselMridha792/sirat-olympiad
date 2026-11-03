@@ -1,15 +1,19 @@
 import {
+  CONTROL_CHARACTERS,
   EXAM_ADMIN_REFUSALS,
   EXAM_LIMITS,
   EXAM_MAX_DURATION_MINUTES,
   QUESTION_IMPORT_CODES,
   QUESTION_IMPORT_COLUMNS,
   QUESTION_IMPORT_LIMITS,
+  KEY_CORRECTION_LIMITS,
   type AdminExamInput,
   type AdminExamPatch,
   type AdminExamView,
   type AdminQuestion,
   type AdminQuestionInput,
+  type AnswerKeyCorrectionInput,
+  type AnswerKeyCorrectionView,
   type Category,
   type ExamAdminRefusal,
   type ExamStatus,
@@ -399,6 +403,44 @@ export function questionRules(
     removal: null,
     canRemoveNow: false,
   };
+}
+
+// ───────────── Answer-key corrections (E7b) ─────────────
+
+export type ReasonProblem = 'reasonShort' | 'reasonControl';
+
+/** Why the server would refuse this reason (it is trimmed first), or null. */
+export function reasonProblem(reason: string): ReasonProblem | null {
+  const text = reason.trim();
+  if (text.length < KEY_CORRECTION_LIMITS.reasonMin) return 'reasonShort';
+  if (CONTROL_CHARACTERS.test(text)) return 'reasonControl';
+  return null;
+}
+
+/** POST …/questions/:questionId/key-corrections, with the exam's `updatedAt` from the page. */
+export const keyCorrectionBody = (
+  toKey: string,
+  reason: string,
+  expectedUpdatedAt: string,
+): AnswerKeyCorrectionInput => ({ toKey, reason: reason.trim(), expectedUpdatedAt });
+
+/** The key in effect per corrected question: the newest correction's (the API lists them newest first). */
+export function correctedKeys(
+  corrections: ReadonlyArray<Pick<AnswerKeyCorrectionView, 'questionId' | 'toKey'>>,
+): Map<string, string> {
+  const keys = new Map<string, string>();
+  for (const c of corrections) if (!keys.has(c.questionId)) keys.set(c.questionId, c.toKey);
+  return keys;
+}
+
+/** A question's number in the page's list (active questions), else its stored position (retired or replaced). */
+export function questionNumber(
+  exam: { questions: ReadonlyArray<{ id: string }> },
+  questionId: string,
+  position: number,
+): number {
+  const index = exam.questions.findIndex((q) => q.id === questionId);
+  return index >= 0 ? index + 1 : position;
 }
 
 // ───────────── Refusals ─────────────

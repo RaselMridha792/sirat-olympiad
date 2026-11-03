@@ -5,6 +5,7 @@ import { ApiRequestError, SessionExpiredError } from '../../../lib/api.ts';
 import {
   addOption,
   authoringProblems,
+  correctedKeys,
   createExamBody,
   dhakaToIso,
   editableFields,
@@ -16,12 +17,15 @@ import {
   importRequest,
   isImportPreview,
   isoToDhaka,
+  keyCorrectionBody,
   patchExamBody,
   pickQuestion,
   pickSettings,
   questionBody,
+  questionNumber,
   questionProblems,
   questionRules,
+  reasonProblem,
   removeOption,
   stateActions,
   toExamValues,
@@ -554,4 +558,35 @@ test('each problem reads as its spreadsheet row and column, in both languages, w
     for (const text of [...Object.values(t.codes), ...Object.values(t.columns)])
       assert.ok(typeof text === 'string' && text.length > 0);
   }
+});
+
+test('answer-key corrections: the reason as the server takes it, the body, the key in effect, the number', () => {
+  assert.equal(reasonProblem('  no '), 'reasonShort');
+  assert.equal(reasonProblem('ok\u0007bad'), 'reasonControl');
+  assert.equal(reasonProblem('A line\nand a tab\tare fine'), null);
+  assert.equal(reasonProblem('   Key misprinted   '), null);
+  assert.deepEqual(keyCorrectionBody('B', '  Key misprinted ', '2026-11-21T04:00:00.000Z'), {
+    toKey: 'B',
+    reason: 'Key misprinted',
+    expectedUpdatedAt: '2026-11-21T04:00:00.000Z',
+  });
+  // Newest first, as the API lists them: q-1 went C → A → B, so B is in effect.
+  const keys = correctedKeys([
+    { questionId: 'q-1', toKey: 'B' },
+    { questionId: 'q-2', toKey: 'D' },
+    { questionId: 'q-1', toKey: 'A' },
+  ]);
+  assert.deepEqual(
+    [...keys],
+    [
+      ['q-1', 'B'],
+      ['q-2', 'D'],
+    ],
+  );
+  const exam = { questions: [{ id: 'q-1' }, { id: 'q-2' }] };
+  assert.equal(questionNumber(exam, 'q-2', 9), 2);
+  assert.equal(questionNumber(exam, 'q-retired', 7), 7);
+  for (const t of [adminExamAuthoringMessages.en, adminExamAuthoringMessages.bn])
+    for (const code of ['exam_draft', 'results_published', 'same_key', 'key_unknown'] as const)
+      assert.ok(t.errors[code].length > 0);
 });
