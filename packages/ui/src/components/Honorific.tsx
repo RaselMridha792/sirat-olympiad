@@ -10,7 +10,7 @@ import { isArabicScript, splitOnHonorific } from '../honorific';
 export function Honorific({ text, className }: { text: string; className?: string }) {
   if (!isArabicScript(text)) return <span className={className}>{text}</span>;
   return (
-    <bdi lang="ar" className={cn('font-arabic text-[1.15em] leading-none', className)}>
+    <bdi lang="ar" className={cn('font-arabic text-[1.3em] leading-none', className)}>
       {text}
     </bdi>
   );

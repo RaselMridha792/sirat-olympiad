@@ -16,7 +16,7 @@ export interface TimelineItem {
 /**
  * An ordered timeline (an <ol>, so the order is read out).
  * - `dates`: a vertical line of dots with the date first (a roadmap).
- * - `steps`: numbered stages, side by side from md up with a connector, stacked on phones (the rounds).
+ * - `steps`: numbered stages joined by a line: stacked on phones, side by side from md up (the rounds).
  * `tone="dark"` for a dark band (bg-shell).
  */
 export function Timeline({
@@ -38,7 +38,7 @@ export function Timeline({
           <li
             key={item.id}
             className={cn(
-              'relative flex flex-col rounded-card border p-6 md:not-last:after:absolute md:not-last:after:top-12 md:not-last:after:-right-8 md:not-last:after:h-0.5 md:not-last:after:w-8 md:not-last:after:bg-primary',
+              'relative flex flex-col rounded-card border p-6 not-last:after:absolute not-last:after:top-full not-last:after:left-[calc(3rem-1px)] not-last:after:h-6 not-last:after:w-0.5 not-last:after:bg-primary md:not-last:after:left-auto md:not-last:after:top-12 md:not-last:after:-right-8 md:not-last:after:h-0.5 md:not-last:after:w-8 md:not-last:after:bg-primary',
               dark ? 'border-white/10 bg-white/5' : 'border-line bg-surface shadow-card',
             )}
           >
