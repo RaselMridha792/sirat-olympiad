@@ -53,7 +53,7 @@ export function Section({
       id={id}
       aria-labelledby={titleId}
       className={cn(
-        'relative isolate scroll-mt-4 overflow-hidden px-4 py-16 sm:px-6 md:py-24',
+        'relative isolate scroll-mt-16 overflow-hidden px-4 py-16 sm:px-6 md:py-24',
         tone.section,
         className,
       )}

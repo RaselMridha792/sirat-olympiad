@@ -1,16 +1,17 @@
+import { site } from '../../content/site.ts';
 import { defineMessages } from '../messages.ts';
 
 /*
  * The public homepage, FIRST DRAFT (owner, 2026-11-03). Bangla from the client's two PDFs; English is our
  * translation. Everything here is "to confirm" with the client. Plain text only: `{saw}` marks where the honorific
- * (brand.honorific, one key) goes, rendered by <WithHonorific>. Facts with numbers or dates live in
+ * (brand.honorific, one key; the name comes from content/site.ts) goes, rendered by <WithHonorific>. Facts with numbers or dates live in
  * content/home.ts; the fee comes from the API.
  */
 export const homeMessages = defineMessages({
   en: {
     brand: {
-      name: 'International Sirat Olympiad 3.0',
-      season: 'Prophetic Leadership Season',
+      name: site.name.en,
+      season: site.season,
       /** The honorific after the Prophet's name. If ﷺ renders badly, the plain form is "(pbuh)". */
       honorific: 'ﷺ',
       home: 'Home page',
@@ -108,7 +109,6 @@ export const homeMessages = defineMessages({
       kicker: 'The stages',
       title: 'Three rounds, one path',
       lead: 'Only those who pass a round take part in the next one.',
-      stage: (number: string) => `Stage ${number}`,
       method: (method: string) => `Method: ${method}`,
       selection: {
         name: 'Selection round',
@@ -185,55 +185,55 @@ export const homeMessages = defineMessages({
     faq: {
       kicker: 'Questions and answers',
       title: 'Frequently asked questions',
+      links: {
+        register: 'Go to registration',
+        roadmap: 'See the roadmap',
+        prizes: 'See the prizes',
+        rounds: 'See the stages',
+        syllabus: 'See the syllabus',
+      },
       items: [
         {
           id: 'register',
           question: 'I want to register.',
           answer:
             'Welcome. Fill in the form with the required details and pay to complete your registration.',
-          link: { to: 'register', label: 'Go to registration' },
         },
         {
           id: 'roadmap',
           question: 'What is the olympiad’s roadmap?',
           answer:
             'The dates of registration, the selection round, the knockout and the final are in the roadmap on this page.',
-          link: { to: 'roadmap', label: 'See the roadmap' },
         },
         {
           id: 'prizes',
           question: 'What are the prizes of season three?',
           answer:
             'There will be book sets, gadgets, cash, certificates, crests and more. The champion of each group wins an Umrah journey. Each group has its own prizes.',
-          link: { to: 'prizes', label: 'See the prizes' },
         },
         {
           id: 'method',
           question: 'How does the exam work?',
           answer:
             'The exam has three stages. Only those who pass a stage take part in the next one.',
-          link: { to: 'rounds', label: 'See the stages' },
         },
         {
           id: 'final',
           question: 'What happens in the final round?',
           answer:
             'The final round is held in the style of a television reality show. Contestants meet each episode’s challenge and compete in the grand finale for the top prize.',
-          link: null,
         },
         {
           id: 'syllabus',
           question: 'Will questions come from outside the syllabus?',
           answer:
             'No. Every question comes from the set books. Questions on understanding and application are also based on what the books say.',
-          link: null,
         },
         {
           id: 'books',
           question: 'Where do I get the syllabus books?',
           answer:
             'You can get the books yourself. Everyone who pays the registration fee also gets one book free: give a delivery address on your dashboard after paying, and it will be delivered to you, in sha Allah.',
-          link: { to: 'syllabus', label: 'See the syllabus' },
         },
       ],
     },
@@ -259,8 +259,8 @@ export const homeMessages = defineMessages({
   },
   bn: {
     brand: {
-      name: 'ইন্টারন্যাশনাল সিরাত অলিম্পিয়াড ৩.০',
-      season: 'Prophetic Leadership Season',
+      name: site.name.bn,
+      season: site.season,
       honorific: 'ﷺ',
       home: 'প্রথম পাতা',
     },
@@ -356,7 +356,6 @@ export const homeMessages = defineMessages({
       kicker: 'প্রতিযোগিতার ধাপ',
       title: 'তিনটি রাউন্ড, একটাই পথ',
       lead: 'প্রতিটি রাউন্ডে উত্তীর্ণ হলেই কেবল পরের রাউন্ডে অংশ নেওয়া যায়।',
-      stage: (number: string) => `ধাপ ${number}`,
       method: (method: string) => `পদ্ধতি: ${method}`,
       selection: {
         name: 'সিলেকশন রাউন্ড',
@@ -433,55 +432,55 @@ export const homeMessages = defineMessages({
     faq: {
       kicker: 'প্রশ্নোত্তর',
       title: 'সচরাচর জিজ্ঞাসা',
+      links: {
+        register: 'রেজিস্ট্রেশন পেজে যান',
+        roadmap: 'রোডম্যাপ দেখুন',
+        prizes: 'পুরস্কার দেখুন',
+        rounds: 'প্রতিযোগিতার ধাপ দেখুন',
+        syllabus: 'সিলেবাস দেখুন',
+      },
       items: [
         {
           id: 'register',
           question: 'আমি রেজিস্ট্রেশন করতে চাই।',
           answer:
             'আপনাকে স্বাগতম। প্রয়োজনীয় তথ্য দিয়ে ফরম পূরণ করে পেমেন্টের মাধ্যমে রেজিস্ট্রেশন সম্পন্ন করুন।',
-          link: { to: 'register', label: 'রেজিস্ট্রেশন পেজে যান' },
         },
         {
           id: 'roadmap',
           question: 'অলিম্পিয়াডের রোডম্যাপ কী?',
           answer:
             'রেজিস্ট্রেশন, সিলেকশন রাউন্ড, নকআউট আর ফাইনালের তারিখ এই পাতার রোডম্যাপ অংশে দেওয়া আছে।',
-          link: { to: 'roadmap', label: 'রোডম্যাপ দেখুন' },
         },
         {
           id: 'prizes',
           question: 'সিজন থ্রি-এর পুরস্কার কী কী?',
           answer:
             'বইসমগ্র, গ্যাজেট, নগদ অর্থ, সার্টিফিকেট ও ক্রেস্টসহ বিভিন্ন পুরস্কার থাকবে। উভয় গ্রুপের চ্যাম্পিয়নের জন্য থাকবে উমরাহ সফর। দুটি গ্রুপে পৃথকভাবে পুরস্কার প্রদান করা হবে।',
-          link: { to: 'prizes', label: 'পুরস্কার দেখুন' },
         },
         {
           id: 'method',
           question: 'পরীক্ষা পদ্ধতি কী?',
           answer:
             'পরীক্ষা তিনটি ধাপে অনুষ্ঠিত হবে। পূর্ববর্তী ধাপে উত্তীর্ণ প্রতিযোগীরাই কেবল পরবর্তী ধাপে অংশগ্রহণ করতে পারবেন।',
-          link: { to: 'rounds', label: 'প্রতিযোগিতার ধাপ দেখুন' },
         },
         {
           id: 'final',
           question: 'ফাইনাল রাউন্ডে কী কী থাকবে?',
           answer:
             'ফাইনাল রাউন্ড টেলিভিশন রিয়েলিটি শো স্টাইলে অনুষ্ঠিত হবে। বিভিন্ন পর্বের চ্যালেঞ্জ উত্তীর্ণ হয়ে প্রতিযোগীরা গ্র্যান্ড ফিনালেতে সর্বোচ্চ পুরস্কারের জন্য প্রতিযোগিতা করবেন।',
-          link: null,
         },
         {
           id: 'syllabus',
           question: 'সিলেবাসের বাইরে থেকে প্রশ্ন করা হবে কি?',
           answer:
             'না। সকল প্রশ্ন সিলেবাসভুক্ত বই থেকে করা হবে। অনুধাবনমূলক ও প্রয়োগমূলক প্রশ্নগুলোও বইয়ের তথ্যের ওপর ভিত্তি করে প্রণয়ন করা হবে।',
-          link: null,
         },
         {
           id: 'books',
           question: 'সিলেবাসের বই কোথায় পাব?',
           answer:
             'সিলেবাসের বই নিজ উদ্যোগে সংগ্রহ করা যাবে। রেজিস্ট্রেশন ফি দেওয়া প্রত্যেকে একটি বই বিনামূল্যেও পাবেন: পেমেন্টের পর ড্যাশবোর্ডে ঠিকানা দিলে বই আপনার ঠিকানায় পৌঁছে দেওয়া হবে, ইনশা আল্লাহ।',
-          link: { to: 'syllabus', label: 'সিলেবাস দেখুন' },
         },
       ],
     },
@@ -506,6 +505,3 @@ export const homeMessages = defineMessages({
     },
   },
 });
-
-/** In-page targets a FAQ answer may link to. */
-export type FaqLinkTarget = 'register' | 'roadmap' | 'prizes' | 'rounds' | 'syllabus';

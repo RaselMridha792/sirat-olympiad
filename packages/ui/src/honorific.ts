@@ -1,7 +1,7 @@
 /** Where the honorific goes in a message, e.g. 'রাসূলুল্লাহ {saw}-এর জীবন'. Plain text: nothing is parsed as HTML. */
 export const HONORIFIC_TOKEN = '{saw}';
 
-const ARABIC = /[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]/;
+const ARABIC = /[\u0600-\u06ff\u0750-\u077f\ufb50-\ufdff\ufe70-\ufeff]/;
 
 /** True when the honorific is written in Arabic script (ﷺ), false for a plain form such as "(সা.)". */
 export function isArabicScript(text: string): boolean {
