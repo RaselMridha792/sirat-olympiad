@@ -29,7 +29,7 @@ Owner = Rasel Mridha. Client = GLTS Leadership × Sirat Olympiad. Add the answer
 | 19 | Import old Season 2 users/results, or start fresh? | Migration | Start fresh |
 | 20 | Teachers/schools: dashboards, bulk registration? | Scope | Out of scope |
 | 21 | Languages: Bangla + English both at launch? Mobile app later? | i18n | Both, web only |
-| 22 | Hosting: confirm Hostinger KVM 8 specs; Malaysia/AWS fallback plan | Infra | Single VPS |
+| 22 | ~~Hosting: confirm Hostinger KVM 8 specs~~ **Specs confirmed 2026-11-03 on the VPS:** 8 vCPU (AMD EPYC 9354P), 31 GB usable (32 GB nominal), 387 GB disk, Ubuntu 26.04.1 LTS; no retune needed (DECISIONS "VPS specs confirmed"). Still open: the Malaysia/AWS fallback plan | Infra | Single VPS |
 | 23 | Support coverage promised to client (exam-day only vs 24/7 any-time) | Runbook/contract | Exam-day only |
 | 24 | Real expected **peak concurrency** and whether starts are bunched (e.g. at window open) | Load test | 1,300–3,800 estimate |
 | 25 | **CI cannot block merges**: the repo is private on GitHub Free, where branch protection/required checks are unavailable (HTTP 403). Upgrade to GitHub Pro (or make the repo public) and switch to pull requests with required checks, or keep pushing to `main` with the rule "deploy only a commit with a green CI run"? | Release process | Advisory CI + green-SHA deploy rule |
