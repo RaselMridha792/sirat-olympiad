@@ -46,6 +46,8 @@ export const LAUNCH = {
   '/admin/rounds': 'live',
   '/admin/jury': 'live',
   '/dashboard/round': 'live',
+  '/dashboard/certificates': 'live',
+  '/admin/certificates': 'live',
   '/admin/users': 'live',
 } as const satisfies LaunchTable;
 
