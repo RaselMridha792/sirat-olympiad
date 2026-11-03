@@ -303,7 +303,7 @@ jobs:
       - name: Through nginx - security headers, no-store on /api, and no query string or Referer in nginx's log
         run: |
           page=$(curl -fsS -D - -o /dev/null http://127.0.0.1:8080/)
-          for h in X-Content-Type-Options Referrer-Policy; do
+          for h in X-Content-Type-Options Referrer-Policy Permissions-Policy; do
             echo "$page" | grep -qi "^$h:" || { echo "::error::$h missing on /"; exit 1; }
           done
           # nginx's page CSP, enforced (Next's own header has only frame-ancestors, so match the policy itself).
@@ -358,7 +358,7 @@ jobs:
           curl -fsS -o /dev/null http://127.0.0.1:8080/
           sleep 65
           curl -fsS -o /dev/null http://127.0.0.1:8080/
-          curl -fsS -o /dev/null http://127.0.0.1:8080/bn
+          curl -fsS -o /dev/null http://127.0.0.1:8080/en
           sleep 5
           if $DCD logs web 2>&1 | grep -E 'EACCES|Failed to update prerender cache'; then
             echo "::error::the web cannot write its cache"; exit 1
