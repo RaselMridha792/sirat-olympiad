@@ -2,6 +2,24 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-03 — Public pages Bangla-first; the homepage and About as a first draft (owner, via the lead)
+
+- **Decision:**
+  - **Routes:** every public page is Bangla at its path (`/`, `/about`, `/privacy`, `/terms`, `/refund-policy`) and English under `/en`, one rule for all (core plan D4). Old `/bn` links get a temporary redirect to the same page (`next.config.mjs`). `hreflang` alternates on every page.
+  - **The homepage and About are built now** as a first draft from the client's two PDFs. The PDFs win over the old site; the old site's About text is used where the PDFs do not contradict it (the purpose and the five goals). This overrides CLAUDE.md §1b's "public site only after the design is confirmed" for these two pages only. The policy texts are exam's (#80).
+  - **One source per fact, each "to confirm" with the client:**
+    - the name and the season line in `content/site.ts` (`site.name.bn/en`, `site.season`); the homepage, the shell, the page titles and the legal texts read it;
+    - dates, the knockout method, the qualifiers, the social links, the album URL and the offline flag in `content/home.ts`;
+    - the team flag in `content/about.ts`;
+    - the texts in `i18n/messages/home.ts` and `about.ts`;
+    - the fee and the open state from the API.
+  - **Hidden until confirmed:** offline participation, the album link (empty URL), the advisory board and the convenor team. Left out: the registration check by SMS, the advisers, the sponsors. The two groups are content only (the system's categories question is with the owner).
+  - **ﷺ** is one key (`homeMessages.brand.honorific`), drawn with a system Arabic font stack (`--font-arabic`, no font package). It rendered well in Chrome on Windows; the plain fallback "(সা.)" is a one-key change. A `{saw}` token in a message marks its place, rendered by `<WithHonorific>` (plain text, no HTML).
+  - **New in `@sirat/ui`:** `Section`, `Timeline` (dates and steps), `Accordion` (native `details`/`summary`, no script), `BigStats`, `StarMark`, `GeometricPattern` and `StarOrnament` (inline SVG geometry in `currentColor`), `Honorific`/`WithHonorific`; the tokens `--font-arabic` and `--animate-rise` (used only behind `motion-safe:`).
+  - **Look:** our own design, never the old site's layout. Geometric and arabesque motifs only: **never a depiction of the Prophet ﷺ or any prophet**.
+- **Why:** the client needs a draft to react to, and its readers are Bangla first. Static server-rendered pages, no new dependency, no HTML from strings.
+- **Who:** Rasel (owner, 2026-11-03), passed on by the lead; built by core.
+
 ## 2026-11-03 — VPS specs confirmed; L14 part 1 needs no change (A2; specs read on the VPS by the lead)
 
 - **Specs, as `deploy` on the VPS:**

@@ -51,7 +51,7 @@ The defaults are used if no answer comes before the PR that needs them.
 | D1 | The students list and its export are **admin only** (not `manager`, `jury`). |
 | D2 | **Phone masked in the list** (last 3 digits only, as payments masks stored payloads); full number in the detail dialog and in the CSV. Search by the full number still works. |
 | D3 | The CSV needs a **reason** (3–200 characters, kept in the audit row) and contains only `student` and `ambassador` accounts. At most 5 exports per admin per hour, at most 50,000 rows per export. |
-| D4 | Public pages: English at `/`, `/about`, `/privacy`, `/terms`, `/refund-policy`; Bangla at the same paths under `/bn`. All static (no cookie read), a language link on each page. |
+| D4 | Public pages: **Bangla at `/`, `/about`, `/privacy`, `/terms`, `/refund-policy`; English at the same paths under `/en`** (owner, 2026-11-03, DECISIONS "Public pages Bangla-first"; before that English was at the root and Bangla under `/bn`, which now redirects). All static (no cookie read), a language link on each page. |
 | D5 | Announcements are plain text (line breaks kept, no HTML, links not clickable), for everyone or one category, publish now or at a set time, archived instead of deleted. No email to students (SES quota). |
 | D6 | The student dashboard home is composed in the web from existing endpoints (`/users/me`, `/exams`, `/announcements`, payments' `/registrations/me`), so the planned `GET /dashboard/home` is dropped and no team's module changes for it. |
 | D7 | A team: one per ambassador, students join with the team's code, at most 10 members, one team per student. |
@@ -89,12 +89,13 @@ The defaults are used if no answer comes before the PR that needs them.
 
 **Web only; no API, no schema.** Not Phase D: no design work, no marketing sections beyond what PayStation's approval needs.
 
-| Route (en; bn under `/bn`) | Content |
+| Route (bn; en under `/en`) | Content |
 |---|---|
 | `/` | Name, one paragraph about the olympiad, the three steps (register and pay, log in, sit the exam), the fee and whether registration is open (from payments' `GET /registrations/info`, cached 60 s; if the API cannot be reached, the page shows no fee and keeps the buttons), Register and Log in buttons, contact block, footer |
 | `/about` | About GLTS Leadership × Sirat Olympiad (placeholder) and the organiser's registered name |
 | `/privacy`, `/terms`, `/refund-policy` | The client's texts; placeholders until then. The refund placeholder: the registration fee is non-refundable (owner); a payment taken by mistake is reported to the contact email (the client confirms the wording) |
 
+- **Update 2026-11-03 (owner):** `/` and `/about` are now the homepage and About first drafts from the client's PDFs (DECISIONS "Public pages Bangla-first"); the policy texts are exam's (#80).
 - **One content source:** `apps/web/src/content/site.ts` (registered business name, address, email, phone, effective date, `placeholder: true`) and a typed message module `i18n/messages/legal.ts` (bn mirrors en at compile time, as every message module does). Legal texts are structured data (headings, paragraphs, lists) rendered by a new `Prose` component in `packages/ui`: no HTML strings, no `dangerouslySetInnerHTML`.
 - **Footer** on every public page: the five links, the contact details and the business name from `site.ts`.
 - **Static:** no cookie read; `<html lang>` stays `en` in the shared root layout (DECISIONS UI port #16 keeps that for Phase D) and Bangla pages set `lang="bn"` on their wrapper, as the dashboards do. While `placeholder` is true, every page carries `noindex`.

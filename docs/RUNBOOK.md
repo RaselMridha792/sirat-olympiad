@@ -828,3 +828,20 @@ pnpm --filter @sirat/api admin:2fa-reset --email ops@example.org --reason "Lost 
 
 - **Exit codes:** 0 reset; 1 refused (no such account, or no two-factor login: nothing changed) or the database or Redis unreachable; 2 usage.
 - **The known gap:** an access token already issued stays valid until it expires. After any reset the old session keeps admin access for at most `JWT_ACCESS_TTL_SECONDS` (15 min), and refreshing fails at once. If the device was stolen, also change the password: a reset alone leaves the password valid.
+
+## 24. Public homepage and About: changing a fact (draft, 2026-11-03)
+
+The homepage (`/`, `/en`) and About (`/about`, `/en/about`) are static pages built from files, so a change needs a release (they are not admin settings). The fee and whether registration is open are the exception: they come from the admin's registration settings, and the pages pick them up within 60 s.
+
+| To change | Where | Note |
+|---|---|---|
+| The name or the season line | `apps/web/src/content/site.ts` (`name.bn`, `name.en`, `season`) | Every public page, the page titles and the legal texts read it |
+| The honorific | `apps/web/src/i18n/messages/home.ts` (`brand.honorific`, bn and en) | ﷺ now; the plain forms are "(সা.)" and "(pbuh)" |
+| Dates, the knockout method, the qualifiers, the social links | `apps/web/src/content/home.ts` | Dates are Dhaka calendar days; `null` means "to be announced" |
+| The album link | `content/home.ts` `albumUrl` | Empty hides the button; only an `https://` link is shown |
+| Offline centres | `content/home.ts` `offline: true` | Only once the client confirms them; the text is in `home.ts` |
+| The advisory board and the convenor team | `apps/web/src/content/about.ts` (`team.show`, the names and roles) | Both stay hidden while `show` is false or a list is empty |
+| The contact email | `content/site.ts` `email` | Also shown in the footer of every public page |
+| Removing the draft note and `noindex` | `content/site.ts` `placeholder: false` | Only with the client's final texts and facts in place |
+
+Check after the release: `/`, `/en`, `/about` and `/en/about` answer 200, and an old `/bn` link redirects to the same page.
