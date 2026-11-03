@@ -9,13 +9,14 @@ import {
   CalendarX,
   CheckCircle,
   Clock,
+  Eye,
   Hourglass,
   Layers,
   ListChecks,
   Lock,
 } from 'lucide-react';
 import { EXAM_VIOLATION_WARNINGS } from '@sirat/shared';
-import { Badge, Card, cn, EmptyState, PageHeader } from '@sirat/ui';
+import { Badge, buttonClasses, Card, cn, EmptyState, PageHeader } from '@sirat/ui';
 import {
   correctedKeys,
   pickQuestion,
@@ -38,6 +39,7 @@ import { parseEnum, parseId, parsePageQuery, type SearchParams } from '@/data/qu
 import { common } from '@/i18n/common';
 import { formatDateTime, formatNumber } from '@/i18n/format';
 import { adminExamAuthoringMessages } from '@/i18n/messages/admin-exam-authoring';
+import { adminExamPreviewMessages } from '@/i18n/messages/admin-exam-preview';
 import { adminExamResultsMessages } from '@/i18n/messages/admin-exam-results';
 import { adminExamsMessages } from '@/i18n/messages/admin-exams';
 import { getMessages } from '@/i18n/server';
@@ -69,11 +71,12 @@ export default async function AdminExamDetailPage({
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const examId = parseId(id);
   if (!examId) notFound();
-  const [{ locale, m }, { m: c }, { m: r }, { m: a }, data] = await Promise.all([
+  const [{ locale, m }, { m: c }, { m: r }, { m: a }, { m: pv }, data] = await Promise.all([
     getMessages(adminExamsMessages),
     getMessages(common),
     getMessages(adminExamResultsMessages),
     getMessages(adminExamAuthoringMessages),
+    getMessages(adminExamPreviewMessages),
     getData(query),
   ]);
   const filter = parseEnum(query.filter, ATTEMPT_FILTERS);
@@ -179,6 +182,18 @@ export default async function AdminExamDetailPage({
                   {m.locked}
                 </span>
               </Badge>
+            ) : null}
+            {exam.status !== 'archived' ? (
+              <Link
+                href={`${path}/preview`}
+                aria-label={pv.openLabel(exam.title)}
+                className={buttonClasses({ variant: 'outline', size: 'sm' })}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <Eye size={14} aria-hidden="true" />
+                  {pv.open}
+                </span>
+              </Link>
             ) : null}
           </div>
         }

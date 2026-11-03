@@ -673,7 +673,7 @@ All five are answered (owner, through the lead, 2026-10-31 18:13). Recorded in D
 | | Default |
 |---|---|
 | D1 | One exam per category (`category` null = everyone). A student sees only their category's exams |
-| D2 | Only `student` and `ambassador` can start an exam. An admin preview without an attempt is P1 |
+| D2 | Only `student` and `ambassador` can start an exam. An admin preview without an attempt is P1: built as `GET /admin/exams/:id/preview` and `/admin/exams/[id]/preview` (DECISIONS 2026-11-03) |
 | D3 | Starting needs a verified email (lazy verification), a **paid registration** and an unblocked account. There are no refunds (owner, 2026-10-31, in payments' DECISIONS; not on `main` yet), so access needs only "paid". The payment status names come from payments PR 1, read only |
 | D4 | Answers are option positions. The client never sees question ids, option keys or correct keys |
 | D5 | Skipping and a question palette are allowed; reload, resume and resume on another device are allowed (RULEBOOK 7.1) and keep the violation count; two devices at once are logged (`resume` events), not blocked |
