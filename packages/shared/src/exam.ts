@@ -5,7 +5,7 @@ import type {
   PageQuery,
   StudentExamCard,
 } from './dashboard';
-import type { QuestionOption, QuestionRecord } from './records';
+import type { ExamStatus, QuestionOption, QuestionRecord } from './records';
 import type { AttemptStatus, Category, Paginated } from './index';
 
 // ───────────── Student side (E2; EXAM-PLAN 1.1, 1.3, 3.15) ─────────────
@@ -301,6 +301,24 @@ export interface AnswerKeyCorrectionInput {
   /** The exam's concurrency token, as for every exam write. */
   expectedUpdatedAt: string;
 }
+/**
+ * GET /admin/exams/:id/preview (admins only; D2): one sample draw, exactly as a student's start would draw and show
+ * it, with nothing written (no attempt, no checkpoint, no cache). Each request is a new draw. Carries the correct
+ * positions, so it is an admin shape like AdminExamView and never reaches a student route.
+ */
+export interface AdminExamPreview {
+  examId: string;
+  title: string;
+  status: ExamStatus;
+  durationMinutes: number;
+  questionsPerAttempt: number;
+  violationWarnings: number;
+  /** Texts only, in the drawn order. Fewer than questionsPerAttempt only for a draft whose pool is short. */
+  questions: Array<{ text: string; options: string[] }>;
+  /** The correct option's displayed position per question, with the key in effect (E7b corrections included). */
+  correct: number[];
+}
+
 /** A correction's reason, trimmed (KeyCorrectionDto; the CHECK answer_key_corrections_reason_check). */
 export const KEY_CORRECTION_LIMITS = { reasonMin: 3, reasonMax: 200 } as const;
 
