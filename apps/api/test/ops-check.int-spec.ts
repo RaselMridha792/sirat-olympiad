@@ -190,8 +190,18 @@ describe('the daily digest', () => {
       sent.push(message);
       return true;
     };
-    // A day of its own (far ahead), so earlier runs of this test never count.
-    const day = new Date(Date.UTC(2100 + Math.floor(Math.random() * 800), 4, 10, 2, 0));
+    // A day of its own (far ahead) that no earlier run used: audit rows are append-only, so on a long-lived test
+    // database a day once sent stays "already_sent". Start from a random year and step to the first unused one.
+    const used = new Set(
+      (
+        await prisma.auditLog.findMany({ where: { action: 'ops.digest' }, select: { meta: true } })
+      ).map((row) => (row.meta as { date?: unknown } | null)?.date),
+    );
+    let year = 2100 + Math.floor(Math.random() * 800);
+    for (let tries = 0; used.has(year * 10_000 + 510) && tries < 800; tries += 1)
+      year = year >= 2899 ? 2100 : year + 1;
+    expect(used.has(year * 10_000 + 510)).toBe(false); // all 800 years used: drop this test database
+    const day = new Date(Date.UTC(year, 4, 10, 2, 0));
     const deps = {
       prisma,
       enqueue,
