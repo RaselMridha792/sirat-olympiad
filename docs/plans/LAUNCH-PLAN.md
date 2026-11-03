@@ -100,7 +100,7 @@ L12 is `bootstrap.sh` + `prelaunch-check.sh` + RUNBOOK §9 (4–5 h). In all: 14
   It is tested in the throwaway VM (Q4) and timed against the 1-hour rebuild target (RULEBOOK §3). Without a VM, its first full run is on the VPS on Sat 7.
 
 **Waits for the VPS,** in this order on Sat 7:
-1. The specs confirmed (OPEN-QUESTIONS #22). Postgres and the compose limits assume 8 vCPU and 32 GB; a smaller box gets L14 part 1 first (section 12).
+1. The specs confirmed (OPEN-QUESTIONS #22). Postgres and the compose limits assume 8 vCPU and 32 GB; a smaller box gets L14 part 1 first (section 12). **Confirmed 2026-11-03:** 8 vCPU, 31 GB usable, Ubuntu 26.04.1; no change (DECISIONS "VPS specs confirmed").
 2. bootstrap run and timed; the owner types the secrets.
 3. The Origin CA key and certificate (section 3).
 4. First start.
@@ -544,7 +544,7 @@ The table assumes about 2 h per medium PR, review rounds included. These are est
 | Wed 25 Nov (expected) | An admin opens registration from `/admin/settings` (audited), when the owner says | The client's date (registration to 15 Feb) |
 
 - **L14 "VPS tuning" (1–2 h, two small parts):**
-  - **Part 1, only if the VPS is not 8 vCPU / 32 GB:** retune `postgresql.conf` and the compose limits before the data services first start. `deploy.sh` never restarts them, so a later change needs its own Postgres restart.
+  - **Part 1, only if the VPS is not 8 vCPU / 32 GB:** retune `postgresql.conf` and the compose limits before the data services first start. `deploy.sh` never restarts them, so a later change needs its own Postgres restart. **Done 2026-11-03: the specs match, no change (DECISIONS "VPS specs confirmed").**
   - **Part 2, after k6:** the nginx zones, the API's refresh tier and the monitor thresholds, shipped in the Thu 12 release candidate. If k6 shows nothing to change, only the numbers go into DECISIONS.
 - **One session:** the code is ready by Fri 6 Nov, before the VPS. If the lead gives L6–L7 and L10–L11 to a second session (their files barely overlap), by about Wed 4 Nov.
 - **Domain on Wed 4 Nov:** no code waits; only SES and the Cloudflare zone move.
