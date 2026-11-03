@@ -16,6 +16,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
   - The CPU limits are caps, not reservations.
 - **Why:** LAUNCH-PLAN L14 part 1 retunes only a box that differs, and this one does not. Part 2 (the nginx zones, the API refresh tier, the monitor thresholds) waits for exam's k6 numbers from the VPS staging.
 - **Who:** the lead read the specs on the VPS; A2 checked the limits against them. This answers OPEN-QUESTIONS #22's specs part; the Malaysia/AWS fallback stays open.
+
 ## 2026-11-01 — Answer-key correction after publish (E7b; exam session, the design the lead approved with four notes)
 
 1. **The question rows stay frozen** (DON'T 8, `questions_frozen_after_publish`). A wrong key is fixed by a row in the new `answer_key_corrections` (exam, question version, from, to, reason, who, when); the newest correction per question is the key in effect.
