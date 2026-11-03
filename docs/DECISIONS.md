@@ -10,6 +10,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 - **The judges' blindness test** checks every identifying field of the students: name, user id, email, phone and institution.
 - **Not changed:** judges sign in without 2FA (the design covers admins and managers); it is on Rasel's list for later, with "not required" as the default.
 - **Who:** the sweep and its fixes by A2; the lead chose which to fix and how.
+
 ## 2026-11-03 — The admin exam preview draws like a start and writes nothing (D2, P1; exam session, the design the lead approved)
 
 1. **`GET /admin/exams/:id/preview`, admins only:** one sample draw, made with the same `drawLayout` and `renderQuestions` that a student's start uses. A preview cannot drift from what students see. The correct positions use the key in effect (E7b).
