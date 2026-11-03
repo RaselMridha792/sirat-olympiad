@@ -15,6 +15,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
   - The new rule follows the API's mode instead of the build, and loosens nothing in production. An answer without `gateway` (an older API during a deploy) counts as `'paystation'`.
 - **One helper:** `goToCheckout` is the only way to a checkout: the wizard's start, retry and continue, and the result page's "Try again". A test checks that no component navigates by itself.
 - **Who:** A2, on the lead's proposal A. It touches payments' files (registration.service, registration-api.ts, RegisterWizard, PaymentResult, 06-API), for payments to review when back.
+
 ## 2026-11-03 — Pre-launch security sweep: four small fixes (A2; the lead's sweep, read-only first)
 
 - **`/api/ready` stays public** (the uptime monitor polls it by keyword), but each replica answers from a check at most 1 s old (`READY_CACHE_MS`). Concurrent probes share one check. A flood costs one database round trip and two Redis pings a second per replica, not one per request. The answer keeps `no-store`, and a failed check is logged once, not once per request.
