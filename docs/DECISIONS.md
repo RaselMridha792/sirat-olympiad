@@ -8,6 +8,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 2. **Nothing is written:** no attempt row, no Redis checkpoint, no cache, no audit row (it is a read, like `GET /admin/exams/:id`, which already carries the keys). Each call is a new draw; the page's "Draw again" is a refresh. A test counts attempts, audit rows and `exam:att:*`/`exam:ckpt:*` keys before and after, and checks that the response carries no attempt id, receipt, request id, token or option key.
 3. **A short pool:** a draft shows what it has, with an "n of m questions" note (lead's pick b). A published exam always has its full pool (the publish rule), so a short one is refused like a publish (`question_count`).
 4. **The web reuses the student's look:** `QuestionCard` and the question-number list moved out of `ExamRoom.tsx` first, as a refactor with no behaviour change. The preview has no controller, timer, checkpoint, submit or violation listeners. "Show answers" is off by default and shows the correct option on its own line, so the student card is not changed for it.
+
 ## 2026-11-03 — VPS specs confirmed; L14 part 1 needs no change (A2; specs read on the VPS by the lead)
 
 - **Specs, as `deploy` on the VPS:**
