@@ -19,6 +19,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - `certificates.int-spec.ts`: participation through the real queue and worker, once, with the name as it was and a blocked student left out; promotion and winners and 12 refusals; the check (name and award only, lower case, the same 404 for unknown, malformed and revoked) and the revoke (stale, twice, the student's view); the per-IP limit; admins only, a demoted admin; the CHECKs.
    - The rounds and jury tests also empty `certificates` (a certificate on a round would block deleting it).
    - web: the area file picks, a message for every refusal code in both languages.
+
 ## 2026-11-03 — VPS specs confirmed; L14 part 1 needs no change (A2; specs read on the VPS by the lead)
 
 - **Specs, as `deploy` on the VPS:**
