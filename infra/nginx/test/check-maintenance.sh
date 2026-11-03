@@ -162,7 +162,7 @@ reaches() { # reaches <api|web> <site> <path> [curl options]: 200 from that fake
 }
 answer_headers() { # no-store, Retry-After and each security header exactly once; HSTS on https only
   local site=$1 h
-  for h in Cache-Control Retry-After X-Content-Type-Options Referrer-Policy Content-Security-Policy-Report-Only; do
+  for h in Cache-Control Retry-After X-Content-Type-Options Referrer-Policy Content-Security-Policy; do
     [ "$(grep -ci "^$h:" "$tmp/h")" = 1 ] || {
       echo "  $h is not there exactly once"
       return 1
