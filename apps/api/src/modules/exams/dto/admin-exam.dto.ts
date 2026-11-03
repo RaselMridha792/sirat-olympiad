@@ -29,6 +29,7 @@ import {
   type ExamStatus,
   type QuestionOption,
 } from '@sirat/shared';
+import { NoControlCharacters } from '../../../common/no-control-characters';
 
 /*
  * Exam admin bodies (06-API "Exam admin"). The global ValidationPipe rejects unknown fields, so nothing outside
@@ -158,6 +159,7 @@ export class QuestionOptionDto implements QuestionOption {
   @Transform(trim)
   @IsString()
   @Length(1, EXAM_LIMITS.optionTextMax)
+  @NoControlCharacters()
   text!: string;
 }
 
@@ -165,6 +167,7 @@ export class QuestionDto implements AdminQuestionInput {
   @Transform(trim)
   @IsString()
   @Length(1, EXAM_LIMITS.questionTextMax)
+  @NoControlCharacters()
   text!: string;
 
   @IsArray()
@@ -181,6 +184,7 @@ export class QuestionDto implements AdminQuestionInput {
   @Transform(trim)
   @IsString()
   @MaxLength(EXAM_LIMITS.explanationMax)
+  @NoControlCharacters()
   explanation!: string | null;
 
   @IsOptional()

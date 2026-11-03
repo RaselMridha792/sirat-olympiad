@@ -107,10 +107,10 @@ it('empties old exam rows, then applies the exam migrations', async () => {
     const applied = await after.$queryRaw<{ name: string }[]>`
       SELECT "migration_name" AS name FROM "_prisma_migrations"
       WHERE "finished_at" IS NOT NULL AND "migration_name" LIKE '%exam%' ORDER BY 1`;
-    expect(applied.map((r) => r.name)).toEqual([
-      '20261031183000_exam_engine',
-      '20261031183100_exam_checks',
-    ]);
+    // Later exam migrations (E7b's answer-key corrections) are applied too; these two are the ones this is about.
+    expect(applied.map((r) => r.name)).toEqual(
+      expect.arrayContaining(['20261031183000_exam_engine', '20261031183100_exam_checks']),
+    );
     // The old draft exam stays (nothing in the exam migrations refuses it); the old attempt and submission are gone.
     expect(await after.exam.count()).toBe(1);
     expect(await after.attempt.count()).toBe(0);

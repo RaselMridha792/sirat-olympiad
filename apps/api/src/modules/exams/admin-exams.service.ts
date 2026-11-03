@@ -71,6 +71,10 @@ const DEFAULT_PAGE_SIZE = 20;
 const examInclude = {
   round: { select: { id: true, name: true } },
   questions: { where: { isActive: true }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] },
+  keyCorrections: {
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    include: { question: { select: { position: true } }, createdBy: { select: { name: true } } },
+  },
 } satisfies Prisma.ExamInclude;
 type ExamWithQuestions = Prisma.ExamGetPayload<{ include: typeof examInclude }>;
 
@@ -586,6 +590,16 @@ function toView(exam: ExamWithQuestions): AdminExamView {
     publishedAt: exam.publishedAt?.toISOString() ?? null,
     updatedAt: exam.updatedAt.toISOString(),
     questions: exam.questions.map(toQuestion),
+    keyCorrections: exam.keyCorrections.map((c) => ({
+      id: c.id,
+      questionId: c.questionId,
+      position: c.question.position,
+      fromKey: c.fromKey,
+      toKey: c.toKey,
+      reason: c.reason,
+      createdAt: c.createdAt.toISOString(),
+      createdByName: c.createdBy.name,
+    })),
   };
 }
 

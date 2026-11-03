@@ -28,12 +28,15 @@ import type { common } from '@/i18n/common';
 import { formatDateTime, formatDuration, formatNumber } from '@/i18n/format';
 import type { Messages } from '@/i18n/messages';
 import type { adminExamResultsMessages } from '@/i18n/messages/admin-exam-results';
+import { questionNumber } from './exam-authoring';
 import { ResultsActions } from './ResultsActions';
 
 /*
  * The results and attempts of one exam on the admin exam page (EXAM-PLAN 3.12; owner Q4 and Q5). Server-rendered
  * from the page's reads; only the build/publish buttons run in the browser. The attempt dialog lives in the URL
- * (`?attempt=<id>`), like the user dialog on /admin/users.
+ * (`?attempt=<id>`), like the user dialog on /admin/users. After an answer-key correction (E7b) it shows the change,
+ * the attempts still waiting for their re-scoring or how many scores changed, and a stale snapshot, before Build and
+ * Publish; the history of corrections follows.
  */
 
 type M = Messages<typeof adminExamResultsMessages>;
@@ -57,6 +60,8 @@ export function ExamResultsSection({
 }) {
   const n = (v: number) => formatNumber(locale, v);
   const r = m.results;
+  const newest = exam.keyCorrections[0];
+  const last = results.lastCorrection;
   return (
     <section aria-labelledby="exam-results" className="mb-10">
       <h2
@@ -92,6 +97,26 @@ export function ExamResultsSection({
               ? r.published(formatDateTime(locale, results.publishedAt))
               : r.notPublished}
           </li>
+          {newest ? (
+            <li>
+              {r.keyCorrected(
+                n(questionNumber(exam, newest.questionId, newest.position)),
+                newest.fromKey,
+                newest.toKey,
+                formatDateTime(locale, newest.createdAt),
+              )}
+            </li>
+          ) : null}
+          {results.rescorePending > 0 ? (
+            <li className="font-semibold text-warning-strong">
+              {r.rescorePending(n(results.rescorePending))}
+            </li>
+          ) : last && last.attempts !== null && last.changed !== null ? (
+            <li className="font-semibold">{r.rescored(n(last.attempts), n(last.changed))}</li>
+          ) : null}
+          {results.snapshotStale ? (
+            <li className="font-semibold text-warning-strong">{r.snapshotStale}</li>
+          ) : null}
         </ul>
         <ResultsActions
           locale={locale}
@@ -101,6 +126,30 @@ export function ExamResultsSection({
           canPublish={results.canPublish}
           published={results.publishedAt !== null}
         />
+        {exam.keyCorrections.length > 0 ? (
+          <div className="border-t border-line pt-4">
+            <h3 className="mb-2 text-sm font-bold text-ink">
+              {r.corrections.heading(n(exam.keyCorrections.length))}
+            </h3>
+            <ol className="space-y-2 text-sm">
+              {exam.keyCorrections.map((c) => (
+                <li key={c.id}>
+                  <span className="font-semibold text-ink">
+                    {r.corrections.item(
+                      n(questionNumber(exam, c.questionId, c.position)),
+                      c.fromKey,
+                      c.toKey,
+                    )}
+                  </span>{' '}
+                  <span className="break-words text-ink">{c.reason}</span>{' '}
+                  <span className="text-ink-muted">
+                    ({r.corrections.by(c.createdByName, formatDateTime(locale, c.createdAt))})
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
       </Card>
     </section>
   );

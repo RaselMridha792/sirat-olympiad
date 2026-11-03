@@ -147,6 +147,7 @@ model User {
   promotionRuns          PromotionRun[]
   juryAssignments        JuryAssignment[]        @relation("JuryAssignmentJudge")
   juryAssignmentsMade    JuryAssignment[]        @relation("JuryAssignmentCreatedBy")
+  keyCorrections         AnswerKeyCorrection[]
 
   @@index([referredById])
   @@index([gradeLevelId])
@@ -373,11 +374,12 @@ model Exam {
   createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz
   updatedAt           DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  round              Round?             @relation(fields: [roundId], references: [id], onDelete: Restrict)
+  round              Round?                @relation(fields: [roundId], references: [id], onDelete: Restrict)
   questions          Question[]
   attempts           Attempt[]
   leaderboardEntries LeaderboardEntry[]
   promotionRuns      PromotionRun[]
+  keyCorrections     AnswerKeyCorrection[]
 
   @@index([status, windowStart])
   @@index([roundId])
@@ -388,21 +390,22 @@ model Exam {
 /// inserts version + 1 in the same lineage and deactivates the old row; nothing is deleted. Attempts keep the exact
 /// version ids they were given. One active version per lineage (partial unique index in raw SQL).
 model Question {
-  id              String    @id @default(uuid(7)) @db.Uuid
-  examId          String    @map("exam_id") @db.Uuid
-  lineageId       String    @map("lineage_id") @db.Uuid // groups the versions of one question
+  id              String                @id @default(uuid(7)) @db.Uuid
+  examId          String                @map("exam_id") @db.Uuid
+  lineageId       String                @map("lineage_id") @db.Uuid // groups the versions of one question
   text            String
   options         Json // [{ "key": "A", "text": "..." }, ...] (2-6, CHECK in raw SQL)
-  correctKey      String    @map("correct_key") // server-only, never serialized to clients before results open
+  correctKey      String                @map("correct_key") // server-only, never serialized to clients before results open
   explanation     String?
-  version         Int       @default(1)
+  version         Int                   @default(1)
   position        Int // admin order; versions keep it
-  keepOptionOrder Boolean   @default(false) @map("keep_option_order") // e.g. "all of the above"
-  isActive        Boolean   @default(true) @map("is_active")
-  deactivatedAt   DateTime? @map("deactivated_at") @db.Timestamptz
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-  exam            Exam      @relation(fields: [examId], references: [id])
+  keepOptionOrder Boolean               @default(false) @map("keep_option_order") // e.g. "all of the above"
+  isActive        Boolean               @default(true) @map("is_active")
+  deactivatedAt   DateTime?             @map("deactivated_at") @db.Timestamptz
+  createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  exam            Exam                  @relation(fields: [examId], references: [id])
+  keyCorrections  AnswerKeyCorrection[]
 
   @@unique([lineageId, version])
   @@index([examId, isActive])
@@ -840,4 +843,27 @@ model TwoFactorRecoveryCode {
 
   @@index([userId])
   @@map("two_factor_recovery_codes")
+}
+
+/// E7b: a correction of a published question's key, after attempts were taken. The question row stays as it was (it is
+/// frozen once published); the newest correction's to_key is the key everywhere a key is read (scoring, the review).
+/// Append-only (a revert is another correction); the rescore job brings the scores in line.
+model AnswerKeyCorrection {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  examId      String   @map("exam_id") @db.Uuid
+  /// The question version the attempts saw.
+  questionId  String   @map("question_id") @db.Uuid
+  fromKey     String   @map("from_key")
+  toKey       String   @map("to_key")
+  reason      String
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  exam        Exam     @relation(fields: [examId], references: [id], onDelete: Restrict)
+  question    Question @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  createdBy   User     @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([questionId, createdAt(sort: Desc)])
+  @@index([examId, createdAt(sort: Desc)])
+  @@index([createdById]) // the foreign key's index (db-constraints' catalog check)
+  @@map("answer_key_corrections")
 }
