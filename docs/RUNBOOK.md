@@ -447,6 +447,8 @@ Client: — · PayStation support: — · Email provider: Amazon SES (AWS accoun
   - only nginx publishes ports;
   - `.env` mode 600, `APP_URL` https, `COOKIE_SECURE` not false;
   - the runtime role (not the database owner), and each API and worker's boot line `database role=sirat_app superuser=false` (it FAILs until L8); no development marker; no Mailpit;
+
+    If that boot-line check FAILs after L8, the line may simply be gone: Docker rotates a container's log by size (`max-size 50m`, 5 files), so a long-running replica can lose its boot line. Check with `$DC logs api worker 2>&1 | grep -c 'database role='`. If a replica has no line, restart one replica at a time (`docker restart <container>`, one only while the others serve) and run the check again. A line that says another role or `superuser=true` is a real failure: the app is not on `sirat_app`.
   - every app container on the recorded release; migrations up to date; the worker healthy;
   - each API's PayStation boot line (live, the client's account and prefix, https callback and IPN);
   - no fixture users, no test invoices, no published exam, the fee 40000, `registration_open` as intended;
