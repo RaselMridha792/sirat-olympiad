@@ -56,7 +56,9 @@ async function clean() {
     UPDATE "exams" SET "status" = 'archived'
     WHERE "round_id" = ${round1.id}::uuid AND "status"::text = 'published'`;
   // jury_scores and promotion_runs are append-only: TRUNCATE is their one way out, and only in a *_test database.
-  await prisma.$executeRawUnsafe('TRUNCATE "jury_scores", "round_entries", "promotion_runs"');
+  await prisma.$executeRawUnsafe(
+    'TRUNCATE "certificates", "jury_scores", "round_entries", "promotion_runs"',
+  );
   await prisma.$executeRaw`DELETE FROM "jury_assignments"`;
   await prisma.$executeRaw`DELETE FROM "rounds" WHERE "sort_order" > 1`;
 }

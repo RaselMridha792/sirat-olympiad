@@ -8,6 +8,23 @@ One short entry per non-obvious technical or product decision. Newest first. For
 2. **Nothing is written:** no attempt row, no Redis checkpoint, no cache, no audit row (it is a read, like `GET /admin/exams/:id`, which already carries the keys). Each call is a new draw; the page's "Draw again" is a refresh. A test counts attempts, audit rows and `exam:att:*`/`exam:ckpt:*` keys before and after, and checks that the response carries no attempt id, receipt, request id, token or option key.
 3. **A short pool:** a draft shows what it has, with an "n of m questions" note (lead's pick b). A published exam always has its full pool (the publish rule), so a short one is refused like a publish (`question_count`).
 4. **The web reuses the student's look:** `QuestionCard` and the question-number list moved out of `ExamRoom.tsx` first, as a refactor with no behaviour change. The preview has no controller, timer, checkpoint, submit or violation listeners. "Show answers" is off by default and shows the correct option on its own line, so the student card is not changed for it.
+## 2026-11-01 — Certificates without the PDF (core C6c-1; the C6 plan, the lead's notes, owner Q4 defaults)
+
+1. **Issuing is a queue job** (DO 8): the admin asks, the API answers 202 with how many qualify now, and the worker runs one idempotent `INSERT … SELECT … ON CONFLICT (user_id, type, round_id) DO NOTHING`. It is on a new `certificates` queue (C6c-2's render joins it), in `ops-check` like the others.
+2. **Who gets which** (Q4 default):
+   - participation: on Round 1's published snapshot, from **published** exams only (as for promotion, an archived exam is retired);
+   - promotion: an entry in a round after Round 1;
+   - winner: named by email in the final, with a reason in the audit log.
+   - Blocked accounts are left out. A winner's email is resolved to an id by the API, so no email reaches Redis.
+3. **Serial and code:** `SLO-<year>-<number>` from `certificate_serial_seq` (gaps when a run skips existing ones; the number only has to be unique). The verification code is 12 random hex digits (48 bits, `gen_random_uuid()`'s random part), case-insensitive when typed. At 30 tries a minute per IP a code cannot be guessed (A2 agreed).
+4. **The name is copied at issue time**, so a later profile edit does not change a printed certificate.
+5. **Revoke, never delete:** with a reason and the version seen (row lock); the student sees "revoked", not the reason. No API deletes a certificate.
+6. **The public check** (lead): only `{ name, award: { type, roundName } }`; one 404 for unknown, malformed and revoked codes (the body differs only by the request id). It was already on A2's reviewed allow-list. The web page `/verify/[code]` calls it **from the browser**: a server-side call would carry the web server's IP, so every visitor would share one per-IP limit. The page is `noindex` and outside the marketing design.
+7. **Web:** `/dashboard/certificates` (the awards, numbers, codes and a link to the check; the PDF marked as coming); `/admin/certificates` (issue, search, revoke); nav items in both shells.
+8. **Tests:**
+   - `certificates.int-spec.ts`: participation through the real queue and worker, once, with the name as it was and a blocked student left out; promotion and winners and 12 refusals; the check (name and award only, lower case, the same 404 for unknown, malformed and revoked) and the revoke (stale, twice, the student's view); the per-IP limit; admins only, a demoted admin; the CHECKs.
+   - The rounds and jury tests also empty `certificates` (a certificate on a round would block deleting it).
+   - web: the area file picks, a message for every refusal code in both languages.
 
 ## 2026-11-03 — VPS specs confirmed; L14 part 1 needs no change (A2; specs read on the VPS by the lead)
 

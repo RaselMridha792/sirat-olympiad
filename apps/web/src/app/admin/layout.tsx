@@ -15,6 +15,7 @@ import {
   UsersRound,
   Milestone,
   Gavel,
+  BadgeCheck,
   type LucideIcon,
 } from 'lucide-react';
 import { Avatar, initialOf, type NavItem } from '@sirat/ui';
@@ -49,6 +50,7 @@ const NAV: ReadonlyArray<{
   { key: 'teams', href: '/admin/teams', Icon: UsersRound },
   { key: 'rounds', href: '/admin/rounds', Icon: Milestone },
   { key: 'jury', href: '/admin/jury', Icon: Gavel },
+  { key: 'certificates', href: '/admin/certificates', Icon: BadgeCheck },
   { key: 'announcements', href: '/admin/announcements', Icon: Megaphone },
   { key: 'payments', href: '/admin/payments', Icon: CreditCard },
   { key: 'settings', href: '/admin/settings', Icon: Settings },
