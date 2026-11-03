@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode } from 'react';
 import { cn } from '../cn';
-import { isArabicScript, splitOnHonorific } from '../honorific';
+import { honorificSegments, isArabicScript } from '../honorific';
 
 /**
  * The honorific after the Prophet's name. The text comes from i18n (one key), never from here. Arabic script (ﷺ)
@@ -16,13 +16,20 @@ export function Honorific({ text, className }: { text: string; className?: strin
   );
 }
 
-/** A message with `{saw}` tokens, each replaced by <Honorific>. The rest stays plain text. */
+/**
+ * A message with `{saw}` tokens, each replaced by <Honorific>. The rest stays plain text. The word before the
+ * honorific and what is glued after it ("-এর") share one unbreakable span, so ﷺ never starts a line alone.
+ */
 export function WithHonorific({ text, honorific }: { text: string; honorific: string }): ReactNode {
-  const parts = splitOnHonorific(text);
-  return parts.map((part, index) => (
-    <Fragment key={index}>
-      {index > 0 ? <Honorific text={honorific} /> : null}
-      {part}
-    </Fragment>
-  ));
+  return honorificSegments(text).map((segment, index) =>
+    segment.kind === 'text' ? (
+      <Fragment key={index}>{segment.text}</Fragment>
+    ) : (
+      <span key={index} className="whitespace-nowrap">
+        {segment.before}
+        <Honorific text={honorific} />
+        {segment.after}
+      </span>
+    ),
+  );
 }
