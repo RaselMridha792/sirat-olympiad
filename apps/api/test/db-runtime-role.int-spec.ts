@@ -23,7 +23,13 @@ const appUrl = process.env.TEST_APP_DATABASE_URL ?? '';
 const DATA = ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] as const;
 const NEVER = ['TRUNCATE', 'REFERENCES', 'TRIGGER'] as const;
 /** The append-only tables today. The catalog test also checks any later one, found by its trigger. */
-const APPEND_ONLY = ['audit_logs', 'payment_events', 'point_ledger', 'submissions'];
+const APPEND_ONLY = [
+  'answer_key_corrections',
+  'audit_logs',
+  'payment_events',
+  'point_ledger',
+  'submissions',
+];
 
 afterAll(async () => {
   await owner.$disconnect();

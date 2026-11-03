@@ -65,6 +65,10 @@ export class ExamWorker implements OnModuleInit, OnApplicationShutdown {
         return this.jobs.sweep();
       case EXAM_JOBS.build:
         return job.data.examId ? this.jobs.buildResults(job.data.examId) : 'not_ready';
+      case EXAM_JOBS.rescore:
+        return job.data.examId
+          ? this.jobs.rescoreAfterCorrection(job.data.examId, job.data.correctionId ?? null)
+          : false;
       default:
         throw new Error(`unknown exam job ${job.name}`);
     }
