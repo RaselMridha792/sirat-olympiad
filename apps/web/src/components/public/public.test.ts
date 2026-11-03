@@ -9,23 +9,23 @@ import { parseRegistrationInfo } from '../../lib/public-api.ts';
 const SRC = new URL('../../', import.meta.url);
 const MARKETING = new URL('../../app/(marketing)/', import.meta.url);
 
-test('every public page exists in English at the root and in Bangla under /bn', () => {
+test('every public page exists in Bangla at the root and in English under /en', () => {
   const routes = PUBLIC_PAGES.flatMap((page) =>
     (['en', 'bn'] as const).map((locale) => ({ page, locale, path: publicPath(page, locale) })),
   );
   assert.deepEqual(
     routes.map((r) => r.path),
     [
+      '/en',
       '/',
-      '/bn',
+      '/en/about',
       '/about',
-      '/bn/about',
+      '/en/privacy',
       '/privacy',
-      '/bn/privacy',
+      '/en/terms',
       '/terms',
-      '/bn/terms',
+      '/en/refund-policy',
       '/refund-policy',
-      '/bn/refund-policy',
     ],
   );
   for (const { page, locale, path } of routes) {

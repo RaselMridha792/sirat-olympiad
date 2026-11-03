@@ -35,7 +35,7 @@ export const site: SiteFacts = {
   placeholder: true,
 };
 
-/** The public pages, English at the root and Bangla under /bn (core plan D4). */
+/** The public pages, Bangla at the root and English under /en (core plan D4, owner 2026-11-03). */
 export const PUBLIC_PAGES = ['home', 'about', 'privacy', 'terms', 'refund'] as const;
 export type PublicPage = (typeof PUBLIC_PAGES)[number];
 
@@ -49,6 +49,6 @@ const PATHS: Record<PublicPage, string> = {
 
 export function publicPath(page: PublicPage, locale: 'en' | 'bn'): string {
   const path = PATHS[page];
-  if (locale === 'en') return path;
-  return path === '/' ? '/bn' : `/bn${path}`;
+  if (locale === 'bn') return path;
+  return path === '/' ? '/en' : `/en${path}`;
 }

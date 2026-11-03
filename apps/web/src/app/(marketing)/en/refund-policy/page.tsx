@@ -1,7 +1,7 @@
 import { LegalPageView, publicMetadata } from '@/components/public/pages';
 
-export const metadata = publicMetadata('privacy', 'bn');
+export const metadata = publicMetadata('refund', 'en');
 
 export default function Page() {
-  return <LegalPageView page="privacy" locale="bn" />;
+  return <LegalPageView page="refund" locale="en" />;
 }
