@@ -8,6 +8,20 @@ One short entry per non-obvious technical or product decision. Newest first. For
 2. **Nothing is written:** no attempt row, no Redis checkpoint, no cache, no audit row (it is a read, like `GET /admin/exams/:id`, which already carries the keys). Each call is a new draw; the page's "Draw again" is a refresh. A test counts attempts, audit rows and `exam:att:*`/`exam:ckpt:*` keys before and after, and checks that the response carries no attempt id, receipt, request id, token or option key.
 3. **A short pool:** a draft shows what it has, with an "n of m questions" note (lead's pick b). A published exam always has its full pool (the publish rule), so a short one is refused like a publish (`question_count`).
 4. **The web reuses the student's look:** `QuestionCard` and the question-number list moved out of `ExamRoom.tsx` first, as a refactor with no behaviour change. The preview has no controller, timer, checkpoint, submit or violation listeners. "Show answers" is off by default and shows the correct option on its own line, so the student card is not changed for it.
+## 2026-11-03 — VPS specs confirmed; L14 part 1 needs no change (A2; specs read on the VPS by the lead)
+
+- **Specs, as `deploy` on the VPS:**
+  - 8 vCPU (`nproc`): AMD EPYC 9354P, an 8-vCPU slice (Hostinger KVM 8);
+  - 31 GB memory usable (32 GB nominal);
+  - 387 GB disk, `/var/lib/docker` on the same filesystem, 7 % used;
+  - Ubuntu 26.04.1 LTS, kernel 7.0.0-38-generic, not the 24.04 the plan assumed (bootstrap accepts it);
+  - from bootstrap: 4 GB swap, `vm.overcommit_memory=1`.
+- **Decision:** no retune of `postgresql.conf` or the compose limits, which assumed 8 vCPU / 32 GB.
+  - The long-running services' memory limits add up to about 21.25 GB: Postgres 12, the api 4 × 1, Redis 2 + 1, web 1, worker 0.5, nginx 0.5, PgBouncer 0.25.
+  - That leaves about 10 GB of the 31 for the OS and the page cache, in line with `effective_cache_size = 20GB` (8 GB `shared_buffers` plus the page cache).
+  - The CPU limits are caps, not reservations.
+- **Why:** LAUNCH-PLAN L14 part 1 retunes only a box that differs, and this one does not. Part 2 (the nginx zones, the API refresh tier, the monitor thresholds) waits for exam's k6 numbers from the VPS staging.
+- **Who:** the lead read the specs on the VPS; A2 checked the limits against them. This answers OPEN-QUESTIONS #22's specs part; the Malaysia/AWS fallback stays open.
 
 ## 2026-11-01 — Answer-key correction after publish (E7b; exam session, the design the lead approved with four notes)
 
