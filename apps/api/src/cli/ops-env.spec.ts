@@ -14,6 +14,7 @@ describe('opsEnv', () => {
       PAYMENTS_QUEUE_NAME: undefined,
       HOUSEKEEPING_QUEUE_NAME: undefined,
       AMBASSADOR_QUEUE_NAME: undefined,
+      CERTIFICATES_QUEUE_NAME: undefined,
     });
     expect(
       opsEnv({
@@ -40,6 +41,7 @@ describe('opsEnv', () => {
     [{ ...base, EXAM_QUEUE_NAME: 'exam queue' }, 'EXAM_QUEUE_NAME'],
     [{ ...base, HOUSEKEEPING_QUEUE_NAME: 'house keeping' }, 'HOUSEKEEPING_QUEUE_NAME'],
     [{ ...base, AMBASSADOR_QUEUE_NAME: 'ambassador points' }, 'AMBASSADOR_QUEUE_NAME'],
+    [{ ...base, CERTIFICATES_QUEUE_NAME: 'cert ificates' }, 'CERTIFICATES_QUEUE_NAME'],
   ])('refuses a bad setting by name, never by value (%#)', (env, name) => {
     let message = '';
     try {

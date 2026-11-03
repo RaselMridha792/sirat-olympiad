@@ -40,8 +40,10 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | rounds | `GET /rounds/me` | Role(student, ambassador) | Rounds (below). Built (core C6a) |
 | | `PUT /rounds/:id/video` | Role(student, ambassador) | Own entry, inside the window. Rounds (below). Built (core C6b) |
 | jury | `GET /jury/rounds`, `GET /jury/entries`, `POST /jury/entries/:entryId/scores` | Role(jury) | Own rounds and categories only, blind. Rounds (below). Built (core C6b) |
-| certificates | `GET /certificates/mine`, `GET /certificates/:id/pdf` | Owner | |
-| | `GET /certificates/verify/:code` | Public | |
+| certificates | `GET /certificates/mine` | Role(student, ambassador) | Certificates (below). Built (core C6c-1) |
+| | `GET /certificates/verify/:code` | Public | Name and award only; the same 404 for unknown and revoked; 30/min per IP. Built (core C6c-1) |
+| | `GET /certificates/:id/pdf` | Owner | Core C6c-2 (the PDF library waits for the owner) |
+| | `POST /admin/certificates/issue`, `GET /admin/certificates`, `POST /admin/certificates/:id/revoke` | admin | Certificates (below): issuing in the queue, revoke with a reason, audited. Built (core C6c-1) |
 | announcements | `GET /announcements` | Role(student, ambassador) | Announcements (below). Built (core C4) |
 | ambassadors | `GET /ambassador/me` | Role(ambassador) | Ambassadors (below). Built (core C5a) |
 | | `POST /ambassador/tasks/:assignmentId/submit`, `POST /ambassador/teams` | Role(ambassador) | Own data only, the ambassador re-read. Built (core C5b-2, C5b-3) |
@@ -361,6 +363,27 @@ The database keeps the limits (`*_core_rounds_checks`): round name 2–60, at mo
 | `POST /jury/entries/:entryId/scores` (jury) | `{ criteria: { key: 0–10 }, comment? (≤ 1,000) }` | 201 `JuryScoreResult`. Every criterion of the round, whole numbers 0–10 (400 `bad_scores`). An entry outside the judge's categories, without a video or not in a video round is 404. After the close only (409 `window_open`), before the category's promotion (409 `already_promoted`). The total is out of 100: the sum × 100 / (10 × the number of criteria), so with the default ten it is the plain sum. A new `jury_scores` row (append-only); the entry's score becomes the average of the latest total of each judge assigned now to its round and category, under the entry's row lock and the round's share lock; status `evaluated`. Audit `jury.scored` (ids only; never the comment, which the student never sees) |
 
 The database keeps the limits (`*_core_jury_checks`): a score's total 0–100, the criteria a JSON object, the comment ≤ 1,000; one assignment per (round, judge, category). `jury_scores` is append-only (UPDATE, DELETE and TRUNCATE refused; TRUNCATE passes only in a database named `*_test`), and `sirat_app` has no UPDATE or DELETE on it.
+
+## Certificates (core C6c-1; plan: `docs/plans/CORE-PLAN.md` §7, owner Q4 defaults, lead's notes)
+
+Shapes `CertificateIssueRequest`, `CertificateIssueResult`, `MyCertificate`, `AdminCertificateRow`, `AdminCertificateQuery`, `CertificateRevokeRequest`, `CertificateCheck`, `CERTIFICATE_TYPES`, `CERTIFICATE_LIMITS`, `CERTIFICATE_CODE_PATTERN`, `CERTIFICATE_REFUSALS` (`core.ts`). Admin routes re-read the admin (managers, jury, students and ambassadors get 403). A certificate is revoked, never deleted.
+
+| Method + path | Request | Answers |
+|---|---|---|
+| `POST /admin/certificates/issue` (admin) | `{ type, roundId, emails? (1–50, winners), reason? (3–200, winners) }` | **202** `{ queued, type, roundId, candidates }`: one job on the `certificates` queue (DO 8), done by the worker. `candidates` is how many qualify now; anyone who has one already is skipped. 409 `wrong_round`; `results_not_published` (participation, no published Round 1 exam with published results); `unknown_user`, `not_in_round` (winners); 400 `no_winners` (winners without emails or a reason, or emails for another type); 503 `queue_unavailable`. Audit `certificates.issue_requested` (the type, the count, a winner's reason; never an email) |
+| `GET /admin/certificates` (admin) | `q` (a name, or an exact `SLO-` number), `type`, `round`, `page`, `pageSize` (≤ 50) | `Paginated<AdminCertificateRow>` newest first, with the student's name and email. No verification code |
+| `POST /admin/certificates/:id/revoke` (admin) | `{ reason (3–200), expectedUpdatedAt }` | 200 the row. A row lock: 409 `stale`, `already_revoked`. Audit `certificate.revoked` (the reason) |
+| `GET /certificates/mine` (student, ambassador, re-read) | — | `MyCertificate[]`, a few at most (one per type and round), so no paging: the award, the number, the check code, the name as printed, `revoked` (never the reason) |
+| `GET /certificates/verify/:code` (**public**, reviewed allow-list) | the 12-hex code, any letter case | 200 `{ name, award: { type, roundName } }` **only** (lead). An unknown, malformed or revoked code gets the same 404. **30 per minute per IP** (the route's tier); the web's `/verify/[code]` page calls it from the browser, so the limit counts the visitor, not the web server |
+
+**The issue job** (worker, `certificates` queue, 3 tries): one `INSERT … SELECT … ON CONFLICT (user_id, type, round_id) DO NOTHING`, so a run twice adds nothing. Who:
+- `participation`: everyone on the latest snapshot of Round 1's **published** exams whose results are published (an archived exam is retired, as for promotion);
+- `promotion`: everyone with an entry in a round after Round 1;
+- `winner`: the students named by email (resolved to ids by the API: no email reaches Redis) who have an entry in the final round.
+
+Blocked accounts are left out. Each row gets the next serial (`SLO-<year>-<number>` from `certificate_serial_seq`; a number drawn for a skipped row is not used) and a random verification code (12 hex digits, 48 bits). The name is copied as it is at issue time. Audit `certificates.issued` (the type and the count) with the requesting admin.
+
+The database keeps the rules (`*_core_certificates_checks`): the three types, the serial and code formats, the name 1–200, the revoke fields all three or none, a reason 3–200; one certificate per (user, type, round).
 
 ## Admin statistics (core; lead 2026-11-01)
 

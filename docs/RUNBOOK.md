@@ -446,7 +446,9 @@ Client: — · PayStation support: — · Email provider: Amazon SES (AWS accoun
 - [ ] `scripts/prelaunch-check.sh` on the VPS (`--registration closed` until opening, `open` after): every line PASS, never a value printed. It checks:
   - only nginx publishes ports;
   - `.env` mode 600, `APP_URL` https, `COOKIE_SECURE` not false;
-  - the runtime role (not the database owner); no development marker; no Mailpit;
+  - the runtime role (not the database owner), and each API and worker's boot line `database role=sirat_app superuser=false` (it FAILs until L8); no development marker; no Mailpit;
+
+    If that boot-line check FAILs after L8, the line may simply be gone: Docker rotates a container's log by size (`max-size 50m`, 5 files), so a long-running replica can lose its boot line. Check with `$DC logs api worker 2>&1 | grep -c 'database role='`. If a replica has no line, restart one replica at a time (`docker restart <container>`, one only while the others serve) and run the check again. A line that says another role or `superuser=true` is a real failure: the app is not on `sirat_app`.
   - every app container on the recorded release; migrations up to date; the worker healthy;
   - each API's PayStation boot line (live, the client's account and prefix, https callback and IPN);
   - no fixture users, no test invoices, no published exam, the fee 40000, `registration_open` as intended;
@@ -464,7 +466,7 @@ Client: — · PayStation support: — · Email provider: Amazon SES (AWS accoun
 See `RULEBOOK.md` section 13: load test at 1.5–2× peak, backup + restore drill, 48 h code freeze, patches before freeze, monitoring + fake alert, Cloudflare verified, email deliverability, real small PayStation payment, rollback rehearsed, owner watching dashboards.
 
 Also before launch:
-- [ ] The API connects to Postgres with a **non-superuser runtime role** (OPEN-QUESTIONS #27); the bootstrap superuser is used only for migrations, backup and restore.
+- [ ] The API connects to Postgres with a **non-superuser runtime role** (OPEN-QUESTIONS #27); the bootstrap superuser is used only for migrations, backup and restore. `prelaunch-check.sh` reads it from every API and worker's newest boot line.
 - [ ] PayStation sandbox checklist done (`docs/paystation/SANDBOX-CHECKLIST.md`) and the accepted `trx_status` values confirmed.
 - [ ] `PAYSTATION_ENV=live` on the VPS, and the boot log's PayStation line matches the client account: `$DC logs api | grep "PayStation env="` shows `env=live`, the live host, the client's account label and invoice prefix, and the production callback and IPN URLs. It never shows any part of the merchant id or password. A `payments are DISABLED` WARN, or a `payments.disabled_in_production` alert, means PAYSTATION_ENV is blank: no registration can be paid.
 - [ ] The free book: an admin has set the real title and uploaded the cover (`/admin/book`), before registration opens.
@@ -828,3 +830,22 @@ pnpm --filter @sirat/api admin:2fa-reset --email ops@example.org --reason "Lost 
 
 - **Exit codes:** 0 reset; 1 refused (no such account, or no two-factor login: nothing changed) or the database or Redis unreachable; 2 usage.
 - **The known gap:** an access token already issued stays valid until it expires. After any reset the old session keeps admin access for at most `JWT_ACCESS_TTL_SECONDS` (15 min), and refreshing fails at once. If the device was stolen, also change the password: a reset alone leaves the password valid.
+
+## 23. Certificates (core C6c-1)
+
+- **Issue** on `/admin/certificates`: choose the type and the round, then "Issue". The answer says how many qualify now; the worker issues them within seconds (refresh the list). Asking twice is safe: anyone who has one already is skipped.
+  - Participation: after Round 1's exam results are published (§20). Archive a replaced Round 1 exam first, or its students count too.
+  - Promotion: for a round after Round 1, once its entries exist (after the promotion into it).
+  - Winners: in the final round, the winners' emails (one per line) and a reason.
+- **"The background queue does not answer"**: the queue Redis is down or slow (§7). Nothing was issued; ask again when it is back. A job that failed three times is kept 7 days, and `ops-check` reports it (queue `certificates`).
+- **Two certificates drawing the same check code** (48 random bits, so rare) fails the whole issue run on the unique code; the job tries again by itself (3 tries) and draws new codes, so nothing is half-issued. Only three failures in a row show in `ops-check`.
+- **Revoke** a wrong certificate on `/admin/certificates` with a reason. It stops checking online at once; it is never deleted, and the same student cannot get the same one again (one per type and round).
+- **The public check** is `/verify/<code>`, printed on the certificate. It shows only the name and the award; a revoked or unknown code shows "No valid certificate". One network can check 30 times a minute.
+- **The PDF** is not built yet (C6c-2, after the owner approves the library): students see "comes soon".
+- **Check the counts** (no names):
+
+```bash
+$DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+select r.name, c.type, count(*) filter (where c.revoked_at is null) as valid, count(c.revoked_at) as revoked from certificates c join rounds r on r.id = c.round_id group by 1, 2 order by 1, 2;
+SQL
+```

@@ -38,6 +38,8 @@ jobs:
         run: bash scripts/test/load-staging.test.sh
       - name: loadtest-generators-left.sh - trusted load-test generators as minutes to the earliest expiry, negative past it or unreadable (A2's L14 files)
         run: bash scripts/test/loadtest-generators-left.test.sh
+      - name: prelaunch-check's runtime role line on stubbed logs - only sirat_app and superuser=false on every API and worker passes (L8 gate)
+        run: bash scripts/test/prelaunch-role.test.sh
       - run: pnpm format:check
       - run: pnpm --filter @sirat/shared build
       - run: pnpm db:generate
@@ -417,11 +419,18 @@ jobs:
           for v in $(grep -E '^(JWT_ACCESS_SECRET|POSTGRES_PASSWORD|TOTP_ENCRYPTION_KEY)=' .env | cut -d= -f2-); do
             ! grep -qF -- "$v" <<< "$out" || { echo "::error::a secret value reached the output"; exit 1; }
           done
+          # The dev stack's api and worker connect as the database owner (a superuser) until L8: the role line must FAIL
+          # here, and only because of the role (the boot line itself is there).
+          for s in api worker; do
+            docker logs "$(docker ps -q --filter label=com.docker.compose.project=sirat --filter "label=com.docker.compose.service=$s" | sed -n 1p)" 2>&1 |
+              grep -qE 'database role=[^ "]+ superuser=(true|false)' || { echo "::error::no database role boot line in $s"; exit 1; }
+          done
           for line in 'PASS    migrations are up to date' 'PASS    the worker is healthy' 'PASS    no published exam yet' \
             'PASS    the registration fee is 400 BDT (40000 paisa)' 'PASS    registration_open is false' 'PASS    the page CSP is sent' \
             'PASS    TOTP_ENCRYPTION_KEY is set: 32 random bytes, base64 or 64 hex (admin 2FA)' \
             'PASS    every API logs two-factor=on (admin 2FA enforced)' \
             'FAIL    no development marker on Postgres' 'FAIL    no Mailpit in the project' 'FAIL    APP_URL is https' \
+            'FAIL    every API and worker logs database role=sirat_app superuser=false (L8)' \
             'N/A     the newest off-server backup is under 26 h old (on the VPS only)' \
             'PASS    no trusted load-test generators (scripts/loadtest-generators.sh off)'; do
             grep -qxF -- "$line" <<< "$out" || { echo "::error::expected: $line"; exit 1; }
