@@ -446,7 +446,7 @@ Client: — · PayStation support: — · Email provider: Amazon SES (AWS accoun
 - [ ] `scripts/prelaunch-check.sh` on the VPS (`--registration closed` until opening, `open` after): every line PASS, never a value printed. It checks:
   - only nginx publishes ports;
   - `.env` mode 600, `APP_URL` https, `COOKIE_SECURE` not false;
-  - the runtime role (not the database owner); no development marker; no Mailpit;
+  - the runtime role (not the database owner), and each API and worker's boot line `database role=sirat_app superuser=false` (it FAILs until L8); no development marker; no Mailpit;
   - every app container on the recorded release; migrations up to date; the worker healthy;
   - each API's PayStation boot line (live, the client's account and prefix, https callback and IPN);
   - no fixture users, no test invoices, no published exam, the fee 40000, `registration_open` as intended;
@@ -464,7 +464,7 @@ Client: — · PayStation support: — · Email provider: Amazon SES (AWS accoun
 See `RULEBOOK.md` section 13: load test at 1.5–2× peak, backup + restore drill, 48 h code freeze, patches before freeze, monitoring + fake alert, Cloudflare verified, email deliverability, real small PayStation payment, rollback rehearsed, owner watching dashboards.
 
 Also before launch:
-- [ ] The API connects to Postgres with a **non-superuser runtime role** (OPEN-QUESTIONS #27); the bootstrap superuser is used only for migrations, backup and restore.
+- [ ] The API connects to Postgres with a **non-superuser runtime role** (OPEN-QUESTIONS #27); the bootstrap superuser is used only for migrations, backup and restore. `prelaunch-check.sh` reads it from every API and worker's newest boot line.
 - [ ] PayStation sandbox checklist done (`docs/paystation/SANDBOX-CHECKLIST.md`) and the accepted `trx_status` values confirmed.
 - [ ] `PAYSTATION_ENV=live` on the VPS, and the boot log's PayStation line matches the client account: `$DC logs api | grep "PayStation env="` shows `env=live`, the live host, the client's account label and invoice prefix, and the production callback and IPN URLs. It never shows any part of the merchant id or password. A `payments are DISABLED` WARN, or a `payments.disabled_in_production` alert, means PAYSTATION_ENV is blank: no registration can be paid.
 - [ ] The free book: an admin has set the real title and uploaded the cover (`/admin/book`), before registration opens.
