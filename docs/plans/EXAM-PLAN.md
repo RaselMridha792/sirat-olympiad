@@ -618,7 +618,9 @@ The docs-only pull request of this plan adds `docs/plans/EXAM-PLAN.md`, one entr
 | E4 | `feat/exam-player` | Exam list on the API, waiting room, rules, player, violation warnings and the automatic submit, time-up, receipt | E2 (A2 PR #12 is merged) |
 | E5 | `feat/exam-admin-ui` | Admin create/edit/publish, results panel, attempts with violations, review page, leaderboards on the API | E1, E3, E4 |
 | E6 | `feat/exam-loadtest` | k6 exam simulation (local), load fixtures, RUNBOOK exam day, 03-HOW-IT-WORKS, CLAUDE.md state | E3 |
-| E7 (P1) | later | CSV import, answer-key correction with re-scoring | after the launch |
+| E7 (P1) | `feat/exam-csv-import` (E7a, payments), `feat/exam-key-correction` (E7b) | CSV import for draft exams, all rows or none (E7a); answer-key correction after publish with re-scoring (E7b) | built before the launch (owner, 2026-11-01: build everything now) |
+
+**Status (2026-11-03, main 9201397):** all merged. E1 #16, E2 #17, E3 #19, E4 #24, E5 as E5a #30 (results on the web) and E5b #45 (authoring), E6 #66 (with the CI exam smoke #73 and the login surge #74), E7a #67, E7b #77. Still open: k6 on the VPS (the login surge, then the exam window, L14), and the admin preview without an attempt (D2, P1).
 
 ### 8.2 Schedule (estimate, at the measured pace)
 
