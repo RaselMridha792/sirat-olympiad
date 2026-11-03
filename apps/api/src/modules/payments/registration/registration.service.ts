@@ -21,9 +21,11 @@ import {
   BD_DISTRICTS,
   EDUCATION_TYPES,
   REGISTRATION_MESSAGES,
+  type CheckoutGateway,
   type Paginated,
   type RegistrationErrorCode,
   type RegistrationState,
+  type ResumeRegistrationResult,
 } from '@sirat/shared';
 import type Redis from 'ioredis';
 import { withTimeout } from '../../../common/with-timeout';
@@ -37,7 +39,7 @@ import {
   type InitiateResult,
 } from '../gateway/payment-gateway';
 import { newInvoiceNumber } from '../invoice';
-import type { PaymentConfig } from '../payment.config';
+import { checkoutGateway, type PaymentConfig } from '../payment.config';
 import { PAYMENT_CONFIG } from '../payments-boot-check';
 import { isActive } from '../payment-state';
 import { isWatched } from '../verify/payment-timing';
@@ -73,6 +75,7 @@ const text = (code: RegistrationErrorCode, fallback: string) =>
 
 export type StartResponse = {
   paymentUrl: string;
+  gateway: CheckoutGateway;
   invoiceNumber: string;
   amountMinor: number;
   currency: 'BDT';
@@ -248,7 +251,7 @@ export class RegistrationService {
     };
   }
 
-  async resume(browserToken: string | null, now = new Date()): Promise<{ paymentUrl: string }> {
+  async resume(browserToken: string | null, now = new Date()): Promise<ResumeRegistrationResult> {
     const attempt = browserToken ? await this.attemptByToken(browserToken) : null;
     if (!attempt || attempt.status === RegistrationAttemptStatus.abandoned)
       throw error(
@@ -260,7 +263,7 @@ export class RegistrationService {
     const latest = attempt.payments[0] ?? null;
     if (attempt.status !== RegistrationAttemptStatus.open || !canResume(latest, now))
       throw error(ConflictException, 'NOTHING_TO_RESUME', 'There is no payment to continue');
-    return { paymentUrl: latest?.paymentUrl as string };
+    return { paymentUrl: latest?.paymentUrl as string, gateway: checkoutGateway(this.config) };
   }
 
   /**
@@ -744,6 +747,7 @@ export class RegistrationService {
   private response(payment: Payment): StartResponse {
     return {
       paymentUrl: payment.paymentUrl as string,
+      gateway: checkoutGateway(this.config),
       invoiceNumber: payment.invoiceNumber,
       amountMinor: payment.amountMinor,
       currency: 'BDT',

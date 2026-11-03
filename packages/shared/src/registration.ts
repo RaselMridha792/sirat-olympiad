@@ -188,12 +188,25 @@ export interface StartRegistrationInput {
   promoCode?: string;
 }
 
+/**
+ * Which checkout `paymentUrl` opens. 'paystation': the real gateway, followed over https only. 'fake': the dev/CI fake
+ * server, which may be http. The API says 'fake' only while PAYSTATION_ENV=fake, which it refuses in production.
+ */
+export type CheckoutGateway = 'paystation' | 'fake';
+
 /** 201 from start and retry: the PayStation checkout to send the browser to. */
 export interface StartRegistrationResult {
   paymentUrl: string;
+  gateway: CheckoutGateway;
   invoiceNumber: string;
   amountMinor: number;
   currency: string;
+}
+
+/** 200 from POST /registrations/current/resume: the open checkout again. */
+export interface ResumeRegistrationResult {
+  paymentUrl: string;
+  gateway: CheckoutGateway;
 }
 
 /** GET /registrations/current: this browser's attempt (the `sirat_reg` cookie). No personal data. */

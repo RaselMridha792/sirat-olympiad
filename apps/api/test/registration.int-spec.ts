@@ -143,7 +143,7 @@ describe('POST /registrations/start', () => {
     const res = await start(body);
     expect(res.status).toBe(201);
     const out = await json(res);
-    expect(out).toMatchObject({ amountMinor: 40000, currency: 'BDT' });
+    expect(out).toMatchObject({ amountMinor: 40000, currency: 'BDT', gateway: 'fake' });
     expect(String(out.paymentUrl)).toContain(`${fake.url}/checkout/`);
     expect(String(out.invoiceNumber)).toMatch(/^T\d{6}[0-9A-Z]{10}$/);
 
@@ -431,7 +431,7 @@ describe("this browser's attempt: current, resume, retry, cancel", () => {
     expect(JSON.stringify(current)).not.toMatch(/@|Student|01[3-9]\d{8}/); // no personal data
     const resumed = await call('POST', '/registrations/current/resume', { cookie });
     expect(resumed.status).toBe(200);
-    expect(await json(resumed)).toEqual({ paymentUrl });
+    expect(await json(resumed)).toEqual({ paymentUrl, gateway: 'fake' });
     expect((await call('POST', '/registrations/current/retry', { cookie })).status).toBe(409);
   });
 
