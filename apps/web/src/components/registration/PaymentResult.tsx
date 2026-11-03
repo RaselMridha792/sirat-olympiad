@@ -20,7 +20,7 @@ import { registrationMessages } from '@/i18n/messages/registration';
 import { ApiRequestError } from '@/lib/api';
 import { BOOK_LOGIN_HREF } from './links';
 import { isMoving, nextPollDelay } from './poll';
-import { goToCheckout, registrationApi } from './registration-api';
+import { goToCheckout, registrationApi, type Checkout } from './registration-api';
 import { problemText, registrationProblem } from './registration-problem';
 
 type Phase = 'loading' | 'ready' | 'none' | 'error';
@@ -87,13 +87,13 @@ export function PaymentResult({ locale }: { locale: Locale }) {
     };
   }, [round]);
 
-  async function act(call: () => Promise<{ paymentUrl: string } | void>, after?: () => void) {
+  async function act(call: () => Promise<Checkout | void>, after?: () => void) {
     if (busy) return;
     setBusy(true);
     setActionError('');
     try {
       const result = await call();
-      if (result && goToCheckout(result.paymentUrl)) return; // stay busy while PayStation loads
+      if (result && goToCheckout(result)) return; // stay busy while PayStation loads
       after?.();
     } catch (err) {
       const problem = registrationProblem(
