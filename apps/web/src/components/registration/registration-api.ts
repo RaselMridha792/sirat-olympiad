@@ -1,10 +1,14 @@
 import type {
   CurrentRegistration,
+  ResumeRegistrationResult,
   StartRegistrationInput,
   StartRegistrationResult,
 } from '@sirat/shared';
 import { api } from '@/lib/api';
 import { timeoutSignal } from '@/lib/auth/timeout';
+import { checkoutUrl, type Checkout } from './checkout';
+
+export type { Checkout } from './checkout';
 
 /*
  * The registration calls the browser makes (same origin, through api(): the `sirat_reg` cookie travels with them,
@@ -30,7 +34,7 @@ export const registrationApi = {
       signal: timeoutSignal(READ_TIMEOUT_MS),
     }),
   resume: () =>
-    api<{ paymentUrl: string }>('/registrations/current/resume', {
+    api<ResumeRegistrationResult>('/registrations/current/resume', {
       ...post,
       signal: timeoutSignal(READ_TIMEOUT_MS),
     }),
@@ -59,20 +63,12 @@ export function newStartRequestId(): string {
 }
 
 /**
- * Sends the browser to PayStation's checkout. Only an https URL (or the local fake's http, outside production) is
- * followed: the URL comes from our API, but a page never navigates to a scheme it did not expect.
+ * Sends the browser to the checkout; false when its URL is not one to follow (checkoutUrl). The one way to a checkout:
+ * the wizard's start, retry and continue, and the result page's "Try again" all come here.
  */
-export function goToCheckout(paymentUrl: string): boolean {
-  let url: URL;
-  try {
-    url = new URL(paymentUrl);
-  } catch {
-    return false;
-  }
-  const allowed =
-    url.protocol === 'https:' ||
-    (process.env.NODE_ENV !== 'production' && url.protocol === 'http:');
-  if (!allowed) return false;
-  window.location.assign(url.toString());
+export function goToCheckout(checkout: Checkout): boolean {
+  const url = checkoutUrl(checkout.paymentUrl, checkout.gateway);
+  if (!url) return false;
+  window.location.assign(url);
   return true;
 }

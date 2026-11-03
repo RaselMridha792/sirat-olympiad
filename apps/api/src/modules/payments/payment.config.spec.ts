@@ -4,6 +4,7 @@ import {
   PAYSTATION_HOSTS,
   PaymentConfigError,
   buildPaymentConfig,
+  checkoutGateway,
   describePaymentConfig,
   type PaymentEnv,
 } from './payment.config';
@@ -82,6 +83,25 @@ describe('buildPaymentConfig', () => {
       { ...fake, PAYSTATION_BASE_URL: undefined },
       /BASE_URL is required with PAYSTATION_ENV=fake/,
     );
+    refused(
+      {
+        ...fake,
+        NODE_ENV: 'production',
+        PAYSTATION_IPN_URL: 'https://x.org/api/payments/paystation/ipn',
+      },
+      /fake .* is refused with NODE_ENV=production/,
+    );
+  });
+
+  it("says 'fake' only for the fake server: live and sandbox checkouts stay https-only in the browser", () => {
+    const fake = sandbox({ PAYSTATION_ENV: 'fake', PAYSTATION_BASE_URL: 'http://127.0.0.1:18090' });
+    expect(checkoutGateway(buildPaymentConfig(fake))).toBe('fake');
+    expect(checkoutGateway(buildPaymentConfig(sandbox()))).toBe('paystation');
+    expect(checkoutGateway(buildPaymentConfig(live()))).toBe('paystation');
+    expect(checkoutGateway(buildPaymentConfig(sandbox({ PAYSTATION_ENV: undefined })))).toBe(
+      'paystation',
+    );
+    // A production API cannot be in fake mode at all, so it can never send 'fake'.
     refused(
       {
         ...fake,

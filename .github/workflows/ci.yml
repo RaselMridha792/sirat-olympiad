@@ -303,9 +303,12 @@ jobs:
       - name: Through nginx - security headers, no-store on /api, and no query string or Referer in nginx's log
         run: |
           page=$(curl -fsS -D - -o /dev/null http://127.0.0.1:8080/)
-          for h in X-Content-Type-Options Referrer-Policy Content-Security-Policy-Report-Only Permissions-Policy; do
+          for h in X-Content-Type-Options Referrer-Policy Permissions-Policy; do
             echo "$page" | grep -qi "^$h:" || { echo "::error::$h missing on /"; exit 1; }
           done
+          # nginx's page CSP, enforced (Next's own header has only frame-ancestors, so match the policy itself).
+          echo "$page" | grep -qi "^content-security-policy: default-src 'self'; script-src" ||
+            { echo "::error::the enforced page CSP is missing on /"; exit 1; }
           api=$(curl -fsS -D - -o /dev/null http://127.0.0.1:8080/api/health)
           echo "$api" | grep -qi '^cache-control: no-store' || { echo "::error::an API answer without no-store"; exit 1; }
           if echo "$page$api" | grep -qi '^strict-transport-security:'; then echo "::error::HSTS on plain http"; exit 1; fi
@@ -313,7 +316,10 @@ jobs:
           for h in X-Content-Type-Options Referrer-Policy Content-Security-Policy; do
             [ "$(echo "$api" | grep -ci "^$h:")" = 1 ] || { echo "::error::$h is not exactly once on an API answer"; exit 1; }
           done
-          if echo "$api" | grep -qi '^content-security-policy-report-only:'; then echo "::error::the page CSP on an API answer"; exit 1; fi
+          # The one CSP on an API answer is helmet's, never the page policy.
+          if echo "$api" | grep -qi "^content-security-policy: default-src 'self'; script-src 'self' 'unsafe-inline'"; then
+            echo "::error::the page CSP on an API answer"; exit 1
+          fi
           q="q$(openssl rand -hex 8)"; r="r$(openssl rand -hex 8)"
           curl -fsS -o /dev/null -H "Referer: http://127.0.0.1:8080/admin/users?q=$r" "http://127.0.0.1:8080/api/health?q=$q"
           sleep 1
@@ -498,6 +504,25 @@ jobs:
             sleep 5
           done
           grep -q '"fee":{"amountMinor":' <<< "$info" || { echo "::error::the api is not on the fake PayStation: $info"; exit 1; }
+      - name: Registration and payment in Chrome through nginx, page CSP enforced (payments' e2e:register on the fake PayStation)
+        # The wizard, the fake's checkout, the callback and the IPN, the worker's check, the result page and the first
+        # login, then a failed checkout retried, and no CSP violation on any page. Chrome must open the fake's checkout,
+        # so for this step only the fake also listens on 127.0.0.1:18090 (the load and staging setups keep it internal,
+        # checked above). The admin opens registration for the run and closes it again; 2FA is on, so it enrols first.
+        run: |
+          printf "services:\n  fake-paystation:\n    ports: ['127.0.0.1:18090:18090']\n" > "$RUNNER_TEMP/fake-e2e.yml"
+          FAKE="$DCD -f infra/fake-paystation.compose.yml -f $RUNNER_TEMP/fake-e2e.yml"
+          FAKE_PAYSTATION_PUBLIC_URL=http://127.0.0.1:18090 FAKE_PAYSTATION_CALLBACK_BASE=http://localhost:8080 \
+            $FAKE up -d --no-deps --wait fake-paystation api worker
+          # nginx may hold the recreated api's old address for a few seconds (see the step above).
+          for _ in $(seq 1 30); do curl -fsS -o /dev/null http://localhost:8080/api/ready && break; sleep 2; done
+          pw=$(openssl rand -hex 16)
+          echo "::add-mask::$pw"
+          printf '%s\n' "$pw" | $DCD run --rm --no-deps -T api node dist/cli/create-admin.js --password-stdin \
+            --email e2e-register@ci.invalid --name "CI Registration"
+          export E2E_ADMIN_EMAIL=e2e-register@ci.invalid E2E_ADMIN_PASSWORD="$pw"
+          node apps/web/scripts/e2e-2fa-enrol.mjs http://localhost:8080
+          node apps/web/scripts/e2e-register.mjs http://localhost:8080
       - name: Logs on failure
         if: failure()
         run: $DCD ps -a; $DCD logs --tail=200

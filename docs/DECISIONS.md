@@ -2,6 +2,20 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-03 — The page CSP is enforced; a checkout's gateway decides its scheme (A2; L3's condition, the lead's proposal A)
+
+- **The page CSP is enforced** (`infra/nginx/security-headers.conf`), no longer Report-Only.
+  - L3's condition: payments' wizard e2e passes under it with no violation, the full round trip (wizard, the fake gateway's checkout, callback and IPN, result page, login, and a failed checkout retried).
+  - CI's docker job runs that e2e through nginx on every PR. The fake listens on 127.0.0.1:18090 for that step only.
+  - **A violation in production:** rename the header to `Content-Security-Policy-Report-Only` and reload nginx.
+- **Start, retry and resume answer `gateway`.**
+  - `'paystation'` is followed over https only, in every build. `'fake'` may be http.
+  - The API says `'fake'` only in fake mode (`checkoutGateway`), which `buildPaymentConfig` refuses with `NODE_ENV=production`, so a live or sandbox API never sends it.
+  - **Why:** the web's old rule allowed http only outside a production build (`NODE_ENV` inlined at build time). The fake's http checkout therefore failed in CI's production-built web, and the CSP proof never reached the gateway.
+  - The new rule follows the API's mode instead of the build, and loosens nothing in production. An answer without `gateway` (an older API during a deploy) counts as `'paystation'`.
+- **One helper:** `goToCheckout` is the only way to a checkout: the wizard's start, retry and continue, and the result page's "Try again". A test checks that no component navigates by itself.
+- **Who:** A2, on the lead's proposal A. It touches payments' files (registration.service, registration-api.ts, RegisterWizard, PaymentResult, 06-API), for payments to review when back.
+
 ## 2026-11-03 — Pre-launch security sweep: four small fixes (A2; the lead's sweep, read-only first)
 
 - **`/api/ready` stays public** (the uptime monitor polls it by keyword), but each replica answers from a check at most 1 s old (`READY_CACHE_MS`). Concurrent probes share one check. A flood costs one database round trip and two Redis pings a second per replica, not one per request. The answer keeps `no-store`, and a failed check is logged once, not once per request.
