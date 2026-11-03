@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Card } from '@sirat/ui';
 import { CertificateCheck } from '@/components/certificates/CertificateCheck';
-import { site } from '@/content/site';
+import { publicPath, site } from '@/content/site';
 import { certificatesMessages } from '@/i18n/messages/certificates';
 import { getMessages } from '@/i18n/server';
 
@@ -27,10 +27,10 @@ export default async function VerifyPage({ params }: { params: Promise<{ code: s
         <CertificateCheck locale={locale} code={code} />
       </Card>
       <Link
-        href="/"
+        href={publicPath('home', locale)}
         className="mt-6 text-center text-sm font-semibold text-secondary hover:underline"
       >
-        {site.name}
+        {site.name[locale]}
       </Link>
     </main>
   );
