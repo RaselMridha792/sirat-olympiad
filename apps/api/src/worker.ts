@@ -6,6 +6,7 @@ import { Logger, LoggerModule } from 'nestjs-pino';
 import { pinoHttpOptions } from './common/logging/pino-http.options';
 import { validateWorkerEnv } from './config/env';
 import { AmbassadorPointsWorkerModule } from './modules/ambassadors/ambassador-points.worker';
+import { CertificatesWorkerModule } from './modules/certificates/certificates.worker';
 import { ExamWorkerModule } from './modules/attempts/attempts.module';
 import { HousekeepingWorkerModule } from './modules/housekeeping/housekeeping.module';
 import { NotificationsWorkerModule } from './modules/notifications/notifications.module';
@@ -25,6 +26,7 @@ import { PaymentsWorkerModule } from './modules/payments/payments.module';
     PaymentsWorkerModule,
     HousekeepingWorkerModule,
     AmbassadorPointsWorkerModule,
+    CertificatesWorkerModule,
   ],
 })
 export class WorkerModule {}

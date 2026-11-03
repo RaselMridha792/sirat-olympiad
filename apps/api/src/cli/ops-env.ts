@@ -12,6 +12,7 @@ export interface OpsEnv {
   PAYMENTS_QUEUE_NAME: string | undefined;
   HOUSEKEEPING_QUEUE_NAME: string | undefined;
   AMBASSADOR_QUEUE_NAME: string | undefined;
+  CERTIFICATES_QUEUE_NAME: string | undefined;
 }
 
 export class OpsEnvError extends Error {}
@@ -50,5 +51,6 @@ export function opsEnv(env: NodeJS.ProcessEnv = process.env): OpsEnv {
     PAYMENTS_QUEUE_NAME: queue('PAYMENTS_QUEUE_NAME'),
     HOUSEKEEPING_QUEUE_NAME: queue('HOUSEKEEPING_QUEUE_NAME'),
     AMBASSADOR_QUEUE_NAME: queue('AMBASSADOR_QUEUE_NAME'),
+    CERTIFICATES_QUEUE_NAME: queue('CERTIFICATES_QUEUE_NAME'),
   };
 }
