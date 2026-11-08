@@ -166,10 +166,13 @@ marker=$(pg "select coalesce(current_setting('sirat.environment', true), '')") |
 [ -z "$marker" ] || fail "this Postgres carries the development marker (sirat.environment): never deploy to a dev stack"
 
 # Exam windows: published exams open within 30 minutes either side of now. A database without the exams table (before
-# the first release) has none.
+# the first release) has none. Demo exams never count (DECISIONS "Demo data"): the demo practice exam stays open for a
+# month, and no student sits it for real. A database from before demo data has no marker column: every exam counts.
 exam_window_open() {
   [ "$(pg "select to_regclass('public.exams') is not null")" = t ] || return 1
-  [ "$(pg "select count(*) from exams where status = 'published' and window_start < now() + interval '30 minutes' and window_end > now() - interval '30 minutes'")" != 0 ]
+  local real=true
+  [ "$(pg "select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'exams' and column_name = 'demo_batch_id'")" = 1 ] && real='demo_batch_id is null'
+  [ "$(pg "select count(*) from exams where status = 'published' and $real and window_start < now() + interval '30 minutes' and window_end > now() - interval '30 minutes'")" != 0 ]
 }
 registration_open() {
   [ "$(pg "select to_regclass('public.settings') is not null")" = t ] || return 1
