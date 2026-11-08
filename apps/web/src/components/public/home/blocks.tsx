@@ -210,12 +210,37 @@ export function PrizesSection({
   const counts = homeFacts.prizes;
   const perGroup = (count: number) =>
     detail ? detail.perGroup(formatNumber(detail.locale, count)) : null;
-  const others = [
-    { key: 'runnerUp', Icon: Medal, ...p.runnerUp, count: perGroup(counts.runnersUpPerGroup) },
-    { key: 'finalists', Icon: Award, ...p.finalists, count: perGroup(counts.finalistsPerGroup) },
-    { key: 'knockout', Icon: Star, ...p.knockout, count: null },
-    { key: 'everyone', Icon: ScrollText, ...p.everyone, count: null },
-  ];
+  const oldSite = counts.oldSiteDetails;
+  const others = oldSite
+    ? [
+        { key: 'runnerUp', Icon: Medal, ...p.runnerUp, count: perGroup(counts.runnersUpPerGroup) },
+        {
+          key: 'finalists',
+          Icon: Award,
+          ...p.finalists,
+          count: perGroup(counts.finalistsPerGroup),
+        },
+        { key: 'knockout', Icon: Star, ...p.knockout, count: null },
+        { key: 'everyone', Icon: ScrollText, ...p.everyone, count: null },
+      ]
+    : [
+        {
+          key: 'runnerUp',
+          Icon: Medal,
+          title: p.runnerUp.title,
+          prize: p.pdf.toBeAnnounced,
+          count: perGroup(counts.runnersUpPerGroup),
+        },
+        {
+          key: 'finalists',
+          Icon: Award,
+          title: p.finalists.title,
+          prize: p.pdf.toBeAnnounced,
+          count: perGroup(counts.finalistsPerGroup),
+        },
+        { key: 'everyone', Icon: ScrollText, ...p.everyone, count: null },
+        { key: 'more', Icon: Gift, title: p.pdf.moreTitle, prize: p.pdf.more, count: null },
+      ];
   const championCount = perGroup(counts.championsPerGroup);
   return (
     <Section id="prizes" kicker={p.kicker} title={p.title} lead={p.lead}>
@@ -224,7 +249,9 @@ export function PrizesSection({
           <GeometricPattern id="prize-pattern" size={48} className="text-white/[0.08]" />
           <Trophy aria-hidden="true" className="h-14 w-14 text-accent" />
           <h3 className="mt-6 text-3xl font-extrabold">{p.champion.title}</h3>
-          <p className="mt-2 text-lg leading-relaxed text-white/85">{p.champion.prize}</p>
+          <p className="mt-2 text-lg leading-relaxed text-white/85">
+            {oldSite ? p.champion.prize : p.pdf.champion}
+          </p>
           {championCount ? (
             <p className="mt-3 text-sm font-semibold text-white">{championCount}</p>
           ) : null}
@@ -247,7 +274,7 @@ export function PrizesSection({
           {detail.pool(formatNumber(detail.locale, counts.poolTaka))}
         </p>
       ) : null}
-      <p className="mt-4 text-center text-ink-muted">{p.note}</p>
+      {oldSite ? <p className="mt-4 text-center text-ink-muted">{p.note}</p> : null}
     </Section>
   );
 }

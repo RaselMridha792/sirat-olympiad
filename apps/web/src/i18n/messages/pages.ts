@@ -157,7 +157,7 @@ export const pagesMessages = defineMessages({
     prizes: {
       title: 'Prizes',
       metaDescription:
-        'The prizes of the Sirat Olympiad: an Umrah journey for both champions, laptops, scholarships, crests and certificates.',
+        'The prizes of the Sirat Olympiad: an Umrah journey for both champions, book sets, gadgets, cash, certificates and crests.',
       hero: {
         kicker: 'Prizes',
         title: 'Prizes',
@@ -351,7 +351,7 @@ export const pagesMessages = defineMessages({
     prizes: {
       title: 'পুরস্কার',
       metaDescription:
-        'সিরাত অলিম্পিয়াডের পুরস্কার: উভয় গ্রুপের চ্যাম্পিয়নের জন্য উমরাহ সফর, ল্যাপটপ, স্কলারশিপ, ক্রেস্ট ও সার্টিফিকেট।',
+        'সিরাত অলিম্পিয়াডের পুরস্কার: উভয় গ্রুপের চ্যাম্পিয়নের জন্য উমরাহ সফর, বইসমগ্র, গ্যাজেট, নগদ অর্থ, সার্টিফিকেট ও ক্রেস্ট।',
       hero: {
         kicker: 'পুরস্কার',
         title: 'পুরস্কার',
