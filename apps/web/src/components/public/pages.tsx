@@ -7,6 +7,7 @@ import { pick } from '@/i18n/messages';
 import { aboutMessages } from '@/i18n/messages/about';
 import { homeMessages } from '@/i18n/messages/home';
 import { legalMessages } from '@/i18n/messages/legal';
+import { morePagesMessages } from '@/i18n/messages/pages-more';
 import { pagesMessages } from '@/i18n/messages/pages';
 import { withHonorificText } from './home/home-view';
 import { PublicShell } from './PublicShell';
@@ -19,9 +20,12 @@ import { PublicShell } from './PublicShell';
 
 type LegalPage = (typeof POLICY_PAGES)[number];
 type TopicPage = 'participate' | 'rounds' | 'prizes' | 'syllabus';
+type MorePage = 'ambassador' | 'gallery' | 'faq' | 'contact';
 
 const isTopic = (page: PublicPage): page is TopicPage =>
   page === 'participate' || page === 'rounds' || page === 'prizes' || page === 'syllabus';
+const isMore = (page: PublicPage): page is MorePage =>
+  page === 'ambassador' || page === 'gallery' || page === 'faq' || page === 'contact';
 
 /** Title, description, hreflang alternates, and noindex while any text is a placeholder. */
 export function publicMetadata(page: PublicPage, locale: Locale): Metadata {
@@ -43,10 +47,15 @@ export function publicMetadata(page: PublicPage, locale: Locale): Metadata {
               title: `${pick(pagesMessages, locale)[page].title} | ${name}`,
               description: pick(pagesMessages, locale)[page].metaDescription,
             }
-          : {
-              title: `${pick(legalMessages, locale)[page].title} | ${name}`,
-              description: pick(legalMessages, locale)[page].metaDescription,
-            };
+          : isMore(page)
+            ? {
+                title: `${pick(morePagesMessages, locale)[page].title} | ${name}`,
+                description: pick(morePagesMessages, locale)[page].metaDescription,
+              }
+            : {
+                title: `${pick(legalMessages, locale)[page].title} | ${name}`,
+                description: pick(legalMessages, locale)[page].metaDescription,
+              };
   return {
     title: { absolute: title },
     description,

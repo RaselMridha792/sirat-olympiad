@@ -24,7 +24,7 @@ import {
   Wifi,
   Youtube,
 } from 'lucide-react';
-import { Accordion, buttonClasses, GeometricPattern, Section, Timeline } from '@sirat/ui';
+import { buttonClasses, GeometricPattern, Section, Timeline } from '@sirat/ui';
 import { homeFacts, safeExternalUrl, type SocialLink } from '@/content/home';
 import { publicPath, site } from '@/content/site';
 import type { Locale } from '@/i18n';
@@ -276,7 +276,7 @@ export function RoadmapSection({ m, locale }: { m: HomeText; locale: Locale }) {
 
 const TASK_ICONS = [ClipboardList, Footprints, UserPlus, ChartLine, Target, Award];
 
-export function AmbassadorSection({ m }: { m: HomeText }) {
+export function AmbassadorSection({ m, locale }: { m: HomeText; locale: Locale }) {
   const a = m.ambassador;
   return (
     <Section id="ambassador" kicker={a.kicker} title={a.title} lead={a.lead}>
@@ -309,59 +309,34 @@ export function AmbassadorSection({ m }: { m: HomeText }) {
           <UserPlus aria-hidden="true" className="h-10 w-10 text-accent" />
           <h3 className="mt-5 text-2xl font-extrabold">{a.join}</h3>
           <p className="mt-3 flex-1 leading-relaxed text-white/80">{a.how}</p>
-          <a
-            href="#contact"
+          <Link
+            href={publicPath('contact', locale)}
             className={buttonClasses({ size: 'lg', className: 'mt-6 self-start' })}
           >
             {a.cta}
-          </a>
+          </Link>
         </div>
       </div>
     </Section>
   );
 }
 
-type FaqTarget = 'register' | 'roadmap' | 'prizes' | 'rounds' | 'syllabus';
+export type FaqTarget = 'register' | 'roadmap' | 'prizes' | 'rounds' | 'syllabus';
 
 /** Where a FAQ answer's link goes: registration, or the page the question is about. */
-function faqHref(target: FaqTarget, locale: Locale): string {
+export function faqHref(target: FaqTarget, locale: Locale): string {
   if (target === 'register') return '/register';
   if (target === 'roadmap') return `${publicPath('rounds', locale)}#roadmap`;
   return publicPath(target, locale);
 }
 
-const FAQ_TARGETS: readonly string[] = ['register', 'roadmap', 'prizes', 'rounds', 'syllabus'];
-
-export function FaqSection({ m, locale }: { m: HomeText; locale: Locale }) {
-  const items = m.faq.items.map((item) => {
-    const target = FAQ_TARGETS.includes(item.id) ? (item.id as FaqTarget) : null;
-    return {
-      id: `faq-${item.id}`,
-      question: item.question,
-      answer: (
-        <>
-          <p>{item.answer}</p>
-          {target ? (
-            <p className="mt-3">
-              <Link
-                href={faqHref(target, locale)}
-                className="inline-flex items-center gap-1 font-semibold text-secondary underline-offset-4 hover:underline"
-              >
-                {m.faq.links[target]}
-                <ArrowRight aria-hidden="true" className="h-4 w-4" />
-              </Link>
-            </p>
-          ) : null}
-        </>
-      ),
-    };
-  });
-  return (
-    <Section id="faq" surface="surface" kicker={m.faq.kicker} title={m.faq.title}>
-      <Accordion items={items} name="home-faq" className="mx-auto max-w-3xl" />
-    </Section>
-  );
-}
+export const FAQ_TARGETS: readonly string[] = [
+  'register',
+  'roadmap',
+  'prizes',
+  'rounds',
+  'syllabus',
+];
 
 const SOCIAL_ICONS: Record<SocialLink['key'], typeof Facebook> = {
   facebook: Facebook,
