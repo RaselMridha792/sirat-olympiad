@@ -25,6 +25,7 @@ import {
   type DemoLoadJobData,
   demoQueueName,
 } from './demo-queue';
+import { DemoRefusalError } from './demo-batches';
 import { DemoClearBlocked, DemoClearBusy, DemoRunner } from './demo-runner';
 import { demoAllowed } from './demo.service';
 
@@ -89,7 +90,14 @@ export class DemoWorker implements OnModuleInit, OnApplicationShutdown {
 
   private async load(job: DemoJob, data: DemoLoadJobData): Promise<Record<string, number> | null> {
     if (!demoAllowed(this.config)) throw new UnrecoverableError('demo_not_allowed');
-    const counts = await this.runner.load(data.batchId, data.passwordHash);
+    let counts: Record<string, number> | null;
+    try {
+      counts = await this.runner.load(data.batchId, data.passwordHash);
+    } catch (e) {
+      // A generator's named refusal (e.g. real_rounds_present): a retry cannot change it.
+      if (e instanceof DemoRefusalError) throw new UnrecoverableError(e.code);
+      throw e;
+    }
     if (!counts) return null;
     this.logger.log({ msg: 'demo data loaded', jobId: job.id, batchId: data.batchId, ...counts });
     await this.alerts.raise('ops.demo_loaded', {

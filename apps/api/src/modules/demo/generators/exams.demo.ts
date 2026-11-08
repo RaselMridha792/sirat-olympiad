@@ -16,17 +16,16 @@ const ROUND1_SHARE = 0.9;
 /**
  * Two demo exams for everyone (category NULL), 30 questions each:
  *  - "DEMO · Practice": open now for 30 days and without attempts, so a demo student can try the exam room;
- *  - "DEMO · Round 1": closed nine days ago and linked to Round 1, with about 90 % of the demo students and ambassadors
+ *  - "DEMO · Round 1": closed nine days ago, in the demo's own Round 1, with about 90 % of the demo students and ambassadors
  *    scored. Their layouts come from drawLayout and their scores from scoreAnswers, as a real start and the worker make
  *    them, so the review and the leaderboard agree. The results snapshot and its publication follow the load
  *    (ExamJobs.buildResults needs the committed attempts): see DemoJobs.
  */
 export const examsDemoGenerator: DemoGenerator = {
   area: 'exams',
-  dependsOn: ['users'],
+  dependsOn: ['users', 'rounds'],
   async load(ctx: DemoContext): Promise<void> {
     await ctx.progress('exams');
-    const round1 = await ctx.tx.round.findFirst({ where: { sortOrder: 1 }, select: { id: true } });
 
     const practice = await insertExam(ctx, {
       title: `${DEMO_EXAM_PREFIX}Practice`,
@@ -38,7 +37,8 @@ export const examsDemoGenerator: DemoGenerator = {
       title: `${DEMO_EXAM_PREFIX}Round 1`,
       windowStart: new Date(ctx.now.getTime() - 10 * DAY),
       windowEnd: new Date(ctx.now.getTime() - 9 * DAY),
-      roundId: round1?.id ?? null,
+      // The demo's own Round 1, never the real one (DECISIONS "Demo data" 8; Phase 1 linked it to the real Round 1).
+      roundId: ctx.rounds?.r1 ?? null,
     });
     ctx.exams.practice = practice.id;
     ctx.exams.round1 = r1.id;

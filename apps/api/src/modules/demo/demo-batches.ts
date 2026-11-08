@@ -51,6 +51,9 @@ export async function assertCanLoad(db: Tx, payments: PaymentConfig, lock = fals
     );
   const allowed = await paymentsAllowDemo(db, payments);
   if (!allowed.ok) throw new DemoRefusalError(allowed.reason);
+  // The demo brings its own rounds (101-103): only beside the real Round 1 alone (the rounds generator checks again).
+  const realRounds = await db.round.count({ where: { demoBatchId: null, sortOrder: { not: 1 } } });
+  if (realRounds > 0) throw new DemoRefusalError('real_rounds_present');
 }
 
 /**

@@ -78,5 +78,6 @@ export const DEMO_REFUSALS = [
   'demo_absent',
   'payments_live',
   'real_payments',
+  'real_rounds_present',
 ] as const;
 export type DemoRefusal = (typeof DEMO_REFUSALS)[number];
