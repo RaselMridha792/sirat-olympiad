@@ -34,6 +34,8 @@ One short entry per non-obvious technical or product decision. Newest first. For
 3. **The load guard** (`paymentsAllowDemo`): demo data is refused while `PAYSTATION_ENV=live`, and once a paid `live` payment exists. Sandbox, fake and demo payments never count: none moved money. Registration may stay open (lead).
 4. **The marker email domain** (`DEMO_EMAIL_DOMAIN`, `@demo.sirat.invalid`): the registration form refuses exactly that domain, so a real attempt, and the account its payment makes, can never carry it.
 5. **Demo payments get no events:** `payment_events` cannot be cleared, so demo data never writes to it. A demo "refund" is a paid payment with review reason `refund_reported`; the `refunded` status is never entered.
+6. **The generator** (`payments/demo/payments.demo.ts`, in `DEMO_GENERATORS`): every demo ambassador is a paid, registered student, because approval needs a registration. Of the students, 80% are paid, 2% paid with `refund_reported`, 5% failed, 5% expired and 3% pending (started minutes ago); the rest never paid. Free-book orders go to 60% of the plain paid ones, all `confirmed` and never shipped. A demo payment never has a checkout link, so nothing can resume or watch it. Rows go in by bulk insert through the load transaction, with no audit rows, emails or PayStation calls, and every row is registered for `demo_clear`.
+7. **A demo account's promo code is unknown at registration** (`PROMO_INVALID`, nothing stored). A real form pointing at a demo account would make `demo_clear` refuse (`demo_clear_blocked`); the marker never changes, so a check at start is enough (A2's review).
 
 ## 2026-11-08 — The public site is multi-page (owner, via the lead; core)
 
