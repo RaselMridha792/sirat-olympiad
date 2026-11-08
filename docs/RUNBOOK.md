@@ -317,7 +317,8 @@ Credentials are read inside the postgres container; nothing secret is typed on t
 bash bootstrap.sh --dry-run --authorized-keys keys.pub   # what it would change; changes nothing
 bash bootstrap.sh --authorized-keys keys.pub             # keys.pub: the owner's and one backup person's public keys
 # It ends with what is left for the owner:
-#   - deploy's public key on GitHub as a READ-ONLY deploy key; run bootstrap again (it clones /srv/sirat)
+#   - nothing for the clone: the repository is public and bootstrap clones /srv/sirat over https
+#     (with an SSH BOOTSTRAP_REPO_URL: deploy's public key on GitHub as a READ-ONLY deploy key, then bootstrap again)
 #   - the values in /srv/sirat/.env, .env.deploy (the GitHub token), .env.monitor (the heartbeat URL) and
 #     /etc/sirat/backup.env (section 5); run bootstrap again (it enables the backup timers once the remote is set)
 #   - the provider's firewall panel: only 22, 80 and 443
@@ -335,7 +336,7 @@ scripts/prelaunch-check.sh
   - the `deploy` user, in the docker group, with SSH keys only. Root and password logins go off only once deploy has keys (no lockout), and `sshd -t` checks the change first. The drop-in is `00-sirat.conf`, read before a cloud image's `50-cloud-init.conf` (sshd keeps the first value it reads). Every run checks with `sshd -T` that passwords, root and keyboard-interactive logins are really off; if an earlier file overrides them, it removes its drop-in, reloads ssh and stops;
   - UFW for the host, plus `sirat-docker-user.service`: Docker's published ports bypass UFW, so from outside only 80 and 443 may reach a container;
   - fail2ban for SSH;
-  - the clone in `/srv/sirat` through a read-only deploy key, with GitHub's host key pinned;
+  - the clone in `/srv/sirat` over https (the repository is public, DECISIONS 2026-11-08). GitHub's host key stays pinned for an SSH `BOOTSTRAP_REPO_URL`, which uses a read-only deploy key;
   - `/var/lib/sirat`;
   - `.env`, `.env.deploy`, `.env.monitor` and `/etc/sirat/backup.env` from their examples, mode 600, never overwritten;
   - the four backup units;

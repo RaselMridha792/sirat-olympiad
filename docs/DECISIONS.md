@@ -2,6 +2,26 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-08 — The repository is public; its history no longer holds reference/ (Rasel; the lead ran the move)
+
+- **Why:** GitHub Actions stopped on the private repository (a failed payment and the spending limit). A public repository runs CI for free.
+- **History:** rewritten with `git filter-branch`, removing `reference/` only: the old Zero Olympiad's code and its bug audit, a third party's live code that must never be public.
+  - Trees are otherwise identical: the same 876 commits, authors and messages, each with a new SHA. Main `ae8b06f` is the old `da934fc` without `reference/`.
+- **Archive:** the old history, its PRs up to #87 and the lead's notes stay in the private `RaselMridha792/sirat-olympiad-archive`.
+- **New numbering:** public PR numbers restart: #1 is the old #87, #2 the old #80, #3 the old #64 (L8).
+- **reference/ is local-only:** git-ignored on main, kept at `G:\sirat-reference` and in the archive. CLAUDE.md's rule stands: a read-only specification, never copied blindly.
+- **Main is protected:**
+  - the four CI checks are required, and a PR;
+  - no force push or deletion;
+  - secret scanning and push protection on;
+  - workflows from fork PRs need approval.
+
+  This supersedes A1 #18, "CI is advisory on main".
+- **Never push an old-history commit.** Before every push: `git merge-base --is-ancestor 7587f2f HEAD` must fail (an old-history commit is the ancestor).
+- **Commit emails are public now.**
+- **The VPS clone** fetches `origin` over https; no deploy key is needed. `bootstrap.sh` clones over https by default; an SSH `BOOTSTRAP_REPO_URL` still makes a read-only deploy key.
+- **Who:** Rasel decided; the lead ran the filter and the move; A2 recorded it.
+
 ## 2026-11-03 — The page CSP is enforced; a checkout's gateway decides its scheme (A2; L3's condition, the lead's proposal A)
 
 - **The page CSP is enforced** (`infra/nginx/security-headers.conf`), no longer Report-Only.

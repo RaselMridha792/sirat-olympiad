@@ -1,5 +1,5 @@
-# CI checks (RULEBOOK §13, §15, §18). ADVISORY on main: a private repo on GitHub Free cannot enforce required
-# checks or branch protection (docs/DECISIONS.md), so deploy only a commit whose CI run is green (RUNBOOK §2).
+# CI checks (RULEBOOK §13, §15, §18). REQUIRED on main since the repository went public (2026-11-08, DECISIONS):
+# branch protection needs these four checks and a pull request. Still deploy only a commit whose run is green (RUNBOOK §2).
 name: CI
 
 on:
