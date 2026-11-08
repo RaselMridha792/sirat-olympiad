@@ -44,6 +44,8 @@ jobs:
         run: bash scripts/test/prelaunch-2fa-requirement.test.sh
       - name: prelaunch-check's demo data line on a throwaway Postgres - passes only with no demo batch, registered row, demo account, exam or announcement left
         run: bash scripts/test/prelaunch-demo.test.sh
+      - name: deploy.sh's exam window check on a throwaway Postgres - a real exam open within 30 minutes blocks a deploy, a demo exam never does
+        run: bash scripts/test/deploy-exam-window.test.sh
       - name: No old history and no reference/ in this run's commits (the repository is public, DECISIONS 2026-11-08) - the pre-push hook, and its own test
         # Full history: the checkout is shallow, and both checks walk the commits. On a pull request HEAD is the merge
         # commit, so the range is the PR's commits; on main it is empty and only the old-root check applies.
