@@ -46,6 +46,35 @@ One short entry per non-obvious technical or product decision. Newest first. For
 - **The VPS clone** fetches `origin` over https; no deploy key is needed. `bootstrap.sh` clones over https by default; an SSH `BOOTSTRAP_REPO_URL` still makes a read-only deploy key.
 - **Who:** Rasel decided; the lead ran the filter and the move; A2 recorded it.
 
+## 2026-11-08 — Accessibility and performance pass: public pages and the student dashboard (core; the lead approved the fixes)
+
+- **Measured** with Chrome through the repo's CDP driver (no new dependency, no Lighthouse):
+  - the public pages on the live VPS and on a local production build;
+  - the student dashboard as a fixture student on a throwaway database;
+  - phone runs: 390 px, 4× CPU, slow 4G;
+  - a DOM review: contrast over the real backdrop, names, labels, landmarks, headings, ids, target size;
+  - a keyboard Tab walk.
+  - Clean: 0 contrast failures, 0 unnamed controls or unlabelled fields, one h1 per page, no CSP violation.
+- **Fixed:**
+  - nginx gzips Next's RSC payloads (`text/x-component`; an RSC payload is 41.8 KB raw, 7.6 KB gzipped);
+  - a `SkipLink` (`@sirat/ui`) is the first Tab stop of PublicShell and AppShell, jumping to `main#main` (WCAG 2.4.1);
+  - `AuthSplitLayout` is the auth pages' `<main>`;
+  - form fields show focus as border plus ring;
+  - the footer nav has its own name;
+  - core's 20 px text links are 24 px (WCAG 2.5.8);
+  - the certificate check page sets `lang`;
+  - a language's own name ("বাংলা" on an English page) is drawn in `--font-system`, so English pages at phone and desktop widths no longer download the Bangla web font (≈106 KB). At 800 px Chrome still loads it although no rendered node uses it; noted, not explained.
+- **Deferred, together, to the font PR:**
+  - The hero's fade-in holds back the LCP (VPS desktop: FCP 1.10 s, LCP 2.07 s).
+  - Removing it alone made the font swap visible: phone `/en` CLS went from 0.016 to 0.143.
+  - So the fade stays until the fonts are preloaded with metric-matched fallbacks (`next/font/local` on the fontsource files, built into Next). That PR removes both causes.
+- **Not code:**
+  - TTFB of 600–840 ms on the VPS: Cloudflare, LAUNCH-PLAN.
+  - JS of 146–163 KB gzip, about 125 KB of it React and Next.
+  - `<html lang="en">` on Bangla pages: per-language root layouts, Phase D.
+  - The old brand in the auth and dashboard titles: waits for the owner's brand decision.
+- **Who:** core; the lead approved the fixes (2026-11-08) and the split of the font work.
+
 ## 2026-11-03 — The page CSP is enforced; a checkout's gateway decides its scheme (A2; L3's condition, the lead's proposal A)
 
 - **The page CSP is enforced** (`infra/nginx/security-headers.conf`), no longer Report-Only.

@@ -81,7 +81,12 @@ export default async function StudentLayout({ children }: { children: React.Reac
               <LogoutButton locale={locale} tone="shell" />
             </>
           }
-          labels={{ nav: c.nav.main, openMenu: c.nav.openMenu, closeMenu: c.nav.closeMenu }}
+          labels={{
+            nav: c.nav.main,
+            openMenu: c.nav.openMenu,
+            closeMenu: c.nav.closeMenu,
+            skip: c.nav.skip,
+          }}
           items={items}
           userName={user.name}
           // Worked out here on the server: the browser may split a Bangla name differently.

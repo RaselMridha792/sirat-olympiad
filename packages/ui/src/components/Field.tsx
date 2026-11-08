@@ -60,7 +60,7 @@ export function Field({ label, error, hint, icon, id, className, ...rest }: Fiel
       </label>
       <div
         className={cn(
-          'flex items-center gap-3 rounded-control border bg-page px-4 py-3 focus-within:border-primary',
+          'flex items-center gap-3 rounded-control border bg-page px-4 py-3 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary',
           error ? 'border-danger' : 'border-line',
         )}
       >
@@ -121,7 +121,7 @@ export function SelectField({
         aria-invalid={Boolean(error)}
         aria-describedby={describedBy(fieldId, error, hint)}
         className={cn(
-          'w-full rounded-control border bg-page px-4 py-3 text-ink outline-none focus:border-primary',
+          'w-full rounded-control border bg-page px-4 py-3 text-ink outline-none focus:border-primary focus:ring-1 focus:ring-primary',
           error ? 'border-danger' : 'border-line',
           className,
         )}
@@ -167,7 +167,7 @@ export function TextAreaField({
         aria-invalid={Boolean(error)}
         aria-describedby={describedBy(fieldId, error, hint)}
         className={cn(
-          'w-full rounded-control border bg-page px-4 py-3 text-ink outline-none placeholder:text-ink-faint focus:border-primary disabled:cursor-not-allowed disabled:text-ink-muted',
+          'w-full rounded-control border bg-page px-4 py-3 text-ink outline-none placeholder:text-ink-faint focus:border-primary focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:text-ink-muted',
           error ? 'border-danger' : 'border-line',
           className,
         )}

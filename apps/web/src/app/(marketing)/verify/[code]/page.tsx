@@ -20,7 +20,11 @@ export default async function VerifyPage({ params }: { params: Promise<{ code: s
   const { code } = await params;
   const { locale, m } = await getMessages(certificatesMessages);
   return (
-    <main className="mx-auto flex min-h-[60vh] max-w-xl flex-col justify-center px-4 py-12">
+    <main
+      id="main"
+      lang={locale}
+      className="mx-auto flex min-h-[60vh] max-w-xl flex-col justify-center px-4 py-12"
+    >
       <Card className="flex flex-col gap-5">
         <h1 className="text-2xl font-extrabold tracking-tight text-ink">{m.check.title}</h1>
         <p className="break-all font-mono text-sm text-ink-muted">{code.toUpperCase()}</p>
@@ -28,7 +32,7 @@ export default async function VerifyPage({ params }: { params: Promise<{ code: s
       </Card>
       <Link
         href={publicPath('home', locale)}
-        className="mt-6 text-center text-sm font-semibold text-secondary hover:underline"
+        className="mt-6 inline-flex min-h-6 items-center justify-center text-sm font-semibold text-secondary hover:underline"
       >
         {site.name[locale]}
       </Link>

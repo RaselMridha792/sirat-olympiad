@@ -3,6 +3,7 @@ import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 
 import { cn } from '../cn';
 import { initialOf } from '../text';
 import { Avatar } from './Avatar';
+import { SkipLink } from './SkipLink';
 
 export interface NavItem {
   href: string;
@@ -46,6 +47,7 @@ export function AppShell({
   navLabel = 'Main',
   menuLabel = 'Open menu',
   closeMenuLabel = 'Close menu',
+  skipLabel,
   sidebarFooter,
   children,
 }: {
@@ -69,6 +71,8 @@ export function AppShell({
   navLabel?: string;
   menuLabel?: string;
   closeMenuLabel?: string;
+  /** "Skip to main content", translated by the app; without it no skip link renders. */
+  skipLabel?: string;
   sidebarFooter?: ReactNode;
   children: ReactNode;
 }) {
@@ -112,6 +116,7 @@ export function AppShell({
   const dark = topbarTone === 'shell';
   return (
     <div className="min-h-screen bg-page xl:flex">
+      {skipLabel ? <SkipLink>{skipLabel}</SkipLink> : null}
       {open ? (
         <div
           aria-hidden="true"
@@ -220,7 +225,9 @@ export function AppShell({
           {title ? <p className="truncate text-base font-bold">{title}</p> : null}
           <div className="ml-auto flex items-center gap-2">{topbar}</div>
         </header>
-        <main className="min-w-0 flex-1 p-4 md:p-8">{children}</main>
+        <main id="main" tabIndex={-1} className="min-w-0 flex-1 p-4 outline-none md:p-8">
+          {children}
+        </main>
       </div>
     </div>
   );

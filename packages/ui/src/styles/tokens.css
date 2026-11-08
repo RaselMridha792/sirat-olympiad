@@ -68,6 +68,12 @@
     'Noto Naskh Arabic', 'Noto Sans Arabic', 'Traditional Arabic', 'Sakkal Majalla', 'Geeza Pro',
     'Arial', 'Times New Roman', serif;
 
+  /*
+   * The system font, for a language's own name in a language switch ("বাংলা" on an English page): drawing that one
+   * word in the web font would download the whole Bangla font (~106 KB) on English pages.
+   */
+  --font-system: system-ui, -apple-system, 'Segoe UI', sans-serif;
+
   /* Motion, used only behind motion-safe: (prefers-reduced-motion). */
   --animate-rise: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
   @keyframes rise {
