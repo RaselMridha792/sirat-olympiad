@@ -356,6 +356,24 @@ describe('PUT /api/admin/security/two-factor-requirement', () => {
     expect(await meTwoFactor(otherCookie)).toMatchObject({ required: true });
   });
 
+  it('re-reads the acting admin: one demoted since the token was issued gets 403, and nothing changes', async () => {
+    await setRow(['admin', 'manager']);
+    const admin = await person();
+    const cookie = await proved(admin); // the token still says admin
+    await prisma.user.update({ where: { id: admin.id }, data: { role: 'manager' } });
+    const res = await change(cookie, {
+      roles: [],
+      expected: ['admin', 'manager'],
+      reason: 'Testing before go-live',
+      code: totp(admin.secret),
+    });
+    expect(res.status).toBe(403);
+    expect(await rowValue()).toEqual(['admin', 'manager']);
+    expect(
+      await auditRows('security.two_factor_requirement_changed', { actorId: admin.id }),
+    ).toEqual([]);
+  });
+
   it('a change to the current set writes nothing and raises nothing', async () => {
     await setRow(['admin']);
     const admin = await person();
