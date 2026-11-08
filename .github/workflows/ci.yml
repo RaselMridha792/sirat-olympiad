@@ -40,6 +40,8 @@ jobs:
         run: bash scripts/test/loadtest-generators-left.test.sh
       - name: prelaunch-check's runtime role line on stubbed logs - only sirat_app and superuser=false on every API and worker passes (L8 gate)
         run: bash scripts/test/prelaunch-role.test.sh
+      - name: prelaunch-check's admin 2FA requirement line on a throwaway Postgres - passes only while admin and manager are both required (or the row is missing)
+        run: bash scripts/test/prelaunch-2fa-requirement.test.sh
       - name: No old history and no reference/ in this run's commits (the repository is public, DECISIONS 2026-11-08) - the pre-push hook, and its own test
         # Full history: the checkout is shallow, and both checks walk the commits. On a pull request HEAD is the merge
         # commit, so the range is the PR's commits; on main it is empty and only the old-root check applies.
@@ -438,6 +440,7 @@ jobs:
             'PASS    the registration fee is 400 BDT (40000 paisa)' 'PASS    registration_open is false' 'PASS    the page CSP is sent' \
             'PASS    TOTP_ENCRYPTION_KEY is set: 32 random bytes, base64 or 64 hex (admin 2FA)' \
             'PASS    every API logs two-factor=on (admin 2FA enforced)' \
+            'PASS    admin 2FA is required for admin and manager (settings two_factor_required_roles)' \
             'FAIL    no development marker on Postgres' 'FAIL    no Mailpit in the project' 'FAIL    APP_URL is https' \
             'FAIL    every API and worker logs database role=sirat_app superuser=false (L8)' \
             'N/A     the newest off-server backup is under 26 h old (on the VPS only)' \

@@ -2,10 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   codeStepProblem,
+  isTwoFactorRequirement,
   isTwoFactorStatus,
   manualKeyFrom,
   needsTwoFactor,
   recoveryCodeFrom,
+  requirementProblem,
+  requirementReasonFrom,
+  requirementRoles,
   stepUpProblem,
   totpFrom,
 } from './two-factor.ts';
@@ -105,4 +109,41 @@ test('the status answer is checked before the page uses it', () => {
   assert.equal(isTwoFactorStatus({ ...ok, recoveryCodesRemaining: '8' }), false);
   assert.equal(isTwoFactorStatus({ enabled: true }), false);
   assert.equal(isTwoFactorStatus(null), false);
+});
+
+test('the requirement change: a wrong code, a stale form, too many attempts, anything else', () => {
+  assert.equal(requirementProblem(answer(400, 'TWO_FACTOR_CODE_INVALID')), 'wrongCode');
+  assert.equal(requirementProblem(answer(409, 'TWO_FACTOR_REQUIREMENT_CHANGED')), 'stale');
+  assert.equal(requirementProblem(answer(429, 'X', 'ThrottlerException', 3600)), 'tooMany');
+  assert.equal(
+    requirementProblem(answer(429, 'X', 'Too many attempts. Try again in 15 minutes', 900)),
+    'tooMany',
+  );
+  assert.equal(requirementProblem(answer(400, 'BAD_REQUEST')), 'failed');
+  assert.equal(requirementProblem(answer(403, 'TWO_FACTOR_REQUIRED')), 'failed');
+  assert.equal(requirementProblem(answer(503, 'TWO_FACTOR_UNAVAILABLE')), 'failed');
+  assert.equal(requirementProblem(null), 'failed');
+});
+
+test('the requirement form: the ticked roles in a fixed order, a reason of 3-200 characters on one line', () => {
+  assert.deepEqual(requirementRoles({ admin: true, manager: true }), ['admin', 'manager']);
+  assert.deepEqual(requirementRoles({ admin: false, manager: true }), ['manager']);
+  assert.deepEqual(requirementRoles({ admin: false, manager: false }), []);
+  assert.equal(requirementReasonFrom('  Testing \n before  go-live '), 'Testing before go-live');
+  assert.equal(requirementReasonFrom(' ab '), null);
+  assert.equal(requirementReasonFrom('x'.repeat(200)), 'x'.repeat(200));
+  assert.equal(requirementReasonFrom('x'.repeat(201)), null);
+});
+
+test('the requirement answer is checked before the page uses it', () => {
+  const ok = { roles: ['admin', 'manager'], updatedAt: null, available: true };
+  assert.equal(isTwoFactorRequirement(ok), true);
+  assert.equal(
+    isTwoFactorRequirement({ ...ok, roles: [], updatedAt: '2026-11-08T10:00:00.000Z' }),
+    true,
+  );
+  assert.equal(isTwoFactorRequirement({ ...ok, roles: ['jury'] }), false);
+  assert.equal(isTwoFactorRequirement({ ...ok, roles: 'admin' }), false);
+  assert.equal(isTwoFactorRequirement({ ...ok, available: 'yes' }), false);
+  assert.equal(isTwoFactorRequirement(null), false);
 });

@@ -26,6 +26,7 @@ import {
   REQUIRED_ROLES,
   Roles,
   SKIP_CSRF,
+  TWO_FACTOR_ALWAYS,
   TWO_FACTOR_OPTIONAL,
 } from '../src/modules/auth/auth.decorators';
 
@@ -70,6 +71,11 @@ const TWO_FACTOR_OPTIONAL_ROUTES = new Set([
   'POST /api/auth/2fa/setup',
   'POST /api/auth/2fa/enable',
 ]);
+/**
+ * Reviewed (DECISIONS "The admin 2FA requirement is a setting"): the routes that demand a proved second factor even
+ * while the requirement setting is off. Switching the requirement must never be possible without the proof.
+ */
+const TWO_FACTOR_ALWAYS_ROUTES = new Set(['PUT /api/admin/security/two-factor-requirement']);
 /** Reviewed: server-to-server callbacks that cannot send X-Requested-With. */
 const CSRF_EXEMPT = new Set(['POST /api/payments/paystation/ipn']);
 
@@ -136,6 +142,7 @@ interface DeclaredRoute {
   roles: string[] | undefined;
   skipCsrf: boolean;
   twoFactorOptional: boolean;
+  twoFactorAlways: boolean;
 }
 
 const joinPath = (...parts: string[]) =>
@@ -169,6 +176,8 @@ function declaredRoutes(): DeclaredRoute[] {
             skipCsrf: reflector.getAllAndOverride<boolean>(SKIP_CSRF, targets) === true,
             twoFactorOptional:
               reflector.getAllAndOverride<boolean>(TWO_FACTOR_OPTIONAL, targets) === true,
+            twoFactorAlways:
+              reflector.getAllAndOverride<boolean>(TWO_FACTOR_ALWAYS, targets) === true,
           });
     }
   }
@@ -232,6 +241,14 @@ describe('route inventory: deny by default', () => {
     expect(optional.map((r) => r.key).sort()).toEqual([...TWO_FACTOR_OPTIONAL_ROUTES].sort());
     // None of them is public: the exemption only ever relaxes the second factor, never the session.
     expect(optional.filter((r) => r.isPublic).map((r) => r.key)).toEqual([]);
+  });
+
+  it('demands a proved second factor whatever the requirement setting says on exactly the reviewed routes', () => {
+    const always = declaredRoutes().filter((r) => r.twoFactorAlways);
+    expect(always.map((r) => r.key).sort()).toEqual([...TWO_FACTOR_ALWAYS_ROUTES].sort());
+    // Admin-only, never public, never also optional.
+    expect(always.filter((r) => r.isPublic || r.twoFactorOptional).map((r) => r.key)).toEqual([]);
+    expect(always.map((r) => r.roles)).toEqual(always.map(() => ['admin']));
   });
 });
 

@@ -2,6 +2,30 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-08 — The admin 2FA requirement is a setting (A2; Rasel's request of 3 Nov, the lead's design)
+
+- **Decision:** whether admins and managers MUST prove a second factor on the admin pages is the settings row `two_factor_required_roles`, a JSON array within `["admin","manager"]` (default both; a CHECK in `20261108000000_two_factor_required_setting` refuses anything else; the seed inserts the default only while the row is missing).
+  - **Enrollable** (2FA on, role admin or manager; in code) drives the login's code step: an enrolled account **always** gets it, also while the requirement is off.
+  - **Required** (enrollable and named in the row) drives only the guard's 403 `TWO_FACTOR_REQUIRED` and the `required` flags of `GET /auth/2fa` and `/auth/me`.
+  - Switching it never deletes or changes an enrolment, a secret, a recovery code or a session, and needs no logout.
+- **Fail closed:** a missing or unreadable row, or a failed read, counts as both roles required. A failed read is not kept.
+- **Read path:** `TwoFactorRequirement` keeps what it read for 5 s per replica (`REQUIREMENT_CACHE_MS`); concurrent callers share one read. The guard awaits it only after the cheap checks (no `tfa`, a route naming admin or manager, not `@TwoFactorOptional`), so students and proved sessions never wait for it.
+  - The web follows its `/auth/me` cache (30 s): after switching on, an unproved admin page may show the error state for up to about 35 s before the redirect to `/admin/security`. The API refuses at once (5 s at most on other replicas).
+- **Changing it:** `PUT /admin/security/two-factor-requirement` (admin only) with `{ roles, expected, reason, code }`.
+  - It is `@TwoFactorAlways()`: the guard demands the proof even while the requirement is off, so switching it back on (or off) always takes a proved session. The routes test pins it as the only such route.
+  - The admin reset's step-up: the acting admin's own current code under the login limits, the role re-read from the database.
+  - One transaction with the code's use: the row locked, `expected` compared (409 `TWO_FACTOR_REQUIREMENT_CHANGED`), the value, the audit row `security.two_factor_requirement_changed` with the reason. Then the local copy is dropped and the alert `two_factor.requirement_changed` names the actor and from → to only.
+  - The generic `PUT /admin/settings/:key` keeps refusing the key (404; a test pins it).
+- **Break-glass:** `admin:2fa-requirement --roles "admin,manager" | --roles "" --reason "…"` (DB and both Redis, no TOTP key), audited with `via: 'cli'`, the same alert. The replicas follow within 5 s.
+- **Prelaunch:** `scripts/prelaunch-check.sh` FAILs while the row lacks admin or manager (a missing row passes). `scripts/test/prelaunch-2fa-requirement.test.sh` runs that function on a throwaway Postgres in CI's checks job, so a line that always passed would be caught.
+- **Choices the design left open (A2):**
+  - A change to the current set answers 200 and writes nothing: no audit row, no alert (the code is still used).
+  - A 409 rolls back the code's use with everything else, so the same code works after a reload.
+  - The GET answers also while 2FA is off (`available: false`); only the PUT answers 503 there.
+  - The web shows the card only to an admin whose session proved the code, and only while 2FA is on; a failed read shows a note in the card, not an error page.
+- **Why:** Rasel wants to test the site before go-live without the code on every admin page, and switch it back on without anyone enrolling again. A setting with an audited, step-up switch keeps that reversible and visible; the prelaunch line keeps it from staying off at launch.
+- **Who:** A2, on the lead's approved design.
+
 ## 2026-11-08 — The repository is public; its history no longer holds reference/ (Rasel; the lead ran the move)
 
 - **Why:** GitHub Actions stopped on the private repository (a failed payment and the spending limit). A public repository runs CI for free.

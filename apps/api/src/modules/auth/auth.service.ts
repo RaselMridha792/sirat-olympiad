@@ -164,9 +164,11 @@ export class AuthService {
       throw new UnauthorizedException(LOGIN_FAILED_MESSAGE);
     }
 
-    // Only the roles that may enrol can have a second factor, so a student's login reads nothing more.
+    // Only the roles that may enrol can have a second factor, so a student's login reads nothing more. Enrolled is
+    // enough: the code step never depends on the requirement setting (DECISIONS "The admin 2FA requirement is a
+    // setting"), so switching the requirement off never lets an enrolled account skip its code.
     const codeStep =
-      this.twoFactor.requiredFor(user.role) &&
+      this.twoFactor.enrollableFor(user.role) &&
       (
         await this.prisma.userTwoFactor.findUnique({
           where: { userId: user.id },

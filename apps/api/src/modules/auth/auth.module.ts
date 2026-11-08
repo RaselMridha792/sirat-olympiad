@@ -16,8 +16,13 @@ import { PasswordService } from './password.service';
 import { SessionCookies } from './session-cookies';
 import { SessionService } from './session.service';
 import { TwoFactorChallenges } from './two-factor/two-factor-challenges';
+import { TwoFactorRequirement } from './two-factor/two-factor-requirement';
 import { TwoFactorConfig } from './two-factor/two-factor.config';
-import { TwoFactorAdminController, TwoFactorController } from './two-factor/two-factor.controller';
+import {
+  TwoFactorAdminController,
+  TwoFactorController,
+  TwoFactorRequirementController,
+} from './two-factor/two-factor.controller';
 import { TwoFactorService } from './two-factor/two-factor.service';
 
 /**
@@ -38,7 +43,12 @@ import { TwoFactorService } from './two-factor/two-factor.service';
         ),
     }),
   ],
-  controllers: [AuthController, TwoFactorController, TwoFactorAdminController],
+  controllers: [
+    AuthController,
+    TwoFactorController,
+    TwoFactorAdminController,
+    TwoFactorRequirementController,
+  ],
   providers: [
     AccessTokenService,
     PasswordService,
@@ -47,6 +57,7 @@ import { TwoFactorService } from './two-factor/two-factor.service';
     AuthService,
     EmailTokenService,
     TwoFactorConfig,
+    TwoFactorRequirement,
     TwoFactorChallenges,
     TwoFactorService,
     {
@@ -80,7 +91,13 @@ import { TwoFactorService } from './two-factor/two-factor.service';
         }),
     },
   ],
-  // TwoFactorConfig: the global AuthGuard (AppModule) enforces 2FA with it.
-  exports: [AccessTokenService, PasswordService, SessionService, TwoFactorConfig],
+  // TwoFactorConfig and TwoFactorRequirement: the global AuthGuard (AppModule) enforces 2FA with them.
+  exports: [
+    AccessTokenService,
+    PasswordService,
+    SessionService,
+    TwoFactorConfig,
+    TwoFactorRequirement,
+  ],
 })
 export class AuthModule {}

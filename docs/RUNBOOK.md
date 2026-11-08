@@ -811,7 +811,7 @@ SQL
 Admins and managers sign in with a password and a 6-digit code from an authenticator app (DECISIONS "Admin two-factor login"; 06-API "Two-factor login"). Production requires `TOTP_ENCRYPTION_KEY` in `.env`; the api logs `two-factor=on` at boot.
 
 - **The key** decrypts every stored secret. Keep a copy with the other server secrets; the database backup does not contain it. A restore onto a new server needs the same key. Without it every enrolled admin needs the CLI reset below.
-- **Enrolment** on `/admin/security`, where an admin or manager without a proved code is sent from every admin page (the API answers the others 403 `TWO_FACTOR_REQUIRED`):
+- **Enrolment** on `/admin/security`, where an admin or manager without a proved code is sent from every admin page while the requirement names their role (the API answers the others 403 `TWO_FACTOR_REQUIRED`; the requirement: below):
   1. The password, then the QR code: scan it in the authenticator app, or type the key shown under it.
   2. The app's first 6-digit code turns it on. Every other session of the admin ends.
   3. 10 recovery codes are shown once: store them offline (print or write them down).
@@ -842,6 +842,34 @@ pnpm --filter @sirat/api admin:2fa-reset --email ops@example.org --reason "Lost 
 
 - **Exit codes:** 0 reset; 1 refused (no such account, or no two-factor login: nothing changed) or the database or Redis unreachable; 2 usage.
 - **The known gap:** an access token already issued stays valid until it expires. After any reset the old session keeps admin access for at most `JWT_ACCESS_TTL_SECONDS` (15 min), and refreshing fails at once. If the device was stolen, also change the password: a reset alone leaves the password valid.
+
+**The requirement: switching it off for testing, and back on** (DECISIONS "The admin 2FA requirement is a setting"). The setting `two_factor_required_roles` says which of admin and manager must prove the code before the admin pages open; the default is both.
+
+- **What switching changes:** only whether an admin or manager session without the code may open the admin pages. Enrolments, secrets, recovery codes and sessions stay. An enrolled admin or manager still enters the code at every sign-in; an admin who has not enrolled signs in with the password alone. Each API replica follows within 5 s, the web's pages within about 35 s (its `/auth/me` cache); nobody is logged out.
+- **On the admin panel:** `/admin/security`, card "Two-factor requirement" (admins whose session proved the code): tick admins and/or managers, give a reason and your current code, Save. Through the API: `PUT /api/admin/security/two-factor-requirement {roles, expected, reason, code}`. 5 changes an hour per admin.
+- **Break-glass** (the database and both Redis; never the TOTP key; prints only the new set):
+
+```bash
+# Off, for testing before go-live
+$DC run --rm --no-deps -T api node dist/cli/admin-2fa-requirement.js --roles "" --reason "Testing before go-live"
+#   two-factor requirement: none
+# Back on, before launch
+$DC run --rm --no-deps -T api node dist/cli/admin-2fa-requirement.js --roles "admin,manager" --reason "Go-live"
+#   two-factor requirement: admin,manager
+
+# Check the audit and alert rows
+$DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+select created_at, action, actor_id, meta from audit_logs
+where action in ('security.two_factor_requirement_changed', 'security.two_factor.requirement_changed')
+order by created_at desc limit 5;
+SQL
+
+# Local (uses apps/api/.env)
+pnpm --filter @sirat/api admin:2fa-requirement --roles "admin,manager" --reason "Go-live"
+```
+
+- **Exit codes:** 0 done; 1 refused or the database or Redis unreachable; 2 usage (an unknown role: nothing changed).
+- **While it is off, `scripts/prelaunch-check.sh` FAILs** on `admin 2FA is required for admin and manager (settings two_factor_required_roles)`. Switch it back on before the go/no-go. Every change raises the security alert `two_factor.requirement_changed` (from → to; the reason stays in the audit row).
 
 ## 23. Certificates (core C6c-1)
 
