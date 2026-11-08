@@ -328,3 +328,17 @@ export interface AdminSetting {
   value: string | number | boolean | null;
   updatedAt: string;
 }
+
+/*
+ * Demo data (exam's framework; payments' part: registrations, payments, book orders). Demo rows carry these markers,
+ * and nothing real may: the registration form refuses the email domain, the payment config refuses the label, and a
+ * real account's invoice prefix is 1-3 characters, so DEMO never collides.
+ */
+export const DEMO_EMAIL_DOMAIN = 'demo.sirat.invalid';
+export const DEMO_ACCOUNT_LABEL = 'demo';
+export const DEMO_INVOICE_PREFIX = 'DEMO';
+
+/** True for an address on the demo marker domain (exactly that domain, any case). */
+export function isDemoEmail(email: string): boolean {
+  return email.trim().toLowerCase().endsWith(`@${DEMO_EMAIL_DOMAIN}`);
+}

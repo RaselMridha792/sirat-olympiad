@@ -7,6 +7,7 @@ import {
   type PaymentGateway,
   type StatusResult,
 } from '../gateway/payment-gateway';
+import { isDemoPayment } from '../demo/demo-payment';
 import { decide } from '../payment-decision';
 import type { PaymentConfig } from '../payment.config';
 import { PAYMENT_CONFIG } from '../payments-boot-check';
@@ -34,6 +35,8 @@ export class PaymentVerifier {
   async verify(paymentId: string, reason: VerifyReason, at?: Date): Promise<string> {
     const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
     if (!payment) return 'not_found';
+    // Before anything else: no PayStation call, no event (payment_events is append-only), no account-mismatch alert.
+    if (isDemoPayment(payment)) return 'demo';
     if (!this.config.enabled || !this.gateway) return 'disabled';
     if (payment.gatewayAccount !== this.config.accountLabel) return this.accountMismatch(payment);
 

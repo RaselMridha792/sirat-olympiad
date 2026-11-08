@@ -149,6 +149,15 @@ describe('buildPaymentConfig', () => {
   it('needs an account label and an invoice prefix; X and FX are reserved', () => {
     for (const label of [undefined, 'ab', 'Rasel', 'rasel sandbox', 'a'.repeat(33)])
       refused(sandbox({ PAYSTATION_ACCOUNT_LABEL: label }), /PAYSTATION_ACCOUNT_LABEL is required/);
+    // The demo data's label: reconciliation selects the configured label, so a real account may never carry it.
+    for (const config of [
+      sandbox({ PAYSTATION_ACCOUNT_LABEL: 'demo' }),
+      live({ PAYSTATION_ACCOUNT_LABEL: 'demo' }),
+    ])
+      refused(config, /must not be "demo"/);
+    expect(buildPaymentConfig(sandbox({ PAYSTATION_ACCOUNT_LABEL: 'demo-school' })).enabled).toBe(
+      true,
+    );
     for (const prefix of [undefined, '', 't', 'ABCD', 'T-'])
       refused(
         sandbox({ PAYSTATION_INVOICE_PREFIX: prefix }),
