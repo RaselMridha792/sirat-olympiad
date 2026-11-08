@@ -1,24 +1,30 @@
 # 08 — Design tokens and component rules
 
-Single source: `packages/ui/src/styles/tokens.css` (Tailwind v4 `@theme`). Never hardcode hex in components. Change a color there once.
+Single source: `packages/ui/src/styles/tokens.css` (Tailwind v4 `@theme`). Change a colour there once. `apps/web/src/design/no-raw-colours.test.ts` fails on any hex, rgb/hsl/oklch/color-mix literal, default palette class (`bg-orange-500`, `text-emerald-700`, …) or brand scale class (`bg-green-600`, `text-gold-50`) anywhere else in `apps/web/src` and `packages/ui/src`. Components use the semantic names below only.
 
-## Colors (carried over from Zero Olympiad)
+## Colours: the client's Sirat Olympiad brand (owner, 2026-11-08)
 
-| Token (utility) | Hex | Use |
-|---|---|---|
-| `primary` | `#E3621C` | Brand orange: primary buttons, active accents, highlights (old `--color-Primary`) |
-| `primary-hover` / `primary-soft` | `#C95416` / `#FDEEE5` | Hover, soft backgrounds (icon tiles, badges) |
-| `secondary` | `#083E5F` | Brand navy: secondary buttons, links (old `--color-Secondary`) |
-| `secondary-hover` / `secondary-soft` | `#062F48` / `#E6EFF5` | |
-| `shell` / `shell-soft` | `#0F172A` / `#1E293B` | Sidebar + auth brand panel (old dashboards used `#0f172a`) |
-| `page` | `#F8FAFC` | App background |
-| `surface` | `#FFFFFF` | Cards |
-| `line` | `#E2E8F0` | Borders, dividers |
-| `ink` / `ink-muted` / `ink-faint` | `#0F172A` / `#64748B` / `#94A3B8` | Text levels |
-| `success` / `warning` / `danger` / `info` (+ `-soft`) | `#10B981` / `#F59E0B` / `#EF4444` / `#2563EB` | Status |
-| `rank-bronze` / `-silver` / `-gold` | `#B45309` / `#94A3B8` / `#F59E0B` | Ambassador tiers |
+The brand is the client's green and gold. The scales come from the client's old site (`theme-color #007a48`), **to confirm** with the client; until then the site is built on them. The scales are declared in tokens.css only (`--color-green-50…950`, `--color-gold-50…800`).
 
-Old code also used `#4F46E5` indigo and `#5B2EFF` violet in places (leaderboard, charts). They are intentionally **not** tokens; unify on primary/secondary unless the designer says otherwise.
+| Token (utility) | Scale | Hex | Use |
+|---|---|---|---|
+| `primary` | green-600 | `#007A48` | Brand green: buttons, active accents, icons on light surfaces. White on it is 5.4:1 |
+| `primary-hover` / `primary-soft` | green-700 / green-50 | `#00623B` / `#EAF6F0` | Hover; soft backgrounds (icon tiles, badges) |
+| `primary-strong` / `primary-strong-hover` | green-700 / green-800 | `#00623B` / `#044E31` | Green text on white, filled buttons (7.4:1) |
+| `secondary` | green-800 | `#044E31` | Links, dark cards (white text) |
+| `secondary-hover` / `secondary-soft` | green-900 / green-100 | `#06402A` / `#D0EBE0` | |
+| `accent` | gold-500 | `#ED9D19` | Brand gold: highlights, icons, rules. On the deep-green shell also text (kickers, dates, the active menu item), 8.1:1. **Never text on white**; on a gold fill, text is `ink` (8:1) |
+| `accent-hover` / `accent-soft` | gold-600 / gold-50 | `#D2820F` / `#FEF8EC` | Hover of a gold fill; soft gold backgrounds |
+| `accent-strong` | gold-800 | `#8A5A05` | Gold text on white or `accent-soft` (5.9:1) |
+| `shell` / `shell-soft` | green-950 / green-900 | `#021C12` / `#06402A` | Headers, heroes, the dashboard sidebar and the auth brand panel. White on it is about 18:1. Green `primary` on it is only 3.3:1, so text and small icons on the shell use `accent` |
+| `page` | | `#F8FAFC` | App background (neutrals stay slate; the client's warm greys are an open option) |
+| `surface` | | `#FFFFFF` | Cards |
+| `line` | | `#E2E8F0` | Borders, dividers |
+| `ink` / `ink-muted` / `ink-faint` | | `#0F172A` / `#475569` / `#64748B` | Text levels |
+| `success` / `warning` / `danger` / `info` (+ `-soft`, `-strong`) | | `#10B981` / `#F59E0B` / `#EF4444` / `#2563EB` | Status |
+| `rank-bronze` / `-silver` / `-gold` | | `#B45309` / `#94A3B8` / `#F59E0B` | Ambassador tiers |
+
+The contrast test (`apps/web/src/design/contrast.test.ts`) checks every brand pair above at WCAG AA (gold icons on the dark-green cards at 3:1, as non-text). The orange `#E3621C` and navy `#083E5F` of the first UI port are retired.
 
 ## Typography
 

@@ -17,7 +17,7 @@ const surfaces: Record<SectionSurface, { section: string; kicker: string; lead: 
     kicker: 'text-primary-strong',
     lead: 'text-ink-muted',
   },
-  shell: { section: 'bg-shell text-white', kicker: 'text-primary', lead: 'text-white/75' },
+  shell: { section: 'bg-shell text-white', kicker: 'text-accent', lead: 'text-white/75' },
 };
 
 /**

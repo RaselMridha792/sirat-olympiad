@@ -22,7 +22,7 @@ export function AuthSplitLayout({
           <div className="absolute -bottom-36 -right-12 h-80 w-80 rounded-full bg-shell-soft opacity-70" />
           <div className="relative z-10 text-white md:ml-10">
             <h1 className="mb-2 text-4xl font-bold tracking-wide">WELCOME</h1>
-            <h2 className="mb-4 text-xl font-medium text-primary">{brand}</h2>
+            <h2 className="mb-4 text-xl font-medium text-accent">{brand}</h2>
             <p className="max-w-xs text-sm leading-relaxed text-white/80">{tagline}</p>
           </div>
         </div>

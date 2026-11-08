@@ -212,7 +212,7 @@ function Hero({ name, round, copy }: { name: string; round: CurrentRound | null;
             className="text-3xl font-black leading-tight tracking-tight sm:text-4xl lg:text-5xl"
           >
             {m.hero.welcome}
-            <span className="mt-1 block break-words text-primary md:mt-2">{name}</span>
+            <span className="mt-1 block break-words text-accent md:mt-2">{name}</span>
           </h1>
           <p className="mt-5 max-w-xl text-sm font-medium leading-relaxed text-white/80 md:text-base">
             {m.hero.lead}

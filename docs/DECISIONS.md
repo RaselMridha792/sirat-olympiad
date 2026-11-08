@@ -2,6 +2,22 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-08 — The client's brand colours, from one place (owner, via the lead; core)
+
+- **Decision:**
+  - The brand is the Sirat Olympiad green and gold. The scales come from the client's old site (green-600 `#007a48`, its theme colour; gold-500 `#ed9d19`), to confirm with the client.
+  - `packages/ui/src/styles/tokens.css` holds the scales and maps them to the semantic tokens:
+    - primary = green-600;
+    - secondary = green-800;
+    - accent = gold-500 (new; `accent-strong` gold-800 for gold text);
+    - shell = green-950.
+    The neutrals stay slate.
+  - On the deep-green shell, text and small icons are gold: green on it reads 3.3:1, gold 8.1:1.
+  - A test fails on any raw colour or palette class outside tokens.css (`apps/web/src/design/no-raw-colours.test.ts`). The contrast test checks every brand pair.
+- **Why:** Rasel asked for the client's colours, controlled globally. The components already used only semantic tokens, so the dashboards follow without code changes.
+- **Not here:** A2's maintenance page and the email templates have their own inline colours (reported; the lead queues them).
+- **Who:** Rasel (owner, 2026-11-08), passed on by the lead; built by core.
+
 ## 2026-11-08 — The admin 2FA requirement is a setting (A2; Rasel's request of 3 Nov, the lead's design)
 
 - **Decision:** whether admins and managers MUST prove a second factor on the admin pages is the settings row `two_factor_required_roles`, a JSON array within `["admin","manager"]` (default both; a CHECK in `20261108000000_two_factor_required_setting` refuses anything else; the seed inserts the default only while the row is missing).

@@ -250,7 +250,7 @@ export default async function AdminHomePage({
             </Link>
             <span
               aria-hidden="true"
-              className="hidden rounded-2xl border border-primary/20 bg-primary/10 p-4 text-primary md:block"
+              className="hidden rounded-2xl border border-accent/20 bg-accent/10 p-4 text-accent md:block"
             >
               <ChartLine size={26} />
             </span>

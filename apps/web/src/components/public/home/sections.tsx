@@ -46,10 +46,10 @@ export function PageHero({
         size={72}
         className="text-white/[0.06] [mask-image:linear-gradient(to_bottom,black,transparent)]"
       />
-      <StarOrnament className="pointer-events-none absolute -top-16 -right-32 -z-10 h-96 w-96 text-primary/25 md:-right-16 md:h-[30rem] md:w-[30rem] motion-safe:animate-[spin_240s_linear_infinite]" />
+      <StarOrnament className="pointer-events-none absolute -top-16 -right-32 -z-10 h-96 w-96 text-accent/25 md:-right-16 md:h-[30rem] md:w-[30rem] motion-safe:animate-[spin_240s_linear_infinite]" />
       <div className="mx-auto max-w-6xl px-4 pt-14 pb-16 sm:px-6 md:pt-20 md:pb-20">
         <div className="max-w-3xl motion-safe:animate-rise">
-          <p className="inline-flex items-center gap-2 text-sm font-bold text-primary">
+          <p className="inline-flex items-center gap-2 text-sm font-bold text-accent">
             <StarMark className="h-3.5 w-3.5" />
             {kicker}
           </p>
@@ -82,7 +82,7 @@ export function IntroSection({ m }: { m: HomeText }) {
           <GeometricPattern id="quote-pattern" size={48} className="text-white/[0.07]" />
           <span
             aria-hidden="true"
-            className="block text-7xl leading-none font-extrabold text-primary"
+            className="block text-7xl leading-none font-extrabold text-accent"
           >
             “
           </span>
