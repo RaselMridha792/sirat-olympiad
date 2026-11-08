@@ -15,7 +15,7 @@ Owner: Rasel Mridha (Exprovia). Reply to the owner in Bengali; code, comments an
 7. **Do paginate every list on the server.** Cache read-heavy data in Redis with explicit invalidation.
 8. **Do move slow work to the queue** (email, PDF, certificates, scoring). Every job is idempotent with retries.
 9. **Do reuse `packages/ui` components and the tokens in `packages/ui/src/styles/tokens.css`.** Add new shared components there.
-10. **Do treat `reference/` as a read-only specification** of the old Zero Olympiad (UI look, business rules). Re-write in TypeScript against our rules; see `docs/07-UI-MIGRATION.md`.
+10. **Do treat `reference/` as a read-only specification** of the old Zero Olympiad (UI look, business rules). Re-write in TypeScript against our rules; see `docs/07-UI-MIGRATION.md`. Since 2026-11-08 it is local-only and never in the public repo: git-ignored, with a copy at `G:\sirat-reference\reference` (and in the private archive).
 11. **Do run checks at the right time, never skip them** (owner, 2026-10-31): before each commit `tsc --noEmit` in apps/api, lint on the changed files and the related tests; once before opening a PR the full `pnpm typecheck && pnpm lint && pnpm test && pnpm build`, `pnpm --filter @sirat/api test:int` and the docker smoke test; password hashing, refresh rotation/reuse, CSRF, login limits/lockout, the guard coverage test and the audit log run their related tests at every step.
     Report success in one line (`api types ✓, lint ✓, auth tests 14 ✓`) and failures with their error lines only; never say "done" without the checks.
 12. **Do log every non-obvious decision** in `docs/DECISIONS.md` and keep `docs/RUNBOOK.md` current.
@@ -79,13 +79,13 @@ pnpm --filter @sirat/api db:seed      # idempotent config seed (also runs in the
 docker compose --env-file .env -f infra/docker-compose.yml up -d --build                                  # server
 docker compose --env-file .env -f infra/docker-compose.yml -f infra/docker-compose.dev.yml up -d --build  # local only
 ```
-Local setup, fixtures and ports: `docs/RUNBOOK.md` section 0. Git: commits/pushes are authored by the owner only, no AI co-author trailers; no direct pushes to `main` (branch + pull request; pull requests are merged only by the lead session (owner decision 2026-10-31, DECISIONS)) until OPEN-QUESTIONS #25 is decided.
+Local setup, fixtures and ports: `docs/RUNBOOK.md` section 0. The repo is public since 2026-11-08 (DECISIONS): the old history and PRs up to #87 are in the private `RaselMridha792/sirat-olympiad-archive`, so PR numbers in older docs point there; never push an old-history commit (`git merge-base --is-ancestor 7587f2f HEAD` must fail before every push). Git: commits/pushes are authored by the owner only, no AI co-author trailers; no direct pushes to `main` (branch + pull request; pull requests are merged only by the lead session (owner decision 2026-10-31, DECISIONS)) until OPEN-QUESTIONS #25 is decided.
 
 ## 4. Current state (update this when it changes)
 
 - **Launch target (Lead, 2026-10-31): 2026-11-15, first step registration and payment only.** Everything is ready on 15 Nov; registration stays closed until an admin opens it, expected 25 Nov (owner, DECISIONS). Launch readiness (deploy, TLS, backups, runtime DB role, monitoring, maintenance page, checklist): `docs/plans/LAUNCH-PLAN.md`.
 - **Sessions** (the lead session gives the tasks and merges the pull requests): **A2** (auth, launch readiness; DBs `sirat`/`sirat_test`, Redis DB 0); **payments** (registration + PayStation, `docs/plans/PAYMENTS-PLAN.md`; `sirat_pay`/`sirat_pay_test`, Redis DB 1); **exam** (`docs/plans/EXAM-PLAN.md`; `sirat_exam`/`sirat_exam_test`, Redis DB 2); **core** (`docs/plans/CORE-PLAN.md`; `sirat_core`/`sirat_core_test`, Redis DB 3: admin students list, the public entry page, privacy/terms/refund-policy pages, profile, announcements, ambassador, rounds/jury/certificates).
-- **Merged (main 5f261e3, PRs to #79; details in `docs/DECISIONS.md`):**
+- **Merged (main 5f261e3, PRs to #79, numbers of the private archive; details in `docs/DECISIONS.md`):**
   - Auth: A2.0–A2.x (#3–#7), first-admin CLI (#10), web session (#12), refresh budget (#15), per-user limits (#20), admin 2FA (#76).
   - Payments: plan (#11), foundation (#14), PayStation client, fake and selfcheck (#18), registration start and status (#21), the money flow (#27), the wizard, result page and admin payments (#33), the k6 registration surge (#44), the free book (#36, #42), the 10-minute checkout (#50), the D6 attempt scrub (#56), the fake PayStation image (#65), the CSV question import (E7a, #67).
   - Exam: plan (#13), schema and admin API (#16), engine (#17), results (#19), player (#24), results web (#30), authoring (#45), k6 simulation (#66), CI exam smoke (#73), login surge (#74), answer-key correction (#77).
