@@ -439,7 +439,7 @@ Client: — · PayStation support: — · Email provider: Amazon SES (AWS accoun
   - a restore drill on another machine;
   - k6 with simulated shared IPs;
   - the live merchant and one real payment.
-- **Thu 12, the release candidate:** `scripts/prelaunch-check.sh` with every line PASS (registration still closed) and the MANUAL lines done. It is the last day for non-critical deploys.
+- **Thu 12, the release candidate:** `scripts/prelaunch-check.sh` with every line PASS (registration still closed) and the MANUAL lines done; demo data removed and `DEMO_DATA_ALLOWED` off (§25). It is the last day for non-critical deploys.
 - **Fri 13:** the freeze, from 00:00 (48 h). Rehearse the kill switches in order, each checked through the internal listener:
   1. `registration_open=false`;
   2. maintenance on (section 4);
@@ -906,3 +906,31 @@ The homepage (`/`, `/en`) and About (`/about`, `/en/about`) are static pages bui
 | Removing the draft note and `noindex` | `content/site.ts` `placeholder: false` | Only with the client's final texts and facts in place |
 
 Check after the release: `/`, `/en`, `/about` and `/en/about` answer 200, and an old `/bn` link redirects to the same page.
+
+## 25. Demo data (load and remove before launch)
+
+Demo data fills the system with invented accounts, exams, results, announcements and payments, so the dashboards can be shown before launch (DECISIONS 2026-11-08 "Demo data"). Every demo account is on `@demo.sirat.invalid` (`student-001` … `student-300`, `ambassador-001` … `ambassador-015`, `jury-001`, `jury-002`); none is an admin or a manager; no email is ever sent to them.
+
+- **Switch it on** for the server only while it is wanted: `DEMO_DATA_ALLOWED=true` in `.env`, then restart the API and the worker (`$DC up -d --no-deps api worker`). Off, a load is refused; **a removal always works**.
+- **Load** on `/admin/settings` → "Demo data" → "Load demo data", with a reason. It needs an admin session that proved the two-factor code. The dialog shows the demo password **once**: write it down (it is stored only as a hash; to get a new one, remove and load again). The job takes a few seconds; the card shows the steps and then the counts. On the server instead:
+
+```bash
+$DC exec -T api node dist/cli/demo.js load --reason "client demo"
+```
+
+- **Refused**:
+  - `demo_exists`: remove the batch first;
+  - `demo_busy`: a job runs, wait;
+  - `payments_live` (`PAYSTATION_ENV=live`) or `real_payments` (a paid live payment exists): demo data never goes beside real money;
+  - "The job queue is not answering": the queue Redis (§7); the batch becomes "failed": remove it, then load again.
+- **Remove** on the same card ("Remove demo data", with a reason), or `$DC exec -T api node dist/cli/demo.js clear --reason "before launch"`. Everything a load made goes, also what demo accounts did afterwards (sign-ins, attempts, team joins). Real rows never go.
+- **"The removal was refused"**: real data uses demo data, and nothing was removed. The card (or the CLI) lists the kinds with counts, e.g. "real accounts referred by a demo ambassador". Remove or correct those real rows (they should not exist: the API refuses each of these mixes), then remove again. Never delete demo rows by hand: `demo_clear` is the only safe path, and the guards refuse a direct delete.
+- **Before launch**: remove the demo data and set `DEMO_DATA_ALLOWED=false` (or delete the line). `scripts/prelaunch-check.sh` fails while either remains (§9).
+- **Check** (counts only):
+
+```bash
+$DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+select status, created_at, counts from demo_batches;
+select count(*) as demo_rows from demo_records;
+SQL
+```

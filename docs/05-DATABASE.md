@@ -108,6 +108,18 @@ Source of truth: `apps/api/prisma/schema.prisma` (validated; see note at bottom)
 | `jury_scores`: criteria range validated in service; `total` server-computed | |
 | `announcements` CHECKs: title 3–150 and body 1–5,000 characters, `archived_at >= created_at`; partial index `(published_at DESC) WHERE archived_at IS NULL` (`*_core_announcements_checks`) | Raw SQL; the students' list repeats the predicate. Archived, never deleted (core C4) |
 
+## Demo data (exam; DECISIONS 2026-11-08 "Demo data, loaded and removed with one click")
+
+Migrations `20261108120000_demo_data` (tables, columns, indexes) and `20261108120001_demo_data_clear` (CHECKs, triggers, `demo_clear`). Asserted by `apps/api/test/demo-clear.int-spec.ts`.
+
+| Object | Rule |
+|---|---|
+| `demo_batches` (status `loading`, `loaded`, `failed`, `clearing`; reason 3–200; `created_by_id` NULL for the CLI; counts) | One batch at a time (unique index on `((true))`) |
+| `demo_records (table_name, row_id, batch_id)`, PK `(table_name, row_id)` | Every row a load inserted. `sirat_app` may only SELECT and INSERT (no UPDATE or DELETE; re-asserted by `runtime-role.ts`) |
+| `users`, `exams`, `announcements` `.demo_batch_id` (the root marker) | Written only by the loader at insert; trigger `demo_marker_immutable` refuses any change. `users_demo_email_check`: the marker is set exactly when the email is on `@demo.sirat.invalid`; `users_demo_role_check`: a demo account is never admin or manager |
+| `demo_clear(batch)` SECURITY DEFINER (`search_path = public, pg_temp`), EXECUTE for `sirat_app` only (not PUBLIC) | The only way demo rows go. Locks the batch (`demo_clear_busy` while loading). A root counts only when it is registered AND marked, both. Refuses `demo_clear_blocked: {counts}` and deletes nothing when real rows use demo rows (real attempts on demo exams, demo attempts on real exams, demo accounts on real leaderboards, real accounts or forms referred by a demo ambassador, mixed teams, real entries from a demo promotion, mixed jury scores). Otherwise deletes children first, also what demo accounts made after the load, under the transaction-local setting `sirat.demo_clear`, then the registry and the batch |
+| The append-only and guard triggers (`attempts_guard`, `submissions_append_only`, `questions_frozen_after_publish`, `answer_key_corrections_append_only`, `point_ledger_append_only`, `jury_scores_append_only`, `promotion_runs_append_only`) | Let a DELETE through only inside `demo_clear` and only for a demo root's rows (for attempts and submissions: a demo account on a demo exam). A forged registry row or the setting alone deletes nothing real |
+
 ## Seed data (needed at first boot)
 
 * `grade_levels`: the 17 labels from the old wizard (see `reference/zero-olympiad-ui/app/registration-full/Step2_Auth.jsx`) mapped to categories **Activist / Ambassador / Achiever** (grade bands to confirm with the client; SDG numbers are dropped).
