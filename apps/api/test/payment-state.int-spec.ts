@@ -5,10 +5,20 @@
 import { randomUUID } from 'node:crypto';
 import { PaymentStatus, type PrismaClient } from '@prisma/client';
 import { isAllowedTransition } from '../src/modules/payments/payment-state';
-import { makeRegistrationAttempt, paymentData, testPrisma, truncateAll } from './helpers';
+import {
+  applyReferenceData,
+  makeRegistrationAttempt,
+  paymentData,
+  testPrisma,
+  truncateAll,
+} from './helpers';
 
 const prisma: PrismaClient = testPrisma();
-beforeAll(() => truncateAll(prisma));
+// The reference data goes back at once: suites that run later on a reused test database need it (Round 1, grades).
+beforeAll(async () => {
+  await truncateAll(prisma);
+  await applyReferenceData(prisma);
+});
 afterAll(() => prisma.$disconnect());
 
 const paidFields = () => ({
