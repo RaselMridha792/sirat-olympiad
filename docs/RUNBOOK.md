@@ -145,7 +145,7 @@ scripts/deploy.sh --first         # once, on a fresh host, with the clone at the
   1. **Preflight:**
      - a lock (`/var/lib/sirat/deploy.lock`; the monitor holds back `/fail` meanwhile); not root; `.env` mode 600; a clean tree;
      - nothing exported that compose would take over the files (`DATABASE_URL`, `DIRECT_URL`, `POSTGRES_*`, `SIRAT_TAG`, `COMPOSE_*`);
-     - free disk; the commit on `origin/main` with a passed CI run; no exam window open within 30 minutes either side;
+     - free disk; the commit on `origin/main` with a passed CI run; no exam window open within 30 minutes either side (demo exams never count);
      - the data services running and healthy, no development marker on Postgres, and the data services exactly as this commit's compose file describes them. Otherwise it stops with "data-service change pending: apply it as its own step": a deploy never starts or recreates a data service.
      - **Applying a data-service change** (its own step, outside an exam window): `git checkout --detach <sha>`, then `$DC up -d --no-deps --no-build --wait --timeout 60 <service>` recreates only that service and keeps its volume; then `scripts/deploy.sh <sha>`. For `postgres` that means a few seconds without the database, so requests that need it fail meanwhile (with registration open, maintenance on first: section 4). Run on a throwaway local project (2026-11-09): recreated, healthy, data kept, and the config hash then matches. Not yet run on the VPS.
   2. Builds `sirat-{migrate,api,worker,web}:<sha>` while the live release serves.
