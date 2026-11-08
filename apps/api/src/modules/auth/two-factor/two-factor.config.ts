@@ -4,7 +4,11 @@ import type { Role } from '@sirat/shared';
 import type { EnvVars } from '../../../config/env';
 import { SecretBox, parseSecretBoxKey } from './secret-box';
 
-/** The roles that must sign in with a second factor (owner default via the lead: admin and manager; jury later). */
+/**
+ * The roles that may enrol in two-factor login (owner default via the lead: admin and manager; jury later). An enrolled
+ * account of these roles always gets the login's code step. Whether a role MUST prove the code on the admin routes is
+ * a setting within this list (two-factor-requirement.ts; DECISIONS "The admin 2FA requirement is a setting").
+ */
 export const TWO_FACTOR_ROLES: readonly Role[] = ['admin', 'manager'];
 
 /**
@@ -27,8 +31,11 @@ export class TwoFactorConfig implements OnModuleInit {
     return this.box !== null;
   }
 
-  /** Must this role sign in with a second factor? Never while 2FA is off. */
-  requiredFor(role: Role): boolean {
+  /**
+   * May this role enrol, so that an enrolled account gets the login's code step? Never while 2FA is off. Not whether
+   * the role must prove the code on the admin routes: that is TwoFactorRequirement.requiredFor (a setting).
+   */
+  enrollableFor(role: Role): boolean {
     return this.enabled && TWO_FACTOR_ROLES.includes(role);
   }
 

@@ -6,23 +6,26 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   Req,
   Res,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import type { AuthUser } from '../access-token.service';
-import { CurrentUser, Public, Roles, TwoFactorOptional } from '../auth.decorators';
+import { CurrentUser, Public, Roles, TwoFactorAlways, TwoFactorOptional } from '../auth.decorators';
 import { TooManyAttemptsException } from '../auth.service';
 import {
   TwoFactorCodeDto,
   TwoFactorDisableDto,
+  TwoFactorRequirementDto,
   TwoFactorResetDto,
   TwoFactorSetupDto,
   TwoFactorVerifyDto,
 } from '../dto/two-factor.dto';
 import { CHALLENGE_COOKIE, SessionCookies } from '../session-cookies';
 import type { ClientInfo } from '../session.service';
+import { TwoFactorRequirement, type TwoFactorRequirementView } from './two-factor-requirement';
 import {
   ChallengeEndedException,
   type TwoFactorStatus,
@@ -45,7 +48,10 @@ async function withRetryAfter<T>(res: Response, run: () => Promise<T>): Promise<
   }
 }
 
-/** Per acting admin (the per-user tracker): a reset ends sessions and raises an alert, so very few an hour. */
+/**
+ * Per acting admin (the per-user tracker; each route counts on its own): a reset ends sessions and a requirement
+ * change opens or closes the admin pages, and both raise an alert, so very few an hour.
+ */
 const RESET_TIER = { default: { limit: 5, ttl: 3_600_000 } };
 
 /**
@@ -194,5 +200,45 @@ export class TwoFactorAdminController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<{ sessionsEnded: number }> {
     return withRetryAfter(res, () => this.twoFactor.adminReset(user, id, body, clientInfo(req)));
+  }
+}
+
+/**
+ * The admin two-factor requirement (06-API "Two-factor login"; DECISIONS "The admin 2FA requirement is a setting"):
+ * which of admin and manager must prove a second factor on the admin routes. Role admin only (a manager gets 403).
+ * Enrolments, the login's code step and sessions never change with it.
+ */
+@Controller('admin/security')
+export class TwoFactorRequirementController {
+  constructor(
+    private readonly twoFactor: TwoFactorService,
+    private readonly requirement: TwoFactorRequirement,
+  ) {}
+
+  /** 200 `{ roles, updatedAt (ISO or null while the default applies), available (2FA on on this server) }`. */
+  @Roles('admin')
+  @Get('two-factor-requirement')
+  current(): Promise<TwoFactorRequirementView> {
+    return this.requirement.view();
+  }
+
+  /**
+   * `{ roles, expected, reason (3-200), code }`: `code` is the acting admin's own current TOTP code (step-up, under the
+   * login limits). Needs a session that proved the code even while the requirement is off (@TwoFactorAlways). 200
+   * `{ roles, updatedAt }`. 400 TWO_FACTOR_CODE_INVALID or a refused body (an unknown role), 409
+   * TWO_FACTOR_REQUIREMENT_CHANGED (`expected` is stale), 503 TWO_FACTOR_UNAVAILABLE while 2FA is off; 5 an hour per
+   * admin.
+   */
+  @Roles('admin')
+  @TwoFactorAlways()
+  @Throttle(RESET_TIER)
+  @Put('two-factor-requirement')
+  change(
+    @CurrentUser() user: AuthUser,
+    @Body() body: TwoFactorRequirementDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{ roles: string[]; updatedAt: string }> {
+    return withRetryAfter(res, () => this.twoFactor.changeRequirement(user, body, clientInfo(req)));
   }
 }

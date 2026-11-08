@@ -69,3 +69,13 @@ export const setupRequired = () =>
 
 export const resetNotAllowed = (message: string) =>
   new ForbiddenException({ code: 'TWO_FACTOR_RESET_NOT_ALLOWED', message });
+
+/**
+ * PUT /admin/security/two-factor-requirement: the set the admin's form showed (`expected`) is no longer the current
+ * one (someone else changed it meanwhile). Reload and check.
+ */
+export const requirementChanged = () =>
+  new ConflictException({
+    code: 'TWO_FACTOR_REQUIREMENT_CHANGED',
+    message: 'The two-factor requirement was changed by someone else. Reload and check',
+  });
