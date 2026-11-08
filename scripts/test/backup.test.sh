@@ -23,6 +23,17 @@ psql() { "${DC[@]}" exec -T postgres psql -U sirat -d "${DB:-sirat}" -v ON_ERROR
 
 echo "backup tests (compose project $PROJECT)"
 "${DC[@]}" up -d --wait postgres >/dev/null 2>&1
+# The real server, not the image's temporary init server (socket only): wait until it takes a query over TCP, then
+# give it up to 60 s. Without this the first psql below could meet the gap between the two (main's CI, 2026-11-09).
+ready=0
+for _ in $(seq 1 60); do
+  if "${DC[@]}" exec -T postgres psql -h 127.0.0.1 -U sirat -d sirat -qAt -c 'select 1' >/dev/null 2>&1; then
+    ready=1
+    break
+  fi
+  sleep 1
+done
+[ "$ready" = 1 ] || { echo "  FAIL  postgres did not take a query over TCP within 60 s"; exit 1; }
 
 # The real dump's shape: Prisma's migrations table (one failed and one rolled back, which must not count), a table
 # whose name needs quotes, an empty one, and rows with tabs and newlines, enough that deleting most shrinks the dump.
