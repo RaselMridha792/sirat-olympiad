@@ -16,9 +16,20 @@ const appUrl = process.env.TEST_APP_DATABASE_URL ?? '';
 const DOMAIN = '@demo.sirat.invalid';
 
 afterEach(async () => {
-  // One batch at a time (a unique index): every test leaves none behind, even one that failed half-way. Marked roots it
-  // did not register are registered here first, so demo_clear can take them.
-  for (const { id } of await prisma.demoBatch.findMany({ select: { id: true } })) {
+  // One batch at a time (a unique index): every test leaves none behind, even one that failed half-way.
+  const batches = await prisma.demoBatch.findMany({ select: { id: true } });
+  if (batches.length === 0) return;
+  // The mixes some tests make on purpose cannot be deleted row by row (a real attempt is never deleted), so this *_test
+  // database drops them by TRUNCATE (allowed here only), and a real row's pointer at a demo user is unset.
+  await prisma.$executeRawUnsafe(
+    'TRUNCATE "attempts", "jury_scores", "point_ledger", "team_members" CASCADE',
+  );
+  await prisma.$executeRaw`
+    UPDATE "users" SET "referred_by_id" = NULL
+    WHERE "referred_by_id" IN (SELECT "id" FROM "users" WHERE "demo_batch_id" IS NOT NULL)`;
+  for (const { id } of batches) {
+    // Marked roots a test did not register are registered first, so demo_clear can take them.
+    await prisma.demoBatch.update({ where: { id }, data: { status: 'loaded' } });
     const roots = [
       ['users', await prisma.user.findMany({ where: { demoBatchId: id }, select: { id: true } })],
       ['exams', await prisma.exam.findMany({ where: { demoBatchId: id }, select: { id: true } })],
@@ -32,7 +43,6 @@ afterEach(async () => {
         data: rows.map((r) => ({ batchId: id, tableName: table, rowId: r.id })),
         skipDuplicates: true,
       });
-    await prisma.$executeRawUnsafe('TRUNCATE "point_ledger"');
     await prisma.$queryRaw`SELECT demo_clear(${id}::uuid)`;
   }
 });
@@ -104,11 +114,30 @@ async function stillThere(real: Awaited<ReturnType<typeof realGraph>>) {
   expect(await prisma.submission.count({ where: { id: real.submission.id } })).toBe(1);
 }
 
+/** A demo or real round entry on a final round made for the test, with a promotion run from `examId`. */
+async function roundSetup() {
+  const from =
+    (await prisma.round.findFirst({ where: { sortOrder: 1 } })) ??
+    (await prisma.round.create({
+      data: { name: 'Round 1', sortOrder: 1, type: 'quiz' },
+    }));
+  const to =
+    (await prisma.round.findFirst({ where: { sortOrder: 10 } })) ??
+    (await prisma.round.create({
+      data: { name: 'Demo test final', sortOrder: 10, type: 'final' },
+    }));
+  return { from, to };
+}
+
+async function blockedWith(batchId: string, kind: string) {
+  await expect(clear(batchId)).rejects.toThrow(new RegExp(`demo_clear_blocked: .*"${kind}": 1`));
+}
+
 describe('demo_clear', () => {
-  it('removes everything a batch made, children first, also rows made after the load; nothing real; idempotent', async () => {
+  it('removes everything a batch made, children first, also what a demo account made after the load; nothing real; idempotent', async () => {
     const real = await realGraph();
     const demo = await demoGraph();
-    // After the load: the demo student signs in and tries a REAL exam; a real student tries the DEMO exam.
+    // After the load, the demo student signs in and tries the demo practice exam.
     await prisma.session.create({
       data: {
         userId: demo.user.id,
@@ -117,29 +146,80 @@ describe('demo_clear', () => {
         expiresAt: new Date(Date.now() + 86_400_000),
       },
     });
-    const demoOnReal = await makeAttempt(prisma, demo.user.id, real.exam.id);
-    const realOnDemo = await makeAttempt(prisma, real.user.id, demo.exam.id);
-    await prisma.submission.create({ data: submissionData(realOnDemo.id) });
+    const practice = await makePublishedExam(prisma, {
+      title: 'DEMO · Practice',
+      demoBatchId: demo.batch.id,
+    });
+    await register(demo.batch.id, 'exams', [practice.id]);
+    const own = await makeAttempt(prisma, demo.user.id, practice.id);
+    await prisma.submission.create({ data: submissionData(own.id) });
 
     const counts = await clear(demo.batch.id);
     expect(counts).toMatchObject({
-      attempts: 3, // the demo one, the demo student's on the real exam, the real student's on the demo exam
+      attempts: 2,
       submissions: 2,
       questions: 1,
-      exams: 1,
+      exams: 2,
       announcements: 1,
       users: 1,
     });
     expect(await prisma.user.count({ where: { id: demo.user.id } })).toBe(0);
     expect(await prisma.session.count({ where: { userId: demo.user.id } })).toBe(0); // cascade
-    expect(await prisma.exam.count({ where: { id: demo.exam.id } })).toBe(0);
-    expect(
-      await prisma.attempt.count({ where: { id: { in: [demoOnReal.id, realOnDemo.id] } } }),
-    ).toBe(0);
+    expect(await prisma.exam.count({ where: { id: { in: [demo.exam.id, practice.id] } } })).toBe(0);
     expect(await prisma.demoRecord.count({ where: { batchId: demo.batch.id } })).toBe(0);
     expect(await prisma.demoBatch.count({ where: { id: demo.batch.id } })).toBe(0);
     await stillThere(real);
     expect(await clear(demo.batch.id)).toEqual({}); // idempotent: nothing left, no error
+  });
+
+  it("clears a demo ambassador's points, a demo jury's scores and a promotion run from the demo exam", async () => {
+    const demo = await demoGraph();
+    const judge = await makeUser(prisma, {
+      email: `j-${randomUUID().slice(0, 8)}${DOMAIN}`,
+      role: 'jury',
+      demoBatchId: demo.batch.id,
+    });
+    await register(demo.batch.id, 'users', [judge.id]);
+    await prisma.pointLedger.create({
+      data: {
+        userId: demo.user.id,
+        eventKey: `test:${randomUUID()}`,
+        amount: 5,
+        createdById: (await anAdmin()).id,
+        reason: 'A test adjustment',
+      },
+    });
+    const { from, to } = await roundSetup();
+    const run = await prisma.promotionRun.create({
+      data: {
+        fromRoundId: from.id,
+        toRoundId: to.id,
+        category: 'achiever',
+        topN: 1,
+        sourceKind: 'exam',
+        sourceExamId: demo.exam.id,
+        sourceGeneration: 1,
+        promotedCount: 1,
+        eliminatedCount: 0,
+        createdById: (await anAdmin()).id,
+      },
+    });
+    const entry = await prisma.roundEntry.create({
+      data: { userId: demo.user.id, roundId: to.id, promotionRunId: run.id },
+    });
+    await prisma.juryScore.create({
+      data: { entryId: entry.id, judgeId: judge.id, total: 70, criteria: { idea: 70 } },
+    });
+
+    const counts = await clear(demo.batch.id);
+    expect(counts).toMatchObject({
+      point_ledger: 1,
+      jury_scores: 1,
+      round_entries: 1,
+      promotion_runs: 1,
+      users: 2,
+    });
+    expect(await prisma.promotionRun.count({ where: { id: run.id } })).toBe(0);
   });
 
   it('never deletes a real row through a forged registry entry', async () => {
@@ -154,7 +234,7 @@ describe('demo_clear', () => {
     await stillThere(real);
   });
 
-  it('needs the registry AND the marker: a marked but unregistered user stays, and so do their attempts', async () => {
+  it('needs the registry AND the marker: a marked but unregistered user stays, and the call fails as a whole', async () => {
     const batch = await prisma.demoBatch.create({
       data: { status: 'loaded', reason: 'Test batch' },
     });
@@ -163,32 +243,73 @@ describe('demo_clear', () => {
       role: 'student',
       demoBatchId: batch.id,
     });
-    const exam = await makePublishedExam(prisma);
-    const attempt = await makeAttempt(prisma, user.id, exam.id);
-    // demo_clear refuses to leave the batch half-removed: the user still holds it (FK), so the call fails as a whole.
     await expect(clear(batch.id)).rejects.toThrow(/users_demo_batch_id_fkey|violates foreign key/);
-    expect(await prisma.attempt.count({ where: { id: attempt.id } })).toBe(1);
     expect(await prisma.user.count({ where: { id: user.id } })).toBe(1);
-    // Clean up for afterEach: register the user, then the batch clears.
-    await register(batch.id, 'users', [user.id]);
   });
 
-  it('rolls back as a whole when a demo user has rows it does not clear yet (point_ledger)', async () => {
+  it('refuses while the batch is still loading (demo_clear_busy), and deletes nothing', async () => {
     const demo = await demoGraph();
-    await prisma.pointLedger.create({
-      data: {
-        userId: demo.user.id,
-        eventKey: `test:${randomUUID()}`,
-        amount: 5,
-        createdById: (await anAdmin()).id,
-        reason: 'A test adjustment',
-      },
-    });
-    await expect(clear(demo.batch.id)).rejects.toThrow();
+    await prisma.demoBatch.update({ where: { id: demo.batch.id }, data: { status: 'loading' } });
+    await expect(clear(demo.batch.id)).rejects.toThrow(/demo_clear_busy/);
+    expect(await prisma.attempt.count({ where: { id: demo.attempt.id } })).toBe(1);
+    await prisma.demoBatch.update({ where: { id: demo.batch.id }, data: { status: 'loaded' } });
+  });
+});
+
+describe('demo_clear refuses a mix of demo and real rows (demo_clear_blocked), and deletes nothing', () => {
+  it("a real student's attempt on a demo exam", async () => {
+    const real = await realGraph();
+    const demo = await demoGraph();
+    await makeAttempt(prisma, real.user.id, demo.exam.id);
+    await blockedWith(demo.batch.id, 'real_attempts_on_demo_exams');
     expect(await prisma.attempt.count({ where: { id: demo.attempt.id } })).toBe(1);
     expect(await prisma.demoBatch.count({ where: { id: demo.batch.id } })).toBe(1);
-    // The ledger row is append-only, so this batch can only go with TRUNCATE here: leave the next test a clean table.
-    await prisma.$executeRawUnsafe('TRUNCATE "point_ledger"');
+  });
+
+  it("a demo student's attempt on a real exam", async () => {
+    const real = await realGraph();
+    const demo = await demoGraph();
+    await makeAttempt(prisma, demo.user.id, real.exam.id);
+    await blockedWith(demo.batch.id, 'demo_attempts_on_real_exams');
+  });
+
+  it('a real student referred by a demo account', async () => {
+    const demo = await demoGraph();
+    await makeUser(prisma, { referredById: demo.user.id });
+    await blockedWith(demo.batch.id, 'real_users_referred_by_demo');
+  });
+
+  it("a demo judge's score on a real entry", async () => {
+    const demo = await demoGraph();
+    const realStudent = await makeUser(prisma, { role: 'student' });
+    const { to } = await roundSetup();
+    const entry = await prisma.roundEntry.create({
+      data: { userId: realStudent.id, roundId: to.id },
+    });
+    const judge = await makeUser(prisma, {
+      email: `j-${randomUUID().slice(0, 8)}${DOMAIN}`,
+      role: 'jury',
+      demoBatchId: demo.batch.id,
+    });
+    await register(demo.batch.id, 'users', [judge.id]);
+    await prisma.juryScore.create({
+      data: { entryId: entry.id, judgeId: judge.id, total: 50, criteria: {} },
+    });
+    await blockedWith(demo.batch.id, 'mixed_jury_scores');
+  });
+
+  it('a real member in a demo-owned team', async () => {
+    const demo = await demoGraph();
+    const team = await prisma.team.create({
+      data: {
+        name: `Demo team ${randomUUID().slice(0, 6)}`,
+        joinCode: `TM-${Array.from({ length: 6 }, () => '0123456789ABCDEFGHJKMNPQRSTVWXYZ'[Math.floor(Math.random() * 32)]).join('')}`,
+        ownerId: demo.user.id,
+      },
+    });
+    const realStudent = await makeUser(prisma, { role: 'student' });
+    await prisma.teamMember.create({ data: { teamId: team.id, userId: realStudent.id } });
+    await blockedWith(demo.batch.id, 'mixed_team_members');
   });
 });
 

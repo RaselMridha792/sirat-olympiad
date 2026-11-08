@@ -9,8 +9,12 @@
 --   * demo_clear(batch) (SECURITY DEFINER) is the only path that deletes demo rows from the guarded tables. It deletes
 --     a row only when its root is registered for the batch AND marked with it, and the guarded tables' triggers let a
 --     DELETE through only inside demo_clear (a transaction-local setting) and only for a row whose root is a
---     registered, marked demo root. So a forged registry row cannot delete a real attempt, submission, question or
---     answer-key correction, through the function or by a direct DELETE.
+--     registered, marked demo root. So a forged registry row cannot delete a real attempt, submission, question,
+--     answer-key correction, point, jury score or promotion run, through the function or by a direct DELETE;
+--   * a demo row never mixes with a real one: before deleting anything, demo_clear looks for real rows that point at a
+--     demo root (or demo rows that point into real data) and, if it finds any, refuses with demo_clear_blocked and the
+--     count per kind. It never cascades into a real row. The endpoints keep such mixes from happening (demo exams only
+--     for demo users and the reverse, teams never mixed, a demo ambassador's code refused at registration).
 
 -- ───────────── the batch and the registry ─────────────
 
@@ -84,7 +88,8 @@ CREATE OR REPLACE FUNCTION "attempts_guard"() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN
-    IF "demo_clearing"() AND ("demo_user_root"(OLD."user_id") OR "demo_exam_root"(OLD."exam_id")) THEN
+    -- Only a demo user's attempt on a demo exam: a mixed one is a blocker in demo_clear and never deleted.
+    IF "demo_clearing"() AND "demo_user_root"(OLD."user_id") AND "demo_exam_root"(OLD."exam_id") THEN
       RETURN OLD;
     END IF;
     RAISE EXCEPTION 'attempts_guard: attempts are never deleted';
@@ -167,7 +172,7 @@ BEGIN
   END IF;
   IF TG_OP = 'DELETE' AND "demo_clearing"() AND EXISTS (
        SELECT 1 FROM "attempts" a
-       WHERE a."id" = OLD."attempt_id" AND ("demo_user_root"(a."user_id") OR "demo_exam_root"(a."exam_id"))) THEN
+       WHERE a."id" = OLD."attempt_id" AND "demo_user_root"(a."user_id") AND "demo_exam_root"(a."exam_id")) THEN
     RETURN OLD;
   END IF;
   RAISE EXCEPTION 'submissions is append-only: % is not allowed', TG_OP;
@@ -187,28 +192,92 @@ BEGIN
 END
 $$;
 
+-- A promotion run is a demo row when its source exam is a demo root, or when every entry it made belongs to a demo user
+-- (a run from a demo video round has no source exam).
+CREATE FUNCTION "demo_run_root"(p_id uuid) RETURNS boolean
+LANGUAGE sql STABLE SET search_path = public, pg_temp AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM "promotion_runs" pr
+    WHERE pr."id" = p_id
+      AND (("pr"."source_exam_id" IS NOT NULL AND "demo_exam_root"(pr."source_exam_id"))
+        OR (EXISTS (SELECT 1 FROM "round_entries" e WHERE e."promotion_run_id" = pr."id")
+            AND NOT EXISTS (SELECT 1 FROM "round_entries" e
+                            WHERE e."promotion_run_id" = pr."id" AND NOT "demo_user_root"(e."user_id")))))
+$$;
+
+CREATE OR REPLACE FUNCTION "point_ledger_append_only"() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'TRUNCATE' AND current_database() ~ '^[a-z0-9_]+_test$' THEN
+    RETURN NULL;
+  END IF;
+  IF TG_OP = 'DELETE' AND "demo_clearing"() AND "demo_user_root"(OLD."user_id") THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'point_ledger is append-only: % is not allowed', TG_OP;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION "jury_scores_append_only"() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'TRUNCATE' AND right(current_database(), 5) = '_test' THEN
+    RETURN NULL;
+  END IF;
+  -- Only a score whose entry belongs to a demo user (whoever the judge): demo_clear refuses a demo judge's score on a
+  -- real entry before it gets here.
+  IF TG_OP = 'DELETE' AND "demo_clearing"() AND EXISTS (
+       SELECT 1 FROM "round_entries" e WHERE e."id" = OLD."entry_id" AND "demo_user_root"(e."user_id")) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'jury_scores is append-only: % is not allowed', TG_OP;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION "promotion_runs_append_only"() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'TRUNCATE' AND right(current_database(), 5) = '_test' THEN
+    RETURN NULL;
+  END IF;
+  IF TG_OP = 'DELETE' AND "demo_clearing"() AND "demo_run_root"(OLD."id") THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'promotion_runs is append-only: % is not allowed', TG_OP;
+END
+$$;
+
 -- ───────────── demo_clear: the one way demo rows go ─────────────
 
 -- Deletes everything batch p_batch made, children first, then the registry and the batch; returns the counts. Only
--- roots registered for the batch AND marked with it count, and every other row goes only through such a root (its
--- user, its exam, its attempt), or, for a registered row of payments' registration form, its marker email. Idempotent:
--- an unknown or already removed batch returns {}. point_ledger, jury_scores and promotion_runs (append-only) are not
--- touched yet: a demo user with rows there makes the user's delete fail (RESTRICT), and the whole call rolls back.
+-- roots registered for the batch AND marked with it count; every other row goes only through such a root (its user,
+-- exam, attempt, entry or promotion run), or, for a registered row of payments' registration form, its marker email.
+-- The batch row is locked first: while a load runs (status 'loading') the call refuses with demo_clear_busy. Before
+-- deleting anything it refuses with demo_clear_blocked when a real row points at a demo root or a demo row points into
+-- real data (the counts per kind in the message). Idempotent: an unknown or already removed batch returns {}.
 CREATE FUNCTION "demo_clear"(p_batch uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE
+  v_status text;
   v_users uuid[];
   v_exams uuid[];
   v_notes uuid[];
   v_attempts uuid[];
   v_forms uuid[];
+  v_runs uuid[];
+  v_entries uuid[];
+  v_teams uuid[];
+  blockers jsonb := '{}'::jsonb;
   counts jsonb := '{}'::jsonb;
   n integer;
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM "demo_batches" WHERE "id" = p_batch) THEN
+  SELECT "status" INTO v_status FROM "demo_batches" WHERE "id" = p_batch FOR UPDATE;
+  IF NOT FOUND THEN
     RETURN counts;
   END IF;
-  PERFORM set_config('sirat.demo_clear', 'on', true);
+  IF v_status = 'loading' THEN
+    RAISE EXCEPTION 'demo_clear_busy: batch % is still loading', p_batch;
+  END IF;
 
   -- The roots: registered for this batch AND marked with it.
   SELECT coalesce(array_agg(u."id"), '{}') INTO v_users FROM "users" u JOIN "demo_records" r
@@ -220,18 +289,53 @@ BEGIN
   SELECT coalesce(array_agg(a."id"), '{}') INTO v_notes FROM "announcements" a JOIN "demo_records" r
     ON r."table_name" = 'announcements' AND r."row_id" = a."id"::text AND r."batch_id" = p_batch
     WHERE a."demo_batch_id" = p_batch;
-  -- Attempts of a demo user or on a demo exam (also those made after the load, e.g. a demo student's own try).
+  -- What hangs off them.
   SELECT coalesce(array_agg("id"), '{}') INTO v_attempts FROM "attempts"
-    WHERE "user_id" = ANY (v_users) OR "exam_id" = ANY (v_exams);
-  -- Payments' registration forms: a demo user's, or a registered one with the marker email (an open demo form has no
-  -- user yet; registration refuses the marker domain, so no real form carries it).
+    WHERE "user_id" = ANY (v_users) AND "exam_id" = ANY (v_exams);
   SELECT coalesce(array_agg(p."id"), '{}') INTO v_forms FROM "pending_registrations" p
     WHERE p."user_id" = ANY (v_users)
        OR (lower(p."email") LIKE '%@demo.sirat.invalid' AND EXISTS (
              SELECT 1 FROM "demo_records" r
              WHERE r."table_name" = 'pending_registrations' AND r."row_id" = p."id"::text AND r."batch_id" = p_batch));
+  SELECT coalesce(array_agg(pr."id"), '{}') INTO v_runs FROM "promotion_runs" pr
+    WHERE pr."source_exam_id" = ANY (v_exams)
+       OR (EXISTS (SELECT 1 FROM "round_entries" e WHERE e."promotion_run_id" = pr."id")
+           AND NOT EXISTS (SELECT 1 FROM "round_entries" e
+                           WHERE e."promotion_run_id" = pr."id" AND NOT (e."user_id" = ANY (v_users))));
+  SELECT coalesce(array_agg("id"), '{}') INTO v_entries FROM "round_entries" WHERE "user_id" = ANY (v_users);
+  SELECT coalesce(array_agg("id"), '{}') INTO v_teams FROM "teams" WHERE "owner_id" = ANY (v_users);
 
-  DELETE FROM "leaderboard_entries" WHERE "exam_id" = ANY (v_exams) OR "user_id" = ANY (v_users);
+  -- Blockers: a real row pointing at a demo root, or a demo row pointing into real data. Nothing is deleted then.
+  SELECT count(*) INTO n FROM "attempts" WHERE "exam_id" = ANY (v_exams) AND NOT ("user_id" = ANY (v_users));
+  IF n > 0 THEN blockers := blockers || jsonb_build_object('real_attempts_on_demo_exams', n); END IF;
+  SELECT count(*) INTO n FROM "attempts" WHERE "user_id" = ANY (v_users) AND NOT ("exam_id" = ANY (v_exams));
+  IF n > 0 THEN blockers := blockers || jsonb_build_object('demo_attempts_on_real_exams', n); END IF;
+  SELECT count(*) INTO n FROM "leaderboard_entries"
+    WHERE "user_id" = ANY (v_users) AND NOT ("exam_id" = ANY (v_exams));
+  IF n > 0 THEN blockers := blockers || jsonb_build_object('demo_users_on_real_leaderboards', n); END IF;
+  SELECT count(*) INTO n FROM "users" WHERE "referred_by_id" = ANY (v_users) AND NOT ("id" = ANY (v_users));
+  IF n > 0 THEN blockers := blockers || jsonb_build_object('real_users_referred_by_demo', n); END IF;
+  SELECT count(*) INTO n FROM "pending_registrations"
+    WHERE "referred_by_id" = ANY (v_users) AND NOT ("id" = ANY (v_forms));
+  IF n > 0 THEN blockers := blockers || jsonb_build_object('real_forms_referred_by_demo', n); END IF;
+  SELECT count(*) INTO n FROM "team_members"
+    WHERE ("team_id" = ANY (v_teams) AND NOT ("user_id" = ANY (v_users)))
+       OR ("user_id" = ANY (v_users) AND NOT ("team_id" = ANY (v_teams)));
+  IF n > 0 THEN blockers := blockers || jsonb_build_object('mixed_team_members', n); END IF;
+  SELECT count(*) INTO n FROM "round_entries"
+    WHERE "promotion_run_id" = ANY (v_runs) AND NOT ("user_id" = ANY (v_users));
+  IF n > 0 THEN blockers := blockers || jsonb_build_object('real_entries_from_demo_promotions', n); END IF;
+  SELECT count(*) INTO n FROM "jury_scores" s
+    WHERE ("judge_id" = ANY (v_users) AND NOT ("entry_id" = ANY (v_entries)))
+       OR ("entry_id" = ANY (v_entries) AND NOT ("judge_id" = ANY (v_users)));
+  IF n > 0 THEN blockers := blockers || jsonb_build_object('mixed_jury_scores', n); END IF;
+  IF blockers <> '{}'::jsonb THEN
+    RAISE EXCEPTION 'demo_clear_blocked: %', blockers::text;
+  END IF;
+
+  PERFORM set_config('sirat.demo_clear', 'on', true);
+
+  DELETE FROM "leaderboard_entries" WHERE "exam_id" = ANY (v_exams);
   GET DIAGNOSTICS n = ROW_COUNT; counts := counts || jsonb_build_object('leaderboard_entries', n);
   DELETE FROM "answer_key_corrections" WHERE "exam_id" = ANY (v_exams);
   GET DIAGNOSTICS n = ROW_COUNT; counts := counts || jsonb_build_object('answer_key_corrections', n);
@@ -239,23 +343,30 @@ BEGIN
   GET DIAGNOSTICS n = ROW_COUNT; counts := counts || jsonb_build_object('submissions', n);
   DELETE FROM "attempts" WHERE "id" = ANY (v_attempts);
   GET DIAGNOSTICS n = ROW_COUNT; counts := counts || jsonb_build_object('attempts', n);
+
+  -- Rounds: scores on demo entries, the demo entries, then the demo promotion runs.
+  DELETE FROM "jury_scores" WHERE "entry_id" = ANY (v_entries);
+  GET DIAGNOSTICS n = ROW_COUNT; counts := counts || jsonb_build_object('jury_scores', n);
+  DELETE FROM "round_entries" WHERE "id" = ANY (v_entries);
+  GET DIAGNOSTICS n = ROW_COUNT; counts := counts || jsonb_build_object('round_entries', n);
+  DELETE FROM "promotion_runs" WHERE "id" = ANY (v_runs);
+  GET DIAGNOSTICS n = ROW_COUNT; counts := counts || jsonb_build_object('promotion_runs', n);
+  DELETE FROM "jury_assignments" WHERE "judge_id" = ANY (v_users);
+  GET DIAGNOSTICS n = ROW_COUNT; counts := counts || jsonb_build_object('jury_assignments', n);
   DELETE FROM "questions" WHERE "exam_id" = ANY (v_exams);
   GET DIAGNOSTICS n = ROW_COUNT; counts := counts || jsonb_build_object('questions', n);
 
-  -- Rows a demo user owns in the other areas (none are made by the load before phase 2; a demo account may make some
-  -- after it). Each goes through its user only.
+  -- Rows a demo user owns in the other areas, each through its user only.
   DELETE FROM "certificates" WHERE "user_id" = ANY (v_users);
   GET DIAGNOSTICS n = ROW_COUNT; counts := counts || jsonb_build_object('certificates', n);
+  DELETE FROM "point_ledger" WHERE "user_id" = ANY (v_users);
+  GET DIAGNOSTICS n = ROW_COUNT; counts := counts || jsonb_build_object('point_ledger', n);
   DELETE FROM "task_assignments" WHERE "user_id" = ANY (v_users);
   GET DIAGNOSTICS n = ROW_COUNT; counts := counts || jsonb_build_object('task_assignments', n);
-  DELETE FROM "team_members" WHERE "user_id" = ANY (v_users);
+  DELETE FROM "team_members" WHERE "team_id" = ANY (v_teams);
   GET DIAGNOSTICS n = ROW_COUNT; counts := counts || jsonb_build_object('team_members', n);
-  DELETE FROM "teams" WHERE "owner_id" = ANY (v_users);
+  DELETE FROM "teams" WHERE "id" = ANY (v_teams);
   GET DIAGNOSTICS n = ROW_COUNT; counts := counts || jsonb_build_object('teams', n);
-  DELETE FROM "jury_assignments" WHERE "judge_id" = ANY (v_users);
-  GET DIAGNOSTICS n = ROW_COUNT; counts := counts || jsonb_build_object('jury_assignments', n);
-  DELETE FROM "round_entries" WHERE "user_id" = ANY (v_users);
-  GET DIAGNOSTICS n = ROW_COUNT; counts := counts || jsonb_build_object('round_entries', n);
   DELETE FROM "ambassador_profiles" WHERE "user_id" = ANY (v_users);
   GET DIAGNOSTICS n = ROW_COUNT; counts := counts || jsonb_build_object('ambassador_profiles', n);
 
@@ -273,7 +384,7 @@ BEGIN
   GET DIAGNOSTICS n = ROW_COUNT; counts := counts || jsonb_build_object('announcements', n);
   DELETE FROM "exams" WHERE "id" = ANY (v_exams);
   GET DIAGNOSTICS n = ROW_COUNT; counts := counts || jsonb_build_object('exams', n);
-  -- Sessions, auth tokens and two-factor rows go with their user (ON DELETE CASCADE).
+  -- Sessions, auth tokens and two-factor rows go with their user (ON DELETE CASCADE): all the demo user's own.
   DELETE FROM "users" WHERE "id" = ANY (v_users);
   GET DIAGNOSTICS n = ROW_COUNT; counts := counts || jsonb_build_object('users', n);
 
