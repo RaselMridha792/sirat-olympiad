@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
-import { BD_DISTRICTS, EDUCATION_TYPES } from '@sirat/shared';
-import { DEMO_DOMAIN } from '../demo-domain';
+import { BD_DISTRICTS, DEMO_EMAIL_DOMAIN, EDUCATION_TYPES } from '@sirat/shared';
 import { FAMILY_BN, FAMILY_EN, GIVEN_BN, GIVEN_EN, INSTITUTIONS } from '../demo-names';
 import type { DemoContext, DemoGenerator, DemoUser } from '../demo.types';
 
@@ -37,7 +36,7 @@ export const usersDemoGenerator: DemoGenerator = {
       const grade = role === 'jury' ? null : ctx.rng.pick(grades);
       return {
         id: randomUUID(),
-        email: `${role}-${String(n).padStart(3, '0')}@${DEMO_DOMAIN}`,
+        email: `${role}-${String(n).padStart(3, '0')}@${DEMO_EMAIL_DOMAIN}`,
         phone: phones.shift()!,
         name,
         role,
@@ -89,9 +88,6 @@ export const usersDemoGenerator: DemoGenerator = {
     ctx.users.students.push(...students);
     ctx.users.ambassadors.push(...ambassadors);
     ctx.users.jury.push(...jury);
-    ctx.count('students', students.length);
-    ctx.count('ambassadors', ambassadors.length);
-    ctx.count('jury', jury.length);
   },
 };
 

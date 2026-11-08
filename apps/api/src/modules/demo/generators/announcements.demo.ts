@@ -47,6 +47,5 @@ export const announcementsDemoGenerator: DemoGenerator = {
       'announcements',
       rows.map((r) => r.id),
     );
-    ctx.count('announcements', rows.length);
   },
 };

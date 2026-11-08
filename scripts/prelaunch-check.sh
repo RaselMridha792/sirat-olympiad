@@ -159,6 +159,16 @@ manual "paystation:selfcheck exits 0 on the VPS (RUNBOOK section 9)"
 check "no fixture users" test "$(pg "select count(*) from users where email like '%@fixtures.invalid'")" = 0
 check "no test invoices (all carry the .env invoice prefix)" test "$(pg "select count(*) from payments where invoice_number not like '$(envval PAYSTATION_INVOICE_PREFIX | tr -cd 'A-Z0-9')%'")" = 0
 check "no published exam yet" test "$(pg "select count(*) from exams where status = 'published'")" = 0
+# Demo data (DECISIONS 2026-11-08 "Demo data"): the switch is off and nothing of a batch is left. A query that fails
+# (no such table) fails the check too.
+check "DEMO_DATA_ALLOWED is not true (demo data cannot be loaded)" test "$(envval DEMO_DATA_ALLOWED)" != true
+no_demo_data() {
+  [ "$(pg "select (select count(*) from demo_batches) + (select count(*) from demo_records)
+    + (select count(*) from users where demo_batch_id is not null or lower(email) like '%@demo.sirat.invalid')
+    + (select count(*) from exams where demo_batch_id is not null)
+    + (select count(*) from announcements where demo_batch_id is not null)")" = 0 ]
+}
+check "no demo data (no batch, no registered row, no demo account, exam or announcement)" no_demo_data
 check "the registration fee is 400 BDT (40000 paisa)" test "$(pg "select value::text from settings where key = 'registration_fee_minor'")" = 40000
 want=false
 [ "$REGISTRATION" = open ] && want=true

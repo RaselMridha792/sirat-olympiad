@@ -51,8 +51,6 @@ export interface DemoContext {
   exams: { practice: string | null; round1: string | null };
   /** Registers inserted rows: the Postgres table name and the ids as strings (any batch size). */
   register(table: string, ids: readonly string[]): Promise<void>;
-  /** Adds to a count the admin card shows, e.g. count('payments', 312). */
-  count(key: string, n: number): void;
   /** A short step name for the job's progress. */
   progress(step: string): Promise<void>;
 }

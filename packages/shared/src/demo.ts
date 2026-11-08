@@ -14,7 +14,10 @@ export type DemoBatchStatus = (typeof DEMO_BATCH_STATUSES)[number];
 
 /** GET /admin/demo. */
 export interface AdminDemoStatus {
-  /** DEMO_DATA_ALLOWED on this server; off, load and remove answer 409 demo_not_allowed. */
+  /**
+   * DEMO_DATA_ALLOWED on this server. Off, a load answers 409 demo_not_allowed; a removal still runs, so demo data
+   * never outlives the switch.
+   */
   allowed: boolean;
   /** The current batch, or null when there is no demo data. One batch at a time. */
   batch: {
@@ -26,7 +29,22 @@ export interface AdminDemoStatus {
     counts: Record<string, number>;
   } | null;
   /** The running job's last step, while a load or a removal runs. */
-  progress: { action: 'load' | 'clear'; step: string } | null;
+  progress: { action: DemoAction; step: string } | null;
+  /** How the last load or removal ended (kept for a day), e.g. a removal refused because real rows use demo rows. */
+  lastOutcome: DemoOutcome | null;
+}
+
+export type DemoAction = 'load' | 'clear';
+
+export interface DemoOutcome {
+  action: DemoAction;
+  result: 'done' | 'failed' | 'blocked';
+  at: string;
+  /**
+   * result 'blocked' (a removal only): what stops it, as counts per kind (demo_clear's names, e.g.
+   * real_attempts_on_demo_exams). Nothing was removed; those real rows must go first.
+   */
+  blockers?: Record<string, number>;
 }
 
 /** POST /admin/demo/load and /admin/demo/clear. */

@@ -42,15 +42,12 @@ export const examsDemoGenerator: DemoGenerator = {
     });
     ctx.exams.practice = practice.id;
     ctx.exams.round1 = r1.id;
-    ctx.count('exams', 2);
-    ctx.count('questions', practice.questions + r1.questions);
 
     await ctx.progress('attempts');
     const sitters = [...ctx.users.students, ...ctx.users.ambassadors].filter(() =>
       ctx.rng.chance(ROUND1_SHARE),
     );
     await insertScoredAttempts(ctx, r1, sitters);
-    ctx.count('attempts', sitters.length);
   },
 };
 
@@ -211,5 +208,4 @@ async function insertScoredAttempts(
     'submissions',
     submissions.map((s) => s.id),
   );
-  ctx.count('submissions', submissions.length);
 }
