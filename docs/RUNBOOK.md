@@ -469,6 +469,7 @@ See `RULEBOOK.md` section 13: load test at 1.5–2× peak, backup + restore dril
 Also before launch:
 - [ ] The API connects to Postgres with a **non-superuser runtime role** (OPEN-QUESTIONS #27); the bootstrap superuser is used only for migrations, backup and restore. `prelaunch-check.sh` reads it from every API and worker's newest boot line.
 - [ ] PayStation sandbox checklist done (`docs/paystation/SANDBOX-CHECKLIST.md`) and the accepted `trx_status` values confirmed.
+- [ ] The sandbox test rows of 2026-11-01 are gone from the VPS (`docs/paystation/SANDBOX-E2E.md`: account label `rasel-sandbox-vps`, `TV…` invoices, `TEST SBX` users). The production database was started again from an empty volume at the launch deploy, which the owner confirmed then. `SELECT gateway_account, count(*) FROM payments GROUP BY 1` must list the live account only.
 - [ ] `PAYSTATION_ENV=live` on the VPS, and the boot log's PayStation line matches the client account: `$DC logs api | grep "PayStation env="` shows `env=live`, the live host, the client's account label and invoice prefix, and the production callback and IPN URLs. It never shows any part of the merchant id or password. A `payments are DISABLED` WARN, or a `payments.disabled_in_production` alert, means PAYSTATION_ENV is blank: no registration can be paid.
 - [ ] The free book: an admin has set the real title and uploaded the cover (`/admin/book`), before registration opens.
 - [ ] `paystation:selfcheck` on the VPS ends with `initiate: created` and exits 0. It leaves one unpaid 10 BDT `X…` invoice in the client's panel. The command: `$DC run --rm --no-deps -T api node dist/cli/paystation-selfcheck.js`; locally `pnpm --filter @sirat/api paystation:selfcheck`.
@@ -541,6 +542,11 @@ scripts/loadtest-generators.sh off                                     # right a
 - **Re-measure it on the client's live account** in the account-switch check (PAYMENTS-PLAN §13): make one unpaid checkout, and open its link every minute until it says "Invalid or Expired Token".
 - If the lifetime differs, set the setting to it in `/admin/settings` (it is audited). Never set it shorter than the lifetime (D3).
 - A payment finished just before the limit is not lost: the IPN, the callback or reconciliation within the 48 h late watch still marks it paid (`late_success`).
+
+**What the sandbox showed** (`docs/paystation/SANDBOX-E2E.md`, 2026-11-01):
+- A cancel on the checkout sends the student back with `status=Canceled`, but v1 keeps saying `processing`. The payment stays pending: the page shows "Waiting for your payment" with Continue the payment. It becomes `expired` at the first reconciliation after the time limit, then stays in the 48 h late watch.
+- A replayed callback changes nothing.
+- On an account without an IPN (Rasel's pre-KYC sandbox panel has no IPN field), a payment whose browser never comes back is settled only by reconciliation (every few minutes) or an admin re-check.
 
 **Changing the fee or the registration window:** `PUT /admin/settings/:key` with the value the form showed as `expected` (409 if someone changed it meanwhile); the fee needs a reason. Payments already started keep their amount.
 

@@ -70,6 +70,13 @@ One short entry per non-obvious technical or product decision. Newest first. For
 3. **A short pool:** a draft shows what it has, with an "n of m questions" note (lead's pick b). A published exam always has its full pool (the publish rule), so a short one is refused like a publish (`question_count`).
 4. **The web reuses the student's look:** `QuestionCard` and the question-number list moved out of `ExamRoom.tsx` first, as a refactor with no behaviour change. The preview has no controller, timer, checkpoint, submit or violation listeners. "Show answers" is off by default and shows the correct option on its own line, so the student card is not changed for it.
 
+## 2026-11-01 — PayStation sandbox on the production VPS, once, before launch (Rasel; payments, lead)
+
+1. **A one-time exception to PAYMENTS-PLAN D8 and §13.1** (sandbox payments never on the production database; the test account never points at production). Rasel gave the go so that the sandbox could be tested through the real nginx, TLS and a public HTTPS callback.
+2. **The condition:** the production database is started again from an empty volume at the launch deploy, which the owner confirms then because it is destructive (RUNBOOK §9 has the check).
+3. **Marked test data:** the account label `rasel-sandbox-vps`, `TV…` invoices, and `TEST SBX nn` students with `@test.invalid` addresses and the agreed phone list. Never deleted by hand.
+4. **Results** in `docs/paystation/SANDBOX-E2E.md` and the checklist. Rasel's pre-KYC panel has no IPN URL field, so the IPN (S9, S20) remains for the client's account.
+
 ## 2026-11-01 — Certificates without the PDF (core C6c-1; the C6 plan, the lead's notes, owner Q4 defaults)
 
 1. **Issuing is a queue job** (DO 8): the admin asks, the API answers 202 with how many qualify now, and the worker runs one idempotent `INSERT … SELECT … ON CONFLICT (user_id, type, round_id) DO NOTHING`. It is on a new `certificates` queue (C6c-2's render joins it), in `ops-check` like the others.
