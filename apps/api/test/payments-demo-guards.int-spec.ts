@@ -199,10 +199,16 @@ describe('paymentsAllowDemo', () => {
     await payment('live', PaymentStatus.failed);
     expect(await paymentsAllowDemo(env.prisma, config)).toEqual({ ok: true });
 
-    await payment('live', PaymentStatus.paid);
-    expect(await paymentsAllowDemo(env.prisma, config)).toEqual({
-      ok: false,
-      reason: 'real_payments',
-    });
+    const real = await payment('live', PaymentStatus.paid);
+    try {
+      expect(await paymentsAllowDemo(env.prisma, config)).toEqual({
+        ok: false,
+        reason: 'real_payments',
+      });
+    } finally {
+      // Left behind, it would make every later demo load in this test database answer real_payments.
+      await env.prisma.payment.delete({ where: { id: real.id } });
+    }
+    expect(await paymentsAllowDemo(env.prisma, config)).toEqual({ ok: true });
   });
 });

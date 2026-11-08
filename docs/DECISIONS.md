@@ -2,6 +2,13 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-09 — Secrets are generated as hex, so the placeholder check never refuses a real one (A2; the lead's flaky-test report)
+
+- **Why:** the check refuses a secret containing a placeholder word (`fake`, `xxxx`, `example`…, case-insensitive). A random base64 value contains one by chance about 1 in 10,000 times (`FaKe`, `xxxx`). That made `env.spec.ts` flaky (exam's #18 CI), and it could refuse a real production secret at boot.
+- **Decision:** every "generate one with" (the API's messages, both `.env.example`s, the RUNBOOK, CI) now says `openssl rand -hex 48` for `JWT_ACCESS_SECRET` and `openssl rand -hex 32` for `TOTP_ENCRYPTION_KEY`. Each placeholder word has a letter outside 0-9a-f, so a hex value never matches; a test keeps it so for any new word. The refusal says that a random base64 value can match by chance.
+- **Not chosen:** matching whole words only. It would let through glued placeholders (`changemeplease`, `fakesecret…`), which is what the check is for. Secrets already set (base64 included) passed the check at boot and stay valid.
+- **Tests:** a random base64 secret in a test is redrawn until no placeholder word matches; the 2FA integration suites' key is hex.
+
 ## 2026-11-08 — Demo data, loaded and removed with one click (exam; Rasel's order of 8 Nov, the lead's approved conditions, A2's review)
 
 1. **Two marks, both needed.** The roots (users, exams, announcements) carry `demo_batch_id`. Only the loader writes it, at insert, and a trigger refuses any change. Every inserted row is also registered in `demo_records`. `demo_clear` treats a row as demo only when it is registered AND marked, so a forged registry row, or the session setting alone, deletes nothing real. The exam marker is the column, not the title (lead: a stronger marker).
@@ -22,6 +29,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - Each step is audited (`demo.load_requested`, `demo.clear_requested`) and raises an ops alert (`ops.demo_loaded`, `ops.demo_cleared`).
 6. **One password per batch**, 16 random characters, shown once in the load answer (or the CLI's output). It is stored only as the argon2id hash, which travels in the job data: removed when the job ends, and kept a day on a failure.
 7. **A lost job never blocks the launch** (A2's review): a batch still `loading` or `clearing` 15 minutes after its last change (`DEMO_STALE_MINUTES`) counts as abandoned. It can be removed like a failed one, and a late job then does nothing. Load and remove are limited to 10 per admin per hour each. A load refuses an existing batch before it hashes a password.
+8. **Phase 2 roots** (lead's approval D1 and D3; core's approval): `admin_tasks` and `rounds` carry the root marker too, under the same rules (written only by the loader, immutable, registry AND marker; the admin DTOs refuse the field). `demo_clear` v3 removes demo tasks and rounds after everything on them. It refuses while a real row sits on one: an assignment, points, an entry, an exam, a jury assignment or a certificate. A run from or into a demo round is a demo run. `certificate_serial_seq` stops at 899999, so the demo serial range `SLO-YYYY-9NNNNN` never meets a real one; demo rounds order in 101–110, real ones in 1–10 (A2's review), so they never share a sort_order. Demo data has its own Round 1 (101), video round (102) and final (103), and no demo row references a real round (lead): a demo exam or run there would hold the real round's slots, e.g. the one promotion per round and category. Core's services keep real and demo apart on top of this (core's guards PR).
 
 ## 2026-11-08 — Demo payments stay out of the money flow (payments' part of exam's demo data; lead)
 
@@ -34,6 +42,8 @@ One short entry per non-obvious technical or product decision. Newest first. For
 3. **The load guard** (`paymentsAllowDemo`): demo data is refused while `PAYSTATION_ENV=live`, and once a paid `live` payment exists. Sandbox, fake and demo payments never count: none moved money. Registration may stay open (lead).
 4. **The marker email domain** (`DEMO_EMAIL_DOMAIN`, `@demo.sirat.invalid`): the registration form refuses exactly that domain, so a real attempt, and the account its payment makes, can never carry it.
 5. **Demo payments get no events:** `payment_events` cannot be cleared, so demo data never writes to it. A demo "refund" is a paid payment with review reason `refund_reported`; the `refunded` status is never entered.
+6. **The generator** (`payments/demo/payments.demo.ts`, in `DEMO_GENERATORS`): every demo ambassador is a paid, registered student, because approval needs a registration. Of the students, 80% are paid, 2% paid with `refund_reported`, 5% failed, 5% expired and 3% pending (started minutes ago); the rest never paid. Free-book orders go to 60% of the plain paid ones, all `confirmed` and never shipped. A demo payment never has a checkout link, so nothing can resume or watch it. Rows go in by bulk insert through the load transaction, with no audit rows, emails or PayStation calls, and every row is registered for `demo_clear`.
+7. **A demo account's promo code is unknown at registration** (`PROMO_INVALID`, nothing stored). A real form pointing at a demo account would make `demo_clear` refuse (`demo_clear_blocked`); the marker never changes, so a check at start is enough (A2's review).
 
 ## 2026-11-08 — The public site is multi-page (owner, via the lead; core)
 

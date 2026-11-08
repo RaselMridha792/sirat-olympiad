@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import { PaymentStatus, type PrismaClient } from '@prisma/client';
-import { EDUCATION_TYPES, REGISTRATION_MESSAGES } from '@sirat/shared';
+import { DEMO_EMAIL_DOMAIN, EDUCATION_TYPES, REGISTRATION_MESSAGES } from '@sirat/shared';
 import Redis from 'ioredis';
 import { seedConfig } from '../prisma/seed';
 import { RedisThrottlerStorage } from '../src/common/throttler/redis-throttler.storage';
@@ -352,6 +352,40 @@ describe('POST /registrations/start', () => {
       where: { startRequestId: body.startRequestId as string },
     });
     expect(attempt.referredById).toBe(ambassador.id);
+  });
+
+  it("a demo account's approved code is unknown: the same refusal, nothing stored, and its batch still clears", async () => {
+    const batch = await prisma.demoBatch.create({
+      data: { status: 'loaded', reason: 'Test batch' },
+    });
+    const demo = await makeUser(prisma, {
+      email: `amb-${randomUUID().slice(0, 8)}@${DEMO_EMAIL_DOMAIN}`,
+      demoBatchId: batch.id,
+    });
+    await prisma.ambassadorProfile.create({
+      data: { userId: demo.id, promoCode: 'DEMO-AMB-CODE', approvedAt: new Date() },
+    });
+    await prisma.demoRecord.create({
+      data: { batchId: batch.id, tableName: 'users', rowId: demo.id },
+    });
+    try {
+      const body = form({ promoCode: 'demo-amb-code' });
+      const res = await start(body);
+      expect(res.status).toBe(400);
+      expect(await json(res)).toMatchObject({ code: 'PROMO_INVALID' });
+      expect(
+        await prisma.pendingRegistration.count({
+          where: {
+            OR: [{ startRequestId: body.startRequestId as string }, { referredById: demo.id }],
+          },
+        }),
+      ).toBe(0);
+    } finally {
+      // demo_clear refuses (demo_clear_blocked) while a real form points at the demo account; one batch at a time.
+      const [row] = await prisma.$queryRaw<{ counts: Record<string, number> }[]>`
+        SELECT demo_clear(${batch.id}::uuid) AS counts`;
+      expect(row!.counts).toMatchObject({ users: 1, ambassador_profiles: 1 });
+    }
   });
 
   it('an unknown class is refused', async () => {

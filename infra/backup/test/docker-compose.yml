@@ -9,7 +9,9 @@ services:
       POSTGRES_DB: sirat
       POSTGRES_PASSWORD: ${BACKUP_TEST_PG_PASSWORD:?set by the test}
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U sirat -d sirat']
+      # Over TCP, not the socket: on a fresh volume the image's entrypoint first runs a temporary server on the socket
+      # only (initdb and the init scripts), which pg_isready on the socket reports as ready just before it stops.
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U sirat -d sirat']
       interval: 2s
       timeout: 3s
       retries: 30

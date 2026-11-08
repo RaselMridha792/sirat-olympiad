@@ -27,6 +27,20 @@ afterEach(async () => {
   await prisma.$executeRaw`
     UPDATE "users" SET "referred_by_id" = NULL
     WHERE "referred_by_id" IN (SELECT "id" FROM "users" WHERE "demo_batch_id" IS NOT NULL)`;
+  // Real rows a phase 2 test put on a demo task or a demo round on purpose (none of these tables is guarded).
+  const demoRounds = Prisma.sql`(SELECT "id" FROM "rounds" WHERE "demo_batch_id" IS NOT NULL)`;
+  const demoUsers = Prisma.sql`(SELECT "id" FROM "users" WHERE "demo_batch_id" IS NOT NULL)`;
+  await prisma.$executeRaw`
+    DELETE FROM "task_assignments" WHERE "user_id" NOT IN ${demoUsers}
+      AND "task_id" IN (SELECT "id" FROM "admin_tasks" WHERE "demo_batch_id" IS NOT NULL)`;
+  await prisma.$executeRaw`
+    DELETE FROM "round_entries" WHERE "round_id" IN ${demoRounds} AND "user_id" NOT IN ${demoUsers}`;
+  await prisma.$executeRaw`
+    DELETE FROM "jury_assignments" WHERE "round_id" IN ${demoRounds} AND "judge_id" NOT IN ${demoUsers}`;
+  await prisma.$executeRaw`
+    DELETE FROM "certificates" WHERE "round_id" IN ${demoRounds} AND "user_id" NOT IN ${demoUsers}`;
+  await prisma.$executeRaw`
+    UPDATE "exams" SET "round_id" = NULL WHERE "round_id" IN ${demoRounds} AND "demo_batch_id" IS NULL`;
   for (const { id } of batches) {
     // Marked roots a test did not register are registered first, so demo_clear can take them.
     await prisma.demoBatch.update({ where: { id }, data: { status: 'loaded' } });
@@ -37,6 +51,11 @@ afterEach(async () => {
         'announcements',
         await prisma.announcement.findMany({ where: { demoBatchId: id }, select: { id: true } }),
       ],
+      [
+        'admin_tasks',
+        await prisma.adminTask.findMany({ where: { demoBatchId: id }, select: { id: true } }),
+      ],
+      ['rounds', await prisma.round.findMany({ where: { demoBatchId: id }, select: { id: true } })],
     ] as const;
     for (const [table, rows] of roots)
       await prisma.demoRecord.createMany({
@@ -395,6 +414,304 @@ describe('the roots', () => {
     await expect(
       prisma.demoBatch.create({ data: { status: 'loading', reason: 'Second' } }),
     ).rejects.toThrow(/demo_batches_one_at_a_time|Unique constraint/);
+  });
+});
+
+const CRITERIA = [{ key: 'content_relevance', en: 'Relevance', bn: 'Relevance (bn)' }];
+const HOUR = 3_600_000;
+const code12 = () => randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase();
+
+/**
+ * Phase 2: on top of demoGraph, a demo ambassador with an approved demo task and its points, a demo judge, and the
+ * demo's own rounds (lead's design): Round 1 (quiz, 101), a closed video round (102), a final (103). The demo student
+ * was promoted from the demo Round 1 by the demo exam into the video round, sent a video, was scored, and holds a
+ * promotion certificate (demo serial range). An empty run from the video round into the final counts as demo only by
+ * the round rule. No demo row references a real round.
+ */
+async function phase2Graph() {
+  const base = await demoGraph();
+  const batchId = base.batch.id;
+  const by = (await anAdmin()).id;
+  const ambassador = await makeUser(prisma, {
+    email: `a-${randomUUID().slice(0, 8)}${DOMAIN}`,
+    role: 'ambassador',
+    demoBatchId: batchId,
+  });
+  const judge = await makeUser(prisma, {
+    email: `j-${randomUUID().slice(0, 8)}${DOMAIN}`,
+    role: 'jury',
+    demoBatchId: batchId,
+  });
+  await register(batchId, 'users', [ambassador.id, judge.id]);
+  const task = await prisma.adminTask.create({
+    data: {
+      title: 'DEMO - Share the poster',
+      description: 'Share it',
+      points: 5,
+      createdById: by,
+      demoBatchId: batchId,
+    },
+  });
+  await register(batchId, 'admin_tasks', [task.id]);
+  const now = Date.now();
+  const assignment = await prisma.taskAssignment.create({
+    data: {
+      taskId: task.id,
+      userId: ambassador.id,
+      status: 'approved',
+      proofText: 'Shared in two groups',
+      submittedAt: new Date(now - 2 * HOUR),
+      approvedById: by,
+      approvedAt: new Date(now - HOUR),
+    },
+  });
+  await prisma.pointLedger.create({
+    data: {
+      userId: ambassador.id,
+      eventKey: `task:${assignment.id}`,
+      amount: 5,
+      reason: 'task',
+      taskId: task.id,
+      createdById: by,
+    },
+  });
+  const { from } = await roundSetup(); // the real Round 1: only for the checks, never referenced by a demo row
+  const quiz = await prisma.round.create({
+    data: { name: 'DEMO - Round 1', sortOrder: 101, type: 'quiz', demoBatchId: batchId },
+  });
+  const video = await prisma.round.create({
+    data: {
+      name: 'DEMO - Video round',
+      sortOrder: 102,
+      type: 'video',
+      opensAt: new Date(now - 72 * HOUR),
+      closesAt: new Date(now - 24 * HOUR),
+      criteria: CRITERIA,
+      demoBatchId: batchId,
+    },
+  });
+  const final = await prisma.round.create({
+    data: { name: 'DEMO - Final', sortOrder: 103, type: 'final', demoBatchId: batchId },
+  });
+  await register(batchId, 'rounds', [quiz.id, video.id, final.id]);
+  const intoVideo = await prisma.promotionRun.create({
+    data: {
+      fromRoundId: quiz.id,
+      toRoundId: video.id,
+      category: 'activist',
+      topN: 1,
+      sourceKind: 'exam',
+      sourceExamId: base.exam.id,
+      sourceGeneration: 1,
+      promotedCount: 1,
+      eliminatedCount: 0,
+      createdById: by,
+    },
+  });
+  const entry = await prisma.roundEntry.create({
+    data: {
+      userId: base.user.id,
+      roundId: video.id,
+      status: 'evaluated',
+      score: new Prisma.Decimal(8),
+      videoUrl: 'https://youtu.be/demo-video',
+      videoSubmittedAt: new Date(now - 48 * HOUR),
+      promotionRunId: intoVideo.id,
+    },
+  });
+  await prisma.juryAssignment.create({
+    data: { roundId: video.id, judgeId: judge.id, category: 'activist', createdById: by },
+  });
+  await prisma.juryScore.create({
+    data: {
+      entryId: entry.id,
+      judgeId: judge.id,
+      criteria: { content_relevance: 8 },
+      total: new Prisma.Decimal(80),
+    },
+  });
+  const intoFinal = await prisma.promotionRun.create({
+    data: {
+      fromRoundId: video.id,
+      toRoundId: final.id,
+      category: 'achiever',
+      topN: 1,
+      sourceKind: 'jury',
+      promotedCount: 0,
+      eliminatedCount: 0,
+      createdById: by,
+    },
+  });
+  await prisma.certificate.create({
+    data: {
+      userId: base.user.id,
+      type: 'promotion',
+      roundId: video.id,
+      serial: `SLO-2026-9${String(Math.floor(Math.random() * 1e5)).padStart(5, '0')}`,
+      verificationCode: code12(),
+      nameOnCertificate: 'Demo Student',
+    },
+  });
+  return {
+    ...base,
+    ambassador,
+    judge,
+    task,
+    quiz,
+    video,
+    final,
+    entry,
+    intoVideo,
+    intoFinal,
+    from,
+  };
+}
+
+/**
+ * Demo rows of a batch that point at a REAL round (the lead's rule: there must be none). A demo exam or a demo run
+ * there would hold the real round's slots, e.g. the one promotion per (from round, category).
+ */
+async function demoRowsOnRealRounds(batchId: string): Promise<number> {
+  const [row] = await prisma.$queryRaw<{ n: number }[]>`
+    SELECT (
+      (SELECT count(*) FROM "exams" e JOIN "rounds" o ON o."id" = e."round_id"
+        WHERE e."demo_batch_id" = ${batchId}::uuid AND o."demo_batch_id" IS NULL)
+      + (SELECT count(*) FROM "promotion_runs" p
+          JOIN "rounds" f ON f."id" = p."from_round_id" JOIN "rounds" t ON t."id" = p."to_round_id"
+          LEFT JOIN "exams" x ON x."id" = p."source_exam_id"
+          WHERE (f."demo_batch_id" = ${batchId}::uuid OR t."demo_batch_id" = ${batchId}::uuid
+                 OR x."demo_batch_id" = ${batchId}::uuid)
+            AND (f."demo_batch_id" IS NULL OR t."demo_batch_id" IS NULL))
+      + (SELECT count(*) FROM "round_entries" r JOIN "users" u ON u."id" = r."user_id"
+          JOIN "rounds" o ON o."id" = r."round_id"
+          WHERE u."demo_batch_id" = ${batchId}::uuid AND o."demo_batch_id" IS NULL)
+      + (SELECT count(*) FROM "jury_assignments" j JOIN "users" u ON u."id" = j."judge_id"
+          JOIN "rounds" o ON o."id" = j."round_id"
+          WHERE u."demo_batch_id" = ${batchId}::uuid AND o."demo_batch_id" IS NULL)
+      + (SELECT count(*) FROM "certificates" c JOIN "users" u ON u."id" = c."user_id"
+          JOIN "rounds" o ON o."id" = c."round_id"
+          WHERE u."demo_batch_id" = ${batchId}::uuid AND o."demo_batch_id" IS NULL)
+    )::int AS "n"`;
+  return row!.n;
+}
+
+describe('demo_clear v3: demo tasks and demo rounds (phase 2)', () => {
+  it('removes demo tasks and rounds after everything on them, the empty run included; the real Round 1 and the admin stay', async () => {
+    const g = await phase2Graph();
+    expect(await demoRowsOnRealRounds(g.batch.id)).toBe(0);
+    const counts = await clear(g.batch.id);
+    expect(counts).toMatchObject({
+      admin_tasks: 1,
+      task_assignments: 1,
+      point_ledger: 1,
+      rounds: 3,
+      round_entries: 1,
+      promotion_runs: 2,
+      jury_assignments: 1,
+      jury_scores: 1,
+      certificates: 1,
+    });
+    expect(
+      await prisma.round.count({ where: { id: { in: [g.quiz.id, g.video.id, g.final.id] } } }),
+    ).toBe(0);
+    expect(await prisma.adminTask.count({ where: { id: g.task.id } })).toBe(0);
+    expect(await prisma.round.count({ where: { id: g.from.id } })).toBe(1);
+    expect(await prisma.user.count({ where: { id: (await anAdmin()).id } })).toBe(1);
+  });
+
+  it.each([
+    'real_assignments_on_demo_tasks',
+    'real_points_on_demo_tasks',
+    'real_entries_on_demo_rounds',
+    'real_exams_on_demo_rounds',
+    'real_jury_on_demo_rounds',
+    'real_certificates_on_demo_rounds',
+  ])('refuses %s and deletes nothing', async (kind) => {
+    const g = await phase2Graph();
+    const real = await makeUser(prisma, {
+      role: kind === 'real_jury_on_demo_rounds' ? 'jury' : 'ambassador',
+    });
+    const by = (await anAdmin()).id;
+    if (kind === 'real_assignments_on_demo_tasks')
+      await prisma.taskAssignment.create({ data: { taskId: g.task.id, userId: real.id } });
+    if (kind === 'real_points_on_demo_tasks')
+      await prisma.pointLedger.create({
+        data: {
+          userId: real.id,
+          eventKey: `task:${randomUUID()}`,
+          amount: 5,
+          reason: 'task',
+          taskId: g.task.id,
+          createdById: by,
+        },
+      });
+    if (kind === 'real_entries_on_demo_rounds')
+      await prisma.roundEntry.create({ data: { userId: real.id, roundId: g.final.id } });
+    if (kind === 'real_exams_on_demo_rounds')
+      await prisma.exam.create({
+        data: {
+          title: 'Real draft on a demo round',
+          windowStart: new Date(Date.now() + 24 * HOUR),
+          windowEnd: new Date(Date.now() + 25 * HOUR),
+          durationMinutes: 30,
+          questionsPerAttempt: 1,
+          roundId: g.final.id,
+        },
+      });
+    if (kind === 'real_jury_on_demo_rounds')
+      await prisma.juryAssignment.create({
+        data: { roundId: g.video.id, judgeId: real.id, category: 'achiever', createdById: by },
+      });
+    if (kind === 'real_certificates_on_demo_rounds')
+      await prisma.certificate.create({
+        data: {
+          userId: real.id,
+          type: 'promotion',
+          roundId: g.video.id,
+          serial: `SLO-2026-0${String(Math.floor(Math.random() * 1e5)).padStart(5, '0')}`,
+          verificationCode: code12(),
+          nameOnCertificate: 'Real Student',
+        },
+      });
+    await blockedWith(g.batch.id, kind);
+    expect(await prisma.round.count({ where: { id: { in: [g.video.id, g.final.id] } } })).toBe(2);
+    expect(await prisma.adminTask.count({ where: { id: g.task.id } })).toBe(1);
+    expect(await prisma.demoBatch.count({ where: { id: g.batch.id } })).toBe(1);
+  });
+
+  it('needs the registry AND the marker: a forged registry row for the real Round 1 deletes nothing real', async () => {
+    const g = await phase2Graph();
+    await register(g.batch.id, 'rounds', [g.from.id]);
+    await clear(g.batch.id);
+    expect(await prisma.round.count({ where: { id: g.from.id } })).toBe(1);
+  });
+
+  it('never changes the marker of a task or a round, either way', async () => {
+    const g = await phase2Graph();
+    await expect(
+      prisma.$executeRaw`UPDATE "admin_tasks" SET "demo_batch_id" = NULL WHERE "id" = ${g.task.id}::uuid`,
+    ).rejects.toThrow(/demo_marker_immutable/);
+    await expect(
+      prisma.$executeRaw`UPDATE "rounds" SET "demo_batch_id" = ${g.batch.id}::uuid WHERE "id" = ${g.from.id}::uuid`,
+    ).rejects.toThrow(/demo_marker_immutable/);
+  });
+
+  it('keeps demo rounds in 101-110 and real rounds in 1-10, so the two never meet on sort_order (A2)', async () => {
+    const g = await phase2Graph();
+    await expect(
+      prisma.round.create({
+        data: { name: 'DEMO - Low', sortOrder: 7, type: 'final', demoBatchId: g.batch.id },
+      }),
+    ).rejects.toThrow(/rounds_sort_order_check/);
+    await expect(
+      prisma.round.create({ data: { name: 'Real high', sortOrder: 105, type: 'final' } }),
+    ).rejects.toThrow(/rounds_sort_order_check/);
+  });
+
+  it('keeps real certificate serials out of the demo range: the sequence stops at 899999', async () => {
+    const [row] = await prisma.$queryRaw<{ max: bigint }[]>`
+      SELECT "seqmax" AS "max" FROM pg_sequence WHERE "seqrelid" = 'certificate_serial_seq'::regclass`;
+    expect(Number(row!.max)).toBe(899999);
   });
 });
 

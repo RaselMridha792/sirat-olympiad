@@ -15,7 +15,7 @@ export DCD="docker compose -p sirat --env-file .env -f infra/docker-compose.yml 
 ```bash
 cp .env.example .env                    # fill real local passwords; never commit
 cp apps/api/.env.example apps/api/.env  # host-side dev env (same POSTGRES_PASSWORD)
-openssl rand -base64 48                 # paste a fresh output into JWT_ACCESS_SECRET of each file (blank in the examples)
+openssl rand -hex 48                    # paste a fresh output into JWT_ACCESS_SECRET of each file (blank in the examples)
 pnpm install
 pnpm --filter @sirat/shared build
 pnpm db:generate
@@ -54,7 +54,7 @@ $DCD up -d --build --no-deps migrate api worker web nginx   # the shared stack (
 Signing secret: the API refuses to start (in every `NODE_ENV`) when `JWT_ACCESS_SECRET` is blank, shorter than 32 characters, too repetitive, or contains a placeholder word such as `fake`, `example` or `change me`. The error names the rule, never the value. Use a separate value per environment and never reuse the dev value on the VPS.
 
 **The two-factor key (admin 2FA, DECISIONS "Admin two-factor login"):**
-- **The stack:** every worktree's root `.env` needs `TOTP_ENCRYPTION_KEY`, since the stack's api runs with `NODE_ENV=production` and refuses to start without it. Add it once without printing it: `printf 'TOTP_ENCRYPTION_KEY=%s\n' "$(openssl rand -base64 32)" >> .env`.
+- **The stack:** every worktree's root `.env` needs `TOTP_ENCRYPTION_KEY`, since the stack's api runs with `NODE_ENV=production` and refuses to start without it. Add it once without printing it: `printf 'TOTP_ENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)" >> .env`.
 - **Host-side `pnpm dev:api`:** the same line in `apps/api/.env` turns 2FA on for that API. Without it 2FA is off there: nothing is enforced, and the 2FA routes answer 503 (development only).
 - **Enrolments follow the key:** it decrypts the stored secrets. An admin who enrolled under one key gets no code accepted under another (a recovery code or `admin:2fa-reset` still works, §22). So dev enrolments must be redone after a stack turn from a worktree with a different key, unless every worktree uses the same value.
 - **Tests:** the integration tests ignore the key in `apps/api/.env` (`test/load-env.ts`). Only the 2FA suites set their own throwaway key; every other suite runs with 2FA off.
@@ -147,6 +147,7 @@ scripts/deploy.sh --first         # once, on a fresh host, with the clone at the
      - nothing exported that compose would take over the files (`DATABASE_URL`, `DIRECT_URL`, `POSTGRES_*`, `SIRAT_TAG`, `COMPOSE_*`);
      - free disk; the commit on `origin/main` with a passed CI run; no exam window open within 30 minutes either side;
      - the data services running and healthy, no development marker on Postgres, and the data services exactly as this commit's compose file describes them. Otherwise it stops with "data-service change pending: apply it as its own step": a deploy never starts or recreates a data service.
+     - **Applying a data-service change** (its own step, outside an exam window): `git checkout --detach <sha>`, then `$DC up -d --no-deps --no-build --wait --timeout 60 <service>` recreates only that service and keeps its volume; then `scripts/deploy.sh <sha>`. For `postgres` that means a few seconds without the database, so requests that need it fail meanwhile (with registration open, maintenance on first: section 4). Run on a throwaway local project (2026-11-09): recreated, healthy, data kept, and the config hash then matches. Not yet run on the VPS.
   2. Builds `sirat-{migrate,api,worker,web}:<sha>` while the live release serves.
   3. When the release adds migrations, a backup first (`sudo -n systemctl start sirat-backup.service`). A failed backup stops the deploy before migrate.
   4. `run --rm --no-deps migrate`. It must print `config seed done`; otherwise the deploy stops and the live API keeps serving ("Migration failed" below, or "The runtime role step failed" when the last line starts with `runtime role:`).
@@ -484,7 +485,7 @@ Also before launch:
 - [ ] Email: SES set up as in section 12 (domain verified with DKIM, MAIL FROM, DMARC, production access granted), `EMAIL_PROVIDER=ses` with the IAM user's keys, `EMAIL_FROM` on the verified domain, one real test email received, and `$DC ps worker` healthy.
 - [ ] `SECURITY_ALERT_EMAIL` is an inbox someone reads during exams, and `APP_URL` is the public web origin (email links).
 - [ ] The first admin exists (section 13): one account per person, never shared, its password only in that person's password manager.
-- [ ] The VPS `.env` has its own `JWT_ACCESS_SECRET` (`openssl rand -base64 48`) and no `COOKIE_SECURE=false` (the API refuses it with `NODE_ENV=production`).
+- [ ] The VPS `.env` has its own `JWT_ACCESS_SECRET` (`openssl rand -hex 48`) and no `COOKIE_SECURE=false` (the API refuses it with `NODE_ENV=production`).
 
 ## 10. Cloudflare real-IP list (refresh every few months and before each exam)
 
