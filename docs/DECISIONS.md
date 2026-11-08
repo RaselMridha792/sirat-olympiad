@@ -25,6 +25,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
   - The web shows the card only to an admin whose session proved the code, and only while 2FA is on; a failed read shows a note in the card, not an error page.
 - **Why:** Rasel wants to test the site before go-live without the code on every admin page, and switch it back on without anyone enrolling again. A setting with an audited, step-up switch keeps that reversible and visible; the prelaunch line keeps it from staying off at launch.
 - **Who:** A2, on the lead's approved design.
+
 ## 2026-11-08 — The repository is public; its history no longer holds reference/ (Rasel; the lead ran the move)
 
 - **Why:** GitHub Actions stopped on the private repository (a failed payment and the spending limit). A public repository runs CI for free.
