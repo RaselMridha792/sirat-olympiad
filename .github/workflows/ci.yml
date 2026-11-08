@@ -38,6 +38,8 @@ jobs:
         run: bash scripts/test/load-staging.test.sh
       - name: loadtest-generators-left.sh - trusted load-test generators as minutes to the earliest expiry, negative past it or unreadable (A2's L14 files)
         run: bash scripts/test/loadtest-generators-left.test.sh
+      - name: prelaunch-check's runtime role line on stubbed logs - only sirat_app and superuser=false on every API and worker passes (L8 gate)
+        run: bash scripts/test/prelaunch-role.test.sh
       - run: pnpm format:check
       - run: pnpm --filter @sirat/shared build
       - run: pnpm db:generate
@@ -301,9 +303,12 @@ jobs:
       - name: Through nginx - security headers, no-store on /api, and no query string or Referer in nginx's log
         run: |
           page=$(curl -fsS -D - -o /dev/null http://127.0.0.1:8080/)
-          for h in X-Content-Type-Options Referrer-Policy Content-Security-Policy-Report-Only; do
+          for h in X-Content-Type-Options Referrer-Policy Permissions-Policy; do
             echo "$page" | grep -qi "^$h:" || { echo "::error::$h missing on /"; exit 1; }
           done
+          # nginx's page CSP, enforced (Next's own header has only frame-ancestors, so match the policy itself).
+          echo "$page" | grep -qi "^content-security-policy: default-src 'self'; script-src" ||
+            { echo "::error::the enforced page CSP is missing on /"; exit 1; }
           api=$(curl -fsS -D - -o /dev/null http://127.0.0.1:8080/api/health)
           echo "$api" | grep -qi '^cache-control: no-store' || { echo "::error::an API answer without no-store"; exit 1; }
           if echo "$page$api" | grep -qi '^strict-transport-security:'; then echo "::error::HSTS on plain http"; exit 1; fi
@@ -311,7 +316,10 @@ jobs:
           for h in X-Content-Type-Options Referrer-Policy Content-Security-Policy; do
             [ "$(echo "$api" | grep -ci "^$h:")" = 1 ] || { echo "::error::$h is not exactly once on an API answer"; exit 1; }
           done
-          if echo "$api" | grep -qi '^content-security-policy-report-only:'; then echo "::error::the page CSP on an API answer"; exit 1; fi
+          # The one CSP on an API answer is helmet's, never the page policy.
+          if echo "$api" | grep -qi "^content-security-policy: default-src 'self'; script-src 'self' 'unsafe-inline'"; then
+            echo "::error::the page CSP on an API answer"; exit 1
+          fi
           q="q$(openssl rand -hex 8)"; r="r$(openssl rand -hex 8)"
           curl -fsS -o /dev/null -H "Referer: http://127.0.0.1:8080/admin/users?q=$r" "http://127.0.0.1:8080/api/health?q=$q"
           sleep 1
@@ -350,7 +358,7 @@ jobs:
           curl -fsS -o /dev/null http://127.0.0.1:8080/
           sleep 65
           curl -fsS -o /dev/null http://127.0.0.1:8080/
-          curl -fsS -o /dev/null http://127.0.0.1:8080/bn
+          curl -fsS -o /dev/null http://127.0.0.1:8080/en
           sleep 5
           if $DCD logs web 2>&1 | grep -E 'EACCES|Failed to update prerender cache'; then
             echo "::error::the web cannot write its cache"; exit 1
@@ -411,11 +419,18 @@ jobs:
           for v in $(grep -E '^(JWT_ACCESS_SECRET|POSTGRES_PASSWORD|TOTP_ENCRYPTION_KEY)=' .env | cut -d= -f2-); do
             ! grep -qF -- "$v" <<< "$out" || { echo "::error::a secret value reached the output"; exit 1; }
           done
+          # The dev stack's api and worker connect as the database owner (a superuser) until L8: the role line must FAIL
+          # here, and only because of the role (the boot line itself is there).
+          for s in api worker; do
+            docker logs "$(docker ps -q --filter label=com.docker.compose.project=sirat --filter "label=com.docker.compose.service=$s" | sed -n 1p)" 2>&1 |
+              grep -qE 'database role=[^ "]+ superuser=(true|false)' || { echo "::error::no database role boot line in $s"; exit 1; }
+          done
           for line in 'PASS    migrations are up to date' 'PASS    the worker is healthy' 'PASS    no published exam yet' \
             'PASS    the registration fee is 400 BDT (40000 paisa)' 'PASS    registration_open is false' 'PASS    the page CSP is sent' \
             'PASS    TOTP_ENCRYPTION_KEY is set: 32 random bytes, base64 or 64 hex (admin 2FA)' \
             'PASS    every API logs two-factor=on (admin 2FA enforced)' \
             'FAIL    no development marker on Postgres' 'FAIL    no Mailpit in the project' 'FAIL    APP_URL is https' \
+            'FAIL    every API and worker logs database role=sirat_app superuser=false (L8)' \
             'N/A     the newest off-server backup is under 26 h old (on the VPS only)' \
             'PASS    no trusted load-test generators (scripts/loadtest-generators.sh off)'; do
             grep -qxF -- "$line" <<< "$out" || { echo "::error::expected: $line"; exit 1; }
@@ -489,6 +504,25 @@ jobs:
             sleep 5
           done
           grep -q '"fee":{"amountMinor":' <<< "$info" || { echo "::error::the api is not on the fake PayStation: $info"; exit 1; }
+      - name: Registration and payment in Chrome through nginx, page CSP enforced (payments' e2e:register on the fake PayStation)
+        # The wizard, the fake's checkout, the callback and the IPN, the worker's check, the result page and the first
+        # login, then a failed checkout retried, and no CSP violation on any page. Chrome must open the fake's checkout,
+        # so for this step only the fake also listens on 127.0.0.1:18090 (the load and staging setups keep it internal,
+        # checked above). The admin opens registration for the run and closes it again; 2FA is on, so it enrols first.
+        run: |
+          printf "services:\n  fake-paystation:\n    ports: ['127.0.0.1:18090:18090']\n" > "$RUNNER_TEMP/fake-e2e.yml"
+          FAKE="$DCD -f infra/fake-paystation.compose.yml -f $RUNNER_TEMP/fake-e2e.yml"
+          FAKE_PAYSTATION_PUBLIC_URL=http://127.0.0.1:18090 FAKE_PAYSTATION_CALLBACK_BASE=http://localhost:8080 \
+            $FAKE up -d --no-deps --wait fake-paystation api worker
+          # nginx may hold the recreated api's old address for a few seconds (see the step above).
+          for _ in $(seq 1 30); do curl -fsS -o /dev/null http://localhost:8080/api/ready && break; sleep 2; done
+          pw=$(openssl rand -hex 16)
+          echo "::add-mask::$pw"
+          printf '%s\n' "$pw" | $DCD run --rm --no-deps -T api node dist/cli/create-admin.js --password-stdin \
+            --email e2e-register@ci.invalid --name "CI Registration"
+          export E2E_ADMIN_EMAIL=e2e-register@ci.invalid E2E_ADMIN_PASSWORD="$pw"
+          node apps/web/scripts/e2e-2fa-enrol.mjs http://localhost:8080
+          node apps/web/scripts/e2e-register.mjs http://localhost:8080
       - name: Logs on failure
         if: failure()
         run: $DCD ps -a; $DCD logs --tail=200

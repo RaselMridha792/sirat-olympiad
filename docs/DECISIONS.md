@@ -2,6 +2,87 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-03 — The page CSP is enforced; a checkout's gateway decides its scheme (A2; L3's condition, the lead's proposal A)
+
+- **The page CSP is enforced** (`infra/nginx/security-headers.conf`), no longer Report-Only.
+  - L3's condition: payments' wizard e2e passes under it with no violation, the full round trip (wizard, the fake gateway's checkout, callback and IPN, result page, login, and a failed checkout retried).
+  - CI's docker job runs that e2e through nginx on every PR. The fake listens on 127.0.0.1:18090 for that step only.
+  - **A violation in production:** rename the header to `Content-Security-Policy-Report-Only` and reload nginx.
+- **Start, retry and resume answer `gateway`.**
+  - `'paystation'` is followed over https only, in every build. `'fake'` may be http.
+  - The API says `'fake'` only in fake mode (`checkoutGateway`), which `buildPaymentConfig` refuses with `NODE_ENV=production`, so a live or sandbox API never sends it.
+  - **Why:** the web's old rule allowed http only outside a production build (`NODE_ENV` inlined at build time). The fake's http checkout therefore failed in CI's production-built web, and the CSP proof never reached the gateway.
+  - The new rule follows the API's mode instead of the build, and loosens nothing in production. An answer without `gateway` (an older API during a deploy) counts as `'paystation'`.
+- **One helper:** `goToCheckout` is the only way to a checkout: the wizard's start, retry and continue, and the result page's "Try again". A test checks that no component navigates by itself.
+- **Who:** A2, on the lead's proposal A. It touches payments' files (registration.service, registration-api.ts, RegisterWizard, PaymentResult, 06-API), for payments to review when back.
+
+## 2026-11-03 — Pre-launch security sweep: four small fixes (A2; the lead's sweep, read-only first)
+
+- **`/api/ready` stays public** (the uptime monitor polls it by keyword), but each replica answers from a check at most 1 s old (`READY_CACHE_MS`). Concurrent probes share one check. A flood costs one database round trip and two Redis pings a second per replica, not one per request. The answer keeps `no-store`, and a failed check is logged once, not once per request.
+- **The login's code step (`POST /api/auth/2fa/verify`) is in nginx's auth zone**, with login and the email-link endpoints: one bucket per client for every endpoint that takes a credential. The API's own caps stay: 5 attempts per challenge, the login limits.
+- **`Permissions-Policy: camera=(), microphone=(), geolocation=()`** on every page nginx serves. No page uses them, the exam room included.
+- **The judges' blindness test** checks every identifying field of the students: name, user id, email, phone and institution.
+- **Not changed:** judges sign in without 2FA (the design covers admins and managers); it is on Rasel's list for later, with "not required" as the default.
+- **Who:** the sweep and its fixes by A2; the lead chose which to fix and how.
+
+## 2026-11-03 — Public pages Bangla-first; the homepage and About as a first draft (owner, via the lead)
+
+- **Decision:**
+  - **Routes:** every public page is Bangla at its path (`/`, `/about`, `/privacy`, `/terms`, `/refund-policy`) and English under `/en`, one rule for all (core plan D4). Old `/bn` links get a temporary redirect to the same page (`next.config.mjs`). `hreflang` alternates on every page.
+  - **The homepage and About are built now** as a first draft from the client's two PDFs. The PDFs win over the old site; the old site's About text is used where the PDFs do not contradict it (the purpose and the five goals). This overrides CLAUDE.md §1b's "public site only after the design is confirmed" for these two pages only. The policy texts are exam's (#80).
+  - **One source per fact, each "to confirm" with the client:**
+    - the name and the season line in `content/site.ts` (`site.name.bn/en`, `site.season`); the homepage, the shell, the page titles and the legal texts read it;
+    - dates, the knockout method, the qualifiers, the social links, the album URL and the offline flag in `content/home.ts`;
+    - the team flag in `content/about.ts`;
+    - the texts in `i18n/messages/home.ts` and `about.ts`;
+    - the fee and the open state from the API.
+  - **Hidden until confirmed:** offline participation, the album link (empty URL), the advisory board and the convenor team. Left out: the registration check by SMS, the advisers, the sponsors. The two groups are content only (the system's categories question is with the owner).
+  - **ﷺ** is one key (`homeMessages.brand.honorific`), drawn with a system Arabic font stack (`--font-arabic`, no font package). It rendered well in Chrome on Windows; the plain fallback "(সা.)" is a one-key change. A `{saw}` token in a message marks its place, rendered by `<WithHonorific>` (plain text, no HTML).
+  - **New in `@sirat/ui`:** `Section`, `Timeline` (dates and steps), `Accordion` (native `details`/`summary`, no script), `BigStats`, `StarMark`, `GeometricPattern` and `StarOrnament` (inline SVG geometry in `currentColor`), `Honorific`/`WithHonorific`; the tokens `--font-arabic` and `--animate-rise` (used only behind `motion-safe:`).
+  - **Look:** our own design, never the old site's layout. Geometric and arabesque motifs only: **never a depiction of the Prophet ﷺ or any prophet**.
+- **Why:** the client needs a draft to react to, and its readers are Bangla first. Static server-rendered pages, no new dependency, no HTML from strings.
+- **Who:** Rasel (owner, 2026-11-03), passed on by the lead; built by core.
+
+## 2026-11-03 — The admin exam preview draws like a start and writes nothing (D2, P1; exam session, the design the lead approved)
+
+1. **`GET /admin/exams/:id/preview`, admins only:** one sample draw, made with the same `drawLayout` and `renderQuestions` that a student's start uses. A preview cannot drift from what students see. The correct positions use the key in effect (E7b).
+2. **Nothing is written:** no attempt row, no Redis checkpoint, no cache, no audit row (it is a read, like `GET /admin/exams/:id`, which already carries the keys). Each call is a new draw; the page's "Draw again" is a refresh. A test counts attempts, audit rows and `exam:att:*`/`exam:ckpt:*` keys before and after, and checks that the response carries no attempt id, receipt, request id, token or option key.
+3. **A short pool:** a draft shows what it has, with an "n of m questions" note (lead's pick b). A published exam always has its full pool (the publish rule), so a short one is refused like a publish (`question_count`).
+4. **The web reuses the student's look:** `QuestionCard` and the question-number list moved out of `ExamRoom.tsx` first, as a refactor with no behaviour change. The preview has no controller, timer, checkpoint, submit or violation listeners. "Show answers" is off by default and shows the correct option on its own line, so the student card is not changed for it.
+
+## 2026-11-01 — Certificates without the PDF (core C6c-1; the C6 plan, the lead's notes, owner Q4 defaults)
+
+1. **Issuing is a queue job** (DO 8): the admin asks, the API answers 202 with how many qualify now, and the worker runs one idempotent `INSERT … SELECT … ON CONFLICT (user_id, type, round_id) DO NOTHING`. It is on a new `certificates` queue (C6c-2's render joins it), in `ops-check` like the others.
+2. **Who gets which** (Q4 default):
+   - participation: on Round 1's published snapshot, from **published** exams only (as for promotion, an archived exam is retired);
+   - promotion: an entry in a round after Round 1;
+   - winner: named by email in the final, with a reason in the audit log.
+   - Blocked accounts are left out. A winner's email is resolved to an id by the API, so no email reaches Redis.
+3. **Serial and code:** `SLO-<year>-<number>` from `certificate_serial_seq` (gaps when a run skips existing ones; the number only has to be unique). The verification code is 12 random hex digits (48 bits, `gen_random_uuid()`'s random part), case-insensitive when typed. At 30 tries a minute per IP a code cannot be guessed (A2 agreed).
+4. **The name is copied at issue time**, so a later profile edit does not change a printed certificate.
+5. **Revoke, never delete:** with a reason and the version seen (row lock); the student sees "revoked", not the reason. No API deletes a certificate.
+6. **The public check** (lead): only `{ name, award: { type, roundName } }`; one 404 for unknown, malformed and revoked codes (the body differs only by the request id). It was already on A2's reviewed allow-list. The web page `/verify/[code]` calls it **from the browser**: a server-side call would carry the web server's IP, so every visitor would share one per-IP limit. The page is `noindex` and outside the marketing design.
+7. **Web:** `/dashboard/certificates` (the awards, numbers, codes and a link to the check; the PDF marked as coming); `/admin/certificates` (issue, search, revoke); nav items in both shells.
+8. **Tests:**
+   - `certificates.int-spec.ts`: participation through the real queue and worker, once, with the name as it was and a blocked student left out; promotion and winners and 12 refusals; the check (name and award only, lower case, the same 404 for unknown, malformed and revoked) and the revoke (stale, twice, the student's view); the per-IP limit; admins only, a demoted admin; the CHECKs.
+   - The rounds and jury tests also empty `certificates` (a certificate on a round would block deleting it).
+   - web: the area file picks, a message for every refusal code in both languages.
+
+## 2026-11-03 — VPS specs confirmed; L14 part 1 needs no change (A2; specs read on the VPS by the lead)
+
+- **Specs, as `deploy` on the VPS:**
+  - 8 vCPU (`nproc`): AMD EPYC 9354P, an 8-vCPU slice (Hostinger KVM 8);
+  - 31 GB memory usable (32 GB nominal);
+  - 387 GB disk, `/var/lib/docker` on the same filesystem, 7 % used;
+  - Ubuntu 26.04.1 LTS, kernel 7.0.0-38-generic, not the 24.04 the plan assumed (bootstrap accepts it);
+  - from bootstrap: 4 GB swap, `vm.overcommit_memory=1`.
+- **Decision:** no retune of `postgresql.conf` or the compose limits, which assumed 8 vCPU / 32 GB.
+  - The long-running services' memory limits add up to about 21.25 GB: Postgres 12, the api 4 × 1, Redis 2 + 1, web 1, worker 0.5, nginx 0.5, PgBouncer 0.25.
+  - That leaves about 10 GB of the 31 for the OS and the page cache, in line with `effective_cache_size = 20GB` (8 GB `shared_buffers` plus the page cache).
+  - The CPU limits are caps, not reservations.
+- **Why:** LAUNCH-PLAN L14 part 1 retunes only a box that differs, and this one does not. Part 2 (the nginx zones, the API refresh tier, the monitor thresholds) waits for exam's k6 numbers from the VPS staging.
+- **Who:** the lead read the specs on the VPS; A2 checked the limits against them. This answers OPEN-QUESTIONS #22's specs part; the Malaysia/AWS fallback stays open.
+
 ## 2026-11-01 — Answer-key correction after publish (E7b; exam session, the design the lead approved with four notes)
 
 1. **The question rows stay frozen** (DON'T 8, `questions_frozen_after_publish`). A wrong key is fixed by a row in the new `answer_key_corrections` (exam, question version, from, to, reason, who, when); the newest correction per question is the key in effect.

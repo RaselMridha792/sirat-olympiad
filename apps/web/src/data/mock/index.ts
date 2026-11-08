@@ -3,6 +3,7 @@ import {
   CATEGORIES,
   DEFAULT_VIDEO_CRITERIA,
   type AdminRound,
+  type AdminCertificateRow,
   type JuryEntryRow,
   BD_DISTRICTS,
   type AdminAnnouncement,
@@ -27,6 +28,7 @@ import {
   type AdminAttemptDetail,
   type AdminAttemptRow,
   type AdminExamLeaderboard,
+  type AdminExamPreview,
   type AdminExamView,
   type ExamEvent,
   type ExamResultsStatus,
@@ -525,6 +527,24 @@ export function createMockSource(state: MockState | null): DataSource {
           () => null,
         ),
 
+      listMyCertificates: () =>
+        run(
+          () => {
+            const w = getWorld();
+            return w.rounds.slice(0, 2).map((r, i) => ({
+              id: `ct-me-${i}`,
+              type: i === 0 ? ('participation' as const) : ('promotion' as const),
+              round: { id: r.id, name: r.name },
+              serial: `SLO-2026-${String(120 + i).padStart(6, '0')}`,
+              verificationCode: i === 0 ? '3FA9C1D27B10' : '9E04B2C6A1F3',
+              nameOnCertificate: w.me.name,
+              issuedAt: r.closesAt ?? '2026-11-20T06:00:00.000Z',
+              revoked: false,
+            }));
+          },
+          () => [],
+        ),
+
       getMyTeam: () =>
         run(
           () => {
@@ -873,6 +893,30 @@ export function createMockSource(state: MockState | null): DataSource {
           () => null,
         ),
 
+      getExamPreview: (id) =>
+        run(
+          (): AdminExamPreview | null => {
+            const e = getWorld().exams.find((x) => x.id === id);
+            if (!e) return null;
+            // The mock draws nothing: the active questions in their stored order, options as written.
+            const questions = e.questions.filter((q) => q.isActive).slice(0, e.questionsPerAttempt);
+            return {
+              examId: e.id,
+              title: e.title,
+              status: e.status,
+              durationMinutes: e.durationMinutes,
+              questionsPerAttempt: e.questionsPerAttempt,
+              violationWarnings: EXAM_VIOLATION_WARNINGS,
+              questions: questions.map((q) => ({
+                text: q.text,
+                options: q.options.map((o) => o.text),
+              })),
+              correct: questions.map((q) => q.options.findIndex((o) => o.key === q.correctKey)),
+            };
+          },
+          () => null,
+        ),
+
       getExamResults: (id) =>
         run(
           (): ExamResultsStatus | null => {
@@ -996,6 +1040,30 @@ export function createMockSource(state: MockState | null): DataSource {
             return paginate(rows, query);
           },
           () => emptyPage<JuryEntryRow>(query),
+        ),
+
+      listCertificates: (query) =>
+        run(
+          () => {
+            const w = getWorld();
+            const rows: AdminCertificateRow[] = w.users
+              .filter((u) => u.role === 'student')
+              .slice(0, 30)
+              .map((u, i) => ({
+                id: `ct-${i}`,
+                user: { userId: u.id, name: u.name, email: u.email },
+                type: i < 24 ? 'participation' : i < 29 ? 'promotion' : 'winner',
+                round: { id: w.rounds[i < 24 ? 0 : 1]!.id, name: w.rounds[i < 24 ? 0 : 1]!.name },
+                serial: `SLO-2026-${String(i + 1).padStart(6, '0')}`,
+                nameOnCertificate: u.name,
+                issuedAt: '2026-11-20T06:00:00.000Z',
+                revokedAt: i === 3 ? '2026-11-21T06:00:00.000Z' : null,
+                revokeReason: i === 3 ? 'Issued by mistake' : null,
+                updatedAt: '2026-11-20T06:00:00.000Z',
+              }));
+            return paginate(rows, query);
+          },
+          () => emptyPage<AdminCertificateRow>(query),
         ),
 
       listRounds: () =>

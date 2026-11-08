@@ -1,5 +1,5 @@
 import { ServiceUnavailableException } from '@nestjs/common';
-import { HealthController, READY_TIMEOUT_MS } from './health.controller';
+import { HealthController, READY_CACHE_MS, READY_TIMEOUT_MS } from './health.controller';
 
 type FakeRedis = { status: string; ping: jest.Mock; connect: jest.Mock };
 const redis = (
@@ -59,6 +59,39 @@ describe('HealthController', () => {
     release('PONG');
     await expect(both).resolves.toEqual([{ status: 'ready' }, { status: 'ready' }]);
     expect(slow.ping).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers a second probe within the window from the same check: the database is asked once', async () => {
+    const query = jest.fn(dbOk);
+    const cache = redis();
+    const c = make(query, cache);
+    await expect(c.ready()).resolves.toEqual({ status: 'ready' });
+    await expect(c.ready()).resolves.toEqual({ status: 'ready' });
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(cache.ping).toHaveBeenCalledTimes(1);
+  });
+
+  it('checks again once the window has passed', async () => {
+    // Only the clock is fake: withTimeout's own timers stay real.
+    jest.useFakeTimers({ doNotFake: ['setImmediate', 'setTimeout', 'clearTimeout', 'nextTick'] });
+    const query = jest.fn(dbOk);
+    const c = make(query);
+    await c.ready();
+    jest.setSystemTime(Date.now() + READY_CACHE_MS - 1);
+    await c.ready();
+    expect(query).toHaveBeenCalledTimes(1);
+    jest.setSystemTime(Date.now() + 1);
+    await c.ready();
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a failure for the window too, and concurrent probes share one check', async () => {
+    const query = jest.fn(() => Promise.reject(new Error('db down')));
+    const c = make(query);
+    const both = Promise.allSettled([c.ready(), c.ready()]);
+    expect((await both).map((r) => r.status)).toEqual(['rejected', 'rejected']);
+    await expect(c.ready()).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(query).toHaveBeenCalledTimes(1);
   });
 
   it('answers 503 within the timeout when a dependency hangs instead of hanging itself', async () => {

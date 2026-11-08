@@ -64,10 +64,20 @@ async function connect(url) {
   };
 }
 
-/** Starts the browser. `close()` ends it and deletes the profile. */
-export async function launchBrowser() {
-  const executable = findBrowser();
-  if (!executable) throw new Error('cdp: needs Chrome or Edge (set CHROME_PATH)');
+/** A busy CI runner can take longer than 30 s to start Chrome (seen once in CI's docker job, after the stack build). */
+const START_TIMEOUT_MS = process.env.CI ? 90_000 : 30_000;
+
+/** The end of Chrome's own output, on one line: it names why a start failed. */
+const lastOutput = (text) =>
+  text.trim()
+    ? JSON.stringify(text.trim().split(/\r?\n/).slice(-8).join(' | ').slice(-800))
+    : '(none)';
+
+/**
+ * Starts Chrome on a new profile: its DevTools URL, the child and the profile. A start that fails is stopped and its
+ * profile removed, and the error carries the end of Chrome's output.
+ */
+async function startBrowser(executable) {
   const profile = mkdtempSync(join(tmpdir(), 'sirat-cdp-'));
   const args = [
     '--headless=new',
@@ -83,22 +93,52 @@ export async function launchBrowser() {
     'about:blank',
   ];
   const child = spawn(executable, args, { stdio: ['ignore', 'ignore', 'pipe'] });
-  const wsUrl = await new Promise((resolve, reject) => {
-    let output = '';
-    const timer = setTimeout(() => reject(new Error('cdp: the browser did not start')), 30_000);
-    child.stderr.on('data', (chunk) => {
-      output += chunk;
-      const match = output.match(/DevTools listening on (ws:\/\/\S+)/);
-      if (match) {
+  let output = '';
+  try {
+    const wsUrl = await new Promise((resolve, reject) => {
+      const fail = (why) =>
+        reject(new Error(`cdp: the browser ${why}; its last output: ${lastOutput(output)}`));
+      const timer = setTimeout(
+        () => fail(`did not start within ${START_TIMEOUT_MS / 1000} s`),
+        START_TIMEOUT_MS,
+      );
+      child.stderr.on('data', (chunk) => {
+        output += chunk;
+        const match = output.match(/DevTools listening on (ws:\/\/\S+)/);
+        if (match) {
+          clearTimeout(timer);
+          resolve(match[1]);
+        }
+      });
+      child.on('exit', (code) => {
         clearTimeout(timer);
-        resolve(match[1]);
-      }
+        fail(`exited (${code})`);
+      });
     });
-    child.on('exit', (code) => {
-      clearTimeout(timer);
-      reject(new Error(`cdp: the browser exited (${code})`));
-    });
-  });
+    return { wsUrl, child, profile };
+  } catch (error) {
+    child.kill();
+    try {
+      rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    } catch {
+      /* best effort: a profile left behind fails no check */
+    }
+    throw error;
+  }
+}
+
+/** Starts the browser (one more try on a new profile if the first start fails). `close()` ends it and deletes the profile. */
+export async function launchBrowser() {
+  const executable = findBrowser();
+  if (!executable) throw new Error('cdp: needs Chrome or Edge (set CHROME_PATH)');
+  let started;
+  try {
+    started = await startBrowser(executable);
+  } catch (error) {
+    console.warn(`${error.message}; starting it once more`);
+    started = await startBrowser(executable);
+  }
+  const { wsUrl, child, profile } = started;
   const conn = await connect(wsUrl);
   // Content-Security-Policy, seen by every page: the violations (enforced or Report-Only) and which documents carried
   // nginx's page policy. e2e.mjs and e2e-exam.mjs check both once at the end (cspReport below, LAUNCH-PLAN §3).

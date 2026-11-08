@@ -5,7 +5,7 @@
  * judge's latest total; scoring stops at the category's promotion; jury_scores is append-only.
  */
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { PrismaClient, type Category, type Prisma } from '@prisma/client';
 import type {
@@ -56,7 +56,9 @@ async function clean() {
     UPDATE "exams" SET "status" = 'archived'
     WHERE "round_id" = ${round1.id}::uuid AND "status"::text = 'published'`;
   // jury_scores and promotion_runs are append-only: TRUNCATE is their one way out, and only in a *_test database.
-  await prisma.$executeRawUnsafe('TRUNCATE "jury_scores", "round_entries", "promotion_runs"');
+  await prisma.$executeRawUnsafe(
+    'TRUNCATE "certificates", "jury_scores", "round_entries", "promotion_runs"',
+  );
   await prisma.$executeRaw`DELETE FROM "jury_assignments"`;
   await prisma.$executeRaw`DELETE FROM "rounds" WHERE "sort_order" > 1`;
 }
@@ -87,7 +89,14 @@ const closeRound = (id: string) =>
 
 /** A student with an entry in the round, optionally with a video already sent. */
 async function contestant(roundId: string, category: Category, video = true) {
-  const s = await sessionFor(env, prisma, { role: 'student', category, name: 'Nusrat Jahan' });
+  // A phone and an institution too, so the blindness checks have every identifying field to look for.
+  const s = await sessionFor(env, prisma, {
+    role: 'student',
+    category,
+    name: 'Nusrat Jahan',
+    phone: `017${String(randomInt(0, 100_000_000)).padStart(8, '0')}`,
+    institution: 'Blind Check Model School',
+  });
   const entry = await prisma.roundEntry.create({
     data: {
       userId: s.id,
@@ -296,10 +305,20 @@ describe('scoring', () => {
       code: expect.stringMatching(/^E-[0-9A-F]{8}$/),
       myScore: null,
     });
-    // Blind: no name, user id or contact of the students.
+    // Blind: nothing that identifies the students (name, user id, email, phone, institution).
     const text = JSON.stringify(pending.json);
     expect(text).not.toContain('Nusrat');
-    for (const s of [a, b, c]) expect(text).not.toContain(s.id);
+    const people = await prisma.user.findMany({
+      where: { id: { in: [a.id, b.id, c.id] } },
+      select: { id: true, name: true, email: true, phone: true, institution: true },
+    });
+    expect(people).toHaveLength(3);
+    for (const p of people) {
+      for (const value of [p.id, p.name, p.email, p.phone, p.institution]) {
+        expect(value).toBeTruthy(); // every field is set, so each check below means something
+        expect(text).not.toContain(value);
+      }
+    }
 
     const one = await score(judge1.cookie, a.entryId, {
       criteria: scores(7),

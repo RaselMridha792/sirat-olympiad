@@ -100,7 +100,7 @@ L12 is `bootstrap.sh` + `prelaunch-check.sh` + RUNBOOK §9 (4–5 h). In all: 14
   It is tested in the throwaway VM (Q4) and timed against the 1-hour rebuild target (RULEBOOK §3). Without a VM, its first full run is on the VPS on Sat 7.
 
 **Waits for the VPS,** in this order on Sat 7:
-1. The specs confirmed (OPEN-QUESTIONS #22). Postgres and the compose limits assume 8 vCPU and 32 GB; a smaller box gets L14 part 1 first (section 12).
+1. The specs confirmed (OPEN-QUESTIONS #22). Postgres and the compose limits assume 8 vCPU and 32 GB; a smaller box gets L14 part 1 first (section 12). **Confirmed 2026-11-03:** 8 vCPU, 31 GB usable, Ubuntu 26.04.1; no change (DECISIONS "VPS specs confirmed").
 2. bootstrap run and timed; the owner types the secrets.
 3. The Origin CA key and certificate (section 3).
 4. First start.
@@ -128,7 +128,7 @@ Then: deploy, second deploy, forced rollback and a reboot, rehearsed and timed.
 - Directory mounts instead of single-file mounts. Ports bound to IPv4 only: with no IPv6 listener, Docker never replaces the client address. Add `certs/.gitkeep`.
 - **Headers,** in one include that also serves the `@api_*` error locations and nginx's own pages:
   - nosniff, Referrer-Policy, and HSTS. HSTS comes only from nginx: helmet's is turned off, and an API test checks it.
-  - **Page CSP**, a fixed policy (nonces would make every Next page dynamic): `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`. L3 adds a `securitypolicyviolation` listener to the shared CDP driver (`apps/web/scripts/lib/cdp.mjs`), so every browser script built on it fails on a violation: `e2e.mjs` and `e2e-exam.mjs` now (login, refresh, the dashboards, the exam room), payments' wizard e2e later. The dev and CI site file sends the same policy as Report-Only, which fires the same event. On the VPS the policy stays Report-Only until payments' wizard e2e (PR 4/5, with the fake PayStation service) has passed with it, from the wizard to the fake gateway's `paymentUrl` and back to the result page. Then it is enforced, at the latest in the Thu 12 release candidate; if that e2e is late, A2 runs it against the rehearsal once PR 4 merges. A nonce- or hash-based `script-src` comes after launch (a DECISIONS entry).
+  - **Page CSP**, a fixed policy (nonces would make every Next page dynamic): `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`. L3 adds a `securitypolicyviolation` listener to the shared CDP driver (`apps/web/scripts/lib/cdp.mjs`), so every browser script built on it fails on a violation: `e2e.mjs` and `e2e-exam.mjs` now (login, refresh, the dashboards, the exam room), payments' wizard e2e later. The dev and CI site file sends the same policy as Report-Only, which fires the same event. On the VPS the policy stays Report-Only until payments' wizard e2e (PR 4/5, with the fake PayStation service) has passed with it, from the wizard to the fake gateway's `paymentUrl` and back to the result page. Then it is enforced, at the latest in the Thu 12 release candidate; if that e2e is late, A2 runs it against the rehearsal once PR 4 merges. A nonce- or hash-based `script-src` comes after launch (a DECISIONS entry). **Enforced 2026-11-03 (#81):** payments' wizard e2e passes under the enforced policy through nginx in CI's docker job, on every PR (DECISIONS "The page CSP is enforced").
   - `Cache-Control: no-store` on `/api`.
 - **Logs (Lead, 22:58):**
   - One explicit access-log format, with every field listed. The path is cut at the first `?` (a `map` on `$request_uri`), and the Referer is dropped. No raw `$request`, `$request_uri` or `$http_referer`.
@@ -544,7 +544,7 @@ The table assumes about 2 h per medium PR, review rounds included. These are est
 | Wed 25 Nov (expected) | An admin opens registration from `/admin/settings` (audited), when the owner says | The client's date (registration to 15 Feb) |
 
 - **L14 "VPS tuning" (1–2 h, two small parts):**
-  - **Part 1, only if the VPS is not 8 vCPU / 32 GB:** retune `postgresql.conf` and the compose limits before the data services first start. `deploy.sh` never restarts them, so a later change needs its own Postgres restart.
+  - **Part 1, only if the VPS is not 8 vCPU / 32 GB:** retune `postgresql.conf` and the compose limits before the data services first start. `deploy.sh` never restarts them, so a later change needs its own Postgres restart. **Done 2026-11-03: the specs match, no change (DECISIONS "VPS specs confirmed").**
   - **Part 2, after k6:** the nginx zones, the API's refresh tier and the monitor thresholds, shipped in the Thu 12 release candidate. If k6 shows nothing to change, only the numbers go into DECISIONS.
 - **One session:** the code is ready by Fri 6 Nov, before the VPS. If the lead gives L6–L7 and L10–L11 to a second session (their files barely overlap), by about Wed 4 Nov.
 - **Domain on Wed 4 Nov:** no code waits; only SES and the Cloudflare zone move.

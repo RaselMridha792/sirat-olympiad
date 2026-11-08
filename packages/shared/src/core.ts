@@ -676,3 +676,98 @@ export interface JuryScoreResult {
   score: number;
   judges: number;
 }
+
+// ───────────── Certificates (core C6c) ─────────────
+
+/**
+ * participation: on a published Round 1 snapshot; promotion: an entry in a round after Round 1; winner: an admin
+ * names final-round students (owner Q4 defaults).
+ */
+export const CERTIFICATE_TYPES = ['participation', 'promotion', 'winner'] as const;
+export type CertificateType = (typeof CERTIFICATE_TYPES)[number];
+
+export const CERTIFICATE_LIMITS = {
+  reasonMin: 3,
+  reasonMax: 200,
+  /** Winners named in one request. */
+  winnersMax: 50,
+  /** The public check per IP and minute. */
+  checksPerMinute: 30,
+} as const;
+
+/** The verification code as printed: 12 hex digits (any letter case when typed). */
+export const CERTIFICATE_CODE_PATTERN = /^[0-9A-Fa-f]{12}$/;
+
+/** Refusal codes in ApiError.details for certificates. */
+export const CERTIFICATE_REFUSALS = [
+  'wrong_round',
+  'results_not_published',
+  'no_winners',
+  'unknown_user',
+  'not_in_round',
+  'already_revoked',
+  'stale',
+  'queue_unavailable',
+] as const;
+export type CertificateRefusal = (typeof CERTIFICATE_REFUSALS)[number];
+
+/** POST /admin/certificates/issue: queues one job; `emails` and `reason` for winners only. */
+export interface CertificateIssueRequest {
+  type: CertificateType;
+  roundId: string;
+  emails?: string[];
+  reason?: string;
+}
+
+/** 202: the job is queued; `candidates` is how many would get one now (those who have one already are skipped). */
+export interface CertificateIssueResult {
+  queued: true;
+  type: CertificateType;
+  roundId: string;
+  candidates: number;
+}
+
+/** GET /certificates/mine: the student's own certificates. */
+export interface MyCertificate {
+  id: string;
+  type: CertificateType;
+  round: Pick<RoundRecord, 'id' | 'name'>;
+  serial: string;
+  verificationCode: string;
+  nameOnCertificate: string;
+  issuedAt: string;
+  revoked: boolean;
+}
+
+/** GET /admin/certificates: one row, with the student's contact (admins only). */
+export interface AdminCertificateRow {
+  id: string;
+  user: { userId: string; name: string; email: string };
+  type: CertificateType;
+  round: Pick<RoundRecord, 'id' | 'name'>;
+  serial: string;
+  nameOnCertificate: string;
+  issuedAt: string;
+  revokedAt: string | null;
+  revokeReason: string | null;
+  updatedAt: string;
+}
+
+export interface AdminCertificateQuery extends PageQuery {
+  /** A name (contains) or a serial (exact). */
+  q?: string;
+  type?: CertificateType;
+  round?: string;
+}
+
+/** POST /admin/certificates/:id/revoke. */
+export interface CertificateRevokeRequest {
+  reason: string;
+  expectedUpdatedAt: string;
+}
+
+/** GET /certificates/verify/:code (public, lead): the name and the award only; revoked and unknown are both 404. */
+export interface CertificateCheck {
+  name: string;
+  award: { type: CertificateType; roundName: string };
+}

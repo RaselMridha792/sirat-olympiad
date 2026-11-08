@@ -60,6 +60,22 @@
 
   --font-sans: 'Inter Variable', 'Noto Sans Bengali Variable', system-ui, sans-serif;
   --font-bangla: 'Noto Sans Bengali Variable', system-ui, sans-serif;
+  /*
+   * Arabic script, for the honorific ﷺ only (<Honorific>). System fonts, no font package (owner, 2026-11-03): the
+   * browser tries each family per glyph, so the first one on the device that has U+FDFA draws it.
+   */
+  --font-arabic:
+    'Noto Naskh Arabic', 'Noto Sans Arabic', 'Traditional Arabic', 'Sakkal Majalla', 'Geeza Pro',
+    'Arial', 'Times New Roman', serif;
+
+  /* Motion, used only behind motion-safe: (prefers-reduced-motion). */
+  --animate-rise: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(0.75rem);
+    }
+  }
 
   --radius-card: 1rem;
   --radius-control: 0.75rem;
