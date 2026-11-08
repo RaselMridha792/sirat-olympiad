@@ -40,6 +40,19 @@ describe('EmailQueue (owner: a failed email never blocks registration, payment o
     });
   });
 
+  it('drops an email to a demo account (any case) without queuing it, logging kind and key only', async () => {
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const demo = { ...message, to: 'Student-001@DEMO.sirat.invalid' };
+    await expect(queueWith('ready').enqueue('verify-email', 'k0', demo)).resolves.toBe(true);
+    expect(add).not.toHaveBeenCalled();
+    expect(JSON.stringify(log.mock.calls)).toContain('demo account dropped');
+    expect(JSON.stringify(log.mock.calls)).not.toContain('Student-001');
+    // Only that exact domain: another .invalid address (CI fixtures) is queued as usual.
+    add.mockResolvedValue({ id: 'k0b' });
+    await queueWith('ready').enqueue('verify-email', 'k0b', { ...message, to: 'a@ci.invalid' });
+    expect(add).toHaveBeenCalledTimes(1);
+  });
+
   it('returns false at once when the queue Redis is not ready, logging kind and key only', async () => {
     await expect(queueWith('reconnecting').enqueue('verify-email', 'k1', message)).resolves.toBe(
       false,

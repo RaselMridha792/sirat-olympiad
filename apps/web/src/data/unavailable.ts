@@ -60,6 +60,7 @@ export const unavailableSource: DataSource = {
     listPayments: fail,
     getPayment: fail,
     listSettings: fail,
+    getDemoStatus: fail,
     getBook: fail,
     listBookOrders: fail,
     listAudit: fail,

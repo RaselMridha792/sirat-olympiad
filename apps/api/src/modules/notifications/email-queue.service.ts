@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, OnApplicationShutdown, Optional } from '@nestjs/common';
 import { type JobsOptions, Queue } from 'bullmq';
 import type Redis from 'ioredis';
+import { isDemoEmail } from '@sirat/shared';
 import { errorLogFields } from '../../common/all-exceptions.filter';
 import { withTimeout } from '../../common/with-timeout';
 import { REDIS_QUEUE } from '../../redis/redis.module';
@@ -37,6 +38,11 @@ export class EmailQueue implements OnApplicationShutdown {
    * Logs kind and key only, never the address or the content.
    */
   async enqueue(kind: string, key: string, message: EmailMessage): Promise<boolean> {
+    // Demo accounts (DECISIONS 2026-11-08 "Demo data") have no mailbox: dropped here and again in the worker.
+    if (isDemoEmail(message.to)) {
+      this.logger.log({ msg: 'email to a demo account dropped', kind, key });
+      return true;
+    }
     if (this.redis.status !== 'ready') {
       this.logger.error({ msg: 'email not queued: queue Redis not ready', kind, key });
       return false;

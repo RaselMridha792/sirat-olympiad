@@ -72,10 +72,15 @@ const TWO_FACTOR_OPTIONAL_ROUTES = new Set([
   'POST /api/auth/2fa/enable',
 ]);
 /**
- * Reviewed (DECISIONS "The admin 2FA requirement is a setting"): the routes that demand a proved second factor even
- * while the requirement setting is off. Switching the requirement must never be possible without the proof.
+ * Reviewed (DECISIONS "The admin 2FA requirement is a setting", "Demo data"): the routes that demand a proved second
+ * factor even while the requirement setting is off. Switching the requirement, and loading or removing demo data
+ * (thousands of rows at once), must never be possible without the proof.
  */
-const TWO_FACTOR_ALWAYS_ROUTES = new Set(['PUT /api/admin/security/two-factor-requirement']);
+const TWO_FACTOR_ALWAYS_ROUTES = new Set([
+  'PUT /api/admin/security/two-factor-requirement',
+  'POST /api/admin/demo/load',
+  'POST /api/admin/demo/clear',
+]);
 /** Reviewed: server-to-server callbacks that cannot send X-Requested-With. */
 const CSRF_EXEMPT = new Set(['POST /api/payments/paystation/ipn']);
 

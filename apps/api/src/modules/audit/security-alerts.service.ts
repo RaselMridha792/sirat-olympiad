@@ -37,7 +37,9 @@ export type SecurityAlertKind =
   | 'ops.certificate' // a server check (ops-check, L11): see RUNBOOK §7
   | 'ops.backup_age' // a server check (ops-check, L11): see RUNBOOK §7
   | 'ops.time_sync' // a server check (ops-check, L11): see RUNBOOK §7
-  | 'ops.trusted_generators'; // the load-test generators are trusted (A2's L14): see RUNBOOK §7;
+  | 'ops.trusted_generators' // the load-test generators are trusted (A2's L14): see RUNBOOK §7;
+  | 'ops.demo_loaded' // demo data was loaded (an admin or the CLI): remove it before launch
+  | 'ops.demo_cleared'; // demo data was removed
 
 /** Alert categories: each has its own hourly email cap (LAUNCH-PLAN §6, owner Q2) and its own subject. */
 export const ALERT_CATEGORIES = ['security', 'payments', 'ops'] as const;
@@ -74,6 +76,8 @@ export const ALERT_CATEGORY: Record<SecurityAlertKind, AlertCategory> = {
   'ops.backup_age': 'ops',
   'ops.time_sync': 'ops',
   'ops.trusted_generators': 'ops',
+  'ops.demo_loaded': 'ops',
+  'ops.demo_cleared': 'ops',
 };
 
 const SUBJECT_PREFIX: Record<AlertCategory, string> = {
@@ -129,6 +133,9 @@ const TITLES: Record<SecurityAlertKind, string> = {
   'ops.time_sync': 'The server clock is not synchronised',
   'ops.trusted_generators':
     'Load-test generators are trusted to set client addresses (loadtest-realip): switch them off',
+  'ops.demo_loaded':
+    'Demo data was loaded: remove it before launch (the prelaunch check fails while it exists)',
+  'ops.demo_cleared': 'Demo data was removed',
 };
 
 /**

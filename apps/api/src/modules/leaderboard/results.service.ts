@@ -148,14 +148,28 @@ export class ResultsService {
     };
   }
 
-  /** Rank, name, institution; only from a published snapshot (owner Q5). Pages are cached per generation. */
-  async leaderboard(query: LeaderboardQueryDto): Promise<ExamLeaderboard> {
+  /**
+   * Rank, name, institution; only from a published snapshot (owner Q5). Pages are cached per generation. Demo data
+   * never mixes with real data (DECISIONS 2026-11-08 "Demo data"): a demo account sees only demo exams' boards and
+   * everyone else only real ones (the other side's exam: the same 404 as an unknown one).
+   */
+  async leaderboard(query: LeaderboardQueryDto, viewerId: string): Promise<ExamLeaderboard> {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? DEFAULT_PAGE_SIZE;
+    const viewer = await this.prisma.user.findUnique({
+      where: { id: viewerId },
+      select: { demoBatchId: true },
+    });
+    const side: Prisma.ExamWhereInput = viewer?.demoBatchId
+      ? { demoBatchId: { not: null } }
+      : { demoBatchId: null };
     const exam = query.exam
-      ? await this.prisma.exam.findUnique({ where: { id: query.exam }, select: examInfoSelect })
+      ? await this.prisma.exam.findFirst({
+          where: { id: query.exam, ...side },
+          select: examInfoSelect,
+        })
       : await this.prisma.exam.findFirst({
-          where: { resultsPublishedAt: { not: null } },
+          where: { resultsPublishedAt: { not: null }, ...side },
           orderBy: { resultsPublishedAt: 'desc' },
           select: examInfoSelect,
         });

@@ -38,6 +38,7 @@ import type {
   AdminPaymentQuery,
   AdminPaymentRow,
   AdminSetting,
+  AdminDemoStatus,
   AdminStats,
   AdminUserDetail,
   AdminUserQuery,
@@ -153,6 +154,8 @@ export interface DataSource {
     getPayment(id: string): Promise<AdminPaymentDetail | null>;
     /** GET /admin/settings (the keys an admin may change) */
     listSettings(): Promise<AdminSetting[]>;
+    /** GET /admin/demo: the demo data card (admin only; DECISIONS 2026-11-08 "Demo data") */
+    getDemoStatus(): Promise<AdminDemoStatus>;
     /** GET /admin/book (title, cover, upload limits) */
     getBook(): Promise<AdminBookInfo>;
     /** GET /admin/book-orders?page=&pageSize=&status=&district=&phone=&email= */
