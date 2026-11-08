@@ -19,7 +19,7 @@ export class StudentExamsService {
 
   async list(userId: string): Promise<StudentExamListItem[]> {
     const student = await studentAccount(this.prisma, userId);
-    const exams = (await this.cache.published()).filter((c) => visibleTo(c, student.category));
+    const exams = (await this.cache.published()).filter((c) => visibleTo(c, student));
     if (exams.length === 0) return [];
     const attempts = await this.prisma.attempt.findMany({
       where: { userId, examId: { in: exams.map((e) => e.id) } },
@@ -33,7 +33,7 @@ export class StudentExamsService {
   async detail(userId: string, examId: string): Promise<StudentExamDetail> {
     const student = await studentAccount(this.prisma, userId);
     const config = await this.cache.config(examId);
-    if (!visibleTo(config, student.category)) throw new NotFoundException('Exam not found');
+    if (!visibleTo(config, student)) throw new NotFoundException('Exam not found');
     const attempt = await this.prisma.attempt.findUnique({
       where: { userId_examId: { userId, examId } },
       select: {

@@ -66,7 +66,7 @@ export class AttemptsService {
   async start(user: AuthUser, examId: string): Promise<{ created: boolean; view: AttemptView }> {
     const student = await studentAccount(this.prisma, user.id);
     let config = await this.cache.config(examId);
-    if (!visibleTo(config, student.category)) throw new NotFoundException('Exam not found');
+    if (!visibleTo(config, student)) throw new NotFoundException('Exam not found');
 
     const existing = await this.findAttempt(user.id, examId);
     if (existing) return { created: false, view: await this.view(existing, config) };
@@ -104,7 +104,7 @@ export class AttemptsService {
       // Nothing inserted: the exam changed under us. Re-read it once (an admin saved a question, or it closed).
       await this.cache.invalidateExam(examId);
       const fresh = await this.cache.config(examId);
-      if (!visibleTo(fresh, student.category)) throw new NotFoundException('Exam not found');
+      if (!visibleTo(fresh, student)) throw new NotFoundException('Exam not found');
       config = fresh;
     }
     throw new ServiceUnavailableException('The exam is being updated. Please try again.');

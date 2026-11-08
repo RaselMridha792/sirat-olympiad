@@ -118,11 +118,24 @@ export class TeamsService {
           select: {
             id: true,
             owner: {
-              select: { role: true, isBlocked: true, ambassador: { select: { approvedAt: true } } },
+              select: {
+                role: true,
+                isBlocked: true,
+                demoBatchId: true,
+                ambassador: { select: { approvedAt: true } },
+              },
             },
             _count: { select: { members: true } },
           },
         });
+        // Demo data never mixes with real data (DECISIONS 2026-11-08 "Demo data"): a demo account joins only a demo
+        // team and a real account only a real one; to the other side the team does not exist.
+        const joiner = await tx.user.findUniqueOrThrow({
+          where: { id: actor.id },
+          select: { demoBatchId: true },
+        });
+        if ((team.owner.demoBatchId === null) !== (joiner.demoBatchId === null))
+          throw new NotFoundException('Team not found');
         if (!ownerActive(team.owner)) throw conflict('team_closed');
         if (
           await tx.teamMember.findUnique({ where: { userId: actor.id }, select: { teamId: true } })

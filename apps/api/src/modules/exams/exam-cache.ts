@@ -22,6 +22,9 @@ export interface ExamConfig {
   randomDraw: boolean;
   contentVersion: number;
   resultsPublishedAt: string | null;
+  /** A demo exam (DECISIONS 2026-11-08 "Demo data"): only demo accounts see and start it. Missing in a config cached
+   * before this field existed, which counts as a real exam. */
+  demo?: boolean;
 }
 
 const CONFIG_TTL_S = 60;
@@ -55,6 +58,7 @@ const configSelect = {
   randomDraw: true,
   contentVersion: true,
   resultsPublishedAt: true,
+  demoBatchId: true,
 } as const;
 
 /**
@@ -225,11 +229,14 @@ function toConfig(row: {
   randomDraw: boolean;
   contentVersion: number;
   resultsPublishedAt: Date | null;
+  demoBatchId: string | null;
 }): ExamConfig {
+  const { demoBatchId, ...rest } = row;
   return {
-    ...row,
+    ...rest,
     windowStart: row.windowStart.toISOString(),
     windowEnd: row.windowEnd.toISOString(),
     resultsPublishedAt: row.resultsPublishedAt?.toISOString() ?? null,
+    demo: demoBatchId !== null,
   };
 }
