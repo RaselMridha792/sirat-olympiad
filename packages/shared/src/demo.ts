@@ -3,14 +3,8 @@
  * it unless DEMO_DATA_ALLOWED is on, and prelaunch-check fails while it is on or any demo row exists.
  */
 
-/**
- * Every demo account's email ends with this. No real account can carry it: a DB CHECK refuses it on a user that is
- * not a demo row, and every email-setting path refuses it with a field error. The email queue never sends to it.
- */
-export const DEMO_EMAIL_DOMAIN = '@demo.sirat.invalid';
-
-export const isDemoEmail = (email: string): boolean =>
-  email.trim().toLowerCase().endsWith(DEMO_EMAIL_DOMAIN);
+// DEMO_EMAIL_DOMAIN ('demo.sirat.invalid', without '@'), isDemoEmail, DEMO_ACCOUNT_LABEL and DEMO_INVOICE_PREFIX are
+// payments' (registration.ts): one definition each.
 
 /** The reason an admin gives for loading or removing demo data (audited). */
 export const DEMO_REASON_LIMITS = { min: 3, max: 200 } as const;

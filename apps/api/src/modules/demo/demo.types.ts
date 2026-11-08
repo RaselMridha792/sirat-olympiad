@@ -9,12 +9,10 @@ import type { Category, Role } from '@sirat/shared';
  * belongs to the batch.
  */
 
-export { DEMO_EMAIL_DOMAIN } from '@sirat/shared';
-
 /** A demo account the users generator made; the later generators attach to these (never make their own users). */
 export interface DemoUser {
   id: string;
-  /** Always ends with DEMO_EMAIL_DOMAIN. */
+  /** Always ends with '@' + DEMO_EMAIL_DOMAIN (payments' constant in @sirat/shared). */
   email: string;
   /** ^01[3-9]\d{8}$, unique among the demo users. */
   phone: string;
