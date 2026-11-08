@@ -6,6 +6,7 @@ export const IS_PUBLIC = 'auth:public';
 export const REQUIRED_ROLES = 'auth:roles';
 export const SKIP_CSRF = 'auth:skip-csrf';
 export const TWO_FACTOR_OPTIONAL = 'auth:two-factor-optional';
+export const TWO_FACTOR_ALWAYS = 'auth:two-factor-always';
 
 /**
  * No session needed. Every route is closed by default; each @Public() route must also be in the reviewed allow-list
@@ -22,6 +23,14 @@ export const Roles = (...roles: Role[]) => SetMetadata(REQUIRED_ROLES, roles);
  * POST /auth/2fa/enable: test/app-routes.int-spec.ts fails on any other.
  */
 export const TwoFactorOptional = () => SetMetadata(TWO_FACTOR_OPTIONAL, true);
+
+/**
+ * The guard demands the second factor on this route even while the requirement setting does not (DECISIONS "The admin
+ * 2FA requirement is a setting"): an admin or manager session without the proof gets 403 TWO_FACTOR_REQUIRED. With
+ * two-factor login off (no TOTP_ENCRYPTION_KEY) the route's service answers 503 TWO_FACTOR_UNAVAILABLE. Exactly
+ * PUT /admin/security/two-factor-requirement: test/app-routes.int-spec.ts fails on any other.
+ */
+export const TwoFactorAlways = () => SetMetadata(TWO_FACTOR_ALWAYS, true);
 
 /**
  * Only for server-to-server callbacks that cannot send the CSRF header (PayStation IPN). Reviewed allow-list in

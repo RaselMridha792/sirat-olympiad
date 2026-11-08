@@ -64,6 +64,17 @@ describe('alert categories', () => {
     expect(reset).not.toContain('Account:');
     expect(reset).toContain('targetUserId: user-2');
     expect(ALERT_CATEGORY['two_factor.reset']).toBe('security');
+    // The requirement change names from and to only (never the reason); the CLI's has no actor either.
+    const requirement = securityAlertMessage(
+      TO,
+      'two_factor.requirement_changed',
+      { actorId: null, meta: { from: 'admin,manager', to: 'none' } },
+      at,
+    ).text;
+    expect(requirement).not.toContain('Account:');
+    expect(requirement).toContain('from: admin,manager');
+    expect(requirement).toContain('to: none');
+    expect(ALERT_CATEGORY['two_factor.requirement_changed']).toBe('security');
     expect(ALERT_CATEGORY['two_factor.recovery_used']).toBe('security');
   });
 

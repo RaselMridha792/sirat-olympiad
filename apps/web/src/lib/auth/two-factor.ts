@@ -132,3 +132,53 @@ export function isTwoFactorStatus(value: unknown): value is TwoFactorStatus {
     typeof v.recoveryCodesRemaining === 'number'
   );
 }
+
+/** The roles the two-factor requirement may name (the API's TWO_FACTOR_ROLES). */
+export const REQUIRABLE_ROLES = ['admin', 'manager'] as const;
+export type RequirableRole = (typeof REQUIRABLE_ROLES)[number];
+
+/** GET /admin/security/two-factor-requirement (admins only). */
+export interface TwoFactorRequirement {
+  roles: RequirableRole[];
+  /** When it last changed (ISO); null while the server's default applies. */
+  updatedAt: string | null;
+  /** Two-factor login is on on this server. */
+  available: boolean;
+}
+
+export function isTwoFactorRequirement(value: unknown): value is TwoFactorRequirement {
+  const v = value as Partial<TwoFactorRequirement> | null;
+  return (
+    !!v &&
+    Array.isArray(v.roles) &&
+    v.roles.every((r) => (REQUIRABLE_ROLES as readonly unknown[]).includes(r)) &&
+    (v.updatedAt === null || typeof v.updatedAt === 'string') &&
+    typeof v.available === 'boolean'
+  );
+}
+
+/** The ticked roles in the API's order, without duplicates. */
+export function requirementRoles(ticked: { admin: boolean; manager: boolean }): RequirableRole[] {
+  return REQUIRABLE_ROLES.filter((role) => ticked[role]);
+}
+
+/** A reason as the API takes it (3-200 characters on one line), or null. */
+export function requirementReasonFrom(input: string): string | null {
+  const reason = input.trim().replace(/\s+/g, ' ');
+  return reason.length >= 3 && reason.length <= 200 ? reason : null;
+}
+
+export type RequirementProblem = 'wrongCode' | 'stale' | 'tooMany' | 'failed';
+
+/**
+ * PUT /admin/security/two-factor-requirement. The form checks the code's shape and the reason before sending, so a
+ * 400 is the code itself; a 409 means someone changed the requirement since the page loaded (reload and check).
+ */
+export function requirementProblem(answer: Answer | null): RequirementProblem {
+  if (!answer) return 'failed';
+  const { status, body } = answer;
+  if (body?.code === 'TWO_FACTOR_CODE_INVALID') return 'wrongCode';
+  if (status === 409) return 'stale';
+  if (status === 429) return 'tooMany';
+  return 'failed';
+}

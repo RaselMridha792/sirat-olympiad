@@ -106,6 +106,16 @@ describe('two-factor login while off (no TOTP_ENCRYPTION_KEY)', () => {
         { reason: 'Lost phone', code: '123456' },
         cookie,
       ),
+      // @TwoFactorAlways asks nothing of the guard while 2FA is off: the service answers 503.
+      await fetch(`${base}/api/admin/security/two-factor-requirement`, {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+          'x-requested-with': 'XMLHttpRequest',
+          cookie,
+        },
+        body: JSON.stringify({ roles: [], expected: [], reason: 'Testing', code: '123456' }),
+      }),
     ];
     for (const res of answers) {
       expect(res.status).toBe(503);
@@ -113,5 +123,16 @@ describe('two-factor login while off (no TOTP_ENCRYPTION_KEY)', () => {
     }
     // Nothing was written.
     expect(await prisma.auditLog.count({ where: { actorId: admin.id } })).toBe(0);
+  });
+
+  it('GET /admin/security/two-factor-requirement answers, and says 2FA is unavailable', async () => {
+    const admin = await enrolledAdmin();
+    const issued = await app
+      .get(SessionService)
+      .start({ id: admin.id, role: 'admin' }, { ip: null, userAgent: null });
+    const cookie = `${ACCESS_COOKIE}=${issued.accessToken}`;
+    const res = await get('/api/admin/security/two-factor-requirement', cookie);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ available: false });
   });
 });

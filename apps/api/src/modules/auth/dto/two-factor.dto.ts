@@ -1,5 +1,10 @@
 import { Transform } from 'class-transformer';
+import type { Role } from '@sirat/shared';
 import {
+  ArrayMaxSize,
+  ArrayUnique,
+  IsArray,
+  IsIn,
   IsNotEmpty,
   IsString,
   Length,
@@ -9,6 +14,7 @@ import {
   registerDecorator,
   type ValidationArguments,
 } from 'class-validator';
+import { TWO_FACTOR_ROLES } from '../two-factor/two-factor.config';
 
 /** A TOTP code: exactly 6 digits (what every authenticator app shows). */
 const TOTP_CODE = /^\d{6}$/;
@@ -84,6 +90,35 @@ const oneLine = ({ value }: { value: unknown }): unknown =>
 
 /** POST /admin/users/:id/2fa/reset: why (audited), and the ACTING admin's current TOTP code (step-up). */
 export class TwoFactorResetDto {
+  @Transform(oneLine)
+  @IsString()
+  @Length(3, 200)
+  reason!: string;
+
+  @Matches(TOTP_CODE, { message: TOTP_MESSAGE })
+  code!: string;
+}
+
+const ROLE_MESSAGE = `Each role must be one of: ${TWO_FACTOR_ROLES.join(', ')}`;
+
+/**
+ * PUT /admin/security/two-factor-requirement: the roles that must prove a second factor (none, admin, manager, or
+ * both), the set the form showed (`expected`, 409 when someone changed it meanwhile), why (audited), and the ACTING
+ * admin's current TOTP code (step-up). An unknown role is a 400.
+ */
+export class TwoFactorRequirementDto {
+  @IsArray()
+  @ArrayMaxSize(TWO_FACTOR_ROLES.length)
+  @ArrayUnique()
+  @IsIn(TWO_FACTOR_ROLES, { each: true, message: ROLE_MESSAGE })
+  roles!: Role[];
+
+  @IsArray()
+  @ArrayMaxSize(TWO_FACTOR_ROLES.length)
+  @ArrayUnique()
+  @IsIn(TWO_FACTOR_ROLES, { each: true, message: ROLE_MESSAGE })
+  expected!: Role[];
+
   @Transform(oneLine)
   @IsString()
   @Length(3, 200)

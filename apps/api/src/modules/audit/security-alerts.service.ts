@@ -13,6 +13,7 @@ export type SecurityAlertKind =
   | 'login.distributed' // more distinct IPs than the threshold failed on one account within the hour
   | 'two_factor.recovery_used' // a 2FA recovery code was used (the login's code step, or turning 2FA off)
   | 'two_factor.reset' // an account's 2FA was reset by another admin or the break-glass CLI
+  | 'two_factor.requirement_changed' // the roles that must prove 2FA changed (an admin, or the break-glass CLI)
   | 'payments.disabled_in_production' // PAYSTATION_ENV is blank on a production server (lead, 2026-10-31)
   | 'payments.fee_invalid' // settings.registration_fee_minor is not a valid fee: no payment can start
   | 'payments.credentials_rejected' // PayStation answered "1001": payments paused (lead, 2026-10-31)
@@ -48,6 +49,7 @@ export const ALERT_CATEGORY: Record<SecurityAlertKind, AlertCategory> = {
   'login.distributed': 'security',
   'two_factor.recovery_used': 'security',
   'two_factor.reset': 'security',
+  'two_factor.requirement_changed': 'security',
   'payments.disabled_in_production': 'payments',
   'payments.fee_invalid': 'payments',
   'payments.credentials_rejected': 'payments',
@@ -96,6 +98,8 @@ const TITLES: Record<SecurityAlertKind, string> = {
   'login.distributed': 'Failed logins on one account from many IP addresses',
   'two_factor.recovery_used': 'A two-factor recovery code was used',
   'two_factor.reset': "An account's two-factor login was reset",
+  'two_factor.requirement_changed':
+    'The roles that must sign in with two-factor login changed (from, to below)',
   'payments.disabled_in_production': 'Payments are disabled: PAYSTATION_ENV is blank in production',
   'payments.fee_invalid':
     'Registration payments stopped: the registration fee setting is not valid',

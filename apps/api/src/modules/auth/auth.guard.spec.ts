@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { ExecutionContext } from '@nestjs/common';
-import { ForbiddenException, HttpException, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, HttpException, Logger, UnauthorizedException } from '@nestjs/common';
 import { PATH_METADATA } from '@nestjs/common/constants';
 import type { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
@@ -8,10 +8,23 @@ import type { Role } from '@sirat/shared';
 import type { EnvVars } from '../../config/env';
 import { ACCESS_COOKIE, type AccessTokenService, type AuthUser } from './access-token.service';
 import { AuthController } from './auth.controller';
-import { Public, Roles, TWO_FACTOR_OPTIONAL, TwoFactorOptional } from './auth.decorators';
+import type { PrismaService } from '../../prisma/prisma.service';
+import {
+  Public,
+  Roles,
+  TWO_FACTOR_ALWAYS,
+  TWO_FACTOR_OPTIONAL,
+  TwoFactorAlways,
+  TwoFactorOptional,
+} from './auth.decorators';
 import { AuthGuard } from './auth.guard';
-import { TwoFactorAdminController, TwoFactorController } from './two-factor/two-factor.controller';
+import {
+  TwoFactorAdminController,
+  TwoFactorController,
+  TwoFactorRequirementController,
+} from './two-factor/two-factor.controller';
 import { TwoFactorConfig } from './two-factor/two-factor.config';
+import { TwoFactorRequirement } from './two-factor/two-factor-requirement';
 
 /* The global guard's two-factor rule (DECISIONS "Admin two-factor login"), without HTTP: a token is "verified" by a fake. */
 
@@ -27,6 +40,9 @@ class Routes {
   @Roles('admin', 'manager')
   @TwoFactorOptional()
   enrol() {}
+  @Roles('admin')
+  @TwoFactorAlways()
+  always() {}
   signedIn() {}
   @Public()
   open() {}
@@ -39,9 +55,22 @@ function config(key: boolean): TwoFactorConfig {
   } as unknown as ConfigService<EnvVars, true>);
 }
 
+/** The settings row two_factor_required_roles: undefined = no row (the default: both roles). */
+let requirementRow: { value: unknown } | undefined;
+const findSetting = jest.fn(async () => requirementRow ?? null);
+beforeEach(() => {
+  requirementRow = undefined;
+  findSetting.mockClear();
+});
+
 function guardFor(user: AuthUser | null, twoFactorOn = true) {
   const tokens = { verify: jest.fn(async () => user) } as unknown as AccessTokenService;
-  return new AuthGuard(new Reflector(), tokens, config(twoFactorOn));
+  const prisma = { setting: { findUnique: findSetting } } as unknown as PrismaService;
+  return new AuthGuard(
+    new Reflector(),
+    tokens,
+    new TwoFactorRequirement(prisma, config(twoFactorOn)),
+  );
 }
 
 function ctx(handler: keyof Routes): ExecutionContext {
@@ -116,27 +145,90 @@ describe('AuthGuard: two-factor login', () => {
   });
 });
 
-describe('@TwoFactorOptional()', () => {
-  it('is on exactly the five enrolment routes of the auth module', () => {
-    const marked: string[] = [];
-    for (const controller of [AuthController, TwoFactorController, TwoFactorAdminController]) {
-      const base = String(Reflect.getMetadata(PATH_METADATA, controller));
-      const proto = controller.prototype as unknown as Record<string, object>;
-      for (const name of Object.getOwnPropertyNames(proto)) {
-        const handler = proto[name];
-        if (name === 'constructor' || typeof handler !== 'function') continue;
-        if (Reflect.getMetadata(TWO_FACTOR_OPTIONAL, handler) === true) {
-          const path = String(Reflect.getMetadata(PATH_METADATA, handler));
-          marked.push(
-            [base, path]
-              .flatMap((p) => p.split('/'))
-              .filter(Boolean)
-              .join('/'),
-          );
-        }
+describe('AuthGuard: the requirement setting (DECISIONS "The admin 2FA requirement is a setting")', () => {
+  it('a missing row requires both roles; with the requirement off the admin routes open without the proof', async () => {
+    expect(await outcome(guardFor(user('admin', false)), 'adminOnly')).toBe(
+      '403 TWO_FACTOR_REQUIRED',
+    );
+    requirementRow = { value: [] };
+    for (const role of ['admin', 'manager'] as const)
+      expect(await outcome(guardFor(user(role, false)), 'staff')).toBe('allowed');
+    expect(await outcome(guardFor(user('admin', false)), 'adminOnly')).toBe('allowed');
+  });
+
+  it('only "admin" required: an unproved manager opens a shared route, an unproved admin does not', async () => {
+    requirementRow = { value: ['admin'] };
+    expect(await outcome(guardFor(user('manager', false)), 'staff')).toBe('allowed');
+    expect(await outcome(guardFor(user('admin', false)), 'staff')).toBe('403 TWO_FACTOR_REQUIRED');
+  });
+
+  it('an unreadable value requires both roles (fail closed)', async () => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    requirementRow = { value: 'none' };
+    expect(await outcome(guardFor(user('manager', false)), 'staff')).toBe(
+      '403 TWO_FACTOR_REQUIRED',
+    );
+  });
+
+  it('@TwoFactorAlways() demands the proof even while the requirement is off, and never while 2FA is off', async () => {
+    requirementRow = { value: [] };
+    expect(await outcome(guardFor(user('admin', false)), 'always')).toBe('403 TWO_FACTOR_REQUIRED');
+    expect(await outcome(guardFor(user('admin', true)), 'always')).toBe('allowed');
+    expect(await outcome(guardFor(user('admin', false), false), 'always')).toBe('allowed');
+  });
+
+  it('reads the setting only after the cheap checks', async () => {
+    await outcome(guardFor(user('admin', true)), 'adminOnly'); // proved
+    await outcome(guardFor(user('student', false)), 'studentOnly'); // no admin role on the route
+    await outcome(guardFor(user('student', false)), 'mixed'); // not an enrollable role
+    await outcome(guardFor(user('admin', false)), 'enrol'); // @TwoFactorOptional
+    await outcome(guardFor(user('admin', false)), 'signedIn'); // no @Roles
+    await outcome(guardFor(user('admin', false), false), 'adminOnly'); // 2FA off
+    expect(findSetting).not.toHaveBeenCalled();
+    await outcome(guardFor(user('admin', false)), 'adminOnly');
+    expect(findSetting).toHaveBeenCalledTimes(1);
+  });
+});
+
+const AUTH_CONTROLLERS = [
+  AuthController,
+  TwoFactorController,
+  TwoFactorAdminController,
+  TwoFactorRequirementController,
+];
+
+/** The routes of the auth module's controllers that carry this metadata, as `base/path`. */
+function marked(key: string): string[] {
+  const found: string[] = [];
+  for (const controller of AUTH_CONTROLLERS) {
+    const base = String(Reflect.getMetadata(PATH_METADATA, controller));
+    const proto = controller.prototype as unknown as Record<string, object>;
+    for (const name of Object.getOwnPropertyNames(proto)) {
+      const handler = proto[name];
+      if (name === 'constructor' || typeof handler !== 'function') continue;
+      if (Reflect.getMetadata(key, handler) === true) {
+        const path = String(Reflect.getMetadata(PATH_METADATA, handler));
+        found.push(
+          [base, path]
+            .flatMap((p) => p.split('/'))
+            .filter(Boolean)
+            .join('/'),
+        );
       }
     }
-    expect(marked.sort()).toEqual(
+  }
+  return found.sort();
+}
+
+describe('@TwoFactorAlways()', () => {
+  it('is on exactly the requirement change', () => {
+    expect(marked(TWO_FACTOR_ALWAYS)).toEqual(['admin/security/two-factor-requirement']);
+  });
+});
+
+describe('@TwoFactorOptional()', () => {
+  it('is on exactly the five enrolment routes of the auth module', () => {
+    expect(marked(TWO_FACTOR_OPTIONAL)).toEqual(
       ['auth/2fa', 'auth/2fa/enable', 'auth/2fa/setup', 'auth/logout', 'auth/me'].sort(),
     );
   });

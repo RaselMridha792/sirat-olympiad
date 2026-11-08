@@ -8,25 +8,34 @@ import {
 import { Reflector } from '@nestjs/core';
 import type { Role } from '@sirat/shared';
 import { ACCESS_COOKIE, AccessTokenService, type AuthedRequest } from './access-token.service';
-import { IS_PUBLIC, REQUIRED_ROLES, TWO_FACTOR_OPTIONAL } from './auth.decorators';
+import {
+  IS_PUBLIC,
+  REQUIRED_ROLES,
+  TWO_FACTOR_ALWAYS,
+  TWO_FACTOR_OPTIONAL,
+} from './auth.decorators';
 import { twoFactorRequired } from './two-factor/two-factor.errors';
-import { TWO_FACTOR_ROLES, TwoFactorConfig } from './two-factor/two-factor.config';
+import { TWO_FACTOR_ROLES } from './two-factor/two-factor.config';
+import { TwoFactorRequirement } from './two-factor/two-factor-requirement';
 
 /**
  * Global guard, deny by default (RULEBOOK §5): a route needs a valid access-token cookie unless it is @Public(), and
  * the session role must match @Roles() when present. A valid session is also attached on public routes.
  * The acting user only ever comes from here, never from the body or query.
  *
- * Two-factor login (DECISIONS "Admin two-factor login"): a route whose @Roles() names admin or manager refuses an
- * admin or manager session that has not proved a second factor (403 TWO_FACTOR_REQUIRED), unless the route is
- * @TwoFactorOptional() (enrolment). Never while 2FA is off (no TOTP_ENCRYPTION_KEY, development only).
+ * Two-factor login (DECISIONS "Admin two-factor login", "The admin 2FA requirement is a setting"): a route whose
+ * @Roles() names admin or manager refuses an admin or manager session that has not proved a second factor (403
+ * TWO_FACTOR_REQUIRED) when the requirement setting names the session's role, unless the route is
+ * @TwoFactorOptional() (enrolment). A @TwoFactorAlways() route refuses it whatever the setting says. Never while 2FA
+ * is off (no TOTP_ENCRYPTION_KEY, development only). The setting is read (from a 5 s copy) only after the cheap
+ * checks, so a proved session, a student and a route without admin roles never wait for it.
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly tokens: AccessTokenService,
-    private readonly twoFactor: TwoFactorConfig,
+    private readonly twoFactor: TwoFactorRequirement,
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
@@ -45,8 +54,10 @@ export class AuthGuard implements CanActivate {
       roles &&
       !user.twoFactor &&
       roles.some((role) => TWO_FACTOR_ROLES.includes(role)) &&
-      this.twoFactor.requiredFor(user.role) &&
-      !this.reflector.getAllAndOverride<boolean>(TWO_FACTOR_OPTIONAL, targets)
+      !this.reflector.getAllAndOverride<boolean>(TWO_FACTOR_OPTIONAL, targets) &&
+      (this.reflector.getAllAndOverride<boolean>(TWO_FACTOR_ALWAYS, targets)
+        ? this.twoFactor.enrollableFor(user.role)
+        : await this.twoFactor.requiredFor(user.role))
     )
       throw twoFactorRequired();
     return true;
