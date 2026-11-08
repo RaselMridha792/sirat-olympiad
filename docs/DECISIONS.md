@@ -13,6 +13,23 @@ One short entry per non-obvious technical or product decision. Newest first. For
 3. **The load guard** (`paymentsAllowDemo`): demo data is refused while `PAYSTATION_ENV=live`, and once a paid `live` payment exists. Sandbox, fake and demo payments never count: none moved money. Registration may stay open (lead).
 4. **The marker email domain** (`DEMO_EMAIL_DOMAIN`, `@demo.sirat.invalid`): the registration form refuses exactly that domain, so a real attempt, and the account its payment makes, can never carry it.
 5. **Demo payments get no events:** `payment_events` cannot be cleared, so demo data never writes to it. A demo "refund" is a paid payment with review reason `refund_reported`; the `refunded` status is never entered.
+## 2026-11-08 — The public site is multi-page (owner, via the lead; core)
+
+- **Decision:**
+  - The homepage becomes an overview: the hero, a short intro, a card per topic page, the dated milestones and last season's numbers.
+  - Each topic has its own page, Bangla at `/…` and English at `/en/…`:
+    - `/how-to-take-part`: groups, registration steps, what you get, the exam rules;
+    - `/rounds`: the rounds, the final, the roadmap, results;
+    - `/prizes`: the prizes, the counts per group, certificates;
+    - `/syllabus`: the books, the questions, where to get the books.
+    The second PR adds ambassador, gallery, FAQ and contact.
+  - The header's second row is the main menu (`MENU_PAGES` in content/site.ts, `aria-current` on the page), a native `<details>` "Menu" on phones (no JavaScript needed); the footer is a site map.
+- **Content rules:**
+  - The texts are the client's PDFs, with the old site where the PDFs are silent.
+  - How the system works comes from the system: the exam rules are exam's terms, word for word.
+  - Facts with numbers live in `content/*.ts`; the contested ones are "to confirm" there and listed in the PR. Among them: the prize counts per group and the 12-lakh total, from the old site only.
+  - Not shown, because neither the PDFs nor the system have them: the old site's points-to-cash, its application form, SMS results.
+- **Who:** Rasel (owner, 2026-11-08), passed on by the lead; built by core.
 
 ## 2026-11-08 — The client's brand colours, from one place (owner, via the lead; core)
 

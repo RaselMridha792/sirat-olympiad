@@ -43,17 +43,47 @@ export const site: SiteFacts = {
   placeholder: true,
 };
 
-/** The public pages, Bangla at the root and English under /en (core plan D4, owner 2026-11-03). */
-export const PUBLIC_PAGES = ['home', 'about', 'privacy', 'terms', 'refund'] as const;
+/**
+ * The public pages, Bangla at the root and English under /en (core plan D4, owner 2026-11-03). The site is
+ * multi-page (owner, 2026-11-08): the homepage gives an overview and each topic has its own page.
+ */
+export const PUBLIC_PAGES = [
+  'home',
+  'about',
+  'participate',
+  'rounds',
+  'prizes',
+  'syllabus',
+  'privacy',
+  'terms',
+  'refund',
+] as const;
 export type PublicPage = (typeof PUBLIC_PAGES)[number];
 
 const PATHS: Record<PublicPage, string> = {
   home: '/',
   about: '/about',
+  participate: '/how-to-take-part',
+  rounds: '/rounds',
+  prizes: '/prizes',
+  syllabus: '/syllabus',
   privacy: '/privacy',
   terms: '/terms',
   refund: '/refund-policy',
 };
+
+/** The header's main menu and the footer's site map, in this order (the homepage is the brand link). */
+export const MENU_PAGES = [
+  'about',
+  'participate',
+  'rounds',
+  'prizes',
+  'syllabus',
+] as const satisfies readonly PublicPage[];
+export type MenuPage = (typeof MENU_PAGES)[number];
+
+/** The policy pages: the footer only. */
+export const POLICY_PAGES = ['privacy', 'terms', 'refund'] as const satisfies readonly PublicPage[];
 
 export function publicPath(page: PublicPage, locale: 'en' | 'bn'): string {
   const path = PATHS[page];
