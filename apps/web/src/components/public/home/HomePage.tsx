@@ -126,11 +126,11 @@ function Hero({
         size={72}
         className="text-white/[0.06] [mask-image:linear-gradient(to_bottom,black,transparent)]"
       />
-      <StarOrnament className="pointer-events-none absolute -top-10 -right-36 -z-10 h-96 w-96 text-primary/30 md:top-1/2 md:-right-24 md:h-[36rem] md:w-[36rem] md:-translate-y-1/2 motion-safe:animate-[spin_240s_linear_infinite]" />
+      <StarOrnament className="pointer-events-none absolute -top-10 -right-36 -z-10 h-96 w-96 text-accent/30 md:top-1/2 md:-right-24 md:h-[36rem] md:w-[36rem] md:-translate-y-1/2 motion-safe:animate-[spin_240s_linear_infinite]" />
       <div className="mx-auto max-w-6xl px-4 pt-14 pb-16 sm:px-6 md:pt-24 md:pb-24">
         <div className="max-w-3xl motion-safe:animate-rise">
           <p className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3.5 py-1.5 text-sm font-semibold text-white/90">
-            <StarMark className="h-3.5 w-3.5 text-primary" />
+            <StarMark className="h-3.5 w-3.5 text-accent" />
             <span lang={locale === 'bn' ? 'en' : undefined}>{m.brand.season}</span>
           </p>
           <h1
@@ -157,18 +157,18 @@ function Hero({
           <ul className="mt-10 flex flex-col gap-3 text-sm text-white/80 sm:flex-row sm:flex-wrap sm:gap-x-6">
             {window ? (
               <li className="flex items-center gap-2">
-                <CalendarDays aria-hidden="true" className="h-4 w-4 shrink-0 text-primary" />
+                <CalendarDays aria-hidden="true" className="h-4 w-4 shrink-0 text-accent" />
                 {m.hero.window(formatDay(locale, window.from), formatDay(locale, window.to))}
               </li>
             ) : null}
             {info ? (
               <li className="flex items-center gap-2">
-                <BadgeCheck aria-hidden="true" className="h-4 w-4 shrink-0 text-primary" />
+                <BadgeCheck aria-hidden="true" className="h-4 w-4 shrink-0 text-accent" />
                 {info.open ? m.hero.open : m.hero.closed}
               </li>
             ) : null}
             <li className="flex items-center gap-2">
-              <Wallet aria-hidden="true" className="h-4 w-4 shrink-0 text-primary" />
+              <Wallet aria-hidden="true" className="h-4 w-4 shrink-0 text-accent" />
               {fee ? m.fee.line(fee) : m.fee.unknown}
             </li>
           </ul>
@@ -344,7 +344,7 @@ function PrizesSection({ m }: { m: HomeText }) {
       <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
         <article className="relative isolate flex flex-col justify-end overflow-hidden rounded-card bg-secondary p-8 text-white shadow-card md:col-span-2 lg:col-span-1 lg:row-span-2">
           <GeometricPattern id="prize-pattern" size={48} className="text-white/[0.08]" />
-          <Trophy aria-hidden="true" className="h-14 w-14 text-primary" />
+          <Trophy aria-hidden="true" className="h-14 w-14 text-accent" />
           <h3 className="mt-6 text-3xl font-extrabold">{p.champion.title}</h3>
           <p className="mt-2 text-lg leading-relaxed text-white/85">{p.champion.prize}</p>
         </article>
@@ -417,7 +417,7 @@ function AmbassadorSection({ m }: { m: HomeText }) {
         </div>
         <div className="relative isolate flex flex-col overflow-hidden rounded-card bg-shell p-8 text-white shadow-card">
           <GeometricPattern id="ambassador-pattern" size={48} className="text-white/[0.06]" />
-          <UserPlus aria-hidden="true" className="h-10 w-10 text-primary" />
+          <UserPlus aria-hidden="true" className="h-10 w-10 text-accent" />
           <h3 className="mt-5 text-2xl font-extrabold">{a.join}</h3>
           <p className="mt-3 flex-1 leading-relaxed text-white/80">{a.how}</p>
           <a

@@ -99,7 +99,7 @@ export function Timeline({
                       ? 'text-white/60'
                       : 'text-ink-muted'
                     : dark
-                      ? 'text-primary'
+                      ? 'text-accent'
                       : 'text-primary-strong',
                 )}
               >

@@ -169,7 +169,7 @@ export function AppShell({
               className: cn(
                 'flex items-center gap-3 rounded-xl px-4 py-3 text-sm transition-colors',
                 active
-                  ? 'border-r-4 border-primary bg-white/10 font-semibold text-white [&_svg]:text-primary'
+                  ? 'border-r-4 border-accent bg-white/10 font-semibold text-white [&_svg]:text-accent'
                   : 'hover:bg-white/5 hover:text-white',
               ),
               onClick: () => setOpen(false),
