@@ -1,25 +1,16 @@
-# PayStation sandbox end-to-end: the IPN run
+# PayStation sandbox end-to-end on the VPS (2026-11-01)
 
-**Status: draft.** The venue waits for the owner's answer:
-- **(A) the VPS:** `https://72-60-211-71.sslip.io`, a one-time pre-launch exception to PAYMENTS-PLAN D8 and §13.1. The production database is started again from an empty volume at the launch deploy, which the owner confirms then.
-- **(B) the PAYMENTS-PLAN §8.1 tunnel:** this worktree's own API and worker, reached through a temporary tunnel.
+**What this is:** the run that needs a real checkout in a browser and a public HTTPS server. It used Rasel's sandbox account on the VPS (`https://72-60-211-71.sslip.io`, release 8c5cea2, 4 API replicas), with Rasel at the browser, the lead running the VPS and payments watching read-only.
 
-Section 1 (the venue's setup) is written once the answer is in. Everything else applies to both venues.
+**Why on the production server:** a one-time pre-launch exception to PAYMENTS-PLAN D8 and §13.1 (Rasel's go, 2026-11-01). The production database is started again from an empty volume at the launch deploy, which the owner confirms then (RUNBOOK §9, pre-launch checklist). Sandbox account only, never the client's. No credential appears in this file, in a message or in a log.
 
-Nothing runs until the lead gives the turn and Rasel is at the browser. Sandbox account only, never the client's. No credential appears in this file, in a message or in a log.
+The results are in `SANDBOX-CHECKLIST.md` (rows marked "VPS 2026-11-01") and summarised in section 3.
 
-## 1. Setup (the venue)
+## 1. Setup
 
-_Both variants are drafted; the one the owner does not pick is removed before the PR._
+**The server:** SSH as the deploy user only. The clone is at `/srv/sirat`, the compose project is `sirat`, and `$DC` is as in RUNBOOK. Email goes to a private Mailpit.
 
-### 1A. The VPS (`https://72-60-211-71.sslip.io`)
-
-**The server:**
-- SSH as the deploy user only; root and password logins are off.
-- The clone is at `/srv/sirat` and the compose project is `sirat`; `$DC` as in RUNBOOK.
-- Email goes to a private Mailpit. Payments are off until this run.
-
-**`.env` (Rasel types the values; file mode 600):**
+**`.env` (Rasel typed the credentials; file mode 600):**
 
 | Name | Value |
 |---|---|
@@ -33,105 +24,60 @@ _Both variants are drafted; the one the owner does not pick is removed before th
 | `PAYSTATION_PAY_WITH_CHARGE` | `0` |
 
 **Then:**
-1. `$DC up -d --no-deps --no-build api worker`. Compose recreates all 4 API replicas (`replicas: 4`), about 10–20 s without the API; nobody else uses the box yet.
-2. Check the boot lines: `$DC logs --since 5m api | grep "PayStation env="` must show one line per replica (4), each reading `env=sandbox`, the sandbox host, `account=rasel-sandbox-vps`, `invoicePrefix=TV`, both URLs and `payWithCharge=0`.
-3. `$DC run --rm --no-deps -T api node dist/cli/paystation-selfcheck.js` must end with `initiate: created`. Write down the unpaid `X…` invoice it leaves in the panel.
-
-**The read-only wrapper:**
-
-```sh
-RO_PSQL() { $DC exec -T -e PGOPTIONS="-c default_transaction_read_only=on" postgres \
-  sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 "$@"' sh "$@"; }
-# e.g.: RO_PSQL -v label=rasel-sandbox-vps < query1.sql
-```
-
-**Registration:** Rasel's admin opens it in `/admin/settings`: `registration_open` on, `registration_opens_at` now, `registration_closes_at` about 2 hours later, so it closes by itself.
-
-**Cleanup (owner):** the production database starts again from an empty volume at the launch deploy, confirmed by the owner then. Until that deploy, the rows stay.
-
-### 1B. The PAYMENTS-PLAN §8.1 tunnel (this worktree)
-
-**The services:**
-- This worktree's own API and worker on 4100, with database `sirat_pay` and Redis DB 1, plus `next dev` on 4101 (`API_INTERNAL_URL=http://localhost:4100`, `DATA_SOURCE=http`).
-- A quick tunnel (e.g. `cloudflared`) to `http://127.0.0.1:4100`, running only while Rasel watches the test.
-
-**The environment:** values in the shell, never in `apps/api/.env`.
-
-| Name | Value |
-|---|---|
-| `PAYSTATION_ENV` | `sandbox` |
-| `PAYSTATION_ACCOUNT_LABEL` | `rasel-sandbox` |
-| `PAYSTATION_INVOICE_PREFIX` | `T` |
-| `PAYSTATION_CALLBACK_URL` | `http://localhost:4101/api/payments/paystation/callback` |
-| `PAYSTATION_IPN_URL` | the tunnel URL + `/api/payments/paystation/ipn` |
-| `PAYSTATION_PAY_WITH_CHARGE` | `0` |
-
-The credentials come from the existing `apps/api/.env` lines; they are not copied, printed or rewritten.
-
-**The read-only wrapper:**
-
-```sh
-RO_PSQL() { docker exec -i -e PGOPTIONS="-c default_transaction_read_only=on" sirat-postgres-1 \
-  sh -c 'psql -U "$POSTGRES_USER" -d sirat_pay -v ON_ERROR_STOP=1 "$@"' sh "$@"; }
-```
-
-**Registration:** opened by the local check admin on `sirat_pay` in `/admin/settings`, with the same 2-hour window.
-
-**What this venue cannot answer:** the IPN through our real nginx and TLS, and S29/S30 for a real domain. These stay open until the production domain.
+1. `$DC up -d --no-deps --no-build --wait api worker`. Compose recreates all 4 API replicas (`replicas: 4`): about 10–20 s without the API.
+2. The boot lines: `$DC logs --since 5m api | grep "PayStation env="` showed one line per replica (4), each with `env=sandbox`, the sandbox host, `account=rasel-sandbox-vps`, `invoicePrefix=TV`, both URLs and `payWithCharge=0`.
+3. `$DC run --rm --no-deps -T api node dist/cli/paystation-selfcheck.js` ended with `initiate: created`. It left one unpaid 10 BDT invoice, `X261101ET5FE5Y38J`, in the panel; it was never stored or paid.
+4. Registration was opened in `/admin/settings` with a 2-hour window.
 
 ## 2. Test data
 
-Every student of the run is made up and clearly marked. Real students' data is never used.
+Every student was made up and clearly marked. Real students' data was never used.
 
-| # | Name | Email | Phone |
+| Name | Email | Phone |
+|---|---|---|
+| `TEST SBX 01` … `TEST SBX 12` | `sbx01@test.invalid` … `sbx12@test.invalid` | `01700000101` … `01700000112` |
+
+- `@test.invalid` can never be delivered; every email went to the private Mailpit anyway.
+- The phones follow the dev fixtures' pattern and are used once each. They go to PayStation's sandbox as `cust_phone`; no SMS is sent to them.
+- Other fields: district `Dhaka`, institution `TEST Sandbox School`, any grade.
+- Used: SBX 01, 03, 04 and 05. The rest are unused.
+- Payments are marked by the label `rasel-sandbox-vps` and the `TV` invoice prefix.
+
+## 3. Results
+
+All times are Asia/Dhaka. "v1" is PayStation's transaction-status API, which alone decides paid or failed.
+
+| Case | Student, invoice | What happened | Our side |
 |---|---|---|---|
-| 01–12 | `TEST SBX 01` … `TEST SBX 12` | Rasel's own address with a `+sbx01` … `+sbx12` tag (he fills in the address) | `01700000101` … `01700000112` |
+| P2 failure | SBX 01, `TV261101B8J6E7B63H` | bKash test wallet: "Payment Failed: Insufficient balance", then PayStation's "Redirecting to Merchant Website" | Callback 23:03:38 with `status=Failed&message=Failed`; v1 `failed` 0.3 s later, so `failed`; no account. Our page offered Try again and Start over |
+| P1 success (via Try again) | SBX 01, `TV261101J13ZJ6CD44` | Our Try again made a new invoice for the same attempt (`POST /registrations/current/retry`); paid with the Mastercard test card | Callback 23:06:24 `status=Successful` with a `trx_id`; v1 `successful`, `"400.00"`, so `paid` at 23:06:25. One account; the verify email reached Mailpit at the same second |
+| P3 cancel | SBX 03, `TV261101MNDHSDXZ9E` | Cancel on PayStation's checkout | Callback 23:09:53 with `status=Canceled` (no `message`, no `trx_id`); v1 stayed `processing`, so `pending`. Our page said "Waiting for your payment" with Continue the payment. The first reconciliation after the 10-minute limit (23:22:25) marked it `expired` |
+| P4 tab closed, continued later | SBX 04, `TV261101G6F579DTDG` | The checkout tab was closed before paying; /register offered "Continue the payment" | `POST /registrations/current/resume` returned the same link (one initiate in total); paid by card; callback 23:14:46, v1 `successful`, so `paid`. One account |
+| P5 callback replay | P1's invoice | The lead sent P1's success callback 3 more times with curl | Each answered 303; each was recorded with outcome `no_check_needed`; no verify job and no extra v1 call; still one account |
+| P4b settle without a callback | SBX 05, `TV261101RSM71RYF6Z` | Meant to close the tab after paying, before PayStation's redirect; the redirect came first (34 s after the start) | Callback 23:18:07, v1 `successful`, so `paid`. One account. Settlement without a callback was therefore **not** tested |
 
-- **Phones:** one agreed list, each used once (phones are unique per open attempt and per user). They follow the dev fixtures' pattern (`01700000001`…), so they read as test numbers. They are sent to PayStation's sandbox as `cust_phone` and may show on its checkout (S22). No SMS is ever sent to them. Rasel may swap in numbers he controls; the list then changes here first.
-- **Other fields:** district `Dhaka`, institution `TEST Sandbox School`, any grade.
-- **Payments:** marked by the account label and invoice prefix of the venue (section 1). Every SQL below filters on the label.
+**Also seen:**
+- The 48-hour late watch re-checked the failed and the expired payment 92 times each; neither changed.
+- Reconciliation runs came 3–6 minutes apart during the session.
+- This card payment's `trx_id` was a 22-digit number; on 31 Oct a card payment had a 36-character UUID. Our column is free text, so both fit.
+- No IPN arrived: Rasel's pre-KYC merchant panel has no IPN URL field (S29).
 
-## 3. What the run answers
+## 4. Still open
 
-These rows of `SANDBOX-CHECKLIST.md` need PayStation to reach our server, or a browser on a real checkout:
+- **S9, S20 (the IPN):** not testable on a pre-KYC sandbox account. Check it after KYC, or on the client's account before launch (PAYMENTS-PLAN §13.4).
+- **Settlement without a callback** (paid, then the browser never returns): untested. With no IPN on this account, only reconciliation can settle it. A rerun can block `*paystation/callback*` in Chrome DevTools (Network request blocking) before paying, so the redirect never reaches us. Then reconciliation alone must mark it paid with exactly one account.
+- **S18 (PayStation's own retry on the same invoice):** not tried; our Try again makes a new invoice instead, which works.
+- **S22 (what the checkout shows the payer):** not recorded.
 
-| Row | Question | How it shows |
-|---|---|---|
-| S9 | Does the sandbox send an IPN after a successful payment at all? | A `payment_events` row with `source = 'ipn'` (SQL 3), and nginx's access log line |
-| S20 | IPN content type, timing against the callback, retries | The event's time against the callback's; P6 below for retries |
-| S29 | Where is the IPN URL registered for a test account; is more than one allowed? | The panel (section 4) |
-| S30 | Must the callback domain be whitelisted? | The first start: initiate answers `"200"`, or an error naming the domain |
-| S5, S16 | Cancel on the checkout: is the browser sent back, with which method and parameters? | P3 below; nginx's log line of the callback |
-| S13, S27 | Close the tab, reopen the link, pay later | P4 below |
-| S14 | Replaying the callback changes nothing | P5 below |
-| S18 | After a failed try, can the same invoice still succeed? | P2 below |
+## 5. Read-only checks
 
-Each result goes into its checklist row with the date, then into DECISIONS where it changes a rule.
+Every query is a SELECT, run through a read-only session (`default_transaction_read_only=on`, so a write fails). No query selects `payload` (raw gateway answers) or any student's email or phone.
 
-## 4. The panel (Rasel)
+The wrapper, on the VPS as the deploy user, reads SQL from stdin and takes psql variables, e.g. `RO_PSQL -v label=rasel-sandbox-vps < query.sql`:
 
-1. **S29:** find where the sandbox account takes an IPN URL, if it has one at all. Register the venue's `PAYSTATION_IPN_URL`, and write down whether a second URL could be added.
-2. **S30:** look for a callback-domain whitelist. Add nothing unless the first start is refused.
-3. **After the run:** remove the IPN URL again, so this account never points at a server afterwards (PAYMENTS-PLAN §13.1 rule 5).
-
-## 5. The payments
-
-Each payment uses a new student from section 2. The expected outcome in our system is listed with each.
-
-| | Steps | Expected |
-|---|---|---|
-| P1 success | Register, pay with a sandbox test card | Callback → our result page → `paid`. One account; its email in Mailpit; login and the dashboard work. An IPN event too (S9) |
-| P2 failure, then retry | Pay with a method that fails (bKash with no balance, or a declined card); then, if the checkout offers it, try again on the same invoice | Callback `status=Failed` → `failed` after verify; no account. S18: whether the same invoice can still succeed |
-| P3 cancel | Cancel on the checkout | S5/S16 recorded. Ours stays `pending` until expiry (10 min), then `expired`, then the 48 h late watch |
-| P4 late payment | Start, close the tab, reopen the link later, pay | Only the IPN and the reconciliation can settle it: ends `paid` with exactly one account |
-| P5 callback replay | Reload P1's callback URL a few times | A redirect each time; no new event that changes anything; still one account |
-| P6 IPN retry (S20) | Turn the maintenance switch on just before paying; turn it off after about 2 minutes | The IPN meets 503 at first. PayStation's retry count and interval show in nginx's log; the payment ends `paid` either way |
-
-## 6. Read-only checks
-
-Every query is a SELECT, run through a read-only session: `default_transaction_read_only=on`, so a write fails. The venue's wrapper `RO_PSQL` is set in section 1. It reads SQL from stdin and takes `-v label=… -v invoice=…`.
-
-No query selects `payload` (raw gateway answers) or any student's email or phone.
+```sh
+RO_PSQL() { $DC exec -T -e PGOPTIONS="-c default_transaction_read_only=on" postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 "$@"' sh "$@"; }
+```
 
 ```sql
 -- 1. The run's payments
@@ -143,10 +89,10 @@ FROM payments WHERE gateway_account = :'label' ORDER BY created_at;
 SELECT source, outcome, status_code, trx_status, created_at
 FROM payment_events WHERE invoice_number = :'invoice' ORDER BY created_at;
 
--- 3. IPN arrivals in the last 3 hours (S9, S20)
+-- 3. IPN arrivals (S9, S20)
 SELECT e.invoice_number, e.outcome, e.trx_status, e.created_at
 FROM payment_events e JOIN payments p ON p.id = e.payment_id
-WHERE e.source = 'ipn' AND p.gateway_account = :'label' AND e.created_at > now() - interval '3 hours'
+WHERE e.source = 'ipn' AND p.gateway_account = :'label'
 ORDER BY e.created_at;
 
 -- 4. One account per paid payment, none for the others
@@ -159,20 +105,16 @@ WHERE p.gateway_account = :'label' ORDER BY p.created_at;
 -- 5. The test students' attempts
 SELECT name, status, completed_at FROM pending_registrations
 WHERE name LIKE 'TEST SBX%' ORDER BY created_at;
-
--- 6. Payments audit rows of the run
-SELECT action, count(*) FROM audit_logs
-WHERE created_at > now() - interval '3 hours'
-  AND (action LIKE 'payments.%' OR action = 'registration.completed' OR action = 'settings.changed')
-GROUP BY action ORDER BY action;
 ```
 
-**Logs during the run:** the API and worker lines about `paystation`, payments, the IPN and verify. Payment logs carry no personal data by design. Nginx's access lines for `/api/payments/paystation/` show each callback and IPN: its status and source address. PayStation's IPN address is worth writing down.
+**Logs during a run:** `$DC logs -f --tail=0 api worker nginx`, filtered for `paystation`, `payment` and `reconcil`.
+- The API and worker lines carry no personal data by design.
+- Nginx's access lines show each callback's path and status, but not its query string.
+- The result page polls `GET /api/registrations/current` every 2–3 s while a payment is pending; filter those out.
 
-## 7. After the run
+## 6. Ending sandbox payments on the VPS
 
+Payments stayed on in sandbox after the run, with registration open (the lead's setting; the VPS later moved to da934fc). To end them:
 1. Close registration in `/admin/settings`.
-2. Turn payments off (`PAYSTATION_ENV` blank), restart `api` and `worker`, and check the boot lines again (on the VPS, one per replica): each must say `PayStation disabled`.
-3. Remove the IPN URL from the panel (section 4).
-4. Write each S-row's result into `SANDBOX-CHECKLIST.md` with the date, including the name of `paystation:selfcheck`'s unpaid `X…` invoice if the venue ran it.
-5. The test rows stay as they are. Removing them is the owner's decision, made at the venue's cleanup step, never by hand (foreign keys are RESTRICT, and the audit log is append-only).
+2. Blank `PAYSTATION_ENV` and run `$DC up -d --no-deps --no-build --wait api worker`. The boot lines must then say `PayStation disabled` on every replica.
+3. The test rows stay. They go when the production database is started again from an empty volume at the launch deploy, which the owner confirms then. Never delete them by hand: the foreign keys are RESTRICT, and the audit log is append-only.
