@@ -149,11 +149,16 @@ model User {
   juryAssignmentsMade    JuryAssignment[]        @relation("JuryAssignmentCreatedBy")
   certificatesRevoked    Certificate[]           @relation("CertificateRevokedBy")
   keyCorrections         AnswerKeyCorrection[]
+  /// Demo data only (DECISIONS 2026-11-08): written by the demo loader, never changed (a trigger), never set by the API.
+  demoBatchId            String?                 @map("demo_batch_id") @db.Uuid
+  demoBatch              DemoBatch?              @relation("DemoUsers", fields: [demoBatchId], references: [id], onDelete: Restrict)
+  demoBatchesStarted     DemoBatch[]             @relation("DemoBatchCreator")
 
   @@index([referredById])
   @@index([gradeLevelId])
   @@index([role])
   @@index([createdAt])
+  @@index([demoBatchId])
   @@map("users")
 }
 
@@ -381,9 +386,13 @@ model Exam {
   leaderboardEntries LeaderboardEntry[]
   promotionRuns      PromotionRun[]
   keyCorrections     AnswerKeyCorrection[]
+  /// Demo data only: written by the demo loader, never changed, never set by the API (no DTO field).
+  demoBatchId        String?               @map("demo_batch_id") @db.Uuid
+  demoBatch          DemoBatch?            @relation(fields: [demoBatchId], references: [id], onDelete: Restrict)
 
   @@index([status, windowStart])
   @@index([roundId])
+  @@index([demoBatchId])
   @@map("exams")
 }
 
@@ -750,20 +759,60 @@ model TaskAssignment {
 /// from published_at on; archived instead of deleted. Raw SQL (*_core_announcements_checks) adds length CHECKs and a
 /// partial index for the students' list.
 model Announcement {
-  id          String    @id @default(uuid(7)) @db.Uuid
+  id          String     @id @default(uuid(7)) @db.Uuid
   title       String
   body        String
   category    Category? // NULL = everyone
-  publishedAt DateTime  @default(now()) @map("published_at") @db.Timestamptz
-  archivedAt  DateTime? @map("archived_at") @db.Timestamptz
-  createdById String    @map("created_by_id") @db.Uuid
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-  createdBy   User      @relation(fields: [createdById], references: [id])
+  publishedAt DateTime   @default(now()) @map("published_at") @db.Timestamptz
+  archivedAt  DateTime?  @map("archived_at") @db.Timestamptz
+  createdById String     @map("created_by_id") @db.Uuid
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  createdBy   User       @relation(fields: [createdById], references: [id])
+  /// Demo data only: written by the demo loader, never changed, never set by the API.
+  demoBatchId String?    @map("demo_batch_id") @db.Uuid
+  demoBatch   DemoBatch? @relation(fields: [demoBatchId], references: [id], onDelete: Restrict)
 
   @@index([publishedAt])
   @@index([createdById])
+  @@index([demoBatchId])
   @@map("announcements")
+}
+
+// ───────────── Demo data (DECISIONS 2026-11-08) ─────────────
+
+/// One load of demo data; at most one exists. demo_clear(id) removes it and everything it made.
+model DemoBatch {
+  id            String         @id @default(uuid(7)) @db.Uuid
+  /// loading | loaded | failed | clearing (CHECK)
+  status        String
+  reason        String
+  /// The admin who clicked; NULL for the CLI (an operator at the server).
+  createdById   String?        @map("created_by_id") @db.Uuid
+  /// Rows per area once loaded, e.g. { "students": 300 }.
+  counts        Json           @default("{}")
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  createdBy     User?          @relation("DemoBatchCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  records       DemoRecord[]
+  users         User[]         @relation("DemoUsers")
+  exams         Exam[]
+  announcements Announcement[]
+
+  @@index([createdById])
+  @@map("demo_batches")
+}
+
+/// Every row a demo load inserted: the Postgres table name and the row id as text.
+model DemoRecord {
+  tableName String    @map("table_name")
+  rowId     String    @map("row_id")
+  batchId   String    @map("batch_id") @db.Uuid
+  batch     DemoBatch @relation(fields: [batchId], references: [id], onDelete: Restrict)
+
+  @@id([tableName, rowId])
+  @@index([batchId])
+  @@map("demo_records")
 }
 
 // ───────────── Free book (plan section 16) ─────────────
