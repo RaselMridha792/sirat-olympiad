@@ -57,7 +57,9 @@ export const homeFacts: HomeFacts = {
     championsPerGroup: 1,
     runnersUpPerGroup: 1,
     finalistsPerGroup: 10,
-    poolTaka: 1_200_000,
+    // The old site says 12,00,000 taka. A prize amount is a public promise of money: hidden (null) until the client
+    // confirms it (lead, 2026-11-08).
+    poolTaka: null,
   },
   // The PDFs give days without years; the season runs from Nov 2026 into 2027.
   roadmap: [
