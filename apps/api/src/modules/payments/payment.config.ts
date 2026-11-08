@@ -1,4 +1,4 @@
-import type { CheckoutGateway } from '@sirat/shared';
+import { DEMO_ACCOUNT_LABEL, type CheckoutGateway } from '@sirat/shared';
 import { PLACEHOLDER, type EnvVars } from '../../config/env';
 
 /**
@@ -140,6 +140,9 @@ export function buildPaymentConfig(env: PaymentEnv): PaymentConfig {
   const accountLabel = env.PAYSTATION_ACCOUNT_LABEL ?? '';
   if (!/^[a-z0-9-]{3,32}$/.test(accountLabel))
     fail('PAYSTATION_ACCOUNT_LABEL is required: 3-32 lowercase letters, digits or "-"');
+  // Demo payments carry this label; reconciliation picks only the configured label, so a real account never may.
+  if (accountLabel === DEMO_ACCOUNT_LABEL)
+    fail(`PAYSTATION_ACCOUNT_LABEL must not be "${DEMO_ACCOUNT_LABEL}" (reserved for demo data)`);
   const invoicePrefix = env.PAYSTATION_INVOICE_PREFIX ?? '';
   if (!/^[A-Z0-9]{1,3}$/.test(invoicePrefix))
     fail('PAYSTATION_INVOICE_PREFIX is required: 1-3 uppercase letters or digits');

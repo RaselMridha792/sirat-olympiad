@@ -3,6 +3,7 @@ import { Prisma, PaymentStatus, type Payment } from '@prisma/client';
 import type { Paginated } from '@sirat/shared';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
+import { isDemoPayment } from '../demo/demo-payment';
 import { readStatusData } from '../gateway/paystation.gateway';
 import type { Decision } from '../payment-decision';
 import { PaymentSettlement, TrxIdInUse } from '../verify/payment-settlement';
@@ -128,10 +129,26 @@ export class AdminPaymentsService {
     };
   }
 
+  /**
+   * 404 for an unknown payment; 409 DEMO_PAYMENT for demo data, which is never sent to PayStation (demo-payment.ts):
+   * a re-check would only find nothing, and a reconcile would settle money that was never taken.
+   */
+  private async existingRealPayment(id: string): Promise<void> {
+    const payment = await this.prisma.payment.findUnique({
+      where: { id },
+      select: { gatewayAccount: true, gatewayEnv: true },
+    });
+    if (!payment) throw new NotFoundException('Payment not found');
+    if (isDemoPayment(payment))
+      throw new ConflictException({
+        code: 'DEMO_PAYMENT',
+        message: 'This is demo data: it is never checked with PayStation',
+      });
+  }
+
   /** Asks the worker for a status check now (any status, e.g. to see a reported refund). 10 s per payment. */
   async recheck(actor: Actor, id: string): Promise<{ requested: boolean }> {
-    const payment = await this.prisma.payment.findUnique({ where: { id }, select: { id: true } });
-    if (!payment) throw new NotFoundException('Payment not found');
+    await this.existingRealPayment(id);
     const result = await this.verifies.request(id, 'admin');
     await this.audit.record({
       action: 'payments.recheck_requested',
@@ -159,8 +176,7 @@ export class AdminPaymentsService {
     id: string,
     dto: ReconcilePaymentDto,
   ): Promise<{ applied: boolean; payment: AdminPaymentView }> {
-    const exists = await this.prisma.payment.findUnique({ where: { id }, select: { id: true } });
-    if (!exists) throw new NotFoundException('Payment not found');
+    await this.existingRealPayment(id);
     let outcome: string;
     let applied: boolean;
     try {

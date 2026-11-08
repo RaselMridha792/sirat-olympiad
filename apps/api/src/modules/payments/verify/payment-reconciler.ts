@@ -32,6 +32,7 @@ export class PaymentReconciler {
       const rows = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM payments
         WHERE gateway_account = ${account}
+          AND gateway_env <> 'demo' -- demo data is never sent to PayStation (demo-payment.ts)
           AND (
             (status IN ('initiated', 'pending') AND created_at <= ${startedBefore}::timestamptz)
             OR (status IN ('failed', 'expired') AND payment_url IS NOT NULL

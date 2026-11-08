@@ -2,6 +2,18 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-08 — Demo payments stay out of the money flow (payments' part of exam's demo data; lead)
+
+1. **One label, two markers:** demo payments carry `gateway_account = 'demo'` (`DEMO_ACCOUNT_LABEL`) and `gateway_env = 'demo'`. Either one keeps a payment away from PayStation (`isDemoPayment`):
+   - reconciliation and the late watch select only the configured label, and now also skip `gateway_env = 'demo'`;
+   - the verifier returns `demo` first, with no status call, no event (payment_events is append-only) and no account-mismatch alert;
+   - admin re-check and reconcile answer 409 `DEMO_PAYMENT`;
+   - payment.config refuses `PAYSTATION_ACCOUNT_LABEL=demo`.
+2. **`payments.gateway_env`** records the PayStation environment at start (`sandbox`, `live`, `fake`) or `demo`. Labels alone cannot tell sandbox money from real money (rasel-sandbox-vps, test-fake, load-fake…). Existing rows became `sandbox`: no payment had ever been started live. The default exists only for that backfill and is dropped in the same migration (lead's fail-closed note): a future write path that forgot the column fails loudly instead of making a live payment look like sandbox money.
+3. **The load guard** (`paymentsAllowDemo`): demo data is refused while `PAYSTATION_ENV=live`, and once a paid `live` payment exists. Sandbox, fake and demo payments never count: none moved money. Registration may stay open (lead).
+4. **The marker email domain** (`DEMO_EMAIL_DOMAIN`, `@demo.sirat.invalid`): the registration form refuses exactly that domain, so a real attempt, and the account its payment makes, can never carry it.
+5. **Demo payments get no events:** `payment_events` cannot be cleared, so demo data never writes to it. A demo "refund" is a paid payment with review reason `refund_reported`; the `refunded` status is never entered.
+
 ## 2026-11-08 — The public site is multi-page (owner, via the lead; core)
 
 - **Decision:**

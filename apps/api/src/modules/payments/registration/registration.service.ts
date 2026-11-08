@@ -674,6 +674,8 @@ export class RegistrationService {
       currency: 'BDT',
       payWithCharge: false,
       gatewayAccount: config.accountLabel,
+      // Always the configured environment, never the column's default: the demo loader counts paid 'live' rows.
+      gatewayEnv: config.env,
       expiresAt: new Date(now.getTime() + settings.expiryMinutes * 60_000),
     };
   }

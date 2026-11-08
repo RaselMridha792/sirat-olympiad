@@ -1,4 +1,4 @@
-import { BD_DISTRICTS, EDUCATION_TYPES, normalizeBdMobile } from '@sirat/shared';
+import { BD_DISTRICTS, EDUCATION_TYPES, isDemoEmail, normalizeBdMobile } from '@sirat/shared';
 import { Transform } from 'class-transformer';
 import {
   IsEmail,
@@ -9,12 +9,29 @@ import {
   Length,
   Matches,
   MaxLength,
+  registerDecorator,
+  type ValidationOptions,
 } from 'class-validator';
 import { normalizeEmail } from '../../../auth/dto/login.dto';
 import { IsAcceptablePassword } from '../../../auth/password-policy';
 
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : value;
+
+/**
+ * Refuses the demo data's marker domain (DEMO_EMAIL_DOMAIN), so no real registration can look like a demo row and be
+ * cleared with them. Only that exact domain: CI fixtures use other .invalid domains. Worded like any invalid address.
+ */
+function IsNotDemoEmail(options?: ValidationOptions) {
+  return (object: object, propertyName: string) =>
+    registerDecorator({
+      name: 'isNotDemoEmail',
+      target: object.constructor,
+      propertyName,
+      options: { message: 'Enter a valid email address', ...options },
+      validator: { validate: (value: unknown) => typeof value !== 'string' || !isDemoEmail(value) },
+    });
+}
 
 /** 01XXXXXXXXX, or the raw input when it is not a Bangladeshi mobile number (the pattern then refuses it). */
 export const toBdMobile = ({ value }: { value: unknown }): unknown =>
@@ -41,6 +58,7 @@ export class StartRegistrationDto {
 
   @Transform(normalizeEmail)
   @IsEmail({}, { message: 'Enter a valid email address' })
+  @IsNotDemoEmail()
   @MaxLength(254)
   email!: string;
 
