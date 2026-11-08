@@ -2,14 +2,14 @@ import { site } from '../../content/site.ts';
 import { defineMessages } from '../messages.ts';
 
 /**
- * The programme's name in the three policies, from one place. The client has not confirmed it. Core's homepage PR
- * moves the name (bn and en) into content/site.ts: whichever of the two PRs merges second points BRAND at that key,
- * so the homepage and these texts never spell it differently.
+ * The programme's name in the three policies: `site.name`, the one source the homepage and the shell read too, so
+ * they never spell it differently. The client has not confirmed it; a change there changes these texts.
  */
-const BRAND = { en: site.name, bn: 'সিরাত লিডারশিপ অলিম্পিয়াড' } as const;
+const BRAND = site.name;
 
 /*
- * The public entry page and the legal pages (core plan section 3). The privacy, terms and refund texts are our own
+ * The legal pages' texts and the public shell's nav, footer and draft note (core plan section 3; the entry and about
+ * pages read content/home.ts and content/about.ts). The privacy, terms and refund texts are our own
  * draft: the client sent none, so every statement was checked against the system on main (05-DATABASE, DECISIONS:
  * cookies, retention, the D6 scrub, A2.1b #9, admin 2FA, "No refund handling"; RUNBOOK section 11). The client
  * reviews them before launch; until then `site.placeholder` keeps the draft note and `noindex`. A change to the
@@ -40,48 +40,6 @@ export const legalMessages = defineMessages({
       address: 'Address',
       registeredName: 'Registered name',
       rights: (year: string, organiser: string) => `© ${year} ${organiser}`,
-    },
-    home: {
-      title: 'Sirat Leadership Olympiad',
-      tagline: 'An online leadership olympiad for students in Bangladesh.',
-      intro:
-        'Students register online, sit a timed exam from a phone or a computer, and see their results on their own dashboard. Categories follow the student’s class: Activist, Ambassador and Achiever.',
-      stepsTitle: 'How it works',
-      steps: [
-        'Register and pay the fee online through PayStation (mobile banking, cards and more).',
-        'Log in with the email and the password you chose when you registered.',
-        'Sit the exam inside its window. It lasts at most 30 minutes, and the timer runs on our server.',
-      ],
-      fee: (amount: string) => `Registration fee: ${amount}`,
-      feeUnknown: 'The registration fee is shown when you register.',
-      open: 'Registration is open.',
-      closed: 'Registration is not open right now.',
-      metaDescription:
-        'Register for the Sirat Leadership Olympiad, an online olympiad for students.',
-    },
-    about: {
-      title: 'About the olympiad',
-      metaDescription: 'Who runs the Sirat Leadership Olympiad and how it works.',
-      sections: [
-        {
-          heading: 'What it is',
-          paragraphs: [
-            'The Sirat Leadership Olympiad is an online competition for school and college students, run as a partnership of GLTS Leadership and Sirat Olympiad.',
-          ],
-        },
-        {
-          heading: 'Categories',
-          paragraphs: [
-            'Each student competes in the category of their class: Activist, Ambassador or Achiever. The category is set from the class chosen at registration.',
-          ],
-        },
-        {
-          heading: 'Who runs it',
-          paragraphs: [
-            'The organiser’s registered name, address and contact details are listed at the bottom of every page.',
-          ],
-        },
-      ],
     },
     privacy: {
       title: 'Privacy policy',
@@ -332,48 +290,6 @@ export const legalMessages = defineMessages({
       address: 'ঠিকানা',
       registeredName: 'নিবন্ধিত নাম',
       rights: (year: string, organiser: string) => `© ${year} ${organiser}`,
-    },
-    home: {
-      title: 'সিরাত লিডারশিপ অলিম্পিয়াড',
-      tagline: 'বাংলাদেশের শিক্ষার্থীদের জন্য একটি অনলাইন লিডারশিপ অলিম্পিয়াড।',
-      intro:
-        'শিক্ষার্থীরা অনলাইনে রেজিস্ট্রেশন করে, ফোন বা কম্পিউটার থেকে নির্দিষ্ট সময়ের পরীক্ষা দেয়, আর নিজের ড্যাশবোর্ডে ফল দেখে। ক্যাটাগরি শিক্ষার্থীর শ্রেণি অনুযায়ী: অ্যাক্টিভিস্ট, অ্যাম্বাসেডর আর অ্যাচিভার।',
-      stepsTitle: 'কীভাবে অংশ নেবেন',
-      steps: [
-        'রেজিস্ট্রেশন করুন আর PayStation-এর মাধ্যমে অনলাইনে ফি দিন (মোবাইল ব্যাংকিং, কার্ড ইত্যাদি)।',
-        'রেজিস্ট্রেশনের সময় দেওয়া ইমেইল আর পাসওয়ার্ড দিয়ে লগইন করুন।',
-        'নির্ধারিত সময়ের মধ্যে পরীক্ষা দিন। পরীক্ষা সর্বোচ্চ ৩০ মিনিটের, আর সময় চলে আমাদের সার্ভারে।',
-      ],
-      fee: (amount: string) => `রেজিস্ট্রেশন ফি: ${amount}`,
-      feeUnknown: 'রেজিস্ট্রেশনের সময় ফি দেখানো হবে।',
-      open: 'রেজিস্ট্রেশন চলছে।',
-      closed: 'এখন রেজিস্ট্রেশন বন্ধ।',
-      metaDescription:
-        'সিরাত লিডারশিপ অলিম্পিয়াডে রেজিস্ট্রেশন করুন, শিক্ষার্থীদের জন্য একটি অনলাইন অলিম্পিয়াড।',
-    },
-    about: {
-      title: 'অলিম্পিয়াড পরিচিতি',
-      metaDescription: 'সিরাত লিডারশিপ অলিম্পিয়াড কারা আয়োজন করে আর কীভাবে চলে।',
-      sections: [
-        {
-          heading: 'এটি কী',
-          paragraphs: [
-            'সিরাত লিডারশিপ অলিম্পিয়াড স্কুল আর কলেজের শিক্ষার্থীদের জন্য একটি অনলাইন প্রতিযোগিতা, GLTS Leadership আর Sirat Olympiad-এর যৌথ আয়োজন।',
-          ],
-        },
-        {
-          heading: 'ক্যাটাগরি',
-          paragraphs: [
-            'প্রত্যেক শিক্ষার্থী নিজের শ্রেণির ক্যাটাগরিতে প্রতিযোগিতা করে: অ্যাক্টিভিস্ট, অ্যাম্বাসেডর বা অ্যাচিভার। রেজিস্ট্রেশনে বেছে নেওয়া শ্রেণি থেকে ক্যাটাগরি ঠিক হয়।',
-          ],
-        },
-        {
-          heading: 'আয়োজক',
-          paragraphs: [
-            'আয়োজকের নিবন্ধিত নাম, ঠিকানা আর যোগাযোগের তথ্য প্রতিটি পাতার নিচে দেওয়া আছে।',
-          ],
-        },
-      ],
     },
     privacy: {
       title: 'গোপনীয়তা নীতি',
