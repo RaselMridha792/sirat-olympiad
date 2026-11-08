@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { minorToWholeTaka, parseAmountToMinor } from '../amount';
-import type { PaymentConfig } from '../payment.config';
+import type { PaymentConfig, PaystationEnv } from '../payment.config';
 import type {
   GatewayRaw,
   InitiateRequest,
@@ -20,6 +20,23 @@ type Answer =
 export const INVALID_CREDENTIAL_CODE = '1001';
 
 export type StatusData = Omit<Extract<StatusResult, { kind: 'found' }>, 'kind' | 'raw'>;
+
+/**
+ * A checkout link the student's browser will follow: https for sandbox and live, as the browser requires for a
+ * 'paystation' checkout (web checkout.ts). Only the dev/CI fake may answer http. Anything else is a bad response, so
+ * start fails at once (the payment is marked failed) instead of leaving a pending payment no browser can open. The
+ * link's host is not checked yet: the live account's checkout host is confirmed at the switch (PAYMENTS-PLAN §13.4).
+ */
+export function isCheckoutUrl(url: unknown, env: PaystationEnv): url is string {
+  if (typeof url !== 'string') return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  return parsed.protocol === 'https:' || (env === 'fake' && parsed.protocol === 'http:');
+}
 
 /**
  * The fields of a v1 transaction-status `data` object. Also reads a stored answer (payment_events.payload.data) for
@@ -76,9 +93,12 @@ export class PayStationGateway implements PaymentGateway {
     const code = String(answer.body.status_code ?? '');
     if (code === '200') {
       const url = answer.body.payment_url;
-      if (typeof url === 'string' && /^https?:\/\//.test(url))
+      if (isCheckoutUrl(url, this.config.env))
         return { kind: 'created', paymentUrl: url, raw: answer.raw };
-      this.logger.warn({ msg: 'paystation answered 200 without a payment_url', op: 'initiate' });
+      this.logger.warn({
+        msg: 'paystation answered 200 without a usable payment_url',
+        op: 'initiate',
+      });
       return { kind: 'unavailable', reason: 'bad_response', raw: answer.raw };
     }
     if (code === INVALID_CREDENTIAL_CODE) {

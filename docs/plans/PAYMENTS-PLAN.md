@@ -668,6 +668,7 @@ Change `PAYSTATION_ENV` (`live`: the host comes from the allow-list; `PAYSTATION
 | S22 | Checkout shows the client's merchant name, not Rasel's | Look. |
 | S17 | 2001 with the new merchant id | Status of an unknown invoice. |
 | S25 | Rate limits on live | Ask PayStation. |
+| Checkout host | The gateway takes any https `payment_url` today (`isCheckoutUrl` in `paystation.gateway.ts`; http only for the fake) | Note the host of the live account's `payment_url`, then add a host check to `isCheckoutUrl` (e.g. `*.paystation.com.bd`) with its unit test. |
 | S26 | A refund shows up as an alert, nothing more (Q4) | Only if the client refunds the small payment in the panel anyway: a re-check records `refund_reported` with a critical alert, and the payment stays `paid`. |
 | Full flow | End to end on live | Register → pay → account → login → dashboard; close the tab → reconciliation settles it (DoD #16). |
 

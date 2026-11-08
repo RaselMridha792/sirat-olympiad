@@ -8,7 +8,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { PrismaClient } from '@prisma/client';
 import { seedConfig } from '../prisma/seed';
-import { testPrisma, truncateAll } from './helpers';
+import { applyReferenceData, testPrisma, truncateAll } from './helpers';
 
 const prisma: PrismaClient = testPrisma();
 const KEY = 'registration_fee_minor';
@@ -28,8 +28,11 @@ function feeMigrationSql(): string {
 }
 const auditRows = () => prisma.auditLog.count({ where: { action: ACTION } });
 
+// The reference data (grades, ranks, rounds; never settings) goes back after each truncate, so later suites on a
+// reused test database still find Round 1. The fee key stays missing, as the first case needs.
 beforeEach(async () => {
   await truncateAll(prisma);
+  await applyReferenceData(prisma);
 });
 afterAll(async () => {
   await prisma.$disconnect();
