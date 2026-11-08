@@ -11,17 +11,26 @@ const AA = 4.5;
 const uiSrc = fileURLToPath(new URL('../../../../packages/ui/src/', import.meta.url));
 const webSrc = fileURLToPath(new URL('../', import.meta.url));
 
+const TOKENS_CSS = readFileSync(join(uiSrc, 'styles/tokens.css'), 'utf8');
 const COLORS: Record<string, string> = {
   white: '#ffffff',
   black: '#000000',
   ...Object.fromEntries(
-    [
-      ...readFileSync(join(uiSrc, 'styles/tokens.css'), 'utf8').matchAll(
-        /--color-([\w-]+):\s*(#[0-9a-f]{6})\s*;/gi,
-      ),
-    ].map((m) => [m[1] as string, (m[2] as string).toLowerCase()]),
+    [...TOKENS_CSS.matchAll(/--color-([\w-]+):\s*(#[0-9a-f]{6})\s*;/gi)].map((m) => [
+      m[1] as string,
+      (m[2] as string).toLowerCase(),
+    ]),
   ),
 };
+// Semantic tokens refer to the brand scales (`--color-primary: var(--color-green-600)`): resolve them, so a palette
+// swap is an edit of the scales only and this test still checks the result.
+for (const [, name, ref] of TOKENS_CSS.matchAll(
+  /--color-([\w-]+):\s*var\(--color-([\w-]+)\)\s*;/g,
+)) {
+  const hex = COLORS[ref as string];
+  assert.ok(hex, `--color-${name} refers to an unknown --color-${ref}`);
+  COLORS[name as string] = hex;
+}
 
 function color(token: string): string {
   const hex = COLORS[token];

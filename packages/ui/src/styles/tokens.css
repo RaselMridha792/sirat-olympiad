@@ -34,27 +34,27 @@
   --color-gold-800: #8a5a05;
 
   /* Brand, semantic. Primary is the client's green: white on it reads 5.4:1, so it fills buttons too. */
-  --color-primary: #007a48; /* green-600 */
-  --color-primary-hover: #00623b; /* green-700 */
-  --color-primary-soft: #eaf6f0; /* green-50 */
-  --color-primary-strong: #00623b; /* green-700: small text, filled buttons */
-  --color-primary-strong-hover: #044e31; /* green-800 */
-  --color-secondary: #044e31; /* green-800: links, dark cards */
-  --color-secondary-hover: #06402a; /* green-900 */
-  --color-secondary-soft: #d0ebe0; /* green-100 */
+  --color-primary: var(--color-green-600);
+  --color-primary-hover: var(--color-green-700);
+  --color-primary-soft: var(--color-green-50);
+  --color-primary-strong: var(--color-green-700); /* small text, filled buttons */
+  --color-primary-strong-hover: var(--color-green-800);
+  --color-secondary: var(--color-green-800); /* links, dark cards */
+  --color-secondary-hover: var(--color-green-900);
+  --color-secondary-soft: var(--color-green-100);
   /*
    * Accent: the client's gold. A light colour: never text on white (only accent-strong is), and dark text on a gold
    * fill (ink on gold reads 8:1). On the deep-green shell, gold is the text colour for kickers and icons (8.1:1),
    * where the green primary would read only 3.3:1.
    */
-  --color-accent: #ed9d19; /* gold-500 */
-  --color-accent-hover: #d2820f; /* gold-600 */
-  --color-accent-soft: #fef8ec; /* gold-50 */
-  --color-accent-strong: #8a5a05; /* gold-800: gold text on white and on accent-soft */
+  --color-accent: var(--color-gold-500);
+  --color-accent-hover: var(--color-gold-600);
+  --color-accent-soft: var(--color-gold-50);
+  --color-accent-strong: var(--color-gold-800); /* gold text on white and on accent-soft */
 
   /* Neutral / surfaces. The shell (headers, heroes, the dashboard sidebar) is the brand's deep green. */
-  --color-shell: #021c12; /* green-950 */
-  --color-shell-soft: #06402a; /* green-900 */
+  --color-shell: var(--color-green-950);
+  --color-shell-soft: var(--color-green-900);
   --color-page: #f8fafc;
   --color-surface: #ffffff;
   --color-line: #e2e8f0;
