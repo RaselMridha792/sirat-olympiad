@@ -99,7 +99,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               <LogoutButton locale={locale} tone="surface" />
             </>
           }
-          labels={{ nav: c.nav.main, openMenu: c.nav.openMenu, closeMenu: c.nav.closeMenu }}
+          labels={{
+            nav: c.nav.main,
+            openMenu: c.nav.openMenu,
+            closeMenu: c.nav.closeMenu,
+            skip: c.nav.skip,
+          }}
           items={items}
           userName={user.name}
           userInitial={userInitial}

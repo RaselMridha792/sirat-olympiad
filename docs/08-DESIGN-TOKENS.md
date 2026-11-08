@@ -22,7 +22,7 @@ Old code also used `#4F46E5` indigo and `#5B2EFF` violet in places (leaderboard,
 
 ## Typography
 
-`--font-sans`: Inter Variable → Noto Sans Bengali Variable → system. Both self-hosted via fontsource (no Google Fonts request). `--font-arabic` (`font-arabic`): system Arabic fonts only, for the honorific ﷺ through `<Honorific>` (owner, 2026-11-03: no font package). Bangla public pages use `leading-[1.7]` for body text and `leading-snug` or more for headings, never `tracking-tight` on Bangla. Page titles `text-2xl/3xl font-extrabold`, labels `text-sm font-semibold`, table headers `text-xs uppercase tracking-wider text-ink-faint`.
+`--font-sans`: Inter Variable → Noto Sans Bengali Variable → system. Both self-hosted via fontsource (no Google Fonts request). `--font-system` (`font-system`): a language's own name in a language switch ("বাংলা" on an English page), so English pages do not download the Bangla web font. `--font-arabic` (`font-arabic`): system Arabic fonts only, for the honorific ﷺ through `<Honorific>` (owner, 2026-11-03: no font package). Bangla public pages use `leading-[1.7]` for body text and `leading-snug` or more for headings, never `tracking-tight` on Bangla. Page titles `text-2xl/3xl font-extrabold`, labels `text-sm font-semibold`, table headers `text-xs uppercase tracking-wider text-ink-faint`.
 
 ## Shape and elevation
 
@@ -30,7 +30,7 @@ Old code also used `#4F46E5` indigo and `#5B2EFF` violet in places (leaderboard,
 
 ## Shared components (`@sirat/ui`)
 
-`Button` (primary|secondary|outline|ghost|danger, sm|md|lg, `loading`) · `Card` · `StatCard` · `Badge` (neutral|success|warning|danger|info|brand) · `Field` (label + icon + error, `aria-invalid`) · `DataTable` (presentational; paging is server-side) · `Pagination` · `EmptyState` / `Spinner` / `ErrorState` · `PageHeader` · `AuthSplitLayout` · `AppShell` (sidebar + content; app passes `renderLink`) · `Countdown` (display-only) · `Prose` · for public pages: `Section` (page, surface, tint and shell bands), `Timeline` (dates, steps), `Accordion` (`details`/`summary`), `BigStats`, `StarMark` / `GeometricPattern` / `StarOrnament` (inline SVG geometry in `currentColor`), `Honorific` / `WithHonorific`.
+`Button` (primary|secondary|outline|ghost|danger, sm|md|lg, `loading`) · `Card` · `StatCard` · `Badge` (neutral|success|warning|danger|info|brand) · `Field` (label + icon + error, `aria-invalid`) · `DataTable` (presentational; paging is server-side) · `Pagination` · `EmptyState` / `Spinner` / `ErrorState` · `PageHeader` · `AuthSplitLayout` · `AppShell` (sidebar + content; app passes `renderLink`) · `Countdown` (display-only) · `Prose` · `SkipLink` (the first Tab stop of every page frame, to `main#main`) · for public pages: `Section` (page, surface, tint and shell bands), `Timeline` (dates, steps), `Accordion` (`details`/`summary`), `BigStats`, `StarMark` / `GeometricPattern` / `StarOrnament` (inline SVG geometry in `currentColor`), `Honorific` / `WithHonorific`.
 
 ## Motion
 
@@ -42,6 +42,7 @@ Old code also used `#4F46E5` indigo and `#5B2EFF` violet in places (leaderboard,
 2. Icons are passed as nodes (ui package has no icon dependency); the apps use `lucide-react`.
 3. Mobile-first; sidebar collapses under `xl`; tables scroll horizontally.
 4. Every screen has loading, empty and error states. No raw error text from the server.
+5. Every page frame has a `SkipLink` and one `main#main`. Focus is always visible: a ring or an outline, never a colour change alone. Interactive targets are at least 24 × 24 px.
 5. Accessibility: labels tied to inputs, visible focus, `aria-live` for status, sufficient contrast (verify `primary` on white for small text; use `secondary` for text links).
 6. Tailwind must scan the UI package: `apps/web/src/app/globals.css` has `@source '../../../../packages/ui/src'`. Keep it.
 7. Dark mode: not in scope yet.

@@ -41,7 +41,7 @@ export function NavShell({
   title?: string;
   topbar?: React.ReactNode;
   topbarTone?: 'shell' | 'surface';
-  labels?: { nav: string; openMenu: string; closeMenu: string };
+  labels?: { nav: string; openMenu: string; closeMenu: string; skip?: string };
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -59,6 +59,7 @@ export function NavShell({
       navLabel={labels?.nav}
       menuLabel={labels?.openMenu}
       closeMenuLabel={labels?.closeMenu}
+      skipLabel={labels?.skip}
       renderLink={(item, props) => (
         <Link key={item.href} href={item.href} {...props}>
           {item.icon}

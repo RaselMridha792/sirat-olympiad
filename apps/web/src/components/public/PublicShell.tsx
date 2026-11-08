@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
-import { buttonClasses, cn, StarMark, WithHonorific } from '@sirat/ui';
+import { buttonClasses, cn, SkipLink, StarMark, WithHonorific } from '@sirat/ui';
 import { publicPath, site, type PublicPage } from '@/content/site';
 import type { Locale } from '@/i18n';
 import { pick } from '@/i18n/messages';
@@ -54,6 +54,7 @@ export function PublicShell({
         locale === 'bn' && 'leading-[1.7]',
       )}
     >
+      <SkipLink>{home.shell.skip}</SkipLink>
       <header className="bg-shell text-white">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-3.5 sm:px-6">
           <Link href={publicPath('home', locale)} className="flex min-w-0 items-center gap-3">
@@ -76,7 +77,11 @@ export function PublicShell({
               hrefLang={other}
               lang={other}
               aria-label={m.nav.otherLanguageLabel}
-              className="rounded-control px-3 py-2 text-sm font-semibold hover:bg-white/10"
+              className={cn(
+                'rounded-control px-3 py-2 text-sm font-semibold hover:bg-white/10',
+                // A language's own name in the system font: the web font would load the whole Bangla font here.
+                other === 'bn' && 'font-system',
+              )}
             >
               {m.nav.otherLanguage}
             </Link>
@@ -94,7 +99,7 @@ export function PublicShell({
       </header>
 
       {bleed ? (
-        <main className="flex-1">
+        <main id="main" tabIndex={-1} className="flex-1 outline-none">
           {draftNote ? (
             <p
               role="note"
@@ -106,7 +111,11 @@ export function PublicShell({
           {children}
         </main>
       ) : (
-        <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-10">
+        <main
+          id="main"
+          tabIndex={-1}
+          className="mx-auto w-full max-w-5xl flex-1 px-6 py-10 outline-none"
+        >
           {draftNote ? (
             <p
               role="note"
@@ -133,7 +142,7 @@ export function PublicShell({
               <WithHonorific text={home.hero.tagline} honorific={home.brand.honorific} />
             </p>
           </div>
-          <nav aria-label={m.nav.label}>
+          <nav aria-label={home.shell.footerNav}>
             <ul className="flex flex-col gap-2">
               {links.map((link) => (
                 <li key={link.page}>
