@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# pre-push: never publish the old history or reference/ (DECISIONS 2026-11-08 "The repository is public").
+#
+# The repository is public. Its old, private history, and reference/ in it, hold a third party's live code and its
+# bug audit. This refuses a push when a pushed commit
+#   - has the old history's first commit (7587f2f, "import scaffold…") as an ancestor, or
+#   - adds, changes or removes anything under reference/.
+#
+# Turn it on once per clone (RUNBOOK section 0): git config core.hooksPath scripts/git-hooks
+# CI runs the same check on every pull request (.github/workflows/ci.yml), feeding it one line on stdin.
+#
+# git gives the remote's name and URL as arguments, and one line per pushed ref on stdin:
+#   <local ref> <local sha> <remote ref> <remote sha>
+set -euo pipefail
+
+# The old history's first commit. SIRAT_OLD_HISTORY_ROOT exists for this hook's own test only.
+OLD_ROOT=${SIRAT_OLD_HISTORY_ROOT:-7587f2fb7dcd3f5139e341cef5336863eb5f8dbd}
+ZERO=0000000000000000000000000000000000000000
+
+refuse() {
+  echo "pre-push: REFUSED, $1" >&2
+  echo "pre-push: the repository is public; the old history and reference/ must never reach it (DECISIONS 2026-11-08)." >&2
+  exit 1
+}
+
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  [ -n "${local_sha:-}" ] || continue
+  [ "$local_sha" = "$ZERO" ] && continue # deleting a remote branch pushes no commit
+  # The old root can only be an ancestor where it exists; a fresh clone of the public repository has never seen it.
+  if git cat-file -e "$OLD_ROOT^{commit}" 2> /dev/null && git merge-base --is-ancestor "$OLD_ROOT" "$local_sha"; then
+    refuse "$local_sha has the old history (${OLD_ROOT:0:7}) as an ancestor"
+  fi
+  # The commits this push sends: after what the remote has, or, for a new branch, those no remote branch holds.
+  if [ "$remote_sha" != "$ZERO" ] && git cat-file -e "$remote_sha^{commit}" 2> /dev/null; then
+    range=("$remote_sha..$local_sha")
+  else
+    range=("$local_sha" --not --remotes)
+  fi
+  touched=$(git rev-list "${range[@]}" -- reference/)
+  [ -z "$touched" ] || refuse "commit ${touched:0:7} touches reference/"
+done
+exit 0

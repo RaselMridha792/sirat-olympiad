@@ -40,6 +40,15 @@ jobs:
         run: bash scripts/test/loadtest-generators-left.test.sh
       - name: prelaunch-check's runtime role line on stubbed logs - only sirat_app and superuser=false on every API and worker passes (L8 gate)
         run: bash scripts/test/prelaunch-role.test.sh
+      - name: No old history and no reference/ in this run's commits (the repository is public, DECISIONS 2026-11-08) - the pre-push hook, and its own test
+        # Full history: the checkout is shallow, and both checks walk the commits. On a pull request HEAD is the merge
+        # commit, so the range is the PR's commits; on main it is empty and only the old-root check applies.
+        run: |
+          git fetch -q --no-tags --unshallow origin 2> /dev/null || git fetch -q --no-tags origin
+          base=${GITHUB_BASE_REF:-main}
+          git fetch -q --no-tags origin "+refs/heads/$base:refs/remotes/origin/$base"
+          printf 'HEAD %s refs/heads/ci %s\n' "$(git rev-parse HEAD)" "$(git rev-parse "origin/$base")" | scripts/git-hooks/pre-push origin ci
+          bash scripts/test/pre-push-hook.test.sh
       - run: pnpm format:check
       - run: pnpm --filter @sirat/shared build
       - run: pnpm db:generate
