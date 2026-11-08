@@ -10,6 +10,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
   - Switching it never deletes or changes an enrolment, a secret, a recovery code or a session, and needs no logout.
 - **Fail closed:** a missing or unreadable row, or a failed read, counts as both roles required. A failed read is not kept.
 - **Read path:** `TwoFactorRequirement` keeps what it read for 5 s per replica (`REQUIREMENT_CACHE_MS`); concurrent callers share one read. The guard awaits it only after the cheap checks (no `tfa`, a route naming admin or manager, not `@TwoFactorOptional`), so students and proved sessions never wait for it.
+  - The web follows its `/auth/me` cache (30 s): after switching on, an unproved admin page may show the error state for up to about 35 s before the redirect to `/admin/security`. The API refuses at once (5 s at most on other replicas).
 - **Changing it:** `PUT /admin/security/two-factor-requirement` (admin only) with `{ roles, expected, reason, code }`.
   - It is `@TwoFactorAlways()`: the guard demands the proof even while the requirement is off, so switching it back on (or off) always takes a proved session. The routes test pins it as the only such route.
   - The admin reset's step-up: the acting admin's own current code under the login limits, the role re-read from the database.

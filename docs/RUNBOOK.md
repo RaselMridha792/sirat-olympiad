@@ -833,7 +833,7 @@ pnpm --filter @sirat/api admin:2fa-reset --email ops@example.org --reason "Lost 
 
 **The requirement: switching it off for testing, and back on** (DECISIONS "The admin 2FA requirement is a setting"). The setting `two_factor_required_roles` says which of admin and manager must prove the code before the admin pages open; the default is both.
 
-- **What switching changes:** only whether an admin or manager session without the code may open the admin pages. Enrolments, secrets, recovery codes and sessions stay. An enrolled admin or manager still enters the code at every sign-in; an admin who has not enrolled signs in with the password alone. Each API replica follows within 5 s; nobody is logged out.
+- **What switching changes:** only whether an admin or manager session without the code may open the admin pages. Enrolments, secrets, recovery codes and sessions stay. An enrolled admin or manager still enters the code at every sign-in; an admin who has not enrolled signs in with the password alone. Each API replica follows within 5 s, the web's pages within about 35 s (its `/auth/me` cache); nobody is logged out.
 - **On the admin panel:** `/admin/security`, card "Two-factor requirement" (admins whose session proved the code): tick admins and/or managers, give a reason and your current code, Save. Through the API: `PUT /api/admin/security/two-factor-requirement {roles, expected, reason, code}`. 5 changes an hour per admin.
 - **Break-glass** (the database and both Redis; never the TOTP key; prints only the new set):
 
