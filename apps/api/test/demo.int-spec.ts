@@ -135,6 +135,15 @@ async function until(done: (s: AdminDemoStatus) => boolean, ms = LOAD_LIMIT_MS) 
   }
 }
 
+/** Waits until the worker has raised `kind` (it raises after the commit and after writing the outcome). */
+async function alerted(kind: string, ms = 10_000) {
+  const end = Date.now() + ms;
+  while (!raise.mock.calls.some((c) => c[0] === kind)) {
+    if (Date.now() > end) throw new Error(`no ${kind} alert within ${ms} ms`);
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
 const load = (reason = 'try the dashboards') =>
   call<DemoLoadAccepted & { details?: string[] }>(env, 'POST', '/admin/demo/load', admin.cookie, {
     reason,
@@ -148,7 +157,12 @@ async function loaded(): Promise<{ batchId: string; password: string; status: Ad
   const started = Date.now();
   const res = await load();
   expect(res.status).toBe(202);
-  const s = await until((x) => x.batch?.status === 'loaded' || x.batch?.status === 'failed');
+  // 'loaded' is committed first, the outcome a moment later: wait for both, or the expects below race the worker.
+  const s = await until(
+    (x) =>
+      (x.batch?.status === 'loaded' && x.lastOutcome?.action === 'load') ||
+      x.batch?.status === 'failed',
+  );
   expect(s.batch?.status).toBe('loaded');
   loadMs = Date.now() - started;
   return { batchId: res.json.batchId, password: res.json.password, status: s };
@@ -234,6 +248,46 @@ describe('access', () => {
     });
     expect(audit.meta).toMatchObject({ reason: 'the job was lost', abandoned: 'loading' });
   });
+
+  it('a batch abandoned in clearing may be removed again; refused, it goes back to failed (A2)', async () => {
+    const batch = await prisma.demoBatch.create({
+      data: { status: 'clearing', reason: 'job lost', createdById: admin.id },
+      select: { id: true },
+    });
+    await prisma.$executeRaw`
+      UPDATE "demo_batches" SET "updated_at" = now() - interval '20 minutes' WHERE "id" = ${batch.id}::uuid`;
+    // A registered, marked demo ambassador whom a real account names as its referrer: the removal must refuse.
+    const ambassador = await prisma.user.create({
+      data: {
+        email: `ambassador-x${randomUUID().slice(0, 6)}@demo.sirat.invalid`,
+        passwordHash: 'not-a-real-hash',
+        name: 'Demo Ambassador',
+        role: 'ambassador',
+        demoBatchId: batch.id,
+      },
+      select: { id: true },
+    });
+    await prisma.demoRecord.create({
+      data: { batchId: batch.id, tableName: 'users', rowId: ambassador.id },
+    });
+    const real = await makeUser(prisma, { role: 'student', referredById: ambassador.id });
+    try {
+      expect((await status()).batch).toMatchObject({ status: 'clearing', stale: true });
+      expect((await clear('the removal job was lost')).status).toBe(202);
+      const s = await until(
+        (x) => x.lastOutcome?.action === 'clear' && x.batch?.status !== 'clearing',
+      );
+      expect(s.lastOutcome).toMatchObject({
+        result: 'blocked',
+        blockers: { real_users_referred_by_demo: 1 },
+      });
+      expect(s.batch).toMatchObject({ status: 'failed', stale: false });
+      expect(await prisma.user.count({ where: { id: ambassador.id } })).toBe(1);
+    } finally {
+      await prisma.user.update({ where: { id: real.id }, data: { referredById: null } });
+      await removeAnyBatch();
+    }
+  });
 });
 
 describe('load, use, remove', () => {
@@ -278,6 +332,7 @@ describe('load, use, remove', () => {
         where: { action: 'demo.load_requested', entityId: batchId, actorId: admin.id },
       }),
     ).toBe(1);
+    await alerted('ops.demo_loaded');
     expect(raise).toHaveBeenCalledWith(
       'ops.demo_loaded',
       expect.objectContaining({ actorId: admin.id }),
@@ -469,8 +524,13 @@ describe('load, use, remove', () => {
     raise.mockClear();
     const res = await clear('before the launch');
     expect(res.status).toBe(202);
-    const s = await until((x) => x.batch === null);
+    // The batch row goes with the commit, the outcome and the alert just after: wait for all three.
+    const s = await until(
+      (x) =>
+        x.batch === null && x.lastOutcome?.action === 'clear' && x.lastOutcome.result === 'done',
+    );
     expect(s.lastOutcome).toMatchObject({ action: 'clear', result: 'done' });
+    await alerted('ops.demo_cleared');
     expect(await prisma.demoRecord.count()).toBe(0);
     expect(await prisma.user.count({ where: { email: { endsWith: '@demo.sirat.invalid' } } })).toBe(
       0,

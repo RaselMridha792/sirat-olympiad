@@ -69,6 +69,13 @@ export class DemoRunner {
         guard: this.deps.guard,
         onProgress: (step) => this.state({ action: 'load', step, outcome: null }),
       });
+    // Still ours? A removal of an abandoned batch (DEMO_STALE_MINUTES) may have started meanwhile: then publishing
+    // would only race demo_clear (A2's review). The removal's own job finishes the work.
+    const still = await prisma.demoBatch.findUnique({
+      where: { id: batchId },
+      select: { status: true },
+    });
+    if (still?.status !== 'loading') return null;
     await this.state({ action: 'load', step: 'results', outcome: null });
     await publishDemoResults(prisma, batchId);
     const counts = await demoCounts(prisma, batchId);
