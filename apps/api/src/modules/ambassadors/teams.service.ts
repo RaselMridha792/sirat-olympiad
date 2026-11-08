@@ -275,6 +275,7 @@ const TEAM_ROW_SELECT = {
       name: true,
       role: true,
       isBlocked: true,
+      demoBatchId: true,
       ambassador: { select: { approvedAt: true } },
     },
   },
@@ -290,6 +291,7 @@ function toAdminRow(t: TeamRowData): AdminTeamRow {
     owner: { userId: t.owner.id, name: t.owner.name },
     open: ownerActive(t.owner),
     memberCount: t._count.members,
+    demo: t.owner.demoBatchId !== null,
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
   };

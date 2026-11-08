@@ -12,6 +12,8 @@ type Db = PrismaService | Prisma.TransactionClient;
  *   archived exam is retired, as for promotion);
  * - promotion: everyone with an entry in the round (a round after Round 1);
  * - winner: the named students who have an entry in the round (the final).
+ * Demo data never counts (DECISIONS 2026-11-08 "Demo data"): demo accounts and demo exams are left out, so a real run
+ * never gives a demo student a certificate from the real serial sequence (the demo loader writes its own).
  */
 export function eligible(data: Pick<IssueJobData, 'type' | 'roundId' | 'userIds'>): Prisma.Sql {
   const round = Prisma.sql`${data.roundId}::uuid`;
@@ -19,13 +21,13 @@ export function eligible(data: Pick<IssueJobData, 'type' | 'roundId' | 'userIds'
     data.type === 'participation'
       ? Prisma.sql`SELECT le."user_id" FROM "leaderboard_entries" le JOIN "exams" x ON x."id" = le."exam_id"
           WHERE x."round_id" = ${round} AND x."status"::text = 'published' AND x."results_published_at" IS NOT NULL
-            AND le."generation" = x."results_generation"`
+            AND x."demo_batch_id" IS NULL AND le."generation" = x."results_generation"`
       : data.type === 'promotion'
         ? Prisma.sql`SELECT e."user_id" FROM "round_entries" e WHERE e."round_id" = ${round}`
         : Prisma.sql`SELECT e."user_id" FROM "round_entries" e
             WHERE e."round_id" = ${round} AND e."user_id" = ANY(${data.userIds ?? []}::uuid[])`;
   return Prisma.sql`SELECT u."id", u."name" FROM "users" u
-    WHERE u."is_blocked" = false AND u."id" IN (${source})`;
+    WHERE u."is_blocked" = false AND u."demo_batch_id" IS NULL AND u."id" IN (${source})`;
 }
 
 /**

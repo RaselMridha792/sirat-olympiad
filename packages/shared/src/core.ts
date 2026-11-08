@@ -262,6 +262,8 @@ export const TASK_REFUSALS = [
   'not_ambassador',
   'not_open',
   'not_submitted',
+  /** Demo data: a demo task goes only to demo ambassadors and a real task only to real ones (nothing assigned). */
+  'task_side_mismatch',
 ] as const;
 export type TaskRefusal = (typeof TASK_REFUSALS)[number];
 
@@ -291,6 +293,8 @@ export interface AdminTaskRow {
   createdAt: string;
   updatedAt: string;
   counts: Record<'assigned' | 'submitted' | 'approved' | 'rejected', number>;
+  /** A demo task (demo data): marked in the admin list; it goes only to demo ambassadors. */
+  demo: boolean;
 }
 
 /** POST /admin/tasks/:id/assign answer: new assignments, and ambassadors who had it already. */
@@ -308,6 +312,8 @@ export interface AdminTaskReviewRow {
   ambassador: { userId: string; name: string };
   proof: string;
   submittedAt: string;
+  /** A demo task's proof (demo data): marked in the queue. */
+  demo: boolean;
 }
 
 /** POST /admin/task-assignments/:id/{approve,reject} answer. */
@@ -365,6 +371,8 @@ export interface AdminTeamRow {
   /** The owner is still an approved, unblocked ambassador (otherwise the team takes no new members). */
   open: boolean;
   memberCount: number;
+  /** A demo team (its owner is a demo account): marked in the admin list, never mixed with real teams. */
+  demo: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -422,6 +430,8 @@ export const ROUND_REFUSALS = [
   'unscored_entries',
   'no_entries',
   'already_promoted',
+  /** Demo data: no round is added and no promotion runs while demo rounds exist (remove the demo data first). */
+  'demo_rounds_present',
 ] as const;
 export type RoundRefusal = (typeof ROUND_REFUSALS)[number];
 
@@ -469,6 +479,8 @@ export type AdminRound = Pick<
   /** This round's entries by status. */
   entries: Record<EntryStatus, number>;
   promotions: AdminPromotionRun[];
+  /** A demo round (demo data): marked in the admin list, removed with the demo data. */
+  demo: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -592,6 +604,8 @@ export const JURY_REFUSALS = [
   'window_open',
   'already_promoted',
   'bad_scores',
+  /** Demo data: a demo judge goes only on a demo round and a real judge only on a real one. */
+  'jury_side_mismatch',
 ] as const;
 export type JuryRefusal = (typeof JURY_REFUSALS)[number];
 
@@ -610,7 +624,8 @@ export interface JuryAssignmentRow {
 
 /** GET /admin/rounds/:id/jury: the round's judges and the jury-role accounts that can be added. */
 export interface AdminRoundJury {
-  round: Pick<RoundRecord, 'id' | 'name'>;
+  /** `demo`: a demo round, whose judges and candidates are demo accounts only (demo data). */
+  round: Pick<RoundRecord, 'id' | 'name'> & { demo: boolean };
   assignments: JuryAssignmentRow[];
   candidates: Array<{ userId: string; name: string; email: string }>;
 }
@@ -708,6 +723,8 @@ export const CERTIFICATE_REFUSALS = [
   'already_revoked',
   'stale',
   'queue_unavailable',
+  /** Demo data: a demo round's certificates come with the demo data, never from an issue run. */
+  'demo_round',
 ] as const;
 export type CertificateRefusal = (typeof CERTIFICATE_REFUSALS)[number];
 
@@ -751,6 +768,8 @@ export interface AdminCertificateRow {
   revokedAt: string | null;
   revokeReason: string | null;
   updatedAt: string;
+  /** A demo account's certificate (demo serials SLO-YYYY-9NNNNN): marked in the admin list. */
+  demo: boolean;
 }
 
 export interface AdminCertificateQuery extends PageQuery {
@@ -770,4 +789,9 @@ export interface CertificateRevokeRequest {
 export interface CertificateCheck {
   name: string;
   award: { type: CertificateType; roundName: string };
+  /**
+   * A demo certificate (demo data, DECISIONS 2026-11-08): the page says it is not a real award, so a client demo
+   * works and nobody reads it as genuine (lead, 2026-11-09).
+   */
+  demo: boolean;
 }

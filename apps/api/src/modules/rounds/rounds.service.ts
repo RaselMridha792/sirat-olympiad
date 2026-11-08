@@ -38,6 +38,7 @@ const ROUND_SELECT = {
   opensAt: true,
   closesAt: true,
   criteria: true,
+  demoBatchId: true,
   createdAt: true,
   updatedAt: true,
 } as const satisfies Prisma.RoundSelect;
@@ -83,7 +84,13 @@ export class RoundsService {
     const id = await this.prisma.$transaction(async (tx) => {
       // One writer at a time: the next sort order is read and used under the lock.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('core:rounds'))`;
-      const existing = await tx.round.findMany({ select: { sortOrder: true, type: true } });
+      const all = await tx.round.findMany({
+        select: { sortOrder: true, type: true, demoBatchId: true },
+      });
+      // Demo rounds (demo data, sort orders 101-110) follow the real Round 1 for a client demo. No real round is added
+      // beside them: the admin removes the demo data first. The rules below count real rounds only all the same.
+      if (all.some((r) => r.demoBatchId !== null)) throw conflict('demo_rounds_present');
+      const existing = all.filter((r) => r.demoBatchId === null);
       if (existing.some((r) => r.type === 'final')) throw conflict('after_final');
       if (existing.length >= ROUND_LIMITS.maxRounds) throw conflict('too_many_rounds');
       const sortOrder = Math.max(0, ...existing.map((r) => r.sortOrder)) + 1;
@@ -216,6 +223,7 @@ export class RoundsService {
         scored: scoredIds.has(r.id),
         entries,
         promotions,
+        demo: r.demoBatchId !== null,
         createdAt: r.createdAt.toISOString(),
         updatedAt: r.updatedAt.toISOString(),
       };

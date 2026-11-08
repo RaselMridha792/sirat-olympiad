@@ -61,6 +61,7 @@ const isAdminRound = (v: unknown): v is AdminRound =>
       count(p.eliminated) &&
       text(p.createdAt),
   ) &&
+  typeof v.demo === 'boolean' &&
   text(v.createdAt) &&
   text(v.updatedAt);
 
@@ -102,6 +103,7 @@ function pickRound(r: AdminRound): AdminRound {
       eliminated: p.eliminated,
       createdAt: p.createdAt,
     })),
+    demo: r.demo,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
   };

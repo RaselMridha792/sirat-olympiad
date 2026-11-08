@@ -72,6 +72,7 @@ test('admin.listAmbassadors passes on only the row fields', async () => {
     referralCount: 3,
     points: 0,
     rankName: null,
+    demo: true,
   };
   const source = createHttpSource(
     fakeApi({

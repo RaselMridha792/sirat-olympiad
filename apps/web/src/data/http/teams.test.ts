@@ -32,6 +32,7 @@ const row: AdminTeamRow = {
   owner: { userId: 'u1', name: 'Rahim Uddin' },
   open: true,
   memberCount: 2,
+  demo: false,
   createdAt: '2026-11-01T06:00:00.000Z',
   updatedAt: '2026-11-01T06:00:00.000Z',
 };
@@ -110,6 +111,7 @@ test('a wrong shape or a refusal is an error (the page shows its error state)', 
   for (const body of [
     page([{ ...row, open: 'yes' }]),
     page([{ ...row, owner: null }]),
+    page([{ ...row, demo: 'no' }]),
     { items: [] },
   ]) {
     const source = createHttpSource(

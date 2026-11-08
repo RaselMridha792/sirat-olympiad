@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { ENTRY_STATUSES, ROUND_LIMITS } from '@sirat/shared';
 import { Badge, Card, PageHeader } from '@sirat/ui';
+import { DemoBadge } from '@/components/admin/demo/DemoBadge';
 import { JuryButton } from '@/components/admin/rounds/JuryButton';
 import { PromoteButton } from '@/components/admin/rounds/PromoteButton';
 import { RoundEditor } from '@/components/admin/rounds/RoundEditor';
@@ -68,6 +69,7 @@ export default async function AdminRoundsPage({
                     <h2 className="mt-1 flex flex-wrap items-center gap-2 text-lg font-bold text-ink">
                       {round.name}
                       <Badge tone="brand">{c.roundTypes[round.type]}</Badge>
+                      <DemoBadge demo={round.demo} locale={locale} />
                     </h2>
                     {round.type === 'quiz' ? null : (
                       <p className="mt-1 text-sm text-ink-muted">

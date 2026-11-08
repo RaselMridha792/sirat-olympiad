@@ -30,6 +30,7 @@ const row: AdminCertificateRow = {
   revokedAt: null,
   revokeReason: null,
   updatedAt: '2026-11-20T06:00:00.000Z',
+  demo: false,
 };
 const page = <T>(items: T[]) => ({ items, page: 1, pageSize: 20, total: items.length });
 
@@ -78,17 +79,18 @@ test('a wrong shape or a refusal is an error (the page shows its error state)', 
       ).student.listMyCertificates(),
       DataRequestError,
     );
-  await assert.rejects(
-    createHttpSource(
-      fakeApi({
-        '/admin/certificates?page=1&pageSize=20': {
-          status: 200,
-          body: page([{ ...row, revokedAt: 5 }]),
-        },
-      }),
-    ).admin.listCertificates({ page: 1, pageSize: 20 }),
-    DataRequestError,
-  );
+  for (const bad of [
+    { ...row, revokedAt: 5 },
+    { ...row, demo: 'yes' },
+  ])
+    await assert.rejects(
+      createHttpSource(
+        fakeApi({
+          '/admin/certificates?page=1&pageSize=20': { status: 200, body: page([bad]) },
+        }),
+      ).admin.listCertificates({ page: 1, pageSize: 20 }),
+      DataRequestError,
+    );
   const refused = createHttpSource(fakeApi({ '/certificates/mine': { status: 403, body: null } }));
   await assert.rejects(refused.student.listMyCertificates(), DataRequestError);
 });

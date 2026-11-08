@@ -27,6 +27,12 @@ const conflict = (code: string) => new ConflictException([code]);
 const DEFAULT_PAGE_SIZE = 20;
 /** "E-" and the last 8 hex digits of the entry id (the random part of a UUIDv7): a number to talk about, no name. */
 const ENTRY_CODE = Prisma.sql`'E-' || upper(right(replace(e."id"::text, '-', ''), 8))`;
+/**
+ * Demo data never mixes with real data (DECISIONS 2026-11-08 "Demo data"): a demo judge sees and scores only demo
+ * accounts' entries, a real judge only real ones; to the other side an entry does not exist. `u` is the entry's user.
+ */
+const sameSide = (judgeIsDemo: boolean) =>
+  judgeIsDemo ? Prisma.sql`u."demo_batch_id" IS NOT NULL` : Prisma.sql`u."demo_batch_id" IS NULL`;
 
 /**
  * The jury of a video round (core C6b, CORE-PLAN §7; lead's notes, Q4c/Q4d defaults).
@@ -48,9 +54,10 @@ export class JuryService {
     await assertAdmin(this.prisma, actorId);
     const round = await this.prisma.round.findUnique({
       where: { id: roundId },
-      select: { id: true, name: true },
+      select: { id: true, name: true, demoBatchId: true },
     });
     if (!round) throw new NotFoundException('Round not found');
+    const demo = round.demoBatchId !== null;
     const [assignments, candidates] = await Promise.all([
       this.prisma.juryAssignment.findMany({
         where: { roundId },
@@ -63,14 +70,15 @@ export class JuryService {
         },
       }),
       this.prisma.user.findMany({
-        where: { role: 'jury', isBlocked: false },
+        // Only judges of the round's side can be added (demo data).
+        where: { role: 'jury', isBlocked: false, demoBatchId: demo ? { not: null } : null },
         orderBy: [{ name: 'asc' }, { id: 'asc' }],
         take: JURY_LIMITS.candidatesMax,
         select: { id: true, name: true, email: true },
       }),
     ]);
     return {
-      round,
+      round: { id: round.id, name: round.name, demo },
       assignments: assignments.map((a) => ({
         id: a.id,
         judge: { userId: a.judge.id, name: a.judge.name, email: a.judge.email },
@@ -88,14 +96,20 @@ export class JuryService {
   ): Promise<JuryAssignResult> {
     await assertAdmin(this.prisma, actor.id);
     return this.prisma.$transaction(async (tx) => {
-      const round = await tx.round.findUnique({ where: { id: roundId }, select: { type: true } });
+      const round = await tx.round.findUnique({
+        where: { id: roundId },
+        select: { type: true, demoBatchId: true },
+      });
       if (!round) throw new NotFoundException('Round not found');
       if (round.type !== 'video') throw conflict('not_video_round');
       const judge = await tx.user.findUnique({
         where: { id: body.judgeId },
-        select: { role: true, isBlocked: true },
+        select: { role: true, isBlocked: true, demoBatchId: true },
       });
       if (!judge || judge.role !== 'jury' || judge.isBlocked) throw conflict('not_jury');
+      // Demo data never mixes with real data: a demo judge only on a demo round, a real judge only on a real one.
+      if ((round.demoBatchId === null) !== (judge.demoBatchId === null))
+        throw conflict('jury_side_mismatch');
       const made = await tx.juryAssignment.createMany({
         data: body.categories.map((category) => ({
           roundId,
@@ -150,9 +164,9 @@ export class JuryService {
   // ───────────── Judge ─────────────
 
   async rounds(judgeId: string): Promise<JuryRound[]> {
-    await assertJury(this.prisma, judgeId);
+    const judge = await assertJury(this.prisma, judgeId);
     const assignments = await this.prisma.juryAssignment.findMany({
-      where: { judgeId, round: { type: 'video' } },
+      where: { judgeId, round: { type: 'video', demoBatchId: judge.demo ? { not: null } : null } },
       select: {
         category: true,
         round: {
@@ -181,7 +195,7 @@ export class JuryService {
                    e."status"::text AS status
             FROM "round_entries" e JOIN "users" u ON u."id" = e."user_id"
             WHERE e."round_id" = ${round.id}::uuid AND e."video_url" IS NOT NULL
-              AND u."category"::text = ANY(${categories as string[]}::text[])
+              AND u."category"::text = ANY(${categories as string[]}::text[]) AND ${sameSide(judge.demo)}
           ) s
           WHERE s.scored OR s.status IN ('submitted', 'evaluated')`;
         return {
@@ -202,13 +216,13 @@ export class JuryService {
     judgeId: string,
     q: Pick<JuryEntryQuery, 'round' | 'status'> & { page?: number; pageSize?: number },
   ): Promise<Paginated<JuryEntryRow>> {
-    await assertJury(this.prisma, judgeId);
+    const judge = await assertJury(this.prisma, judgeId);
     const page = q.page ?? 1;
     const pageSize = q.pageSize ?? DEFAULT_PAGE_SIZE;
     const status = q.status ?? 'pending';
     const round = await this.prisma.round.findUnique({
       where: { id: q.round },
-      select: { type: true, closesAt: true },
+      select: { type: true, closesAt: true, demoBatchId: true },
     });
     const categories = (
       await this.prisma.juryAssignment.findMany({
@@ -216,8 +230,13 @@ export class JuryService {
         select: { category: true },
       })
     ).map((a) => a.category as string);
-    // Not this judge's round: the same answer as a round that does not exist.
-    if (!round || round.type !== 'video' || categories.length === 0)
+    // Not this judge's round, or the other side (demo data): the same answer as a round that does not exist.
+    if (
+      !round ||
+      round.type !== 'video' ||
+      categories.length === 0 ||
+      (round.demoBatchId !== null) !== judge.demo
+    )
       throw new NotFoundException('Round not found');
     if (!round.closesAt || round.closesAt > new Date()) throw conflict('window_open');
 
@@ -228,7 +247,7 @@ export class JuryService {
         ? Prisma.sql`NOT ${mine} AND e."status"::text IN ('submitted', 'evaluated')`
         : mine;
     const where = Prisma.sql`e."round_id" = ${q.round}::uuid AND e."video_url" IS NOT NULL
-      AND u."category"::text = ANY(${categories}::text[]) AND ${which}`;
+      AND u."category"::text = ANY(${categories}::text[]) AND ${sameSide(judge.demo)} AND ${which}`;
     const [counted] = await this.prisma.$queryRaw<Array<{ n: number }>>`
       SELECT count(*)::int AS n FROM "round_entries" e JOIN "users" u ON u."id" = e."user_id" WHERE ${where}`;
     const rows = await this.prisma.$queryRaw<
@@ -280,7 +299,7 @@ export class JuryService {
   }
 
   async score(entryId: string, body: JuryScoreRequest, actor: Actor): Promise<JuryScoreResult> {
-    await assertJury(this.prisma, actor.id);
+    const judge = await assertJury(this.prisma, actor.id);
     return this.prisma.$transaction(async (tx) => {
       const found = await tx.roundEntry.findUnique({
         where: { id: entryId },
@@ -294,7 +313,11 @@ export class JuryService {
       await tx.$queryRaw`SELECT 1 FROM "round_entries" WHERE "id" = ${entryId}::uuid FOR UPDATE`;
       const entry = await tx.roundEntry.findUniqueOrThrow({
         where: { id: entryId },
-        select: { status: true, videoUrl: true, user: { select: { category: true } } },
+        select: {
+          status: true,
+          videoUrl: true,
+          user: { select: { category: true, demoBatchId: true } },
+        },
       });
       const category = entry.user.category;
       const assigned =
@@ -305,8 +328,15 @@ export class JuryService {
           },
           select: { id: true },
         }));
-      // Not a video round, not this judge's category, or no video: not an entry this judge can see.
-      if (!round || round.type !== 'video' || !assigned || entry.videoUrl === null)
+      // Not a video round, not this judge's category, no video, or the other side (demo data): not an entry this
+      // judge can see.
+      if (
+        !round ||
+        round.type !== 'video' ||
+        !assigned ||
+        entry.videoUrl === null ||
+        (entry.user.demoBatchId !== null) !== judge.demo
+      )
         throw new NotFoundException('Entry not found');
       if (!round.closes_at || round.closes_at > new Date()) throw conflict('window_open');
       const promoted = await tx.promotionRun.findUnique({
@@ -386,12 +416,13 @@ function audit(tx: Tx, actor: Actor, action: string, roundId: string, meta: Pris
   });
 }
 
-/** A jury-role account that is not blocked, re-read (the token's role may be older). */
-async function assertJury(db: PrismaService, userId: string): Promise<void> {
+/** A jury-role account that is not blocked, re-read (the token's role may be older); `demo` is its side. */
+async function assertJury(db: PrismaService, userId: string): Promise<{ demo: boolean }> {
   const user = await db.user.findUnique({
     where: { id: userId },
-    select: { role: true, isBlocked: true },
+    select: { role: true, isBlocked: true, demoBatchId: true },
   });
   if (!user || user.role !== 'jury' || user.isBlocked)
     throw new ForbiddenException('Forbidden resource');
+  return { demo: user.demoBatchId !== null };
 }

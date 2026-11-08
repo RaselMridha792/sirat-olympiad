@@ -79,6 +79,8 @@ export const adminTasksMessages = defineMessages({
       notArchived: 'This task is not archived.',
       nothingToUpdate: 'Nothing was changed.',
       notAmbassador: 'Tasks go to approved ambassadors only.',
+      taskSideMismatch:
+        'A demo task goes only to demo ambassadors, and a real task only to real ones. Nothing was assigned.',
       notOpen: 'This task is not open for proof right now.',
       notSubmitted: 'This proof was already decided.',
       limit: 'Too many tries. Wait a few minutes and try again.',
@@ -163,6 +165,8 @@ export const adminTasksMessages = defineMessages({
       notArchived: 'এই কাজটি আর্কাইভ করা নয়।',
       nothingToUpdate: 'কিছুই বদলানো হয়নি।',
       notAmbassador: 'কাজ শুধু অনুমোদিত অ্যাম্বাসেডরদের দেওয়া যায়।',
+      taskSideMismatch:
+        'ডেমো কাজ শুধু ডেমো অ্যাম্বাসেডরদের, আর আসল কাজ শুধু আসল অ্যাম্বাসেডরদের দেওয়া যায়। কিছুই দেওয়া হয়নি।',
       notOpen: 'এই কাজে এখন প্রমাণ পাঠানো যাবে না।',
       notSubmitted: 'এই প্রমাণের সিদ্ধান্ত আগেই হয়ে গেছে।',
       limit: 'অনেকবার চেষ্টা হয়েছে। কয়েক মিনিট পরে আবার চেষ্টা করুন।',

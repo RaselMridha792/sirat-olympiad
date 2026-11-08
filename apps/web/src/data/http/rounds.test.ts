@@ -37,6 +37,7 @@ const round: AdminRound = {
       createdAt: '2026-11-28T04:00:00.000Z',
     },
   ],
+  demo: false,
   createdAt: '2026-11-01T06:00:00.000Z',
   updatedAt: '2026-11-01T06:00:00.000Z',
 };

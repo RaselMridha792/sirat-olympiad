@@ -40,7 +40,7 @@ const ROW_SELECT = {
   revokedAt: true,
   revokeReason: true,
   updatedAt: true,
-  user: { select: { id: true, name: true, email: true } },
+  user: { select: { id: true, name: true, email: true, demoBatchId: true } },
   round: { select: { id: true, name: true } },
 } as const satisfies Prisma.CertificateSelect;
 type RowData = Prisma.CertificateGetPayload<{ select: typeof ROW_SELECT }>;
@@ -56,6 +56,7 @@ const toRow = (c: RowData): AdminCertificateRow => ({
   revokedAt: c.revokedAt?.toISOString() ?? null,
   revokeReason: c.revokeReason,
   updatedAt: c.updatedAt.toISOString(),
+  demo: c.user.demoBatchId !== null,
 });
 
 /**
@@ -77,15 +78,23 @@ export class CertificatesService {
     await assertAdmin(this.prisma, actor.id);
     const round = await this.prisma.round.findUnique({
       where: { id: body.roundId },
-      select: { id: true, type: true, sortOrder: true },
+      select: { id: true, type: true, sortOrder: true, demoBatchId: true },
     });
     if (!round) throw new NotFoundException('Round not found');
+    // A demo round's certificates come with the demo data (their own serial range), never from an issue run.
+    if (round.demoBatchId !== null) throw conflict('demo_round');
 
     let userIds: string[] | undefined;
     if (body.type === 'participation') {
       if (round.type !== 'quiz') throw conflict('wrong_round');
+      // A demo exam on the real Round 1 (demo data) never makes the round's results count as published.
       const published = await this.prisma.exam.count({
-        where: { roundId: round.id, status: 'published', resultsPublishedAt: { not: null } },
+        where: {
+          roundId: round.id,
+          status: 'published',
+          resultsPublishedAt: { not: null },
+          demoBatchId: null,
+        },
       });
       if (published === 0) throw conflict('results_not_published');
     } else if (body.type === 'promotion') {
@@ -239,12 +248,14 @@ export class CertificatesService {
         nameOnCertificate: true,
         revokedAt: true,
         round: { select: { name: true } },
+        user: { select: { demoBatchId: true } },
       },
     });
     if (!found || found.revokedAt) throw notValid();
     return {
       name: found.nameOnCertificate,
       award: { type: found.type as CertificateType, roundName: found.round.name },
+      demo: found.user.demoBatchId !== null,
     };
   }
 }

@@ -23,7 +23,8 @@ const isTask = (v: unknown): v is AdminTaskRow =>
   isRecord(v.counts) &&
   ['assigned', 'submitted', 'approved', 'rejected'].every((k) =>
     count((v.counts as Record<string, unknown>)[k]),
-  );
+  ) &&
+  typeof v.demo === 'boolean';
 
 const isReview = (v: unknown): v is AdminTaskReviewRow =>
   isRecord(v) &&
@@ -35,7 +36,8 @@ const isReview = (v: unknown): v is AdminTaskReviewRow =>
   text(v.ambassador.userId) &&
   text(v.ambassador.name) &&
   text(v.proof) &&
-  text(v.submittedAt);
+  text(v.submittedAt) &&
+  typeof v.demo === 'boolean';
 
 const pageOf =
   <T>(isRow: (v: unknown) => v is T) =>
@@ -77,6 +79,7 @@ export function adminTasks(
             approved: t.counts.approved,
             rejected: t.counts.rejected,
           },
+          demo: t.demo,
         })),
         page: page.page,
         pageSize: page.pageSize,
@@ -99,6 +102,7 @@ export function adminTasks(
           ambassador: { userId: r.ambassador.userId, name: r.ambassador.name },
           proof: r.proof,
           submittedAt: r.submittedAt,
+          demo: r.demo,
         })),
         page: page.page,
         pageSize: page.pageSize,

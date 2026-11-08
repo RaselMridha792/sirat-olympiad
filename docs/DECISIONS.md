@@ -2,6 +2,17 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-09 — Demo data: core's services keep the two sides apart (core; the lead's approval of 9 Nov)
+
+Phase 2 of the demo data (exam's #22) adds demo tasks and demo rounds (101–110). Core's services keep real and demo apart on top of the markers; a side is `demo_batch_id IS NULL` or not.
+
+1. **Tasks:** a demo task goes only to demo ambassadors and a real one only to real ones, all or nothing (409 `task_side_mismatch`). The trigger `task_assignments_same_side` backs it whoever writes.
+2. **Rounds:** no real round is added and no promotion runs while demo rounds exist (409 `demo_rounds_present`; demo data is pre-launch only, so this never blocks the season). Underneath, as defence in depth, create's `after_final`, the 10-round limit and max + 1 count real rounds only, a promotion's next round is the next real one, and its exam source is never a demo exam (Phase 1 put the demo Round 1 exam on the real Round 1: a real promotion then got `ambiguous_source`, or would have promoted demo accounts).
+3. **Student reads:** `/rounds/me` and the profile's current round follow the viewer's side (a demo account's Round 1 is the demo one). The trigger `round_entries_same_side` keeps every entry on its account's side.
+4. **Jury:** a judge goes only on a round of its side (409 `jury_side_mismatch`); the candidates follow the round's side; a judge's rounds, entries and scores are its side's only (the other side is 404).
+5. **Certificates:** no issue run on a demo round (409 `demo_round`); a real run leaves demo accounts and demo exams out, and a demo exam never makes Round 1's results count as published. The public check answers a demo certificate with `demo: true`, and the page says "Demo certificate, not a real award" (lead: a client demo should not look broken, and the public must never read it as genuine).
+6. **Admin:** the lists of rounds, tasks, proofs, teams, ambassadors and certificates mark demo rows with a "Demo" badge; admin stats count the real second round and final first, a demo one only while no real one exists.
+
 ## 2026-11-08 — Demo data, loaded and removed with one click (exam; Rasel's order of 8 Nov, the lead's approved conditions, A2's review)
 
 1. **Two marks, both needed.** The roots (users, exams, announcements) carry `demo_batch_id`. Only the loader writes it, at insert, and a trigger refuses any change. Every inserted row is also registered in `demo_records`. `demo_clear` treats a row as demo only when it is registered AND marked, so a forged registry row, or the session setting alone, deletes nothing real. The exam marker is the column, not the title (lead: a stronger marker).

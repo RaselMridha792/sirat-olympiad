@@ -15,7 +15,7 @@ function fakeApi(answers: Record<string, ApiResult>) {
 
 const ROUND = '0190f3a1-7c2e-7d4b-8a11-3c5d9e0f1a2b';
 const jury: AdminRoundJury = {
-  round: { id: ROUND, name: 'Video round' },
+  round: { id: ROUND, name: 'Video round', demo: true },
   assignments: [
     {
       id: 'a1',
