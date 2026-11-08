@@ -131,6 +131,14 @@ two_factor_on() {
   done
 }
 check "every API logs two-factor=on (admin 2FA enforced)" two_factor_on
+# The admin 2FA requirement (RUNBOOK section 22; DECISIONS "The admin 2FA requirement is a setting"): admins and
+# managers must prove the code on the admin pages. It may be switched off for testing before go-live
+# (admin:2fa-requirement), and then this FAILs. A missing row counts as required, as the API reads it; a failed query
+# prints nothing and fails. scripts/test/prelaunch-2fa-requirement.test.sh runs this function on a throwaway Postgres.
+two_factor_required() {
+  [ "$(pg "select coalesce((select value @> '[\"admin\",\"manager\"]'::jsonb from settings where key = 'two_factor_required_roles'), true)")" = t ]
+}
+check "admin 2FA is required for admin and manager (settings two_factor_required_roles)" two_factor_required
 # Each API and worker replica's newest boot line from prisma.service.ts (`database role=<name> superuser=<bool>`): the
 # app runs as the runtime role sirat_app and never as a superuser (OPEN-QUESTIONS #27, LAUNCH-PLAN L8). A missing line
 # fails too. Until L8 switches production to sirat_app this FAILs, which is right for a pre-launch gate. Names only.

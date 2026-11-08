@@ -3,10 +3,17 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { ShieldCheck } from 'lucide-react';
 import { Card } from '@sirat/ui';
+import { TwoFactorRequirementCard } from '@/components/admin/TwoFactorRequirementCard';
 import { TwoFactorSettings } from '@/components/admin/TwoFactorSettings';
 import { adminSecurityMessages } from '@/i18n/messages/admin-security';
 import { getMessages } from '@/i18n/server';
-import { isTwoFactorStatus, needsTwoFactor, TWO_FACTOR_PAGE } from '@/lib/auth/two-factor';
+import {
+  isTwoFactorRequirement,
+  isTwoFactorStatus,
+  needsTwoFactor,
+  TWO_FACTOR_PAGE,
+  type TwoFactorRequirement,
+} from '@/lib/auth/two-factor';
 import { ACCESS_COOKIE, serverGet, ServerApiError } from '@/lib/server-api';
 import { refreshUrl, requireAccess } from '@/lib/session';
 
@@ -18,7 +25,9 @@ export async function generateMetadata(): Promise<Metadata> {
 /**
  * Two-factor login for admins and managers (06-API "Two-factor login"). The only admin page open before the code is
  * proved (lib/session.ts requireAccess). The status comes from GET /api/auth/2fa on the server; the changes are made
- * in the browser (TwoFactorSettings), which reloads once the API has set the new session.
+ * in the browser (TwoFactorSettings), which reloads once the API has set the new session. An admin whose session
+ * proved the code also sees who must use two-factor login (GET /api/admin/security/two-factor-requirement; the API's
+ * change needs that proof anyway); managers and unproved sessions do not.
  */
 export default async function AdminSecurityPage() {
   const user = await requireAccess(TWO_FACTOR_PAGE);
@@ -34,6 +43,16 @@ export default async function AdminSecurityPage() {
     status === 503 && (body as { code?: unknown } | null)?.code === 'TWO_FACTOR_UNAVAILABLE';
   if (!unavailable && (status !== 200 || !isTwoFactorStatus(body)))
     throw new ServerApiError('Two-factor status failed', status);
+
+  // Only for an admin whose session proved the code, and only while 2FA is on. A failed read shows a note in the card
+  // instead of an error page, so the admin can still manage their own two-factor login here.
+  let requirement: TwoFactorRequirement | null | undefined;
+  if (!unavailable && user.role === 'admin' && user.twoFactor?.verified) {
+    const answer = await serverGet('/admin/security/two-factor-requirement', token);
+    if (answer.status === 401) redirect(await refreshUrl());
+    requirement = answer.status === 200 && isTwoFactorRequirement(answer.body) ? answer.body : null;
+    if (requirement && !requirement.available) requirement = undefined;
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -56,6 +75,9 @@ export default async function AdminSecurityPage() {
       ) : (
         <TwoFactorSettings locale={locale} status={body} />
       )}
+      {requirement !== undefined ? (
+        <TwoFactorRequirementCard locale={locale} requirement={requirement} />
+      ) : null}
     </div>
   );
 }

@@ -35,6 +35,11 @@ $DCD up -d --build                                      # full stack; http://127
 $DCD up -d --build --no-deps migrate api worker web nginx   # the shared stack (lead's rule): rebuild only the app services
 ```
 
+**The pre-push hook (every clone, once):** `git config core.hooksPath scripts/git-hooks`.
+- `scripts/git-hooks/pre-push` refuses a push whose commits descend from the old history's first commit (`7587f2f`) or touch `reference/`. The repository is public, and both must never reach it (DECISIONS 2026-11-08).
+- CI runs the same check on every pull request.
+- To check by hand before a push: `git merge-base --is-ancestor 7587f2f HEAD && echo STOP-old-history || echo ok`.
+
 **nginx after pulling the TLS change once (L3):**
 - An nginx container created before the folder mount (single-file mounts, the image's default command) keeps running, but it cannot start again. At the next Docker Desktop or PC restart, or after `$DCD restart nginx`, it crash-loops with `open() "/etc/nginx/sirat/cloudflare-realip.conf" failed`.
 - With the lead's or Rasel's go-ahead (the stack is shared), recreate it once from a checkout that has the change: `$DCD up -d --no-deps nginx`. The same applies if a smoke turn recreated nginx from a worktree without the change and that worktree merges main later.
@@ -317,7 +322,8 @@ Credentials are read inside the postgres container; nothing secret is typed on t
 bash bootstrap.sh --dry-run --authorized-keys keys.pub   # what it would change; changes nothing
 bash bootstrap.sh --authorized-keys keys.pub             # keys.pub: the owner's and one backup person's public keys
 # It ends with what is left for the owner:
-#   - deploy's public key on GitHub as a READ-ONLY deploy key; run bootstrap again (it clones /srv/sirat)
+#   - nothing for the clone: the repository is public and bootstrap clones /srv/sirat over https
+#     (with an SSH BOOTSTRAP_REPO_URL: deploy's public key on GitHub as a READ-ONLY deploy key, then bootstrap again)
 #   - the values in /srv/sirat/.env, .env.deploy (the GitHub token), .env.monitor (the heartbeat URL) and
 #     /etc/sirat/backup.env (section 5); run bootstrap again (it enables the backup timers once the remote is set)
 #   - the provider's firewall panel: only 22, 80 and 443
@@ -335,7 +341,7 @@ scripts/prelaunch-check.sh
   - the `deploy` user, in the docker group, with SSH keys only. Root and password logins go off only once deploy has keys (no lockout), and `sshd -t` checks the change first. The drop-in is `00-sirat.conf`, read before a cloud image's `50-cloud-init.conf` (sshd keeps the first value it reads). Every run checks with `sshd -T` that passwords, root and keyboard-interactive logins are really off; if an earlier file overrides them, it removes its drop-in, reloads ssh and stops;
   - UFW for the host, plus `sirat-docker-user.service`: Docker's published ports bypass UFW, so from outside only 80 and 443 may reach a container;
   - fail2ban for SSH;
-  - the clone in `/srv/sirat` through a read-only deploy key, with GitHub's host key pinned;
+  - the clone in `/srv/sirat` over https (the repository is public, DECISIONS 2026-11-08). GitHub's host key stays pinned for an SSH `BOOTSTRAP_REPO_URL`, which uses a read-only deploy key;
   - `/var/lib/sirat`;
   - `.env`, `.env.deploy`, `.env.monitor` and `/etc/sirat/backup.env` from their examples, mode 600, never overwritten;
   - the four backup units;
@@ -468,6 +474,7 @@ See `RULEBOOK.md` section 13: load test at 1.5–2× peak, backup + restore dril
 Also before launch:
 - [ ] The API connects to Postgres with a **non-superuser runtime role** (OPEN-QUESTIONS #27); the bootstrap superuser is used only for migrations, backup and restore. `prelaunch-check.sh` reads it from every API and worker's newest boot line.
 - [ ] PayStation sandbox checklist done (`docs/paystation/SANDBOX-CHECKLIST.md`) and the accepted `trx_status` values confirmed.
+- [ ] The sandbox test rows of 2026-11-01 are gone from the VPS (`docs/paystation/SANDBOX-E2E.md`: account label `rasel-sandbox-vps`, `TV…` invoices, `TEST SBX` users). The production database was started again from an empty volume at the launch deploy, which the owner confirmed then. `SELECT gateway_account, count(*) FROM payments GROUP BY 1` must list the live account only.
 - [ ] `PAYSTATION_ENV=live` on the VPS, and the boot log's PayStation line matches the client account: `$DC logs api | grep "PayStation env="` shows `env=live`, the live host, the client's account label and invoice prefix, and the production callback and IPN URLs. It never shows any part of the merchant id or password. A `payments are DISABLED` WARN, or a `payments.disabled_in_production` alert, means PAYSTATION_ENV is blank: no registration can be paid.
 - [ ] The free book: an admin has set the real title and uploaded the cover (`/admin/book`), before registration opens.
 - [ ] `paystation:selfcheck` on the VPS ends with `initiate: created` and exits 0. It leaves one unpaid 10 BDT `X…` invoice in the client's panel. The command: `$DC run --rm --no-deps -T api node dist/cli/paystation-selfcheck.js`; locally `pnpm --filter @sirat/api paystation:selfcheck`.
@@ -540,6 +547,11 @@ scripts/loadtest-generators.sh off                                     # right a
 - **Re-measure it on the client's live account** in the account-switch check (PAYMENTS-PLAN §13): make one unpaid checkout, and open its link every minute until it says "Invalid or Expired Token".
 - If the lifetime differs, set the setting to it in `/admin/settings` (it is audited). Never set it shorter than the lifetime (D3).
 - A payment finished just before the limit is not lost: the IPN, the callback or reconciliation within the 48 h late watch still marks it paid (`late_success`).
+
+**What the sandbox showed** (`docs/paystation/SANDBOX-E2E.md`, 2026-11-01):
+- A cancel on the checkout sends the student back with `status=Canceled`, but v1 keeps saying `processing`. The payment stays pending: the page shows "Waiting for your payment" with Continue the payment. It becomes `expired` at the first reconciliation after the time limit, then stays in the 48 h late watch.
+- A replayed callback changes nothing.
+- On an account without an IPN (Rasel's pre-KYC sandbox panel has no IPN field), a payment whose browser never comes back is settled only by reconciliation (every few minutes) or an admin re-check.
 
 **Changing the fee or the registration window:** `PUT /admin/settings/:key` with the value the form showed as `expected` (409 if someone changed it meanwhile); the fee needs a reason. Payments already started keep their amount.
 
@@ -799,7 +811,7 @@ SQL
 Admins and managers sign in with a password and a 6-digit code from an authenticator app (DECISIONS "Admin two-factor login"; 06-API "Two-factor login"). Production requires `TOTP_ENCRYPTION_KEY` in `.env`; the api logs `two-factor=on` at boot.
 
 - **The key** decrypts every stored secret. Keep a copy with the other server secrets; the database backup does not contain it. A restore onto a new server needs the same key. Without it every enrolled admin needs the CLI reset below.
-- **Enrolment** on `/admin/security`, where an admin or manager without a proved code is sent from every admin page (the API answers the others 403 `TWO_FACTOR_REQUIRED`):
+- **Enrolment** on `/admin/security`, where an admin or manager without a proved code is sent from every admin page while the requirement names their role (the API answers the others 403 `TWO_FACTOR_REQUIRED`; the requirement: below):
   1. The password, then the QR code: scan it in the authenticator app, or type the key shown under it.
   2. The app's first 6-digit code turns it on. Every other session of the admin ends.
   3. 10 recovery codes are shown once: store them offline (print or write them down).
@@ -830,6 +842,34 @@ pnpm --filter @sirat/api admin:2fa-reset --email ops@example.org --reason "Lost 
 
 - **Exit codes:** 0 reset; 1 refused (no such account, or no two-factor login: nothing changed) or the database or Redis unreachable; 2 usage.
 - **The known gap:** an access token already issued stays valid until it expires. After any reset the old session keeps admin access for at most `JWT_ACCESS_TTL_SECONDS` (15 min), and refreshing fails at once. If the device was stolen, also change the password: a reset alone leaves the password valid.
+
+**The requirement: switching it off for testing, and back on** (DECISIONS "The admin 2FA requirement is a setting"). The setting `two_factor_required_roles` says which of admin and manager must prove the code before the admin pages open; the default is both.
+
+- **What switching changes:** only whether an admin or manager session without the code may open the admin pages. Enrolments, secrets, recovery codes and sessions stay. An enrolled admin or manager still enters the code at every sign-in; an admin who has not enrolled signs in with the password alone. Each API replica follows within 5 s, the web's pages within about 35 s (its `/auth/me` cache); nobody is logged out.
+- **On the admin panel:** `/admin/security`, card "Two-factor requirement" (admins whose session proved the code): tick admins and/or managers, give a reason and your current code, Save. Through the API: `PUT /api/admin/security/two-factor-requirement {roles, expected, reason, code}`. 5 changes an hour per admin.
+- **Break-glass** (the database and both Redis; never the TOTP key; prints only the new set):
+
+```bash
+# Off, for testing before go-live
+$DC run --rm --no-deps -T api node dist/cli/admin-2fa-requirement.js --roles "" --reason "Testing before go-live"
+#   two-factor requirement: none
+# Back on, before launch
+$DC run --rm --no-deps -T api node dist/cli/admin-2fa-requirement.js --roles "admin,manager" --reason "Go-live"
+#   two-factor requirement: admin,manager
+
+# Check the audit and alert rows
+$DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+select created_at, action, actor_id, meta from audit_logs
+where action in ('security.two_factor_requirement_changed', 'security.two_factor.requirement_changed')
+order by created_at desc limit 5;
+SQL
+
+# Local (uses apps/api/.env)
+pnpm --filter @sirat/api admin:2fa-requirement --roles "admin,manager" --reason "Go-live"
+```
+
+- **Exit codes:** 0 done; 1 refused or the database or Redis unreachable; 2 usage (an unknown role: nothing changed).
+- **While it is off, `scripts/prelaunch-check.sh` FAILs** on `admin 2FA is required for admin and manager (settings two_factor_required_roles)`. Switch it back on before the go/no-go. Every change raises the security alert `two_factor.requirement_changed` (from → to; the reason stays in the audit row).
 
 ## 23. Certificates (core C6c-1)
 

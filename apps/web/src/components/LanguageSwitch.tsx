@@ -30,6 +30,8 @@ export async function LanguageSwitch({ tone = 'surface' }: { tone?: 'shell' | 's
               aria-pressed={active}
               className={cn(
                 'rounded-[10px] px-3 py-1.5 text-xs font-bold transition-colors',
+                // A language's own name in the system font: the web font would load the whole Bangla font here.
+                value === 'bn' && locale !== 'bn' && 'font-system',
                 active
                   ? 'bg-primary-strong text-white'
                   : dark

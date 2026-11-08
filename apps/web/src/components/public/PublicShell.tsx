@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
-import { buttonClasses, cn, StarMark, WithHonorific } from '@sirat/ui';
+import { buttonClasses, cn, SkipLink, StarMark, WithHonorific } from '@sirat/ui';
 import { publicPath, site, type PublicPage } from '@/content/site';
 import type { Locale } from '@/i18n';
 import { pick } from '@/i18n/messages';
@@ -16,16 +16,20 @@ const yearIn = (locale: Locale, year: number) =>
  * merchant review reads them). Static: the locale comes from the route (Bangla at /, English under /en), never from
  * a cookie. The wrapper sets `lang`; the root <html lang> stays "en" until Phase D (DECISIONS UI port #16).
  * `bleed` lets a long page (home, about) run its bands edge to edge; other pages get the reading column.
+ * `sectionNav` (the homepage's in-page menu) is a second row of the header, which then stays at the top from md up
+ * (owner, 2026-11-08: the menu belongs in the header at the top, not below the hero).
  */
 export function PublicShell({
   locale,
   page,
   bleed = false,
+  sectionNav,
   children,
 }: {
   locale: Locale;
   page: PublicPage;
   bleed?: boolean;
+  sectionNav?: { label: string; items: ReadonlyArray<{ href: string; label: string }> };
   children: ReactNode;
 }) {
   const m = pick(legalMessages, locale);
@@ -54,7 +58,8 @@ export function PublicShell({
         locale === 'bn' && 'leading-[1.7]',
       )}
     >
-      <header className="bg-shell text-white">
+      <SkipLink>{home.shell.skip}</SkipLink>
+      <header className={cn('bg-shell text-white', sectionNav && 'md:sticky md:top-0 md:z-40')}>
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-3.5 sm:px-6">
           <Link href={publicPath('home', locale)} className="flex min-w-0 items-center gap-3">
             <span
@@ -76,7 +81,11 @@ export function PublicShell({
               hrefLang={other}
               lang={other}
               aria-label={m.nav.otherLanguageLabel}
-              className="rounded-control px-3 py-2 text-sm font-semibold hover:bg-white/10"
+              className={cn(
+                'rounded-control px-3 py-2 text-sm font-semibold hover:bg-white/10',
+                // A language's own name in the system font: the web font would load the whole Bangla font here.
+                other === 'bn' && 'font-system',
+              )}
             >
               {m.nav.otherLanguage}
             </Link>
@@ -91,10 +100,26 @@ export function PublicShell({
             </Link>
           </nav>
         </div>
+        {sectionNav ? (
+          <nav aria-label={sectionNav.label} className="border-t border-white/10">
+            <ul className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4 py-2 text-sm font-semibold whitespace-nowrap [scrollbar-width:none] sm:px-6">
+              {sectionNav.items.map((item) => (
+                <li key={item.href}>
+                  <a
+                    href={item.href}
+                    className="block rounded-full px-3 py-1.5 text-white/80 hover:bg-white/10 hover:text-white"
+                  >
+                    {item.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        ) : null}
       </header>
 
       {bleed ? (
-        <main className="flex-1">
+        <main id="main" tabIndex={-1} className="flex-1 outline-none">
           {draftNote ? (
             <p
               role="note"
@@ -106,7 +131,11 @@ export function PublicShell({
           {children}
         </main>
       ) : (
-        <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-10">
+        <main
+          id="main"
+          tabIndex={-1}
+          className="mx-auto w-full max-w-5xl flex-1 px-6 py-10 outline-none"
+        >
           {draftNote ? (
             <p
               role="note"
@@ -133,7 +162,7 @@ export function PublicShell({
               <WithHonorific text={home.hero.tagline} honorific={home.brand.honorific} />
             </p>
           </div>
-          <nav aria-label={m.nav.label}>
+          <nav aria-label={home.shell.footerNav}>
             <ul className="flex flex-col gap-2">
               {links.map((link) => (
                 <li key={link.page}>

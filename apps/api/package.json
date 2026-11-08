@@ -15,6 +15,7 @@
     "prisma:deploy": "prisma migrate deploy",
     "admin:create": "tsx --env-file-if-exists=.env src/cli/create-admin.ts",
     "admin:2fa-reset": "tsx --env-file-if-exists=.env src/cli/admin-2fa-reset.ts",
+    "admin:2fa-requirement": "tsx --env-file-if-exists=.env src/cli/admin-2fa-requirement.ts",
     "paystation:selfcheck": "tsx --env-file-if-exists=.env src/cli/paystation-selfcheck.ts",
     "ops:alert": "tsx --env-file-if-exists=.env src/cli/ops-alert.ts",
     "ops:check": "tsx --env-file-if-exists=.env src/cli/ops-check.ts",

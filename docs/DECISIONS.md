@@ -2,6 +2,79 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-08 — The admin 2FA requirement is a setting (A2; Rasel's request of 3 Nov, the lead's design)
+
+- **Decision:** whether admins and managers MUST prove a second factor on the admin pages is the settings row `two_factor_required_roles`, a JSON array within `["admin","manager"]` (default both; a CHECK in `20261108000000_two_factor_required_setting` refuses anything else; the seed inserts the default only while the row is missing).
+  - **Enrollable** (2FA on, role admin or manager; in code) drives the login's code step: an enrolled account **always** gets it, also while the requirement is off.
+  - **Required** (enrollable and named in the row) drives only the guard's 403 `TWO_FACTOR_REQUIRED` and the `required` flags of `GET /auth/2fa` and `/auth/me`.
+  - Switching it never deletes or changes an enrolment, a secret, a recovery code or a session, and needs no logout.
+- **Fail closed:** a missing or unreadable row, or a failed read, counts as both roles required. A failed read is not kept.
+- **Read path:** `TwoFactorRequirement` keeps what it read for 5 s per replica (`REQUIREMENT_CACHE_MS`); concurrent callers share one read. The guard awaits it only after the cheap checks (no `tfa`, a route naming admin or manager, not `@TwoFactorOptional`), so students and proved sessions never wait for it.
+  - The web follows its `/auth/me` cache (30 s): after switching on, an unproved admin page may show the error state for up to about 35 s before the redirect to `/admin/security`. The API refuses at once (5 s at most on other replicas).
+- **Changing it:** `PUT /admin/security/two-factor-requirement` (admin only) with `{ roles, expected, reason, code }`.
+  - It is `@TwoFactorAlways()`: the guard demands the proof even while the requirement is off, so switching it back on (or off) always takes a proved session. The routes test pins it as the only such route.
+  - The admin reset's step-up: the acting admin's own current code under the login limits, the role re-read from the database.
+  - One transaction with the code's use: the row locked, `expected` compared (409 `TWO_FACTOR_REQUIREMENT_CHANGED`), the value, the audit row `security.two_factor_requirement_changed` with the reason. Then the local copy is dropped and the alert `two_factor.requirement_changed` names the actor and from → to only.
+  - The generic `PUT /admin/settings/:key` keeps refusing the key (404; a test pins it).
+- **Break-glass:** `admin:2fa-requirement --roles "admin,manager" | --roles "" --reason "…"` (DB and both Redis, no TOTP key), audited with `via: 'cli'`, the same alert. The replicas follow within 5 s.
+- **Prelaunch:** `scripts/prelaunch-check.sh` FAILs while the row lacks admin or manager (a missing row passes). `scripts/test/prelaunch-2fa-requirement.test.sh` runs that function on a throwaway Postgres in CI's checks job, so a line that always passed would be caught.
+- **Choices the design left open (A2):**
+  - A change to the current set answers 200 and writes nothing: no audit row, no alert (the code is still used).
+  - A 409 rolls back the code's use with everything else, so the same code works after a reload.
+  - The GET answers also while 2FA is off (`available: false`); only the PUT answers 503 there.
+  - The web shows the card only to an admin whose session proved the code, and only while 2FA is on; a failed read shows a note in the card, not an error page.
+- **Why:** Rasel wants to test the site before go-live without the code on every admin page, and switch it back on without anyone enrolling again. A setting with an audited, step-up switch keeps that reversible and visible; the prelaunch line keeps it from staying off at launch.
+- **Who:** A2, on the lead's approved design.
+
+## 2026-11-08 — The repository is public; its history no longer holds reference/ (Rasel; the lead ran the move)
+
+- **Why:** GitHub Actions stopped on the private repository (a failed payment and the spending limit). A public repository runs CI for free.
+- **History:** rewritten with `git filter-branch`, removing `reference/` only: the old Zero Olympiad's code and its bug audit, a third party's live code that must never be public.
+  - Trees are otherwise identical: the same 876 commits, authors and messages, each with a new SHA. Main `ae8b06f` is the old `da934fc` without `reference/`.
+- **Archive:** the old history, its PRs up to #87 and the lead's notes stay in the private `RaselMridha792/sirat-olympiad-archive`.
+- **New numbering:** public PR numbers restart: #1 is the old #87, #2 the old #80, #3 the old #64 (L8).
+- **reference/ is local-only:** git-ignored on main, kept at `G:\sirat-reference` and in the archive. CLAUDE.md's rule stands: a read-only specification, never copied blindly.
+- **Main is protected:**
+  - the four CI checks are required, and a PR;
+  - no force push or deletion;
+  - secret scanning and push protection on;
+  - workflows from fork PRs need approval.
+
+  This supersedes A1 #18, "CI is advisory on main".
+- **Never push an old-history commit.** Before every push: `git merge-base --is-ancestor 7587f2f HEAD` must fail (an old-history commit is the ancestor).
+- **Commit emails are public now.**
+- **The VPS clone** fetches `origin` over https; no deploy key is needed. `bootstrap.sh` clones over https by default; an SSH `BOOTSTRAP_REPO_URL` still makes a read-only deploy key.
+- **Who:** Rasel decided; the lead ran the filter and the move; A2 recorded it.
+
+## 2026-11-08 — Accessibility and performance pass: public pages and the student dashboard (core; the lead approved the fixes)
+
+- **Measured** with Chrome through the repo's CDP driver (no new dependency, no Lighthouse):
+  - the public pages on the live VPS and on a local production build;
+  - the student dashboard as a fixture student on a throwaway database;
+  - phone runs: 390 px, 4× CPU, slow 4G;
+  - a DOM review: contrast over the real backdrop, names, labels, landmarks, headings, ids, target size;
+  - a keyboard Tab walk.
+  - Clean: 0 contrast failures, 0 unnamed controls or unlabelled fields, one h1 per page, no CSP violation.
+- **Fixed:**
+  - nginx gzips Next's RSC payloads (`text/x-component`; an RSC payload is 41.8 KB raw, 7.6 KB gzipped);
+  - a `SkipLink` (`@sirat/ui`) is the first Tab stop of PublicShell and AppShell, jumping to `main#main` (WCAG 2.4.1);
+  - `AuthSplitLayout` is the auth pages' `<main>`;
+  - form fields show focus as border plus ring;
+  - the footer nav has its own name;
+  - core's 20 px text links are 24 px (WCAG 2.5.8);
+  - the certificate check page sets `lang`;
+  - a language's own name ("বাংলা" on an English page) is drawn in `--font-system`, so English pages at phone and desktop widths no longer download the Bangla web font (≈106 KB). At 800 px Chrome still loads it although no rendered node uses it; noted, not explained.
+- **Deferred, together, to the font PR:**
+  - The hero's fade-in holds back the LCP (VPS desktop: FCP 1.10 s, LCP 2.07 s).
+  - Removing it alone made the font swap visible: phone `/en` CLS went from 0.016 to 0.143.
+  - So the fade stays until the fonts are preloaded with metric-matched fallbacks (`next/font/local` on the fontsource files, built into Next). That PR removes both causes.
+- **Not code:**
+  - TTFB of 600–840 ms on the VPS: Cloudflare, LAUNCH-PLAN.
+  - JS of 146–163 KB gzip, about 125 KB of it React and Next.
+  - `<html lang="en">` on Bangla pages: per-language root layouts, Phase D.
+  - The old brand in the auth and dashboard titles: waits for the owner's brand decision.
+- **Who:** core; the lead approved the fixes (2026-11-08) and the split of the font work.
+
 ## 2026-11-03 — The page CSP is enforced; a checkout's gateway decides its scheme (A2; L3's condition, the lead's proposal A)
 
 - **The page CSP is enforced** (`infra/nginx/security-headers.conf`), no longer Report-Only.
@@ -49,6 +122,13 @@ One short entry per non-obvious technical or product decision. Newest first. For
 2. **Nothing is written:** no attempt row, no Redis checkpoint, no cache, no audit row (it is a read, like `GET /admin/exams/:id`, which already carries the keys). Each call is a new draw; the page's "Draw again" is a refresh. A test counts attempts, audit rows and `exam:att:*`/`exam:ckpt:*` keys before and after, and checks that the response carries no attempt id, receipt, request id, token or option key.
 3. **A short pool:** a draft shows what it has, with an "n of m questions" note (lead's pick b). A published exam always has its full pool (the publish rule), so a short one is refused like a publish (`question_count`).
 4. **The web reuses the student's look:** `QuestionCard` and the question-number list moved out of `ExamRoom.tsx` first, as a refactor with no behaviour change. The preview has no controller, timer, checkpoint, submit or violation listeners. "Show answers" is off by default and shows the correct option on its own line, so the student card is not changed for it.
+
+## 2026-11-01 — PayStation sandbox on the production VPS, once, before launch (Rasel; payments, lead)
+
+1. **A one-time exception to PAYMENTS-PLAN D8 and §13.1** (sandbox payments never on the production database; the test account never points at production). Rasel gave the go so that the sandbox could be tested through the real nginx, TLS and a public HTTPS callback.
+2. **The condition:** the production database is started again from an empty volume at the launch deploy, which the owner confirms then because it is destructive (RUNBOOK §9 has the check).
+3. **Marked test data:** the account label `rasel-sandbox-vps`, `TV…` invoices, and `TEST SBX nn` students with `@test.invalid` addresses and the agreed phone list. Never deleted by hand.
+4. **Results** in `docs/paystation/SANDBOX-E2E.md` and the checklist. Rasel's pre-KYC panel has no IPN URL field, so the IPN (S9, S20) remains for the client's account.
 
 ## 2026-11-01 — Certificates without the PDF (core C6c-1; the C6 plan, the lead's notes, owner Q4 defaults)
 

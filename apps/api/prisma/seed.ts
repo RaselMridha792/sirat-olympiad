@@ -31,6 +31,10 @@ export const DEFAULT_SETTINGS: Readonly<
   // Ambassador points (core C5b-1; owner Q3 default, unanswered): points per paid referral; admins change it on
   // /admin/ambassadors. The referral sweep uses 10 too if the row is missing.
   ambassador_points_per_referral: 10,
+  // Admin two-factor login (DECISIONS 2026-11-08 "The admin 2FA requirement is a setting"): the roles that must prove
+  // a second factor on the admin routes. A missing row means the same (the API fails closed). Switched only through
+  // PUT /admin/security/two-factor-requirement or the admin:2fa-requirement CLI, never the generic settings PUT.
+  two_factor_required_roles: ['admin', 'manager'],
   // No global submit grace: exams.grace_seconds (per exam) is the only source (DECISIONS, A1 review).
 };
 

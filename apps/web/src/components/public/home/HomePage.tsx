@@ -74,25 +74,16 @@ export async function HomePage({ locale }: { locale: Locale }) {
     ? m.fee.amount(formatNumber(locale, info.fee.amountMinor / 100), info.fee.currency)
     : null;
   return (
-    <PublicShell locale={locale} page="home" bleed>
+    <PublicShell
+      locale={locale}
+      page="home"
+      bleed
+      sectionNav={{
+        label: m.sectionNav.label,
+        items: SECTION_NAV.map((id) => ({ href: `#${id}`, label: m.sectionNav[id] })),
+      }}
+    >
       <Hero m={m} locale={locale} info={info} fee={fee} />
-      <nav
-        aria-label={m.sectionNav.label}
-        className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur"
-      >
-        <ul className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4 py-2 text-sm font-semibold whitespace-nowrap [scrollbar-width:none] sm:px-6">
-          {SECTION_NAV.map((id) => (
-            <li key={id}>
-              <a
-                href={`#${id}`}
-                className="block rounded-full px-3 py-1.5 text-ink-muted hover:bg-page hover:text-ink"
-              >
-                {m.sectionNav[id]}
-              </a>
-            </li>
-          ))}
-        </ul>
-      </nav>
       <IntroSection m={m} />
       <GoalsSection m={m} locale={locale} />
       <GroupsSection m={m} fee={fee} />

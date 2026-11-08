@@ -15,7 +15,7 @@ export function AuthSplitLayout({
   children: ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen w-full items-center justify-center bg-page p-4">
+    <main id="main" className="flex min-h-screen w-full items-center justify-center bg-page p-4">
       <div className="flex w-full max-w-5xl flex-col overflow-hidden rounded-3xl bg-surface shadow-2xl md:min-h-[650px] md:flex-row">
         <div className="relative flex flex-col justify-center overflow-hidden bg-shell p-10 md:w-1/2">
           <div className="absolute -left-24 -top-24 h-64 w-64 rounded-full bg-shell-soft opacity-70" />
@@ -30,6 +30,6 @@ export function AuthSplitLayout({
           <div className="mx-auto w-full max-w-md">{children}</div>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

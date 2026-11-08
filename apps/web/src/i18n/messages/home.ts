@@ -16,6 +16,7 @@ export const homeMessages = defineMessages({
       honorific: 'ﷺ',
       home: 'Home page',
     },
+    shell: { skip: 'Skip to main content', footerNav: 'Site links' },
     metaDescription:
       'The country’s largest Sirat event, on the life and ideals of the Messenger of Allah {saw}: groups, syllabus, rounds, prizes and dates.',
     sectionNav: {
@@ -264,6 +265,7 @@ export const homeMessages = defineMessages({
       honorific: 'ﷺ',
       home: 'প্রথম পাতা',
     },
+    shell: { skip: 'মূল অংশে যান', footerNav: 'সাইটের লিংক' },
     metaDescription:
       'রাসূলুল্লাহ {saw}-এর জীবন ও আদর্শ নিয়ে দেশের সর্ববৃহৎ সিরাতভিত্তিক আয়োজন: গ্রুপ, সিলেবাস, পর্যায়, পুরস্কার ও তারিখ।',
     sectionNav: {

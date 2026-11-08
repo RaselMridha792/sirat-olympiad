@@ -14,6 +14,7 @@ export * from './components/AuthSplitLayout';
 export * from './components/PageHeader';
 export * from './components/Countdown';
 export * from './components/AppShell';
+export * from './components/SkipLink';
 export * from './components/Avatar';
 export * from './components/Skeleton';
 export * from './components/Tabs';

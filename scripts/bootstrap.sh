@@ -21,7 +21,8 @@
 set -euo pipefail
 umask 022
 
-REPO_URL="${BOOTSTRAP_REPO_URL:-git@github.com:RaselMridha792/sirat-olympiad.git}"
+# The repository is public (DECISIONS 2026-11-08): https needs no key. An SSH URL still works, with a deploy key.
+REPO_URL="${BOOTSTRAP_REPO_URL:-https://github.com/RaselMridha792/sirat-olympiad.git}"
 CLONE=/srv/sirat
 STATE=/var/lib/sirat
 ETC=/etc/sirat
@@ -269,11 +270,17 @@ bantime = 1h'
 if systemctl is-enabled --quiet fail2ban 2> /dev/null; then ok "fail2ban enabled"; else change "enable fail2ban" systemctl enable --now fail2ban; fi
 
 # ---------------- the clone ----------------
-step "the clone in $CLONE (read-only deploy key)"
+step "the clone in $CLONE"
 KEY=$HOME_DIR/.ssh/id_ed25519
-if [ -f "$KEY" ]; then ok "$USER_NAME has an SSH key for GitHub"; else
-  [ -d "$HOME_DIR/.ssh" ] || change "create $HOME_DIR/.ssh" install -d -m 700 -o "$USER_NAME" -g "$USER_NAME" "$HOME_DIR/.ssh"
-  change "make $USER_NAME's deploy key" su -s /bin/sh "$USER_NAME" -c "ssh-keygen -q -t ed25519 -N '' -C sirat-vps-deploy-key -f $KEY"
+SSH_REPO=0
+case "$REPO_URL" in git@* | ssh://*) SSH_REPO=1 ;; esac
+# ~/.ssh first, 700: the pinned known_hosts below would otherwise create it with install's default mode.
+[ -d "$HOME_DIR/.ssh" ] || change "create $HOME_DIR/.ssh" install -d -m 700 -o "$USER_NAME" -g "$USER_NAME" "$HOME_DIR/.ssh"
+# Only an SSH URL needs a key (a read-only deploy key on GitHub); the public repository clones over https.
+if [ "$SSH_REPO" = 1 ]; then
+  if [ -f "$KEY" ]; then ok "$USER_NAME has an SSH key for GitHub"; else
+    change "make $USER_NAME's deploy key" su -s /bin/sh "$USER_NAME" -c "ssh-keygen -q -t ed25519 -N '' -C sirat-vps-deploy-key -f $KEY"
+  fi
 fi
 # GitHub's published SSH host key (GitHub docs, "GitHub's SSH key fingerprints"), pinned, never trusted on first use.
 GITHUB_KEY='github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
@@ -282,13 +289,15 @@ if [ -d "$CLONE/.git" ]; then
   ok "$CLONE is a clone"
 elif [ "$DRY" = 1 ]; then
   CHANGES=$((CHANGES + 1))
-  echo "   would clone $REPO_URL into $CLONE (once the deploy key is added on GitHub)"
+  echo "   would clone $REPO_URL into $CLONE"
 elif su -s /bin/sh "$USER_NAME" -c "git ls-remote '$REPO_URL' HEAD" > /dev/null 2>&1; then
   install -d -m 755 -o "$USER_NAME" -g "$USER_NAME" "$CLONE"
   change "clone the repository into $CLONE" su -s /bin/sh "$USER_NAME" -c "git clone -q '$REPO_URL' $CLONE"
-else
+elif [ "$SSH_REPO" = 1 ]; then
   left "add $USER_NAME's public key below on GitHub as a READ-ONLY deploy key, then run bootstrap again:"
   if [ -f "$KEY.pub" ]; then left "    $(cat "$KEY.pub")"; fi
+else
+  left "$REPO_URL cannot be reached from here (network or DNS?); run bootstrap again once it can"
 fi
 
 # ---------------- state, settings, backups, monitor, sudo ----------------

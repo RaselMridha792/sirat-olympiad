@@ -6,7 +6,12 @@ import { defineMessages } from './messages.ts';
  */
 export const common = defineMessages({
   en: {
-    nav: { main: 'Main menu', openMenu: 'Open menu', closeMenu: 'Close menu' },
+    nav: {
+      main: 'Main menu',
+      openMenu: 'Open menu',
+      closeMenu: 'Close menu',
+      skip: 'Skip to main content',
+    },
     language: { label: 'Language', bn: 'বাংলা', en: 'English' },
     states: {
       loading: 'Loading…',
@@ -70,7 +75,12 @@ export const common = defineMessages({
     },
   },
   bn: {
-    nav: { main: 'প্রধান মেনু', openMenu: 'মেনু খুলুন', closeMenu: 'মেনু বন্ধ করুন' },
+    nav: {
+      main: 'প্রধান মেনু',
+      openMenu: 'মেনু খুলুন',
+      closeMenu: 'মেনু বন্ধ করুন',
+      skip: 'মূল অংশে যান',
+    },
     language: { label: 'ভাষা', bn: 'বাংলা', en: 'English' },
     states: {
       loading: 'লোড হচ্ছে…',

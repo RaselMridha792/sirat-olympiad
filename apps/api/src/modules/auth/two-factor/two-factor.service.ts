@@ -22,6 +22,12 @@ import { hashRecoveryCode, newRecoveryCodes, normalizeRecoveryCode } from './rec
 import type { SecretBox } from './secret-box';
 import { CHALLENGE_MAX_ATTEMPTS, TwoFactorChallenges } from './two-factor-challenges';
 import { removeTwoFactor } from './two-factor-reset';
+import {
+  TwoFactorRequirement,
+  applyRequirementChange,
+  normalizeRoles,
+  rolesLabel,
+} from './two-factor-requirement';
 import { TWO_FACTOR_ROLES, TwoFactorConfig } from './two-factor.config';
 import {
   alreadyEnabled,
@@ -54,7 +60,7 @@ export interface TwoFactorStatus {
   enabled: boolean;
   /** A setup was started and not confirmed yet (POST /auth/2fa/enable). */
   pending: boolean;
-  /** This role must sign in with a second factor. */
+  /** This role must prove a second factor on the admin routes (the requirement setting). */
   required: boolean;
   /** This session proved the second factor. */
   verified: boolean;
@@ -97,6 +103,7 @@ export class TwoFactorService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: TwoFactorConfig,
+    private readonly requirement: TwoFactorRequirement,
     private readonly challenges: TwoFactorChallenges,
     private readonly limiter: LoginLimiter,
     private readonly passwords: PasswordService,
@@ -177,7 +184,7 @@ export class TwoFactorService {
     return {
       enabled,
       pending: row !== null && !enabled,
-      required: this.config.requiredFor(actor.role),
+      required: await this.requirement.requiredFor(actor.role),
       verified: actor.twoFactor,
       recoveryCodesRemaining: enabled
         ? await this.prisma.twoFactorRecoveryCode.count({
@@ -204,7 +211,7 @@ export class TwoFactorService {
       : null;
     return {
       enabled: row?.enabledAt != null,
-      required: this.config.requiredFor(user.role),
+      required: await this.requirement.requiredFor(user.role),
       verified,
     };
   }
@@ -413,11 +420,7 @@ export class TwoFactorService {
     input: { code: string; reason: string },
     client: ClientInfo,
   ): Promise<{ sessionsEnded: number }> {
-    const box = this.requireBox();
-    if (!actor.twoFactor) throw twoFactorRequired(); // the guard refuses this already; kept explicit
-    // The role fresh from the database, not the token's (up to 15 minutes old): as assertAdmin elsewhere.
-    const me = await this.enrolledUser(actor.id, true);
-    if (me.role !== 'admin') throw new ForbiddenException('Forbidden resource');
+    const { box, me } = await this.stepUpAdmin(actor);
     if (targetId === actor.id)
       throw resetNotAllowed(
         'You cannot reset your own two-factor login: use a recovery code, or ask another admin',
@@ -431,12 +434,7 @@ export class TwoFactorService {
       throw resetNotAllowed('Only an admin or manager has two-factor login');
     if (!target.twoFactor) throw notEnabled();
 
-    await this.checkLimits(me.email, client);
-    const proof = await this.prove(box, me.id, me.twoFactor, { code: input.code });
-    if (!proof) {
-      await this.countFailure(me, 'reset', { code: input.code }, client);
-      throw codeInvalid();
-    }
+    const proof = await this.stepUpCode(box, me, input.code, 'reset', client);
     const ended = await this.prisma.$transaction(async (tx) => {
       if (!(await this.consume(tx, me.id, proof))) return null;
       return removeTwoFactor(tx, target.id);
@@ -456,6 +454,76 @@ export class TwoFactorService {
       meta: { via: 'admin', targetUserId: target.id, sessionsEnded: ended },
     });
     return { sessionsEnded: ended };
+  }
+
+  /**
+   * PUT /admin/security/two-factor-requirement (DECISIONS "The admin 2FA requirement is a setting"): which enrollable
+   * roles must prove a second factor on the admin routes. The step-up of the admin reset: an admin whose session proved
+   * 2FA (the route is @TwoFactorAlways), still admin in the database, with a current code of their OWN under the login
+   * limits. In one transaction with the code's use: the row locked, `expected` compared (409
+   * TWO_FACTOR_REQUIREMENT_CHANGED, nothing used or written), the value and the audit row with the reason. Then this
+   * replica's copy is dropped (others follow within REQUIREMENT_CACHE_MS) and the alert names the actor and
+   * from -> to only. A change to the current set writes and raises nothing. Enrolments and sessions stay as they are.
+   */
+  async changeRequirement(
+    actor: AuthUser,
+    input: { roles: Role[]; expected: Role[]; reason: string; code: string },
+    client: ClientInfo,
+  ): Promise<{ roles: Role[]; updatedAt: string }> {
+    const { box, me } = await this.stepUpAdmin(actor);
+    const proof = await this.stepUpCode(box, me, input.code, 'requirement', client);
+    const result = await this.prisma.$transaction(async (tx) => {
+      if (!(await this.consume(tx, me.id, proof))) return null;
+      return applyRequirementChange(tx, {
+        to: normalizeRoles(input.roles),
+        expected: normalizeRoles(input.expected),
+        actorId: me.id,
+        ip: client.ip,
+        meta: { reason: input.reason },
+      });
+    });
+    if (result === null) throw codeInvalid();
+    this.requirement.invalidate();
+    if (result.changed)
+      await this.alerts.raise('two_factor.requirement_changed', {
+        actorId: me.id,
+        ip: client.ip,
+        meta: { from: rolesLabel(result.from), to: rolesLabel(result.to) },
+      });
+    return { roles: result.to, updatedAt: result.updatedAt.toISOString() };
+  }
+
+  /**
+   * The acting admin of a step-up (the admin reset, the requirement change): 503 while 2FA is off, 403
+   * TWO_FACTOR_REQUIRED unless the session proved 2FA (the guard refuses that already; kept explicit), and the role
+   * fresh from the database, not the token's (up to 15 minutes old), must be admin: as assertAdmin elsewhere.
+   */
+  private async stepUpAdmin(actor: AuthUser) {
+    const box = this.requireBox();
+    if (!actor.twoFactor) throw twoFactorRequired();
+    const me = await this.enrolledUser(actor.id, true);
+    if (me.role !== 'admin') throw new ForbiddenException('Forbidden resource');
+    return { box, me };
+  }
+
+  /**
+   * The step-up code: the acting admin's own current TOTP code (no recovery code), under the login limits; a wrong
+   * one counts there and answers 400 TWO_FACTOR_CODE_INVALID. The proof is used up by the caller, in its transaction.
+   */
+  private async stepUpCode(
+    box: SecretBox,
+    me: { id: string; email: string; twoFactor: StoredFactor },
+    code: string,
+    purpose: string,
+    client: ClientInfo,
+  ): Promise<Proof> {
+    await this.checkLimits(me.email, client);
+    const proof = await this.prove(box, me.id, me.twoFactor, { code });
+    if (!proof) {
+      await this.countFailure(me, purpose, { code }, client);
+      throw codeInvalid();
+    }
+    return proof;
   }
 
   /**

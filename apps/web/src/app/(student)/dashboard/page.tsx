@@ -53,7 +53,7 @@ type NextExam = StudentHome['nextExam'];
 const FOCUS_ON_DARK =
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white';
 const TEXT_LINK =
-  'inline-flex items-center gap-1.5 text-sm font-semibold text-secondary hover:underline';
+  'inline-flex min-h-6 items-center gap-1.5 text-sm font-semibold text-secondary hover:underline';
 
 /** Spaced capitals suit Latin labels only: Bangla has no case, and wide tracking hurts legibility. */
 function spacedCaps(locale: Locale, tracking: string): string | undefined {

@@ -38,7 +38,7 @@ export default async function EditProfilePage({
     <div className="mx-auto w-full max-w-3xl">
       <Link
         href="/dashboard/profile"
-        className="mb-4 inline-flex items-center gap-1.5 text-sm font-semibold text-secondary hover:underline"
+        className="mb-4 inline-flex min-h-6 items-center gap-1.5 text-sm font-semibold text-secondary hover:underline"
       >
         <ArrowLeft size={16} aria-hidden="true" />
         {m.edit.back}
