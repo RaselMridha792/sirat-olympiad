@@ -8,11 +8,14 @@
 import { randomUUID } from 'node:crypto';
 import type { ConfigService } from '@nestjs/config';
 import type { PrismaClient } from '@prisma/client';
-import type {
-  AdminDemoStatus,
-  DemoLoadAccepted,
-  ExamLeaderboard,
-  StudentExamListItem,
+import {
+  DEFAULT_VIDEO_CRITERIA,
+  isAllowedVideoUrl,
+  TEAM_LIMITS,
+  type AdminDemoStatus,
+  type DemoLoadAccepted,
+  type ExamLeaderboard,
+  type StudentExamListItem,
 } from '@sirat/shared';
 import type Redis from 'ioredis';
 import type { EnvVars } from '../src/config/env';
@@ -20,6 +23,8 @@ import { ACCESS_COOKIE } from '../src/modules/auth/access-token.service';
 import type { SecurityAlerts } from '../src/modules/audit/security-alerts.service';
 import { newJoinCode } from '../src/modules/ambassadors/promo-code';
 import { DemoWorker } from '../src/modules/demo/demo.worker';
+import { DEMO_TASKS } from '../src/modules/demo/generators/ambassadors.demo';
+import { DEMO_ROUND_SORT } from '../src/modules/demo/generators/rounds.demo';
 import type { PaymentConfig } from '../src/modules/payments/payment.config';
 import { PAYMENT_CONFIG } from '../src/modules/payments/payments-boot-check';
 import type { PrismaService } from '../src/prisma/prisma.service';
@@ -56,6 +61,7 @@ beforeAll(async () => {
   await removeAnyBatch();
   if (await prisma.payment.count({ where: { status: 'paid', gatewayEnv: 'live' } }))
     await dropPayments();
+  await dropRealRoundsAfterRound1();
   const values: Record<string, string> = {
     REDIS_QUEUE_URL: process.env.REDIS_QUEUE_URL ?? '',
     DEMO_QUEUE_NAME: QUEUE,
@@ -119,6 +125,50 @@ async function livePaidPayment() {
  */
 async function dropPayments() {
   await prisma.$executeRawUnsafe('TRUNCATE "payments" CASCADE');
+}
+
+/**
+ * The demo brings its own rounds and loads only beside the real Round 1 alone (real_rounds_present): rounds another
+ * suite left behind go first. *_test database only (TRUNCATE, as certificates.int-spec does).
+ */
+async function dropRealRoundsAfterRound1() {
+  if ((await prisma.round.count({ where: { demoBatchId: null, sortOrder: { gt: 1 } } })) === 0)
+    return;
+  await prisma.$executeRawUnsafe(
+    'TRUNCATE "certificates", "jury_scores", "round_entries", "promotion_runs"',
+  );
+  await prisma.$executeRaw`
+    DELETE FROM "jury_assignments" WHERE "round_id" IN (
+      SELECT "id" FROM "rounds" WHERE "demo_batch_id" IS NULL AND "sort_order" > 1)`;
+  await prisma.$executeRaw`UPDATE "exams" SET "status" = 'archived'
+    WHERE "status"::text = 'published' AND "round_id" IN (
+      SELECT "id" FROM "rounds" WHERE "demo_batch_id" IS NULL AND "sort_order" > 1)`;
+  await prisma.$executeRaw`DELETE FROM "rounds" WHERE "demo_batch_id" IS NULL AND "sort_order" > 1`;
+}
+
+/** Demo rows of a batch that point at a REAL round (DECISIONS "Demo data" 8: there must be none). */
+async function demoRowsOnRealRounds(batchId: string): Promise<number> {
+  const [row] = await prisma.$queryRaw<{ n: number }[]>`
+    SELECT (
+      (SELECT count(*) FROM "exams" e JOIN "rounds" o ON o."id" = e."round_id"
+        WHERE e."demo_batch_id" = ${batchId}::uuid AND o."demo_batch_id" IS NULL)
+      + (SELECT count(*) FROM "promotion_runs" p
+          JOIN "rounds" f ON f."id" = p."from_round_id" JOIN "rounds" t ON t."id" = p."to_round_id"
+          LEFT JOIN "exams" x ON x."id" = p."source_exam_id"
+          WHERE (f."demo_batch_id" = ${batchId}::uuid OR t."demo_batch_id" = ${batchId}::uuid
+                 OR x."demo_batch_id" = ${batchId}::uuid)
+            AND (f."demo_batch_id" IS NULL OR t."demo_batch_id" IS NULL))
+      + (SELECT count(*) FROM "round_entries" r JOIN "users" u ON u."id" = r."user_id"
+          JOIN "rounds" o ON o."id" = r."round_id"
+          WHERE u."demo_batch_id" = ${batchId}::uuid AND o."demo_batch_id" IS NULL)
+      + (SELECT count(*) FROM "jury_assignments" j JOIN "users" u ON u."id" = j."judge_id"
+          JOIN "rounds" o ON o."id" = j."round_id"
+          WHERE u."demo_batch_id" = ${batchId}::uuid AND o."demo_batch_id" IS NULL)
+      + (SELECT count(*) FROM "certificates" c JOIN "users" u ON u."id" = c."user_id"
+          JOIN "rounds" o ON o."id" = c."round_id"
+          WHERE u."demo_batch_id" = ${batchId}::uuid AND o."demo_batch_id" IS NULL)
+    )::int AS "n"`;
+  return row!.n;
 }
 
 const status = async () =>
@@ -290,6 +340,23 @@ describe('access', () => {
   });
 });
 
+describe('the demo rounds precondition', () => {
+  it('refuses a load beside a real round after Round 1: 409 real_rounds_present, nothing written', async () => {
+    const real = await prisma.round.create({
+      data: { name: 'Real Round 2', sortOrder: 2, type: 'final' },
+      select: { id: true },
+    });
+    try {
+      const res = await load();
+      expect(res.status).toBe(409);
+      expect(res.json.details).toEqual(['real_rounds_present']);
+      expect(await prisma.demoBatch.count()).toBe(0);
+    } finally {
+      await prisma.round.delete({ where: { id: real.id } });
+    }
+  });
+});
+
 describe('load, use, remove', () => {
   let batchId: string;
   let password: string;
@@ -344,6 +411,132 @@ describe('load, use, remove', () => {
     });
     expect(row.passwordHash).not.toContain(password);
   }, 90_000);
+
+  it('fills rounds, ambassadors, tasks, teams, promotions, the jury and certificates the way the services would, and no demo row touches a real round', async () => {
+    const rounds = await prisma.round.findMany({
+      where: { demoBatchId: batchId },
+      orderBy: { sortOrder: 'asc' },
+      select: { id: true, sortOrder: true, type: true, criteria: true, closesAt: true },
+    });
+    expect(rounds.map((r) => [r.sortOrder, r.type])).toEqual([
+      [DEMO_ROUND_SORT.r1, 'quiz'],
+      [DEMO_ROUND_SORT.video, 'video'],
+      [DEMO_ROUND_SORT.final, 'final'],
+    ]);
+    const [r1, video, final] = rounds;
+    // The demo Round 1 exam belongs to the demo Round 1 (Phase 1 linked it to the real one).
+    expect(await prisma.exam.count({ where: { demoBatchId: batchId, roundId: r1!.id } })).toBe(1);
+    expect(await demoRowsOnRealRounds(batchId)).toBe(0);
+
+    // Ambassadors: approved with an SR- code; points only of the worker's and the task review's kinds.
+    const profiles = await prisma.ambassadorProfile.findMany({
+      where: { user: { demoBatchId: batchId } },
+      select: { promoCode: true, approvedAt: true },
+    });
+    expect(profiles).toHaveLength(15);
+    for (const p of profiles) {
+      expect(p.promoCode).toMatch(/^SR-[0-9A-HJKMNP-TV-Z]{6}$/);
+      expect(p.approvedAt).not.toBeNull();
+    }
+    const ledger = await prisma.pointLedger.findMany({
+      where: { user: { demoBatchId: batchId } },
+      select: { eventKey: true, reason: true, amount: true, taskId: true },
+    });
+    expect(ledger.length).toBeGreaterThan(0);
+    for (const l of ledger)
+      expect(
+        (l.reason === 'referral' &&
+          /^referral_paid:[0-9a-f-]{36}$/.test(l.eventKey) &&
+          !l.taskId) ||
+          (l.reason === 'task' && /^task:[0-9a-f-]{36}$/.test(l.eventKey) && Boolean(l.taskId)),
+      ).toBe(true);
+
+    // Tasks: the demo tasks, assignments in their states with the fields each state needs, approved ones paid once.
+    const tasks = await prisma.adminTask.findMany({
+      where: { demoBatchId: batchId },
+      select: { id: true, points: true },
+    });
+    expect(tasks).toHaveLength(DEMO_TASKS.length);
+    const assignments = await prisma.taskAssignment.findMany({
+      where: { taskId: { in: tasks.map((t) => t.id) } },
+      select: { id: true, status: true, user: { select: { demoBatchId: true } } },
+    });
+    expect(new Set(assignments.map((a) => a.status)).size).toBeGreaterThan(2);
+    expect(assignments.every((a) => a.user.demoBatchId === batchId)).toBe(true);
+    const approved = assignments.filter((a) => a.status === 'approved').map((a) => `task:${a.id}`);
+    expect(
+      ledger
+        .filter((l) => l.reason === 'task')
+        .map((l) => l.eventKey)
+        .sort(),
+    ).toEqual(approved.sort());
+
+    // Teams: 3 to 10 members, owner included, all demo accounts.
+    const teams = await prisma.team.findMany({
+      where: { owner: { demoBatchId: batchId } },
+      select: { members: { select: { user: { select: { demoBatchId: true } } } } },
+    });
+    expect(teams.length).toBeGreaterThan(0);
+    for (const t of teams) {
+      expect(t.members.length).toBeGreaterThanOrEqual(3);
+      expect(t.members.length).toBeLessThanOrEqual(TEAM_LIMITS.maxMembers);
+      expect(t.members.every((m) => m.user.demoBatchId === batchId)).toBe(true);
+    }
+
+    // Promotion and the video round: allow-listed videos, every criterion 0-10, total = the scaled sum, entry score =
+    // the judges' mean; runs from the demo rounds only.
+    const runs = await prisma.promotionRun.findMany({
+      where: { fromRoundId: { in: [r1!.id, video!.id] } },
+      select: { fromRoundId: true, toRoundId: true, sourceKind: true },
+    });
+    expect(runs.some((r) => r.fromRoundId === r1!.id && r.toRoundId === video!.id)).toBe(true);
+    expect(runs.some((r) => r.fromRoundId === video!.id && r.toRoundId === final!.id)).toBe(true);
+    const videoEntries = await prisma.roundEntry.findMany({
+      where: { roundId: video!.id },
+      select: {
+        videoUrl: true,
+        videoSubmittedAt: true,
+        score: true,
+        scores: { select: { criteria: true, total: true } },
+      },
+    });
+    const keys = DEFAULT_VIDEO_CRITERIA.map((c) => c.key).sort();
+    for (const e of videoEntries) {
+      if (e.videoUrl === null) continue;
+      expect(isAllowedVideoUrl(e.videoUrl)).toBe(true);
+      expect(e.videoSubmittedAt!.getTime()).toBeLessThan(video!.closesAt!.getTime());
+      for (const s of e.scores) {
+        const c = s.criteria as Record<string, number>;
+        expect(Object.keys(c).sort()).toEqual(keys);
+        expect(Object.values(c).every((v) => Number.isInteger(v) && v >= 0 && v <= 10)).toBe(true);
+        const sum = Object.values(c).reduce((a, b) => a + b, 0);
+        expect(Number(s.total)).toBeCloseTo((sum * 100) / (10 * keys.length), 2);
+      }
+      if (e.scores.length > 0)
+        expect(Number(e.score)).toBeCloseTo(
+          e.scores.reduce((a: number, s) => a + Number(s.total), 0) / e.scores.length,
+          2,
+        );
+    }
+    expect(await prisma.roundEntry.count({ where: { roundId: final!.id } })).toBeGreaterThan(0);
+
+    // Certificates: the demo serial range only; the public check answers for one like any code.
+    const certificates = await prisma.certificate.findMany({
+      where: { user: { demoBatchId: batchId } },
+      select: { serial: true, verificationCode: true, type: true },
+    });
+    expect(new Set(certificates.map((c) => c.type))).toEqual(
+      new Set(['participation', 'promotion', 'winner']),
+    );
+    for (const c of certificates) expect(c.serial).toMatch(/^SLO-\d{4}-9\d{5}$/);
+    const check = await call(
+      env,
+      'GET',
+      `/certificates/verify/${certificates[0]!.verificationCode}`,
+      '',
+    );
+    expect(check.status).toBe(200);
+  });
 
   it('a second load is refused while the batch exists: 409 demo_exists', async () => {
     const res = await load();
@@ -440,28 +633,22 @@ describe('load, use, remove', () => {
   });
 
   it('teams never mix: a real account cannot join a demo team, nor a demo account a real team', async () => {
-    const demoOwner = await prisma.user.findFirstOrThrow({
-      where: { demoBatchId: batchId, role: 'ambassador' },
-      select: { id: true, role: true },
+    // The generator made the demo teams; the joiner is a demo student in none of them.
+    const demoTeam = await prisma.team.findFirstOrThrow({
+      where: { owner: { demoBatchId: batchId } },
+      select: { id: true, joinCode: true, _count: { select: { members: true } } },
     });
+    expect(demoTeam._count.members).toBeLessThan(TEAM_LIMITS.maxMembers);
     const demoJoiner = await prisma.user.findFirstOrThrow({
-      where: { demoBatchId: batchId, role: 'student' },
+      where: { demoBatchId: batchId, role: 'student', teamMember: { none: {} } },
       select: { id: true },
     });
-    expect(demoOwner.role).toBe('ambassador');
     const realOwner = await makeUser(prisma, { role: 'ambassador' });
-    const code = () => `SR-${randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase()}`;
-    await prisma.ambassadorProfile.createMany({
-      data: [
-        { userId: demoOwner.id, promoCode: code(), approvedAt: new Date() },
-        { userId: realOwner.id, promoCode: code(), approvedAt: new Date() },
-      ],
-    });
-    const demoTeam = await prisma.team.create({
+    await prisma.ambassadorProfile.create({
       data: {
-        name: `Demo team ${randomUUID().slice(0, 6)}`,
-        joinCode: newJoinCode(),
-        ownerId: demoOwner.id,
+        userId: realOwner.id,
+        promoCode: `SR-${randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase()}`,
+        approvedAt: new Date(),
       },
     });
     const realTeam = await prisma.team.create({
@@ -482,9 +669,10 @@ describe('load, use, remove', () => {
       call(env, 'POST', '/teams/join', cookie, { code: joinCode });
     expect((await join(realStudent.cookie, demoTeam.joinCode)).status).toBe(404);
     expect((await join(demoCookie, realTeam.joinCode)).status).toBe(404);
-    expect(
-      await prisma.teamMember.count({ where: { teamId: { in: [demoTeam.id, realTeam.id] } } }),
-    ).toBe(0);
+    expect(await prisma.teamMember.count({ where: { teamId: realTeam.id } })).toBe(0);
+    expect(await prisma.teamMember.count({ where: { teamId: demoTeam.id } })).toBe(
+      demoTeam._count.members,
+    );
     // Same side: allowed.
     expect((await join(demoCookie, demoTeam.joinCode)).status).toBe(200);
 

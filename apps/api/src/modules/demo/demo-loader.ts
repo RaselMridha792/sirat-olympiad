@@ -2,9 +2,12 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 import { buildExamResults } from '../attempts/exam-jobs';
 import { paymentsDemoGenerator } from '../payments/demo/payments.demo';
 import { demoRandom, seedOf } from './demo-random';
-import type { DemoContext, DemoGenerator } from './demo.types';
+import type { DemoContext, DemoGenerator, DemoUser } from './demo.types';
+import { ambassadorsDemoGenerator } from './generators/ambassadors.demo';
 import { announcementsDemoGenerator } from './generators/announcements.demo';
 import { examsDemoGenerator } from './generators/exams.demo';
+import { progressDemoGenerator } from './generators/progress.demo';
+import { roundsDemoGenerator } from './generators/rounds.demo';
 import { usersDemoGenerator } from './generators/users.demo';
 
 /**
@@ -13,9 +16,12 @@ import { usersDemoGenerator } from './generators/users.demo';
  */
 export const DEMO_GENERATORS: readonly DemoGenerator[] = [
   usersDemoGenerator,
+  roundsDemoGenerator,
   examsDemoGenerator,
   announcementsDemoGenerator,
   paymentsDemoGenerator,
+  ambassadorsDemoGenerator,
+  progressDemoGenerator,
 ];
 
 /** The generators in dependency order (each after everything it depends on); throws on a cycle or a missing area. */
@@ -73,19 +79,142 @@ export async function generateDemo(prisma: PrismaClient, opts: DemoGenerateOptio
         passwordHash: opts.passwordHash,
         users: { students: [], ambassadors: [], jury: [] },
         exams: { practice: null, round1: null },
-        register: async (table, ids) => {
-          for (let i = 0; i < ids.length; i += REGISTER_CHUNK)
-            await tx.demoRecord.createMany({
-              data: ids
-                .slice(i, i + REGISTER_CHUNK)
-                .map((rowId) => ({ batchId: opts.batchId, tableName: table, rowId })),
-            });
-        },
+        rounds: null,
+        adminId: await demoAdmin(tx, opts.batchId),
+        register: registrar(tx, opts.batchId),
         progress: async (step) => {
           await opts.onProgress?.(step);
         },
       };
-      for (const g of orderGenerators(opts.generators ?? DEMO_GENERATORS)) await g.load(ctx);
+      for (const g of orderGenerators(inPhase(opts.generators ?? DEMO_GENERATORS, 'load')))
+        await g.load(ctx);
+    },
+    { timeout: LOAD_TIMEOUT_MS, maxWait: 10_000 },
+  );
+}
+
+const inPhase = (generators: readonly DemoGenerator[], phase: 'load' | 'afterResults') =>
+  generators.filter((g) => (g.phase ?? 'load') === phase);
+
+const registrar =
+  (tx: Prisma.TransactionClient, batchId: string) =>
+  async (table: string, ids: readonly string[]): Promise<void> => {
+    for (let i = 0; i < ids.length; i += REGISTER_CHUNK)
+      await tx.demoRecord.createMany({
+        data: ids
+          .slice(i, i + REGISTER_CHUNK)
+          .map((rowId) => ({ batchId, tableName: table, rowId })),
+      });
+  };
+
+/**
+ * The admin for admin-only columns (DECISIONS "Demo data", D4): the admin who clicked, else the oldest active admin
+ * (the CLI has no clicking admin); null when there is none. A demo account is never an admin (users_demo_role_check).
+ */
+export async function demoAdmin(
+  tx: Prisma.TransactionClient,
+  batchId: string,
+): Promise<string | null> {
+  const batch = await tx.demoBatch.findUnique({
+    where: { id: batchId },
+    select: { createdById: true },
+  });
+  if (batch?.createdById) return batch.createdById;
+  const oldest = await tx.user.findFirst({
+    where: { role: 'admin', isBlocked: false, demoBatchId: null },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true },
+  });
+  return oldest?.id ?? null;
+}
+
+/** Whether a batch's after-results pass already committed (its marker: a registered round entry). */
+export async function demoAfterResultsDone(
+  prisma: PrismaClient,
+  batchId: string,
+): Promise<boolean> {
+  return (
+    (await prisma.demoRecord.findFirst({
+      where: { batchId, tableName: 'round_entries' },
+      select: { rowId: true },
+    })) !== null
+  );
+}
+
+/**
+ * The 'afterResults' generators, in their own transaction once the demo exams' results are published. The context is
+ * read back from the database (the load transaction's is gone, and a retried job may have skipped it); the random
+ * numbers continue from a second seed, so a retry gives the same rows. The batch must still be 'loading'.
+ */
+export async function generateDemoAfterResults(
+  prisma: PrismaClient,
+  opts: Pick<DemoGenerateOptions, 'batchId' | 'now' | 'generators' | 'onProgress'>,
+): Promise<void> {
+  const generators = inPhase(opts.generators ?? DEMO_GENERATORS, 'afterResults');
+  if (generators.length === 0) return;
+  await prisma.$transaction(
+    async (tx) => {
+      const [batch] = await tx.$queryRaw<{ status: string }[]>`
+        SELECT "status" FROM "demo_batches" WHERE "id" = ${opts.batchId}::uuid FOR UPDATE`;
+      if (batch?.status !== 'loading') throw new Error('demo load: the batch is not loading');
+      const users = await tx.user.findMany({
+        where: { demoBatchId: opts.batchId },
+        orderBy: { email: 'asc' },
+        select: {
+          id: true,
+          email: true,
+          phone: true,
+          name: true,
+          role: true,
+          district: true,
+          institution: true,
+          educationType: true,
+          gradeLevelId: true,
+          category: true,
+        },
+      });
+      const as = (role: DemoUser['role']) =>
+        users
+          .filter((u) => u.role === role)
+          .map((u) => ({
+            ...u,
+            role,
+            phone: u.phone ?? '',
+            district: u.district ?? '',
+            institution: u.institution ?? '',
+            educationType: u.educationType ?? '',
+          }));
+      const exams = await tx.exam.findMany({
+        where: { demoBatchId: opts.batchId },
+        select: { id: true, roundId: true },
+      });
+      const rounds = await tx.round.findMany({
+        where: { demoBatchId: opts.batchId },
+        select: { id: true, type: true },
+      });
+      const byType = (t: string) => rounds.find((r) => r.type === t)?.id;
+      const r1 = byType('quiz');
+      const video = byType('video');
+      const final = byType('final');
+      const ctx: DemoContext = {
+        tx,
+        batchId: opts.batchId,
+        now: opts.now ?? new Date(),
+        rng: demoRandom((seedOf(opts.batchId) ^ 0x5bd1e995) >>> 0),
+        passwordHash: '',
+        users: { students: as('student'), ambassadors: as('ambassador'), jury: as('jury') },
+        exams: {
+          practice: exams.find((e) => e.roundId === null)?.id ?? null,
+          round1: exams.find((e) => e.roundId !== null && e.roundId === r1)?.id ?? null,
+        },
+        rounds: r1 && video && final ? { r1, video, final } : null,
+        adminId: await demoAdmin(tx, opts.batchId),
+        register: registrar(tx, opts.batchId),
+        progress: async (step) => {
+          await opts.onProgress?.(step);
+        },
+      };
+      for (const g of orderGenerators(generators)) await g.load(ctx);
     },
     { timeout: LOAD_TIMEOUT_MS, maxWait: 10_000 },
   );

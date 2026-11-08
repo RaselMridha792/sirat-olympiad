@@ -102,6 +102,8 @@ describe('paymentsDemoGenerator', () => {
           passwordHash: 'not-a-real-hash',
           users: { students, ambassadors, jury: [] },
           exams: { practice: null, round1: null },
+          rounds: null,
+          adminId: null,
           register: async (table, ids) => {
             await tx.demoRecord.createMany({
               data: ids.map((rowId) => ({ batchId: batch.id, tableName: table, rowId })),

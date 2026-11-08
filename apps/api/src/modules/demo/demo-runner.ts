@@ -5,7 +5,14 @@ import { withTimeout } from '../../common/with-timeout';
 import { STATS_KEY } from '../admin/admin-stats.service';
 import { GENERATION_KEY } from '../announcements/announcements.service';
 import { keys as examKeys } from '../exams/exam-cache';
-import { demoCounts, demoGenerated, generateDemo, publishDemoResults } from './demo-loader';
+import {
+  demoAfterResultsDone,
+  demoCounts,
+  demoGenerated,
+  generateDemo,
+  generateDemoAfterResults,
+  publishDemoResults,
+} from './demo-loader';
 
 /** The running or last job, in the cache Redis (best effort: without it the card shows no progress). */
 export const DEMO_JOB_KEY = 'demo:job';
@@ -78,6 +85,13 @@ export class DemoRunner {
     if (still?.status !== 'loading') return null;
     await this.state({ action: 'load', step: 'results', outcome: null });
     await publishDemoResults(prisma, batchId);
+    // Promotion, video, jury and certificates need the published snapshot: a second transaction (skipped on a retry
+    // once it committed).
+    if (!(await demoAfterResultsDone(prisma, batchId)))
+      await generateDemoAfterResults(prisma, {
+        batchId,
+        onProgress: (step) => this.state({ action: 'load', step, outcome: null }),
+      });
     const counts = await demoCounts(prisma, batchId);
     const done = await prisma.demoBatch.updateMany({
       where: { id: batchId, status: 'loading' },

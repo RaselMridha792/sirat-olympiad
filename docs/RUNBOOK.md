@@ -925,6 +925,7 @@ $DC exec -T api node dist/cli/demo.js load --reason "client demo"
   - `demo_exists`: remove the batch first;
   - `demo_busy`: a job runs, wait;
   - `payments_live` (`PAYSTATION_ENV=live`) or `real_payments` (a paid live payment exists): demo data never goes beside real money;
+  - `real_rounds_present`: a real round after Round 1 exists. The demo brings its own Round 1, video round and final (sort orders 101–103) and loads only beside the real Round 1 alone;
   - "The job queue is not answering": the queue Redis (§7); the batch becomes "failed": remove it, then load again.
 - **Stuck in "Loading" or "Removing"** (the API stopped between saving the batch and queuing the job, or the queue lost the job): after 15 minutes without a change the card says the job is treated as lost and offers "Remove demo data" (the CLI's `clear` accepts it too). Before that, both actions answer `demo_busy`: wait. No SQL by hand.
 - **Remove** on the same card ("Remove demo data", with a reason), or `$DC exec -T api node dist/cli/demo.js clear --reason "before launch"`. Everything a load made goes, also what demo accounts did afterwards (sign-ins, attempts, team joins). Real rows never go.

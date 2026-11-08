@@ -66,6 +66,15 @@ afterEach(async () => {
   }
 });
 afterAll(async () => {
+  // The real final roundSetup made (sort_order 10) and what still points at it: the demo load refuses beside a real
+  // round after Round 1 (real_rounds_present). *_test database only (TRUNCATE, as certificates.int-spec does).
+  await prisma.$executeRawUnsafe(
+    'TRUNCATE "certificates", "jury_scores", "round_entries", "promotion_runs"',
+  );
+  await prisma.$executeRaw`
+    DELETE FROM "jury_assignments" WHERE "round_id" IN (
+      SELECT "id" FROM "rounds" WHERE "demo_batch_id" IS NULL AND "sort_order" > 1)`;
+  await prisma.$executeRaw`DELETE FROM "rounds" WHERE "demo_batch_id" IS NULL AND "sort_order" > 1`;
   await prisma.$disconnect();
 });
 

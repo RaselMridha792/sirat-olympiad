@@ -49,6 +49,16 @@ export interface DemoContext {
   users: { students: DemoUser[]; ambassadors: DemoUser[]; jury: DemoUser[] };
   /** The demo exams, filled by the exams generator. */
   exams: { practice: string | null; round1: string | null };
+  /**
+   * The demo's own rounds (101 quiz, 102 video, 103 final), filled by the rounds generator; null when there are none.
+   * No demo row ever references a real round (DECISIONS "Demo data" 8).
+   */
+  rounds: { r1: string; video: string; final: string } | null;
+  /**
+   * The admin written into admin-only columns (tasks, promotion runs, jury assignments, approvals): the admin who
+   * clicked, else the oldest active admin; null when there is none (those areas are skipped).
+   */
+  adminId: string | null;
   /** Registers inserted rows: the Postgres table name and the ids as strings (any batch size). */
   register(table: string, ids: readonly string[]): Promise<void>;
   /** A short step name for the job's progress. */
@@ -58,7 +68,12 @@ export interface DemoContext {
 export interface DemoGenerator {
   /** The area's name, e.g. 'payments'. */
   readonly area: string;
-  /** Areas that must run first, e.g. ['users']. */
+  /** Areas that must run first, e.g. ['users']. Within one phase. */
   readonly dependsOn: readonly string[];
+  /**
+   * 'load' (default): inside the load transaction. 'afterResults': in a second transaction once the demo exams'
+   * results are published (promotion needs the leaderboard snapshot); its context is read back from the database.
+   */
+  readonly phase?: 'load' | 'afterResults';
   load(ctx: DemoContext): Promise<void>;
 }
