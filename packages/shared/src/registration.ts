@@ -200,7 +200,8 @@ export interface StartRegistrationResult {
   gateway: CheckoutGateway;
   invoiceNumber: string;
   amountMinor: number;
-  currency: string;
+  /** Always BDT (settings.currency is CHECKed to it), as the API's StartResponse says. */
+  currency: 'BDT';
 }
 
 /** 200 from POST /registrations/current/resume: the open checkout again. */
