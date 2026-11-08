@@ -17,6 +17,10 @@ export const pagesMessages = defineMessages({
       rounds: 'Rounds and dates',
       prizes: 'Prizes',
       syllabus: 'Syllabus',
+      ambassador: 'Ambassadors',
+      gallery: 'Gallery',
+      faq: 'FAQ',
+      contact: 'Contact',
     },
     footer: {
       olympiad: 'The olympiad',
@@ -38,6 +42,10 @@ export const pagesMessages = defineMessages({
         rounds: 'The three rounds and the important dates.',
         prizes: 'An Umrah journey for both champions, and honours for the best.',
         syllabus: 'The set books of each group, and one book free.',
+        ambassador: 'Represent the olympiad where you live, alone or with a team.',
+        gallery: 'Last season in numbers, and its photos.',
+        faq: 'Answers on registration, the exam, results, payment and ambassadors.',
+        contact: 'Email and social media: ask us anything.',
       },
       open: 'Open',
       dates: {
@@ -149,7 +157,7 @@ export const pagesMessages = defineMessages({
     prizes: {
       title: 'Prizes',
       metaDescription:
-        'The prizes of the Sirat Olympiad: an Umrah journey for both champions, laptops, scholarships, crests and certificates.',
+        'The prizes of the Sirat Olympiad: an Umrah journey for both champions, book sets, gadgets, cash, certificates and crests.',
       hero: {
         kicker: 'Prizes',
         title: 'Prizes',
@@ -204,6 +212,10 @@ export const pagesMessages = defineMessages({
       rounds: 'পর্যায় ও তারিখ',
       prizes: 'পুরস্কার',
       syllabus: 'সিলেবাস',
+      ambassador: 'অ্যাম্বাসেডর',
+      gallery: 'গ্যালারি',
+      faq: 'প্রশ্নোত্তর',
+      contact: 'যোগাযোগ',
     },
     footer: {
       olympiad: 'অলিম্পিয়াড',
@@ -225,6 +237,10 @@ export const pagesMessages = defineMessages({
         rounds: 'তিনটি রাউন্ড আর গুরুত্বপূর্ণ তারিখ।',
         prizes: 'উভয় গ্রুপের চ্যাম্পিয়নের জন্য উমরাহ সফর, আর সেরাদের জন্য সম্মাননা।',
         syllabus: 'প্রতিটি গ্রুপের নির্ধারিত বই, আর একটি বই বিনামূল্যে।',
+        ambassador: 'নিজের এলাকায় অলিম্পিয়াডের প্রতিনিধি হন, এককভাবে বা দল গঠন করে।',
+        gallery: 'সংখ্যায় গত আসর, আর তার ছবি।',
+        faq: 'রেজিস্ট্রেশন, পরীক্ষা, ফলাফল, পেমেন্ট আর অ্যাম্বাসেডর নিয়ে উত্তর।',
+        contact: 'ইমেইল আর সোশ্যাল মিডিয়া: যেকোনো প্রশ্ন জিজ্ঞেস করুন।',
       },
       open: 'দেখুন',
       dates: {
@@ -335,7 +351,7 @@ export const pagesMessages = defineMessages({
     prizes: {
       title: 'পুরস্কার',
       metaDescription:
-        'সিরাত অলিম্পিয়াডের পুরস্কার: উভয় গ্রুপের চ্যাম্পিয়নের জন্য উমরাহ সফর, ল্যাপটপ, স্কলারশিপ, ক্রেস্ট ও সার্টিফিকেট।',
+        'সিরাত অলিম্পিয়াডের পুরস্কার: উভয় গ্রুপের চ্যাম্পিয়নের জন্য উমরাহ সফর, বইসমগ্র, গ্যাজেট, নগদ অর্থ, সার্টিফিকেট ও ক্রেস্ট।',
       hero: {
         kicker: 'পুরস্কার',
         title: 'পুরস্কার',

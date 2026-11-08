@@ -54,6 +54,10 @@ export const PUBLIC_PAGES = [
   'rounds',
   'prizes',
   'syllabus',
+  'ambassador',
+  'gallery',
+  'faq',
+  'contact',
   'privacy',
   'terms',
   'refund',
@@ -67,6 +71,10 @@ const PATHS: Record<PublicPage, string> = {
   rounds: '/rounds',
   prizes: '/prizes',
   syllabus: '/syllabus',
+  ambassador: '/ambassador',
+  gallery: '/gallery',
+  faq: '/faq',
+  contact: '/contact',
   privacy: '/privacy',
   terms: '/terms',
   refund: '/refund-policy',
@@ -79,6 +87,10 @@ export const MENU_PAGES = [
   'rounds',
   'prizes',
   'syllabus',
+  'ambassador',
+  'gallery',
+  'faq',
+  'contact',
 ] as const satisfies readonly PublicPage[];
 export type MenuPage = (typeof MENU_PAGES)[number];
 

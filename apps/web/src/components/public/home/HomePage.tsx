@@ -6,8 +6,12 @@ import {
   CalendarDays,
   ClipboardList,
   Flag,
+  HelpCircle,
+  Images,
+  Mail,
   ScrollText,
   Trophy,
+  UserPlus,
   Wallet,
 } from 'lucide-react';
 import {
@@ -28,14 +32,12 @@ import { homeMessages } from '@/i18n/messages/home';
 import { pagesMessages } from '@/i18n/messages/pages';
 import { getRegistrationInfo, type PublicRegistrationInfo } from '@/lib/public-api';
 import { PublicShell } from '../PublicShell';
-import { AmbassadorSection, ContactSection, FaqSection } from './blocks';
 import { formatDay, registrationWindow } from './home-view';
 import { FinalCta, HighlightsSection, type HomeText } from './sections';
 
 /*
  * The public homepage: an overview of the multi-page site (owner, 2026-11-08). Hero, a short intro, a card for
- * each topic page, the dated milestones, last season's numbers, and (until their pages exist) the ambassador, FAQ
- * and contact bands. Server-rendered and revalidated with the fee (lib/public-api.ts): no cookie or header is read.
+ * each page of the menu, the dated milestones and last season's numbers. Server-rendered and revalidated with the fee (lib/public-api.ts): no cookie or header is read.
  * Every word comes from i18n (home.ts, pages.ts), every fact from content/home.ts. Geometry only, never a figure.
  */
 
@@ -47,6 +49,10 @@ const CARD_ICONS: Record<MenuPage, typeof Flag> = {
   rounds: Flag,
   prizes: Trophy,
   syllabus: BookOpen,
+  ambassador: UserPlus,
+  gallery: Images,
+  faq: HelpCircle,
+  contact: Mail,
 };
 
 export async function HomePage({ locale }: { locale: Locale }) {
@@ -63,9 +69,6 @@ export async function HomePage({ locale }: { locale: Locale }) {
       <ExploreSection p={p} locale={locale} />
       <DatesSection m={m} p={p} locale={locale} />
       <HighlightsSection m={m} />
-      <AmbassadorSection m={m} />
-      <FaqSection m={m} locale={locale} />
-      <ContactSection m={m} />
       <FinalCta m={m} />
     </PublicShell>
   );
