@@ -4,7 +4,7 @@ Single source: `packages/ui/src/styles/tokens.css` (Tailwind v4 `@theme`). Chang
 
 ## Colours: the client's Sirat Olympiad brand (owner, 2026-11-08)
 
-The brand is the client's green and gold. The scales come from the client's old site (`theme-color #007a48`), **to confirm** with the client; until then the site is built on them. The scales are declared in tokens.css only (`--color-green-50…950`, `--color-gold-50…800`).
+The brand is the client's green and gold. The scales come from the client's old site (`theme-color #007a48`), **to confirm** with the client; until then the site is built on them. The scales are declared in tokens.css only (`--color-green-50…950`, `--color-gold-50…800`), and the semantic tokens refer to them (`--color-primary: var(--color-green-600)`), so swapping the client's palette is an edit of the scales only. The contrast test resolves those references and checks the result.
 
 | Token (utility) | Scale | Hex | Use |
 |---|---|---|---|
