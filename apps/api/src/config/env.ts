@@ -27,7 +27,7 @@ export class EnvVars {
   @IsString() @IsNotEmpty() JWT_ACCESS_SECRET!: string;
   /**
    * Admin two-factor login: the AES-256-GCM key for stored TOTP secrets, 32 random bytes as base64 or 64 hex
-   * (`openssl rand -base64 32`). Required with NODE_ENV=production; without it elsewhere, 2FA is off. _PREVIOUS only
+   * (`openssl rand -hex 32`). Required with NODE_ENV=production; without it elsewhere, 2FA is off. _PREVIOUS only
    * opens secrets sealed before a key rotation.
    */
   @IsOptional() @IsString() TOTP_ENCRYPTION_KEY?: string;
@@ -132,7 +132,11 @@ export class EnvVars {
 const MIN_SECRET_LENGTH = 32;
 /** A random 32-byte secret (hex or base64) easily clears this; "aaaa…" or "abab…" do not. */
 const MIN_DISTINCT_CHARS = 10;
-/** Words that only appear in example values. Matching any of them means the secret was never really set. */
+/**
+ * Words that only appear in example values. Matching any of them means the secret was never really set. A random
+ * base64 value can contain one by chance ("xxxx", "FaKe": about 1 in 10,000); a hex one never can, since every word
+ * has a letter outside 0-9a-f. Hence hex in every "generate one with" (DECISIONS 2026-11-09).
+ */
 export const PLACEHOLDER = /(fake|change.?me|example|placeholder|dummy|sample|your.?secret|xxxx)/i;
 
 /**
@@ -142,7 +146,8 @@ export const PLACEHOLDER = /(fake|change.?me|example|placeholder|dummy|sample|yo
  */
 export function secretProblem(value: string): string | null {
   if (value.length < MIN_SECRET_LENGTH) return `must be at least ${MIN_SECRET_LENGTH} characters`;
-  if (PLACEHOLDER.test(value)) return 'looks like a placeholder';
+  if (PLACEHOLDER.test(value))
+    return 'looks like a placeholder (a random base64 value rarely contains one by chance: use hex)';
   if (new Set(value).size < MIN_DISTINCT_CHARS) return 'is too repetitive';
   return null;
 }
@@ -163,7 +168,7 @@ export function validateEnv(raw: Record<string, unknown>, app: 'api' | 'worker' 
   }
   const problem = secretProblem(env.JWT_ACCESS_SECRET);
   if (problem) {
-    throw new Error(`JWT_ACCESS_SECRET ${problem}. Generate one with: openssl rand -base64 48`);
+    throw new Error(`JWT_ACCESS_SECRET ${problem}. Generate one with: openssl rand -hex 48`);
   }
   if (env.NODE_ENV === 'production' && !env.APP_URL) {
     throw new Error('APP_URL is required in production: email links are built from it');
@@ -192,7 +197,7 @@ export function totpKeyProblem(
   env: Pick<EnvVars, 'NODE_ENV' | 'TOTP_ENCRYPTION_KEY' | 'TOTP_ENCRYPTION_KEY_PREVIOUS'>,
   requiredInProduction = true,
 ): string | null {
-  const generate = 'Generate one with: openssl rand -base64 32';
+  const generate = 'Generate one with: openssl rand -hex 32';
   for (const name of ['TOTP_ENCRYPTION_KEY', 'TOTP_ENCRYPTION_KEY_PREVIOUS'] as const) {
     const value = env[name];
     if (value === undefined) continue;

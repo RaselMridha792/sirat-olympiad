@@ -30,7 +30,7 @@ import {
 import { REDIS_CACHE } from '../src/redis/redis.module';
 import { makeUser, testPrisma } from './helpers';
 
-const KEY = randomBytes(32).toString('base64');
+const KEY = randomBytes(32).toString('hex'); // hex: never a placeholder word (env.ts)
 const PASSWORD = 'Quiet-harbour-lamp-58';
 let app: NestExpressApplication;
 let base: string;

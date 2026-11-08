@@ -12,6 +12,12 @@ Phase 2 of the demo data (exam's #22) adds demo tasks and demo rounds (101–110
 4. **Jury:** a judge goes only on a round of its side (409 `jury_side_mismatch`); the candidates follow the round's side; a judge's rounds, entries and scores are its side's only (the other side is 404).
 5. **Certificates:** no issue run on a demo round (409 `demo_round`); a real run leaves demo accounts and demo exams out, and a demo exam never makes Round 1's results count as published. The public check answers a demo certificate with `demo: true`, and the page says "Demo certificate, not a real award" (lead: a client demo should not look broken, and the public must never read it as genuine).
 6. **Admin:** the lists of rounds, tasks, proofs, teams, ambassadors and certificates mark demo rows with a "Demo" badge; admin stats count the real second round and final first, a demo one only while no real one exists.
+## 2026-11-09 — Secrets are generated as hex, so the placeholder check never refuses a real one (A2; the lead's flaky-test report)
+
+- **Why:** the check refuses a secret containing a placeholder word (`fake`, `xxxx`, `example`…, case-insensitive). A random base64 value contains one by chance about 1 in 10,000 times (`FaKe`, `xxxx`). That made `env.spec.ts` flaky (exam's #18 CI), and it could refuse a real production secret at boot.
+- **Decision:** every "generate one with" (the API's messages, both `.env.example`s, the RUNBOOK, CI) now says `openssl rand -hex 48` for `JWT_ACCESS_SECRET` and `openssl rand -hex 32` for `TOTP_ENCRYPTION_KEY`. Each placeholder word has a letter outside 0-9a-f, so a hex value never matches; a test keeps it so for any new word. The refusal says that a random base64 value can match by chance.
+- **Not chosen:** matching whole words only. It would let through glued placeholders (`changemeplease`, `fakesecret…`), which is what the check is for. Secrets already set (base64 included) passed the check at boot and stay valid.
+- **Tests:** a random base64 secret in a test is redrawn until no placeholder word matches; the 2FA integration suites' key is hex.
 
 ## 2026-11-08 — Demo data, loaded and removed with one click (exam; Rasel's order of 8 Nov, the lead's approved conditions, A2's review)
 
