@@ -12,6 +12,7 @@ Phase 2 of the demo data (exam's #22) adds demo tasks and demo rounds (101–110
 4. **Jury:** a judge goes only on a round of its side (409 `jury_side_mismatch`); the candidates follow the round's side; a judge's rounds, entries and scores are its side's only (the other side is 404).
 5. **Certificates:** no issue run on a demo round (409 `demo_round`); a real run leaves demo accounts and demo exams out, and a demo exam never makes Round 1's results count as published. The public check answers a demo certificate with `demo: true`, and the page says "Demo certificate, not a real award" (lead: a client demo should not look broken, and the public must never read it as genuine).
 6. **Admin:** the lists of rounds, tasks, proofs, teams, ambassadors and certificates mark demo rows with a "Demo" badge; admin stats count the real second round and final first, a demo one only while no real one exists.
+
 ## 2026-11-09 — Secrets are generated as hex, so the placeholder check never refuses a real one (A2; the lead's flaky-test report)
 
 - **Why:** the check refuses a secret containing a placeholder word (`fake`, `xxxx`, `example`…, case-insensitive). A random base64 value contains one by chance about 1 in 10,000 times (`FaKe`, `xxxx`). That made `env.spec.ts` flaky (exam's #18 CI), and it could refuse a real production secret at boot.
