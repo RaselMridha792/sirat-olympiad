@@ -27,7 +27,7 @@ import {
 } from '../src/modules/auth/two-factor/two-factor-requirement';
 import { makeUser, testPrisma } from './helpers';
 
-const KEY = randomBytes(32).toString('base64');
+const KEY = randomBytes(32).toString('hex'); // hex: never a placeholder word (env.ts)
 const PASSWORD = 'Quiet-harbour-lamp-58';
 const PATH = '/api/admin/security/two-factor-requirement';
 let app: NestExpressApplication;
