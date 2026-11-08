@@ -135,14 +135,10 @@ describe('PayStationGateway.initiate', () => {
       return (await new PayStationGateway(config({ env })).initiate(request)).kind;
     };
     for (const env of ['sandbox', 'live'] as const) {
-      expect(await created(env, 'https://sandbox.paystation.com.bd/checkout/abc')).toBe('created');
+      expect(await created(env, 'https://pay.test/checkout/abc')).toBe('created');
       // The browser would refuse it (web checkout.ts): start fails now instead of leaving a dead pending payment.
-      expect(await created(env, 'http://sandbox.paystation.com.bd/checkout/abc')).toBe(
-        'unavailable',
-      );
-      expect(await created(env, 'ftp://sandbox.paystation.com.bd/checkout/abc')).toBe(
-        'unavailable',
-      );
+      expect(await created(env, 'http://pay.test/checkout/abc')).toBe('unavailable');
+      expect(await created(env, 'ftp://pay.test/checkout/abc')).toBe('unavailable');
     }
     expect(await created('fake', 'http://127.0.0.1:18090/checkout/abc')).toBe('created');
     expect(await created('fake', 'https://fake.test/checkout/abc')).toBe('created');
