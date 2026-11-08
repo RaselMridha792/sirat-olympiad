@@ -73,7 +73,7 @@ Source of truth: `apps/api/prisma/schema.prisma` (validated; see note at bottom)
 | `users UNIQUE(phone)` (NULL allowed) and `phone ~ '^01[3-9][0-9]{8}$'` on `users` and `pending_registrations` | One phone number, one student, in one stored form (owner) |
 | `payments` status transitions follow the state machine; a new row is `initiated`; `refunded` is never entered (trigger) | A stale answer never downgrades `paid`; no refund handling (owner) |
 , `trx_id <> ''`, account label format | Raw SQL (`*_payments_checks`) |
-| `payments.gateway_env` in (`sandbox`, `live`, `fake`, `demo`): the PayStation environment at start, or demo data | Raw SQL (`*_payments_gateway_env`); start always writes `PAYSTATION_ENV`; the demo loader refuses a database with a paid `live` row |
+| `payments.gateway_env` in (`sandbox`, `live`, `fake`, `demo`): the PayStation environment at start, or demo data | Raw SQL (`*_payments_gateway_env`); start always writes `PAYSTATION_ENV`; no default after the backfill, so a write that forgets it fails; the demo loader refuses a database with a paid `live` row |
 | `pending_registrations` CHECK: `completed` ⇔ `user_id` and `completed_at` set | Raw SQL |
 | `payment_events` append-only (UPDATE, DELETE, TRUNCATE refused); `payment_id` deliberately not a FK, like `audit_logs.actor_id` | The gateway log keeps unknown invoices and is never blocked by payment rows |
 | `settings` CHECK: `registration_fee_minor` is a positive whole-taka number | Raw SQL; the fee is 40000 (owner) |

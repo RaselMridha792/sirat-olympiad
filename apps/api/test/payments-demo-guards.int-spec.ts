@@ -14,7 +14,7 @@ import {
 } from '../src/modules/payments/gateway/payment-gateway';
 import type { PaymentConfig } from '../src/modules/payments/payment.config';
 import { PAYMENT_CONFIG } from '../src/modules/payments/payments-boot-check';
-import { makeRegistrationAttempt, paymentData } from './helpers';
+import { makeRegistrationAttempt, paymentData, testInvoice } from './helpers';
 import {
   bootPaymentsApp,
   caller,
@@ -73,10 +73,32 @@ const demoPayment = (status: PaymentStatus) =>
   payment('demo', status, { gatewayAccount: DEMO_ACCOUNT_LABEL, invoiceNumber: demoInvoice() });
 
 describe('start and the registration form', () => {
-  it('start records the configured PayStation environment (fake here), never the column default', async () => {
+  it('start records the configured PayStation environment (fake here)', async () => {
     const started = await startRegistration(env);
     const row = await env.prisma.payment.findUniqueOrThrow({ where: { id: started.paymentId } });
     expect(row.gatewayEnv).toBe('fake');
+  });
+
+  it('gateway_env has no default: a write that does not name it is refused, so live money cannot pass as sandbox', async () => {
+    const attempt = await makeRegistrationAttempt(env.prisma);
+    // 23502 not_null_violation (Prisma's message does not name the column): every other NOT NULL column is given, and
+    // the control below, identical but naming gateway_env, goes in.
+    await expect(env.prisma.$executeRaw`
+      INSERT INTO "payments" ("id", "pending_registration_id", "invoice_number", "amount_minor", "currency",
+                              "pay_with_charge", "gateway_account", "expires_at", "updated_at")
+      VALUES (gen_random_uuid(), ${attempt.id}::uuid, ${testInvoice()}, 40000, 'BDT', false, 'test-fake',
+              now() + interval '1 hour', now())`).rejects.toThrow(/Code: `23502`/);
+    expect(await env.prisma.payment.count({ where: { pendingRegistrationId: attempt.id } })).toBe(
+      0,
+    );
+    await env.prisma.$executeRaw`
+      INSERT INTO "payments" ("id", "pending_registration_id", "invoice_number", "amount_minor", "currency",
+                              "pay_with_charge", "gateway_account", "gateway_env", "expires_at", "updated_at")
+      VALUES (gen_random_uuid(), ${attempt.id}::uuid, ${testInvoice()}, 40000, 'BDT', false, 'test-fake', 'fake',
+              now() + interval '1 hour', now())`;
+    expect(await env.prisma.payment.count({ where: { pendingRegistrationId: attempt.id } })).toBe(
+      1,
+    );
   });
 
   it('refuses exactly the demo email domain, in any case, and starts nothing', async () => {

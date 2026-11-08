@@ -99,6 +99,7 @@ export async function loadDevFixtures(
           currency: 'BDT',
           payWithCharge: false,
           gatewayAccount: FIXTURE_GATEWAY_ACCOUNT,
+          gatewayEnv: 'fake', // fixture money: never a PayStation payment
           expiresAt: now,
         },
       });

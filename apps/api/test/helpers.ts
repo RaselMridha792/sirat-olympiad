@@ -120,6 +120,7 @@ export function paymentData(
     currency: 'BDT',
     payWithCharge: false,
     gatewayAccount: 'test-account',
+    gatewayEnv: 'fake', // gateway_env has no default: every write names its environment
     expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     ...data,
   };

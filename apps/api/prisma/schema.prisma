@@ -258,7 +258,7 @@ model Payment {
   trxId                 String?       @unique @map("trx_id")
   payWithCharge         Boolean       @map("pay_with_charge") // snapshot; always false (merchant pays the charge)
   gatewayAccount        String        @map("gateway_account") // PAYSTATION_ACCOUNT_LABEL at start
-  gatewayEnv            String        @default("sandbox") @map("gateway_env") // PAYSTATION_ENV at start, or 'demo' (CHECK)
+  gatewayEnv            String        @map("gateway_env") // PAYSTATION_ENV at start, or 'demo' (CHECK); no default
   paidAmountMinor       Int?          @map("paid_amount_minor") // what PayStation reported, as a record
   paymentUrl            String?       @map("payment_url")
   gatewayStatus         String?       @map("gateway_status") // last raw trx_status, lowercased
