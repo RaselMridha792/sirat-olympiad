@@ -126,6 +126,29 @@ describe('PayStationGateway.initiate', () => {
     }
   });
 
+  it('sandbox and live take an https checkout only; the dev/CI fake may also answer http', async () => {
+    const created = async (env: 'sandbox' | 'live' | 'fake', payment_url: string) => {
+      reply = () => ({ body: { status_code: '200', payment_url } });
+      return (await new PayStationGateway(config({ env })).initiate(request)).kind;
+    };
+    for (const env of ['sandbox', 'live'] as const) {
+      expect(await created(env, 'https://sandbox.paystation.com.bd/checkout/abc')).toBe('created');
+      // The browser would refuse it (web checkout.ts): start fails now instead of leaving a dead pending payment.
+      expect(await created(env, 'http://sandbox.paystation.com.bd/checkout/abc')).toBe(
+        'unavailable',
+      );
+      expect(await created(env, 'ftp://sandbox.paystation.com.bd/checkout/abc')).toBe(
+        'unavailable',
+      );
+    }
+    expect(await created('fake', 'http://127.0.0.1:18090/checkout/abc')).toBe('created');
+    expect(await created('fake', 'https://fake.test/checkout/abc')).toBe('created');
+    expect(await created('fake', 'ftp://127.0.0.1:18090/checkout/abc')).toBe('unavailable');
+    expect(logs.flat()).toContainEqual(
+      expect.objectContaining({ msg: 'paystation answered 200 without a usable payment_url' }),
+    );
+  });
+
   it('refuses to send an amount that is not whole taka', async () => {
     await expect(
       new PayStationGateway(config()).initiate({ ...request, amountMinor: 40050 }),
