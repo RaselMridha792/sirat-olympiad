@@ -1,6 +1,6 @@
 # Design note: a privacy-safe public "registration check" (core, 2026-11-09)
 
-**Status:** design only, no code. For the lead and the owner to decide; the open questions are at the end.
+**Status:** design only, no code. Approved by the lead (2026-11-09) with the defaults in section 7, which Rasel may override.
 **Asked by:** the client (the website PDF: "রেজিস্ট্রেশন যাচাই — রেজিস্ট্রেশন নম্বর দিয়ে দেখে নিন আপনার রেজিস্ট্রেশন নিশ্চিত হয়েছে কিনা", and "ফোন নাম্বার অথবা ইমেইল দিয়ে যাচাই করুন"); queued for core by the lead on 2026-11-08.
 
 ## 1. What it is for
@@ -90,9 +90,9 @@ We already have one weaker oracle to keep in mind: `POST /registrations/start` a
   - the page: the check-pages job, a CDP run, bn and en screenshots;
   - docs: 06-API, DECISIONS, RUNBOOK (what operators see).
 
-## 7. Open questions (owner)
+## 7. Decisions: the lead's defaults (2026-11-09; Rasel may override)
 
-1. **Inputs:** invoice + phone (recommended) instead of the client's "phone or email". The client's version is the oracle in section 2.
-2. **Show the failed and expired state** to the holder of both factors, or fold it into one "not complete"? The draft above shows it, so a payer knows to register again.
-3. **Who builds the API:** payments (their tables, recommended) or core with read-only access?
-4. **When:** before registration opens (25 Nov), or after launch?
+1. **Inputs: invoice number plus mobile number**, not the client's "phone or email". Protecting minors from enumeration outweighs the client's wording; the lead explains this to Rasel.
+2. **The failed and expired state is shown** to the holder of both factors. It is their own payment, and it tells them to register again instead of paying twice.
+3. **Payments builds the API** (their tables); **core builds the page**.
+4. **When:** after the demo data. Payments starts the API once its demo generator (part C) is merged, and core builds the page in parallel. The aim is before 25 Nov; it does not block the launch.
