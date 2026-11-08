@@ -138,12 +138,22 @@ export class AdminStatsService {
           FROM "registrations"
           WHERE "created_at" >= ${start}
           GROUP BY 1`,
-        // Entries in Round 2 and in the final round (core C6a); null while that round does not exist.
+        // Entries in the second round and in the final round (core C6a); null while that round does not exist. Each
+        // side counts its rounds in its own order (demo data has its own Round 1, sort orders 101-110). A real round
+        // counts first, a demo one only while there is no real one: a client demo shows its numbers, and a real
+        // season never mixes with them.
         this.prisma.$queryRaw<{ second: number | null; finalists: number | null }[]>`
-          SELECT (SELECT count(e."id")::int FROM "rounds" r LEFT JOIN "round_entries" e ON e."round_id" = r."id"
-                  WHERE r."sort_order" = 2 GROUP BY r."id") AS "second",
-                 (SELECT count(e."id")::int FROM "rounds" r LEFT JOIN "round_entries" e ON e."round_id" = r."id"
-                  WHERE r."type"::text = 'final' GROUP BY r."id") AS "finalists"`,
+          WITH ranked AS (
+            SELECT r."id", r."type"::text AS "type", (r."demo_batch_id" IS NOT NULL) AS "demo",
+                   row_number() OVER (PARTITION BY (r."demo_batch_id" IS NOT NULL) ORDER BY r."sort_order") AS "n"
+            FROM "rounds" r
+          ),
+          second AS (SELECT "id" FROM ranked WHERE "n" = 2 ORDER BY "demo" LIMIT 1),
+          final AS (SELECT "id" FROM ranked WHERE "type" = 'final' ORDER BY "demo" LIMIT 1)
+          SELECT (SELECT count(e."id")::int FROM second s LEFT JOIN "round_entries" e ON e."round_id" = s."id"
+                  GROUP BY s."id") AS "second",
+                 (SELECT count(e."id")::int FROM final f LEFT JOIN "round_entries" e ON e."round_id" = f."id"
+                  GROUP BY f."id") AS "finalists"`,
       ],
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );

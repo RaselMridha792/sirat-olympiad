@@ -17,6 +17,7 @@ const task: AdminTaskRow = {
   createdAt: '2026-11-01T06:00:00.000Z',
   updatedAt: '2026-11-01T06:00:00.000Z',
   counts: { assigned: 3, submitted: 1, approved: 2, rejected: 0 },
+  demo: false,
 };
 const review: AdminTaskReviewRow = {
   assignmentId: 'a1',
@@ -26,6 +27,7 @@ const review: AdminTaskReviewRow = {
   ambassador: { userId: 'u1', name: 'Rahim' },
   proof: 'https://example.org/post',
   submittedAt: '2026-11-01T07:00:00.000Z',
+  demo: true,
 };
 const page = <T>(items: T[]) => ({ items, page: 1, pageSize: 20, total: items.length });
 

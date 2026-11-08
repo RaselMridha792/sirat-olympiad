@@ -17,6 +17,7 @@ import { AmbassadorButton } from '@/components/admin/AmbassadorButton';
 import { AmbassadorPointsEditor } from '@/components/admin/AmbassadorPointsEditor';
 import { AssignTaskButton } from '@/components/admin/AssignTaskButton';
 import { rankTone } from '@/components/status';
+import { DemoBadge } from '@/components/admin/demo/DemoBadge';
 import { getData } from '@/data';
 import { hrefWith, parsePageQuery, totalPages, type SearchParams } from '@/data/query';
 import { common } from '@/i18n/common';
@@ -131,7 +132,10 @@ export default async function AdminAmbassadorsPage({
                 <div className="flex items-center gap-3">
                   <Avatar name={a.name} size="sm" />
                   <div className="min-w-0">
-                    <p className="font-semibold text-ink">{a.name}</p>
+                    <p className="flex flex-wrap items-center gap-2 font-semibold text-ink">
+                      {a.name}
+                      <DemoBadge demo={a.demo} locale={locale} />
+                    </p>
                     <p className="text-xs text-ink-muted">{a.email}</p>
                   </div>
                 </div>

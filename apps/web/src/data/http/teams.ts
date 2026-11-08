@@ -31,6 +31,7 @@ const isRow = (v: unknown): v is AdminTeamRow =>
   text(v.owner.name) &&
   typeof v.open === 'boolean' &&
   count(v.memberCount) &&
+  typeof v.demo === 'boolean' &&
   text(v.createdAt) &&
   text(v.updatedAt);
 
@@ -56,6 +57,7 @@ const pickRow = (r: AdminTeamRow): AdminTeamRow => ({
   owner: { userId: r.owner.userId, name: r.owner.name },
   open: r.open,
   memberCount: r.memberCount,
+  demo: r.demo,
   createdAt: r.createdAt,
   updatedAt: r.updatedAt,
 });

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ClipboardList, ClipboardCheck } from 'lucide-react';
 import { DataTable, EmptyState, LinkPagination, PageHeader, Tabs } from '@sirat/ui';
+import { DemoBadge } from '@/components/admin/demo/DemoBadge';
 import { TaskDecision } from '@/components/admin/TaskDecision';
 import { TaskEditor } from '@/components/admin/TaskEditor';
 import { TaskStateButton } from '@/components/admin/TaskStateButton';
@@ -77,7 +78,10 @@ export default async function AdminTasksPage({
                   className: 'min-w-56 px-5 py-4 align-top text-sm text-ink',
                   render: (r) => (
                     <div>
-                      <p className="font-bold text-ink">{r.taskTitle}</p>
+                      <p className="flex flex-wrap items-center gap-2 font-bold text-ink">
+                        {r.taskTitle}
+                        <DemoBadge demo={r.demo} locale={locale} />
+                      </p>
                       <p className="mt-1 text-xs text-secondary">{m.pointsValue(n(r.points))}</p>
                     </div>
                   ),
@@ -152,7 +156,10 @@ export default async function AdminTasksPage({
               className: 'min-w-72 px-5 py-4 align-top text-sm text-ink',
               render: (t) => (
                 <div>
-                  <p className="text-base font-bold text-ink">{t.title}</p>
+                  <p className="flex flex-wrap items-center gap-2 text-base font-bold text-ink">
+                    {t.title}
+                    <DemoBadge demo={t.demo} locale={locale} />
+                  </p>
                   <p className="mt-1 whitespace-pre-line break-words text-sm text-ink-muted">
                     {t.description}
                   </p>

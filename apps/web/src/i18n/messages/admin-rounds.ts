@@ -96,7 +96,11 @@ export const adminRoundsMessages = defineMessages({
       unscored_entries: 'Some sent videos have no jury score yet.',
       no_entries: 'Nobody would go through.',
       already_promoted: 'This category has already been promoted from this round.',
+      demo_rounds_present:
+        'Demo rounds exist. Remove the demo data first (Settings, Demo data): no real round is added and no promotion runs beside it.',
       not_jury: 'Only an active jury account can be a judge.',
+      jury_side_mismatch:
+        'A demo judge goes only on a demo round, and a real judge only on a real one.',
       notFound: 'This round no longer exists.',
       limit: 'Too many requests. Wait a moment and try again.',
       invalid: 'Check what you entered.',
@@ -196,7 +200,11 @@ export const adminRoundsMessages = defineMessages({
       unscored_entries: 'পাঠানো কিছু ভিডিও এখনো জুরির নম্বর পায়নি।',
       no_entries: 'কেউ উত্তীর্ণ হবে না।',
       already_promoted: 'এই ক্যাটাগরি এই রাউন্ড থেকে আগেই তোলা হয়েছে।',
+      demo_rounds_present:
+        'ডেমো রাউন্ড আছে। আগে ডেমো ডেটা মুছুন (সেটিংস, ডেমো ডেটা): এর পাশে কোনো আসল রাউন্ড যোগ হয় না, কোনো প্রমোশনও চলে না।',
       not_jury: 'শুধু সক্রিয় জুরি অ্যাকাউন্টই বিচারক হতে পারে।',
+      jury_side_mismatch:
+        'ডেমো বিচারক শুধু ডেমো রাউন্ডে, আর আসল বিচারক শুধু আসল রাউন্ডে যোগ হতে পারেন।',
       notFound: 'এই রাউন্ডটি আর নেই।',
       limit: 'অনেক বেশি অনুরোধ। একটু অপেক্ষা করে আবার চেষ্টা করুন।',
       invalid: 'যা লিখেছেন তা দেখে নিন।',

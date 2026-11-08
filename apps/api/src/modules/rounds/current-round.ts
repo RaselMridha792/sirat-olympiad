@@ -27,10 +27,16 @@ const toRound = (r: RoundRow): MyRound['round'] => ({
 /**
  * The student's current round (core C6a): the latest round they have an entry in, with its status; with no entry
  * yet (before Round 1's promotion), the first round. Used by GET /rounds/me and the profile.
+ * By the viewer's side (demo data, DECISIONS 2026-11-08): a real account sees real rounds only and a demo account its
+ * demo rounds only (demo data has its own Round 1, sort orders 101-110).
  */
 export async function currentRoundOf(db: Db, userId: string): Promise<MyRound | null> {
+  const viewer = await db.user.findUnique({ where: { id: userId }, select: { demoBatchId: true } });
+  const visible: Prisma.RoundWhereInput = {
+    demoBatchId: viewer?.demoBatchId ? { not: null } : null,
+  };
   const entry = await db.roundEntry.findFirst({
-    where: { userId },
+    where: { userId, round: visible },
     orderBy: { round: { sortOrder: 'desc' } },
     select: {
       status: true,
@@ -46,7 +52,11 @@ export async function currentRoundOf(db: Db, userId: string): Promise<MyRound | 
       videoUrl: entry.videoUrl,
       videoSubmittedAt: entry.videoSubmittedAt?.toISOString() ?? null,
     };
-  const first = await db.round.findFirst({ orderBy: { sortOrder: 'asc' }, select: ROUND_SELECT });
+  const first = await db.round.findFirst({
+    where: visible,
+    orderBy: { sortOrder: 'asc' },
+    select: ROUND_SELECT,
+  });
   return (
     first && { round: toRound(first), entryStatus: null, videoUrl: null, videoSubmittedAt: null }
   );

@@ -309,7 +309,7 @@ describe('the check and the revoke', () => {
     const ok = await check(cert.verificationCode.toLowerCase());
     expect([ok.status, ok.json]).toEqual([
       200,
-      { name: 'Nusrat Jahan', award: { type: 'promotion', roundName: 'Final' } },
+      { name: 'Nusrat Jahan', award: { type: 'promotion', roundName: 'Final' }, demo: false },
     ]);
     const unknown = await check('ABCDEF012345');
     const malformed = await check('not-a-code');

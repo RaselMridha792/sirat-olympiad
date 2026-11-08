@@ -287,4 +287,6 @@ export type AdminAmbassadorRow = Pick<UserRecord, 'name' | 'email'> &
     referralCount: number;
     points: number;
     rankName: RankThresholdRecord['name'] | null;
+    /** A demo account (demo data): marked in the admin list. */
+    demo: boolean;
   };
