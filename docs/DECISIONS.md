@@ -21,6 +21,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 - **Commit emails are public now.**
 - **The VPS clone** fetches `origin` over https; no deploy key is needed. `bootstrap.sh` clones over https by default; an SSH `BOOTSTRAP_REPO_URL` still makes a read-only deploy key.
 - **Who:** Rasel decided; the lead ran the filter and the move; A2 recorded it.
+
 ## 2026-11-08 — Accessibility and performance pass: public pages and the student dashboard (core; the lead approved the fixes)
 
 - **Measured** with Chrome through the repo's CDP driver (no new dependency, no Lighthouse):
