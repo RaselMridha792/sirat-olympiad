@@ -14,6 +14,7 @@ import {
   type AdminLeaderboardRow,
   BOOK_COVER_LIMITS,
   type AdminBookInfo,
+  type AdminDemoStatus,
   type AdminBookOrderRow,
   type AdminPaymentDetail,
   type AdminPaymentRow,
@@ -1337,6 +1338,22 @@ export function createMockSource(state: MockState | null): DataSource {
         run(
           () => MOCK_SETTINGS.map((s) => ({ ...s })),
           () => MOCK_SETTINGS.map((s) => ({ ...s })),
+        ),
+
+      getDemoStatus: () =>
+        run(
+          (): AdminDemoStatus => ({
+            allowed: true,
+            batch: null,
+            progress: null,
+            lastOutcome: null,
+          }),
+          (): AdminDemoStatus => ({
+            allowed: false,
+            batch: null,
+            progress: null,
+            lastOutcome: null,
+          }),
         ),
 
       getBook: () =>
