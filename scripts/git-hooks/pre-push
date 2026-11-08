@@ -6,6 +6,8 @@
 #   - has the old history's first commit (7587f2f, "import scaffold…") as an ancestor, or
 #   - adds, changes or removes anything under reference/.
 #
+# A push to the private archive (its exact URLs, below) passes: it holds both by design.
+#
 # Turn it on once per clone (RUNBOOK section 0): git config core.hooksPath scripts/git-hooks
 # CI runs the same check on every pull request (.github/workflows/ci.yml), feeding it one line on stdin.
 #
@@ -16,6 +18,18 @@ set -euo pipefail
 # The old history's first commit. SIRAT_OLD_HISTORY_ROOT exists for this hook's own test only.
 OLD_ROOT=${SIRAT_OLD_HISTORY_ROOT:-7587f2fb7dcd3f5139e341cef5336863eb5f8dbd}
 ZERO=0000000000000000000000000000000000000000
+
+# The private archive holds the old history and reference/ by design (DECISIONS 2026-11-08), so a push to it passes.
+# Only its exact URLs (git gives the remote's URL as the second argument); any other URL, the public repository
+# included, gets both checks. stdin is drained first, so git never writes into a closed pipe.
+case "${2:-}" in
+  https://github.com/RaselMridha792/sirat-olympiad-archive | https://github.com/RaselMridha792/sirat-olympiad-archive.git | \
+    git@github.com:RaselMridha792/sirat-olympiad-archive | git@github.com:RaselMridha792/sirat-olympiad-archive.git | \
+    ssh://git@github.com/RaselMridha792/sirat-olympiad-archive | ssh://git@github.com/RaselMridha792/sirat-olympiad-archive.git)
+    cat > /dev/null
+    exit 0
+    ;;
+esac
 
 refuse() {
   echo "pre-push: REFUSED, $1" >&2
