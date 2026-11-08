@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import { errorLogFields } from '../../common/all-exceptions.filter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { correctedKeys, databaseNow, effectiveKey } from '../exams/answer-keys';
@@ -320,10 +320,22 @@ export class ExamJobs {
    * no re-scoring batch lands while the snapshot is taken.
    */
   async buildResults(examId: string): Promise<BuildOutcome> {
-    return this.prisma.$transaction(
-      async (tx) => {
-        await tx.$executeRawUnsafe(`SET LOCAL statement_timeout = '120s'`);
-        const [exam] = await tx.$queryRaw<{ generation: number; ready: boolean }[]>`
+    return buildExamResults(this.prisma, examId);
+  }
+}
+
+/**
+ * ExamJobs.buildResults as a function of a client, so the demo loader (worker and CLI) builds a demo exam's snapshot
+ * with the very same statements. See buildResults for the rules.
+ */
+export function buildExamResults(
+  prisma: Pick<PrismaClient, '$transaction'>,
+  examId: string,
+): Promise<BuildOutcome> {
+  return prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRawUnsafe(`SET LOCAL statement_timeout = '120s'`);
+      const [exam] = await tx.$queryRaw<{ generation: number; ready: boolean }[]>`
           SELECT e."results_generation" AS "generation",
                  e."status" = 'published'
                  AND e."window_end" + make_interval(secs => e."grace_seconds") < now()
@@ -337,9 +349,9 @@ export class ExamJobs {
                    WHERE a."exam_id" = e."id" AND a."status" = 'scored' AND a."scored_at" < c."at") AS "ready"
           FROM "exams" e WHERE e."id" = ${examId}::uuid
           FOR UPDATE`;
-        if (!exam?.ready) return 'not_ready';
-        const generation = exam.generation + 1;
-        await tx.$executeRaw`
+      if (!exam?.ready) return 'not_ready';
+      const generation = exam.generation + 1;
+      await tx.$executeRaw`
           INSERT INTO "leaderboard_entries" ("exam_id", "generation", "position", "rank", "user_id", "attempt_id",
                                              "name", "institution", "category", "score", "time_taken_seconds",
                                              "created_at")
@@ -351,15 +363,14 @@ export class ExamJobs {
           FROM "attempts" a JOIN "users" u ON u."id" = a."user_id"
           WHERE a."exam_id" = ${examId}::uuid AND a."score" IS NOT NULL AND NOT u."is_blocked"
           ORDER BY a."score" DESC, a."time_taken_seconds" ASC`;
-        await tx.$executeRaw`
+      await tx.$executeRaw`
           UPDATE "exams" SET "results_generation" = ${generation}::int, "results_snapshot_at" = now(),
                              "updated_at" = now()
           WHERE "id" = ${examId}::uuid`;
-        return 'built';
-      },
-      { timeout: 130_000 },
-    );
-  }
+      return 'built';
+    },
+    { timeout: 130_000 },
+  );
 }
 
 /** The question versions of a layout, each with the key in effect (its newest correction's, else its own; E7b). */
