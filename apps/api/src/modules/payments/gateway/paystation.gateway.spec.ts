@@ -8,6 +8,8 @@ import { redactGatewayBody } from './redact';
 // Shaped like real values, obviously not real ones.
 const MERCHANT = '123-4567890123';
 const PASSWORD = 'Sx9Lk2Qw7Zt4';
+/** The timeout case's gateway timeout, well under its stub's 1.5 s delay. */
+const TIMEOUT_CASE_MS = 200;
 
 type Seen = { path: string; headers: IncomingMessage['headers']; form: URLSearchParams };
 type Reply = { status?: number; body: unknown; delayMs?: number; raw?: string };
@@ -58,7 +60,8 @@ const config = (over: Partial<Extract<PaymentConfig, { enabled: true }>> = {}) =
     callbackUrl: 'http://localhost:4100/api/payments/paystation/callback',
     ipnUrl: null,
     payWithCharge: 0,
-    timeoutMs: 1_000,
+    // Long, so a local stub that answers late on a busy machine is never mistaken for a timeout (A2 saw it once).
+    timeoutMs: 10_000,
     ...over,
   }) as Extract<PaymentConfig, { enabled: true }>;
 
@@ -249,11 +252,13 @@ describe('PayStationGateway: transport failures are "unavailable", never a decis
     ['a JSON array', { raw: '[]', body: null }, 'bad_response'],
   ])('%s', async (_label, r, reason) => {
     reply = () => r as Reply;
-    expect(await new PayStationGateway(config()).statusByInvoice('T1')).toMatchObject({
+    // Only the timeout case runs on a short timeout (200 ms against a 1.5 s answer); the others keep the long one.
+    const over = reason === 'timeout' ? { timeoutMs: TIMEOUT_CASE_MS } : {};
+    expect(await new PayStationGateway(config(over)).statusByInvoice('T1')).toMatchObject({
       kind: 'unavailable',
       reason,
     });
-    expect(await new PayStationGateway(config()).initiate(request)).toMatchObject({
+    expect(await new PayStationGateway(config(over)).initiate(request)).toMatchObject({
       kind: 'unavailable',
       reason,
     });
