@@ -13,6 +13,21 @@ One short entry per non-obvious technical or product decision. Newest first. For
 3. **The load guard** (`paymentsAllowDemo`): demo data is refused while `PAYSTATION_ENV=live`, and once a paid `live` payment exists. Sandbox, fake and demo payments never count: none moved money. Registration may stay open (lead).
 4. **The marker email domain** (`DEMO_EMAIL_DOMAIN`, `@demo.sirat.invalid`): the registration form refuses exactly that domain, so a real attempt, and the account its payment makes, can never carry it.
 5. **Demo payments get no events:** `payment_events` cannot be cleared, so demo data never writes to it. A demo "refund" is a paid payment with review reason `refund_reported`; the `refunded` status is never entered.
+## 2026-11-08 — The client's brand colours, from one place (owner, via the lead; core)
+
+- **Decision:**
+  - The brand is the Sirat Olympiad green and gold. The scales come from the client's old site (green-600 `#007a48`, its theme colour; gold-500 `#ed9d19`), to confirm with the client.
+  - `packages/ui/src/styles/tokens.css` holds the scales and maps them to the semantic tokens:
+    - primary = green-600;
+    - secondary = green-800;
+    - accent = gold-500 (new; `accent-strong` gold-800 for gold text);
+    - shell = green-950.
+    The neutrals stay slate.
+  - On the deep-green shell, text and small icons are gold: green on it reads 3.3:1, gold 8.1:1.
+  - A test fails on any raw colour or palette class outside tokens.css (`apps/web/src/design/no-raw-colours.test.ts`). The contrast test checks every brand pair.
+- **Why:** Rasel asked for the client's colours, controlled globally. The components already used only semantic tokens, so the dashboards follow without code changes.
+- **Not here:** A2's maintenance page and the email templates have their own inline colours (reported; the lead queues them).
+- **Who:** Rasel (owner, 2026-11-08), passed on by the lead; built by core.
 
 ## 2026-11-08 — The admin 2FA requirement is a setting (A2; Rasel's request of 3 Nov, the lead's design)
 
