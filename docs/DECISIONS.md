@@ -21,6 +21,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - Load and remove need an admin session that proved the second factor (`@TwoFactorAlways`).
    - Each step is audited (`demo.load_requested`, `demo.clear_requested`) and raises an ops alert (`ops.demo_loaded`, `ops.demo_cleared`).
 6. **One password per batch**, 16 random characters, shown once in the load answer (or the CLI's output). It is stored only as the argon2id hash, which travels in the job data: removed when the job ends, and kept a day on a failure.
+7. **A lost job never blocks the launch** (A2's review): a batch still `loading` or `clearing` 15 minutes after its last change (`DEMO_STALE_MINUTES`) counts as abandoned. It can be removed like a failed one, and a late job then does nothing. Load and remove are limited to 10 per admin per hour each. A load refuses an existing batch before it hashes a password.
 
 ## 2026-11-08 — Demo payments stay out of the money flow (payments' part of exam's demo data; lead)
 

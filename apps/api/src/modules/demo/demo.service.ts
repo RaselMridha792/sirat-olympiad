@@ -1,11 +1,12 @@
 import { randomBytes } from 'node:crypto';
 import { ConflictException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type {
-  AdminDemoStatus,
-  DemoBatchStatus,
-  DemoLoadAccepted,
-  DemoRefusal,
+import {
+  DEMO_STALE_MINUTES,
+  type AdminDemoStatus,
+  type DemoBatchStatus,
+  type DemoLoadAccepted,
+  type DemoRefusal,
 } from '@sirat/shared';
 import type Redis from 'ioredis';
 import type { EnvVars } from '../../config/env';
@@ -16,6 +17,7 @@ import { type Actor, assertAdmin } from '../exams/admin-exams.service';
 import type { PaymentConfig } from '../payments/payment.config';
 import { PAYMENT_CONFIG } from '../payments/payments-boot-check';
 import {
+  assertCanLoad,
   beginDemoClear,
   beginDemoLoad,
   DemoRefusalError,
@@ -61,13 +63,17 @@ export class DemoService {
           id: true,
           status: true,
           createdAt: true,
+          updatedAt: true,
           counts: true,
           createdBy: { select: { name: true } },
         },
       }),
       this.runner.jobState(),
     ]);
-    const running = batch?.status === 'loading' || batch?.status === 'clearing';
+    const busy = batch?.status === 'loading' || batch?.status === 'clearing';
+    // The abandoned-job rule (DEMO_STALE_MINUTES): no progress any more, and the card offers the removal.
+    const stale = busy && batch.updatedAt.getTime() < Date.now() - DEMO_STALE_MINUTES * 60_000;
+    const running = busy && !stale;
     return {
       allowed: demoAllowed(this.config),
       batch: batch && {
@@ -76,6 +82,7 @@ export class DemoService {
         createdAt: batch.createdAt.toISOString(),
         createdByName: batch.createdBy?.name ?? 'Server (CLI)',
         counts: (batch.counts ?? {}) as Record<string, number>,
+        stale,
       },
       progress:
         running && job?.step
@@ -92,6 +99,9 @@ export class DemoService {
    */
   async load(actor: Actor, reason: string): Promise<DemoLoadAccepted> {
     if (!demoAllowed(this.config)) throw refuse('demo_not_allowed');
+    // The cheap refusals first (A2's review): a click that will be refused costs no password hash. The transaction
+    // below checks again under the lock.
+    await this.refusing(() => assertCanLoad(this.prisma, this.payments));
     const password = randomBytes(PASSWORD_BYTES).toString('base64url');
     const passwordHash = await this.passwords.hash(password); // CPU work outside the transaction
     const batchId = await this.refusing(() =>

@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import type { DemoRefusal } from '@sirat/shared';
+import { DEMO_STALE_MINUTES, type DemoRefusal } from '@sirat/shared';
 import { paymentsAllowDemo } from '../payments/demo/allow-demo';
 import type { PaymentConfig } from '../payments/payment.config';
 
@@ -30,10 +30,7 @@ export async function beginDemoLoad(
   req: DemoRequest,
   payments: PaymentConfig,
 ): Promise<string> {
-  const current = await currentBatch(tx);
-  if (current) throw new DemoRefusalError(running(current.status) ? 'demo_busy' : 'demo_exists');
-  const allowed = await paymentsAllowDemo(tx, payments);
-  if (!allowed.ok) throw new DemoRefusalError(allowed.reason);
+  await assertCanLoad(tx, payments, true);
   const batch = await tx.demoBatch.create({
     data: { status: 'loading', reason: req.reason, createdById: req.actorId },
     select: { id: true },
@@ -42,18 +39,42 @@ export async function beginDemoLoad(
   return batch.id;
 }
 
-/** Starts a removal: the batch becomes 'clearing' with its audit row. Refuses demo_absent, demo_busy. */
+/**
+ * The cheap refusals of a load (no batch may exist; payments' guard), so a refused click costs no password hash.
+ * `lock`: inside the load transaction, the batch row is locked (the API reads once before hashing without it).
+ */
+export async function assertCanLoad(db: Tx, payments: PaymentConfig, lock = false): Promise<void> {
+  const current = await currentBatch(db, lock);
+  if (current)
+    throw new DemoRefusalError(
+      running(current.status) && !current.stale ? 'demo_busy' : 'demo_exists',
+    );
+  const allowed = await paymentsAllowDemo(db, payments);
+  if (!allowed.ok) throw new DemoRefusalError(allowed.reason);
+}
+
+/**
+ * Starts a removal: the batch becomes 'clearing' with its audit row. Refuses demo_absent, and demo_busy while a job
+ * runs. A batch abandoned in 'loading' or 'clearing' (DEMO_STALE_MINUTES) may be removed; if the removal is refused,
+ * it then goes back to 'failed'.
+ */
 export async function beginDemoClear(
   tx: Tx,
   req: DemoRequest,
 ): Promise<{ batchId: string; previous: 'loaded' | 'failed' }> {
-  const current = await currentBatch(tx);
+  const current = await currentBatch(tx, true);
   if (!current) throw new DemoRefusalError('demo_absent');
-  if (current.status !== 'loaded' && current.status !== 'failed')
-    throw new DemoRefusalError('demo_busy');
+  if (running(current.status) && !current.stale) throw new DemoRefusalError('demo_busy');
+  const previous = current.status === 'loaded' ? 'loaded' : 'failed';
   await tx.demoBatch.update({ where: { id: current.id }, data: { status: 'clearing' } });
-  await auditDemo(tx, req, 'demo.clear_requested', current.id);
-  return { batchId: current.id, previous: current.status };
+  await auditDemo(
+    tx,
+    req,
+    'demo.clear_requested',
+    current.id,
+    current.stale ? current.status : null,
+  );
+  return { batchId: current.id, previous };
 }
 
 /** Two loads at once: the second insert meets the one-batch unique index. */
@@ -62,14 +83,32 @@ export const isSecondBatch = (e: unknown): boolean =>
 
 const running = (status: string) => status === 'loading' || status === 'clearing';
 
-/** The one batch, locked for the transaction. */
-async function currentBatch(tx: Tx): Promise<{ id: string; status: string } | null> {
-  const [row] = await tx.$queryRaw<{ id: string; status: string }[]>`
-    SELECT "id"::text AS "id", "status" FROM "demo_batches" ORDER BY "created_at" DESC LIMIT 1 FOR UPDATE`;
-  return row ?? null;
+/** The one batch (locked for the transaction with `lock`), and whether it is abandoned (DEMO_STALE_MINUTES). */
+async function currentBatch(
+  db: Tx,
+  lock: boolean,
+): Promise<{ id: string; status: string; stale: boolean } | null> {
+  const rows = lock
+    ? await db.$queryRaw<{ id: string; status: string; stale: boolean }[]>`
+        SELECT "id"::text AS "id", "status",
+               "status" IN ('loading', 'clearing')
+               AND "updated_at" < now() - make_interval(mins => ${DEMO_STALE_MINUTES}::int) AS "stale"
+        FROM "demo_batches" ORDER BY "created_at" DESC LIMIT 1 FOR UPDATE`
+    : await db.$queryRaw<{ id: string; status: string; stale: boolean }[]>`
+        SELECT "id"::text AS "id", "status",
+               "status" IN ('loading', 'clearing')
+               AND "updated_at" < now() - make_interval(mins => ${DEMO_STALE_MINUTES}::int) AS "stale"
+        FROM "demo_batches" ORDER BY "created_at" DESC LIMIT 1`;
+  return rows[0] ?? null;
 }
 
-async function auditDemo(tx: Tx, req: DemoRequest, action: string, batchId: string) {
+async function auditDemo(
+  tx: Tx,
+  req: DemoRequest,
+  action: string,
+  batchId: string,
+  abandoned: string | null = null,
+) {
   await tx.auditLog.create({
     data: {
       action,
@@ -77,7 +116,8 @@ async function auditDemo(tx: Tx, req: DemoRequest, action: string, batchId: stri
       entityType: 'demo_batch',
       entityId: batchId,
       ip: req.ip,
-      meta: { reason: req.reason, via: req.via },
+      // An abandoned batch's status before the removal (the stale rule), so the log tells why it was allowed.
+      meta: { reason: req.reason, via: req.via, ...(abandoned ? { abandoned } : {}) },
     },
   });
 }

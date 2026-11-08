@@ -33,7 +33,8 @@ function isDemoStatus(v: unknown): v is AdminDemoStatus {
       (DEMO_BATCH_STATUSES as readonly unknown[]).includes(b.status) &&
       typeof b.createdAt === 'string' &&
       typeof b.createdByName === 'string' &&
-      counts(b.counts));
+      counts(b.counts) &&
+      typeof b.stale === 'boolean');
   const p = v.progress;
   const progressOk = p === null || (isRecord(p) && action(p.action) && typeof p.step === 'string');
   return batchOk && progressOk && (v.lastOutcome === null || isOutcome(v.lastOutcome));
@@ -50,6 +51,7 @@ export function pickDemoStatus(s: AdminDemoStatus): AdminDemoStatus {
       createdAt: s.batch.createdAt,
       createdByName: s.batch.createdByName,
       counts: { ...s.batch.counts },
+      stale: s.batch.stale,
     },
     progress: s.progress && { action: s.progress.action, step: s.progress.step },
     lastOutcome: o && {

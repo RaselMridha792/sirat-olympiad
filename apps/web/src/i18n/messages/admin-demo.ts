@@ -22,6 +22,8 @@ export const adminDemoMessages = defineMessages({
     },
     loadedBy: (name: string, date: string) => `Loaded by ${name}, ${date}`,
     failedText: 'The load stopped before it finished. Remove what it left, then load again.',
+    staleText:
+      'Its job has not answered for over 15 minutes and is treated as lost. Remove the batch, then load again if needed.',
     steps: {
       queued: 'waiting for the worker',
       starting: 'starting',
@@ -126,6 +128,8 @@ export const adminDemoMessages = defineMessages({
     },
     loadedBy: (name: string, date: string) => `লোড করেছেন ${name}, ${date}`,
     failedText: 'লোড শেষ হওয়ার আগেই থেমে গেছে। যা রয়ে গেছে তা মুছে আবার লোড করুন।',
+    staleText:
+      'এর কাজটি ১৫ মিনিটের বেশি সাড়া দেয়নি, তাই হারানো ধরা হচ্ছে। ব্যাচটি মুছুন, দরকার হলে আবার লোড করুন।',
     steps: {
       queued: 'ওয়ার্কারের অপেক্ষায়',
       starting: 'শুরু হচ্ছে',

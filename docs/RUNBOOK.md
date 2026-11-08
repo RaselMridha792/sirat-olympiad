@@ -925,6 +925,7 @@ $DC exec -T api node dist/cli/demo.js load --reason "client demo"
   - `demo_busy`: a job runs, wait;
   - `payments_live` (`PAYSTATION_ENV=live`) or `real_payments` (a paid live payment exists): demo data never goes beside real money;
   - "The job queue is not answering": the queue Redis (§7); the batch becomes "failed": remove it, then load again.
+- **Stuck in "Loading" or "Removing"** (the API stopped between saving the batch and queuing the job, or the queue lost the job): after 15 minutes without a change the card says the job is treated as lost and offers "Remove demo data" (the CLI's `clear` accepts it too). Before that, both actions answer `demo_busy`: wait. No SQL by hand.
 - **Remove** on the same card ("Remove demo data", with a reason), or `$DC exec -T api node dist/cli/demo.js clear --reason "before launch"`. Everything a load made goes, also what demo accounts did afterwards (sign-ins, attempts, team joins). Real rows never go.
 - **"The removal was refused"**: real data uses demo data, and nothing was removed. The card (or the CLI) lists the kinds with counts, e.g. "real accounts referred by a demo ambassador". Remove or correct those real rows (they should not exist: the API refuses each of these mixes), then remove again. Never delete demo rows by hand: `demo_clear` is the only safe path, and the guards refuse a direct delete.
 - **Before launch**: remove the demo data and set `DEMO_DATA_ALLOWED=false` (or delete the line). `scripts/prelaunch-check.sh` fails while either remains (§9).

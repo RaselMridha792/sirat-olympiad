@@ -40,9 +40,13 @@ export function validDemoReason(input: string): boolean {
   return length >= DEMO_REASON_LIMITS.min && length <= DEMO_REASON_LIMITS.max;
 }
 
-/** A load or a removal is running: the card asks the API again until it ends. */
+/** A load or a removal is running: the card asks the API again until it ends. An abandoned job is not running. */
 export const demoRunning = (s: AdminDemoStatus): boolean =>
-  s.batch?.status === 'loading' || s.batch?.status === 'clearing';
+  (s.batch?.status === 'loading' || s.batch?.status === 'clearing') && !s.batch.stale;
+
+/** The removal is offered for a loaded or failed batch, and for one whose job was abandoned (DEMO_STALE_MINUTES). */
+export const demoRemovable = (s: AdminDemoStatus): boolean =>
+  s.batch !== null && (s.batch.status === 'loaded' || s.batch.status === 'failed' || s.batch.stale);
 
 /** The counts to show, in a fixed order first, then anything an area added later (by its table name). */
 export function demoCountRows(counts: Record<string, number>, order: readonly string[]) {

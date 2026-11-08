@@ -17,6 +17,7 @@ import { api, ApiRequestError, SessionExpiredError } from '@/lib/api';
 import {
   demoCountRows,
   demoProblem,
+  demoRemovable,
   demoRunning,
   validDemoReason,
   type DemoProblem,
@@ -121,9 +122,7 @@ export function DemoDataCard({
         </div>
         <div className="flex flex-wrap items-start gap-3">
           {!batch && current.allowed ? <LoadDialog locale={locale} /> : null}
-          {batch && (batch.status === 'loaded' || batch.status === 'failed') ? (
-            <ClearDialog locale={locale} onStarted={setCurrent} />
-          ) : null}
+          {demoRemovable(current) ? <ClearDialog locale={locale} onStarted={setCurrent} /> : null}
         </div>
       </div>
 
@@ -171,6 +170,7 @@ export function DemoDataCard({
           {batch.status === 'failed' ? (
             <p className="text-sm text-danger-strong">{m.failedText}</p>
           ) : null}
+          {batch.stale ? <p className="text-sm text-danger-strong">{m.staleText}</p> : null}
           {Object.keys(batch.counts).length > 0 ? (
             <DetailList
               columns={3}

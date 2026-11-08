@@ -16,6 +16,7 @@ const loaded: AdminDemoStatus = {
     createdAt: '2026-11-09T06:00:00.000Z',
     createdByName: 'Ops Admin',
     counts: { students: 300, ambassadors: 15, jury: 2, attempts: 271 },
+    stale: false,
   },
   progress: null,
   lastOutcome: {
@@ -68,6 +69,7 @@ test('admin.getDemoStatus refuses a wrong shape or a refusal (the card shows its
     { ...loaded, allowed: 'yes' },
     { ...loaded, batch: { ...loaded.batch, status: 'deleted' } },
     { ...loaded, batch: { ...loaded.batch, counts: { students: '300' } } },
+    { ...loaded, batch: { ...loaded.batch, stale: 'no' } },
     { ...loaded, progress: { action: 'wipe', step: 'x' } },
     { ...loaded, lastOutcome: { ...loaded.lastOutcome, result: 'maybe' } },
     { ...loaded, lastOutcome: { ...loaded.lastOutcome, blockers: { x: -1 } } },

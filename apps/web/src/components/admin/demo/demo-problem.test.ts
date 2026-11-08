@@ -1,7 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { AdminDemoStatus } from '@sirat/shared';
-import { demoCountRows, demoProblem, demoRunning, validDemoReason } from './demo-problem.ts';
+import {
+  demoCountRows,
+  demoProblem,
+  demoRemovable,
+  demoRunning,
+  validDemoReason,
+} from './demo-problem.ts';
 
 const answer = (status: number, details?: unknown, code = 'X') => ({
   status,
@@ -40,15 +46,30 @@ test('the reason: 3 to 200 characters after trimming, as the API counts them', (
 
 test('running while a batch loads or clears, never otherwise', () => {
   const base: AdminDemoStatus = { allowed: true, batch: null, progress: null, lastOutcome: null };
-  const batch = (status: 'loading' | 'loaded' | 'failed' | 'clearing') => ({
+  const batch = (status: 'loading' | 'loaded' | 'failed' | 'clearing', stale = false) => ({
     ...base,
-    batch: { id: 'b', status, createdAt: '2026-11-09T00:00:00Z', createdByName: 'A', counts: {} },
+    batch: {
+      id: 'b',
+      status,
+      createdAt: '2026-11-09T00:00:00Z',
+      createdByName: 'A',
+      counts: {},
+      stale,
+    },
   });
   assert.equal(demoRunning(base), false);
   assert.equal(demoRunning(batch('loading')), true);
   assert.equal(demoRunning(batch('clearing')), true);
   assert.equal(demoRunning(batch('loaded')), false);
   assert.equal(demoRunning(batch('failed')), false);
+  // An abandoned job: no polling, and the removal is offered.
+  assert.equal(demoRunning(batch('loading', true)), false);
+  assert.equal(demoRemovable(batch('loading', true)), true);
+  assert.equal(demoRemovable(batch('clearing', true)), true);
+  assert.equal(demoRemovable(batch('loading')), false);
+  assert.equal(demoRemovable(batch('loaded')), true);
+  assert.equal(demoRemovable(batch('failed')), true);
+  assert.equal(demoRemovable(base), false);
 });
 
 test('counts: the known order first, then what an area added later, by name', () => {

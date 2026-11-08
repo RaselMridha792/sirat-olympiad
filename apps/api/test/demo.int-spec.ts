@@ -200,6 +200,40 @@ describe('access', () => {
       await dropPayments();
     }
   });
+  it('throttles load and remove: ten an hour per admin, refusals included, then 429', async () => {
+    for (let i = 0; i < 10; i++) expect((await clear()).status).toBe(409); // demo_absent
+    expect((await clear()).status).toBe(429);
+  });
+
+  it('a batch abandoned in loading (the job lost) may be removed after 15 minutes, not before', async () => {
+    const insert = (minutesAgo: number) => prisma.$executeRaw`
+      INSERT INTO "demo_batches" ("id", "status", "reason", "created_by_id", "created_at", "updated_at")
+      VALUES (gen_random_uuid(), 'loading', 'job lost', ${admin.id}::uuid,
+              now() - make_interval(mins => ${minutesAgo}::int), now() - make_interval(mins => ${minutesAgo}::int))`;
+    await insert(5);
+    try {
+      // Fresh: a job may still run. Both actions wait.
+      expect((await status()).batch).toMatchObject({ status: 'loading', stale: false });
+      expect((await clear()).json.details).toEqual(['demo_busy']);
+      expect((await load()).json.details).toEqual(['demo_busy']);
+    } finally {
+      await removeAnyBatch();
+    }
+    await insert(20);
+    const s = await status();
+    expect(s.batch).toMatchObject({ status: 'loading', stale: true });
+    expect(s.progress).toBeNull();
+    expect((await load()).json.details).toEqual(['demo_exists']);
+    const res = await clear('the job was lost');
+    expect(res.status).toBe(202);
+    await until((x) => x.batch === null);
+    const audit = await prisma.auditLog.findFirstOrThrow({
+      where: { action: 'demo.clear_requested', meta: { path: ['abandoned'], equals: 'loading' } },
+      orderBy: { createdAt: 'desc' },
+      select: { meta: true },
+    });
+    expect(audit.meta).toMatchObject({ reason: 'the job was lost', abandoned: 'loading' });
+  });
 });
 
 describe('load, use, remove', () => {

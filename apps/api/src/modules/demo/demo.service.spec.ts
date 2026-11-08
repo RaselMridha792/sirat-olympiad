@@ -48,4 +48,25 @@ describe('DemoService while DEMO_DATA_ALLOWED is off', () => {
       lastOutcome: null,
     });
   });
+
+  it('refuses a load while a batch exists before hashing a password (a refused click costs no argon2 work)', async () => {
+    const hash = jest.fn();
+    const $transaction = jest.fn();
+    const service = new DemoService(
+      {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: 'b1', status: 'loaded', stale: false }]),
+        $transaction,
+      } as unknown as PrismaService,
+      { status: 'end' } as unknown as Redis,
+      config('true'),
+      { enabled: false } as PaymentConfig,
+      {} as DemoQueue,
+      { hash } as unknown as PasswordService,
+    );
+    await expect(service.load({ id: 'a', ip: null }, 'client demo')).rejects.toMatchObject({
+      response: { message: ['demo_exists'] },
+    });
+    expect(hash).not.toHaveBeenCalled();
+    expect($transaction).not.toHaveBeenCalled();
+  });
 });
