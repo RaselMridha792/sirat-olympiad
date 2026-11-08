@@ -35,6 +35,11 @@ $DCD up -d --build                                      # full stack; http://127
 $DCD up -d --build --no-deps migrate api worker web nginx   # the shared stack (lead's rule): rebuild only the app services
 ```
 
+**The pre-push hook (every clone, once):** `git config core.hooksPath scripts/git-hooks`.
+- `scripts/git-hooks/pre-push` refuses a push whose commits descend from the old history's first commit (`7587f2f`) or touch `reference/`. The repository is public, and both must never reach it (DECISIONS 2026-11-08).
+- CI runs the same check on every pull request.
+- To check by hand before a push: `git merge-base --is-ancestor 7587f2f HEAD && echo STOP-old-history || echo ok`.
+
 **nginx after pulling the TLS change once (L3):**
 - An nginx container created before the folder mount (single-file mounts, the image's default command) keeps running, but it cannot start again. At the next Docker Desktop or PC restart, or after `$DCD restart nginx`, it crash-loops with `open() "/etc/nginx/sirat/cloudflare-realip.conf" failed`.
 - With the lead's or Rasel's go-ahead (the stack is shared), recreate it once from a checkout that has the change: `$DCD up -d --no-deps nginx`. The same applies if a smoke turn recreated nginx from a worktree without the change and that worktree merges main later.
