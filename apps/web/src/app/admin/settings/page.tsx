@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Settings } from 'lucide-react';
 import type { AdminSetting, AdminSettingKey } from '@sirat/shared';
 import { Badge, Card, DetailList, type DetailItem } from '@sirat/ui';
+import { DemoDataCard } from '@/components/admin/demo/DemoDataCard';
 import { FeeDialog, RegistrationSwitch } from '@/components/admin/payments/SettingsActions';
 import { getData } from '@/data';
 import type { SearchParams } from '@/data/query';
@@ -28,7 +29,8 @@ export async function generateMetadata(): Promise<Metadata> {
 /**
  * Registration settings (plan 3.4; admin only, not manager): open or close registration and change the fee, each
  * from the value this page shows (`expected`), so an old page never overwrites a newer change. The window and the
- * checkout time limit are shown; they are changed through the same API (no form here yet).
+ * checkout time limit are shown; they are changed through the same API (no form here yet). Below: the demo data card
+ * (exam; DECISIONS 2026-11-08 "Demo data").
  */
 export default async function AdminSettingsPage({
   searchParams,
@@ -41,7 +43,11 @@ export default async function AdminSettingsPage({
     getMessages(adminSettingsMessages),
     getData(params),
   ]);
-  const settings = await data.admin.listSettings();
+  // The demo card is optional: if its status cannot be read, the card says so and the settings still show.
+  const [settings, demo] = await Promise.all([
+    data.admin.listSettings(),
+    data.admin.getDemoStatus().catch(() => null),
+  ]);
   const byKey = new Map(settings.map((s) => [s.key, s]));
   const open = byKey.get('registration_open')?.value === true;
   const fee = byKey.get('registration_fee_minor')?.value;
@@ -65,24 +71,27 @@ export default async function AdminSettingsPage({
   });
 
   return (
-    <Card className="flex flex-col gap-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div className="min-w-0">
-          <h1 className="flex items-center gap-2 text-xl font-extrabold tracking-tight text-ink md:text-2xl">
-            <Settings aria-hidden="true" className="h-6 w-6 shrink-0 text-secondary" />
-            {m.title}
-          </h1>
-          <p className="mt-1 text-sm text-ink-muted">{m.intro}</p>
+    <div className="flex flex-col gap-6">
+      <Card className="flex flex-col gap-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0">
+            <h1 className="flex items-center gap-2 text-xl font-extrabold tracking-tight text-ink md:text-2xl">
+              <Settings aria-hidden="true" className="h-6 w-6 shrink-0 text-secondary" />
+              {m.title}
+            </h1>
+            <p className="mt-1 text-sm text-ink-muted">{m.intro}</p>
+          </div>
+          <div className="flex flex-wrap items-start gap-3">
+            {byKey.has('registration_open') ? (
+              <RegistrationSwitch locale={locale} open={open} />
+            ) : null}
+            {typeof fee === 'number' ? <FeeDialog locale={locale} currentMinor={fee} /> : null}
+          </div>
         </div>
-        <div className="flex flex-wrap items-start gap-3">
-          {byKey.has('registration_open') ? (
-            <RegistrationSwitch locale={locale} open={open} />
-          ) : null}
-          {typeof fee === 'number' ? <FeeDialog locale={locale} currentMinor={fee} /> : null}
-        </div>
-      </div>
-      <DetailList columns={2} items={items} />
-    </Card>
+        <DetailList columns={2} items={items} />
+      </Card>
+      <DemoDataCard locale={locale} status={demo} />
+    </div>
   );
 }
 

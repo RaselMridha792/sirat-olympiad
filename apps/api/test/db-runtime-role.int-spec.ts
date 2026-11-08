@@ -23,6 +23,11 @@ const appUrl = process.env.TEST_APP_DATABASE_URL ?? '';
 const DATA = ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] as const;
 const NEVER = ['TRUNCATE', 'REFERENCES', 'TRIGGER'] as const;
 /** The append-only tables today. The catalog test also checks any later one, found by its trigger. */
+/** The demo registry (DECISIONS 2026-11-08): written by the loader, removed only by demo_clear as the owner. */
+const DEMO_REGISTRY: Record<string, readonly string[]> = {
+  demo_records: ['SELECT', 'INSERT'],
+  demo_batches: ['SELECT', 'INSERT', 'UPDATE'],
+};
 const APPEND_ONLY = [
   'answer_key_corrections',
   'audit_logs',
@@ -125,7 +130,11 @@ describe('the runtime role sirat_app', () => {
     const wrong: string[] = [];
     for (const { name } of tables) {
       const expected: readonly string[] =
-        name === '_prisma_migrations' ? [] : appendOnly.has(name) ? ['SELECT', 'INSERT'] : DATA;
+        name === '_prisma_migrations'
+          ? []
+          : appendOnly.has(name)
+            ? ['SELECT', 'INSERT']
+            : (DEMO_REGISTRY[name] ?? DATA);
       for (const privilege of [...DATA, ...NEVER]) {
         const [row] = await owner.$queryRaw<{ ok: boolean }[]>`
           SELECT has_table_privilege('sirat_app', ${`public."${name}"`}, ${privilege}) AS ok`;

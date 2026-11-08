@@ -40,7 +40,8 @@ const ADMIN_PAGE_SIZE = 20;
 const CACHE_TTL_S = 60;
 const REDIS_TIMEOUT_MS = 300;
 const PUBLISH_PAST_GRACE_MS = 60_000;
-const GENERATION_KEY = 'announcements:gen';
+/** Exported for the demo data's invalidation (demo-runner.ts). */
+export const GENERATION_KEY = 'announcements:gen';
 
 const refuse = (...codes: AnnouncementRefusal[]) => new ConflictException(codes);
 const invalid = (...codes: AnnouncementRefusal[]) => new BadRequestException(codes);

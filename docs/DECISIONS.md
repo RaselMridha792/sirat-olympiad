@@ -2,6 +2,27 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-08 — Demo data, loaded and removed with one click (exam; Rasel's order of 8 Nov, the lead's approved conditions, A2's review)
+
+1. **Two marks, both needed.** The roots (users, exams, announcements) carry `demo_batch_id`. Only the loader writes it, at insert, and a trigger refuses any change. Every inserted row is also registered in `demo_records`. `demo_clear` treats a row as demo only when it is registered AND marked, so a forged registry row, or the session setting alone, deletes nothing real. The exam marker is the column, not the title (lead: a stronger marker).
+2. **`demo_clear` is the only way out** (SECURITY DEFINER, EXECUTE for `sirat_app` only). It locks the batch: `demo_clear_busy` while loading. If real rows use demo rows, it refuses with `demo_clear_blocked` and the counts per kind, and never cascades into real rows. It also removes what demo accounts did after the load. The guarded triggers let a DELETE through only inside it, for a demo root's rows.
+3. **No mixing at the endpoints.**
+   - A demo account sees and starts only demo exams, and a real account only real ones (the other side's exam: the same 404).
+   - A team takes no member from the other side.
+   - The leaderboard follows the viewer's side, so a real student never sees the demo board, not even as the default.
+   - A demo ambassador's code is refused at registration (payments).
+   - No email goes to the demo domain: dropped at enqueue and again in the worker. Every path that sets an email refuses the domain (the registration form, `create-admin`).
+4. **The switch is an env var** (`DEMO_DATA_ALLOWED`, default false), so a session cannot turn it on. It gates **loads only**: a removal always works, so demo data never outlives the switch. The prelaunch check fails while the switch is on or any demo row, batch or demo-domain account exists. Loads also stop while payments run live or real money was taken (payments' `paymentsAllowDemo`), checked at the click and again inside the load transaction.
+5. **One transaction, one queue job, one batch.**
+   - The generators run in dependency order inside one transaction: all or nothing.
+   - The results of the batch's closed exams are built and published after the commit, with the exam worker's own code. The layouts and scores come from `drawLayout` and `scoreAnswers`, so the review and the leaderboard agree.
+   - The job is idempotent (a retry skips what committed). The card's counts are read from the database.
+   - The CLI runs the same steps for the VPS.
+   - Load and remove need an admin session that proved the second factor (`@TwoFactorAlways`).
+   - Each step is audited (`demo.load_requested`, `demo.clear_requested`) and raises an ops alert (`ops.demo_loaded`, `ops.demo_cleared`).
+6. **One password per batch**, 16 random characters, shown once in the load answer (or the CLI's output). It is stored only as the argon2id hash, which travels in the job data: removed when the job ends, and kept a day on a failure.
+7. **A lost job never blocks the launch** (A2's review): a batch still `loading` or `clearing` 15 minutes after its last change (`DEMO_STALE_MINUTES`) counts as abandoned. It can be removed like a failed one, and a late job then does nothing. Load and remove are limited to 10 per admin per hour each. A load refuses an existing batch before it hashes a password.
+
 ## 2026-11-08 — Demo payments stay out of the money flow (payments' part of exam's demo data; lead)
 
 1. **One label, two markers:** demo payments carry `gateway_account = 'demo'` (`DEMO_ACCOUNT_LABEL`) and `gateway_env = 'demo'`. Either one keeps a payment away from PayStation (`isDemoPayment`):

@@ -27,8 +27,9 @@ export const TwoFactorOptional = () => SetMetadata(TWO_FACTOR_OPTIONAL, true);
 /**
  * The guard demands the second factor on this route even while the requirement setting does not (DECISIONS "The admin
  * 2FA requirement is a setting"): an admin or manager session without the proof gets 403 TWO_FACTOR_REQUIRED. With
- * two-factor login off (no TOTP_ENCRYPTION_KEY) the route's service answers 503 TWO_FACTOR_UNAVAILABLE. Exactly
- * PUT /admin/security/two-factor-requirement: test/app-routes.int-spec.ts fails on any other.
+ * two-factor login off (no TOTP_ENCRYPTION_KEY, development only) the guard lets it through; the requirement route's
+ * own service then answers 503 TWO_FACTOR_UNAVAILABLE. Exactly PUT /admin/security/two-factor-requirement and
+ * POST /admin/demo/load and /admin/demo/clear: test/app-routes.int-spec.ts fails on any other.
  */
 export const TwoFactorAlways = () => SetMetadata(TWO_FACTOR_ALWAYS, true);
 

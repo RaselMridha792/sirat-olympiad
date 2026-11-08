@@ -6,6 +6,8 @@ import type { ExamConfig } from './exam-cache';
 export interface StudentAccount {
   category: Category | null;
   emailVerifiedAt: Date | null;
+  /** A demo account (DECISIONS 2026-11-08 "Demo data"): it sees and starts demo exams only. */
+  demo: boolean;
 }
 
 /**
@@ -18,10 +20,14 @@ export async function studentAccount(
 ): Promise<StudentAccount> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { isBlocked: true, category: true, emailVerifiedAt: true },
+    select: { isBlocked: true, category: true, emailVerifiedAt: true, demoBatchId: true },
   });
   if (!user || user.isBlocked) throw new ForbiddenException(['account_blocked']);
-  return { category: user.category, emailVerifiedAt: user.emailVerifiedAt };
+  return {
+    category: user.category,
+    emailVerifiedAt: user.emailVerifiedAt,
+    demo: user.demoBatchId !== null,
+  };
 }
 
 /**
@@ -37,11 +43,16 @@ export async function hasPaidRegistration(prisma: PrismaService, userId: string)
   return registration?.payment.status === 'paid';
 }
 
-/** A student sees published exams for everyone or for their own category (EXAM-PLAN D1). */
+/**
+ * A student sees published exams for everyone or for their own category (EXAM-PLAN D1). Demo data never mixes with real
+ * data (DECISIONS 2026-11-08 "Demo data"): a demo exam only for demo accounts, a real exam only for real ones, so
+ * removing the demo can never take a real attempt with it.
+ */
 export const visibleTo = (
   config: ExamConfig | null,
-  category: Category | null,
+  student: Pick<StudentAccount, 'category' | 'demo'>,
 ): config is ExamConfig =>
   config !== null &&
   config.status === 'published' &&
-  (config.category === null || config.category === category);
+  (config.demo ?? false) === student.demo &&
+  (config.category === null || config.category === student.category);

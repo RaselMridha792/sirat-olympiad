@@ -40,8 +40,11 @@ export class LeaderboardController {
 
   /** Any signed-in user: rank, name and institution only, and only once published (owner Q5). */
   @Get('leaderboard')
-  leaderboard(@Query() query: LeaderboardQueryDto): Promise<ExamLeaderboard> {
-    return this.results.leaderboard(query);
+  leaderboard(
+    @Query() query: LeaderboardQueryDto,
+    @CurrentUser() user: AuthUser,
+  ): Promise<ExamLeaderboard> {
+    return this.results.leaderboard(query, user.id);
   }
 
   @Get('admin/leaderboard')

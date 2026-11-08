@@ -138,6 +138,8 @@ export async function ensureRole(db: Db): Promise<void> {
  *  - `pg_restore --clean` over a live schema re-creates each table under the default privileges, so sirat_app gets
  *    UPDATE and DELETE on the append-only tables and every right on `_prisma_migrations`;
  *  - a migration merged later but named earlier runs after the runtime-role migration on an existing database.
+ * The demo registry (DECISIONS 2026-11-08 "Demo data"): the loader adds rows, and only demo_clear (as the owner)
+ * removes them, so sirat_app keeps no UPDATE or DELETE on demo_records and no DELETE on demo_batches.
  */
 export async function assertRestrictions(db: Db): Promise<void> {
   await db.$executeRawUnsafe(`
@@ -159,6 +161,12 @@ export async function assertRestrictions(db: Db): Promise<void> {
       LOOP
         EXECUTE format('REVOKE UPDATE, DELETE ON TABLE public.%I FROM ${RUNTIME_ROLE}', t.relname);
       END LOOP;
+      IF to_regclass('public."demo_records"') IS NOT NULL THEN
+        REVOKE UPDATE, DELETE ON TABLE "demo_records" FROM ${RUNTIME_ROLE};
+      END IF;
+      IF to_regclass('public."demo_batches"') IS NOT NULL THEN
+        REVOKE DELETE ON TABLE "demo_batches" FROM ${RUNTIME_ROLE};
+      END IF;
     END
     $$`);
 }

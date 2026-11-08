@@ -9,6 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { type Job, UnrecoverableError, Worker } from 'bullmq';
 import Redis from 'ioredis';
+import { isDemoEmail } from '@sirat/shared';
 import type { EnvVars } from '../../config/env';
 import { QUEUE_REDIS_OPTIONS } from '../../redis/redis.module';
 import {
@@ -31,7 +32,7 @@ export const EMAIL_CONCURRENCY = 5;
 export class EmailWorker implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(EmailWorker.name);
   private connection?: Redis;
-  private worker?: Worker<EmailJobData>;
+  private worker?: Worker<EmailJobData, 'sent' | 'dropped'>;
 
   constructor(
     @Inject(EMAIL_PROVIDER) private readonly provider: EmailProvider,
@@ -44,13 +45,17 @@ export class EmailWorker implements OnModuleInit, OnApplicationShutdown {
       ...QUEUE_REDIS_OPTIONS,
     });
     this.connection.on('error', () => undefined); // BullMQ reconnects; job failures are logged below
-    this.worker = new Worker<EmailJobData>(this.queueName, (job) => this.process(job), {
-      connection: this.connection,
-      concurrency: EMAIL_CONCURRENCY,
-    });
-    this.worker.on('completed', (job) =>
+    this.worker = new Worker<EmailJobData, 'sent' | 'dropped'>(
+      this.queueName,
+      (job) => this.process(job),
+      {
+        connection: this.connection,
+        concurrency: EMAIL_CONCURRENCY,
+      },
+    );
+    this.worker.on('completed', (job, result) =>
       this.logger.log({
-        msg: 'email sent',
+        msg: result === 'dropped' ? 'email to a demo account dropped' : 'email sent',
         kind: job.name,
         jobId: job.id,
         attempt: job.attemptsMade,
@@ -71,13 +76,16 @@ export class EmailWorker implements OnModuleInit, OnApplicationShutdown {
   }
 
   /** Exposed for tests; BullMQ calls it for every job. */
-  async process(job: Job<EmailJobData>): Promise<void> {
+  async process(job: Job<EmailJobData>): Promise<'sent' | 'dropped'> {
+    // Never to a demo account (DECISIONS 2026-11-08 "Demo data"), whoever queued it.
+    if (isDemoEmail(job.data.message.to)) return 'dropped';
     try {
       await this.provider.send(job.data.message, job.id ?? `${job.name}.${job.timestamp}`);
     } catch (e) {
       if (e instanceof PermanentEmailError) throw new UnrecoverableError(e.message);
       throw e;
     }
+    return 'sent';
   }
 
   isRunning(): boolean {

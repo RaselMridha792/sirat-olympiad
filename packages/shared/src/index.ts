@@ -73,3 +73,4 @@ export * from './registration';
 export * from './book';
 export * from './exam';
 export * from './core';
+export * from './demo';

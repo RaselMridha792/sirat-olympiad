@@ -13,6 +13,7 @@
  * audit row records it. An existing email is refused, never changed. Prints the new user id only.
  */
 import { Prisma, PrismaClient, Role } from '@prisma/client';
+import { isDemoEmail } from '@sirat/shared';
 import { passwordProblem } from '../modules/auth/password-policy';
 import { PasswordService } from '../modules/auth/password.service';
 
@@ -72,7 +73,8 @@ export function parseArgs(argv: readonly string[]): AdminArgs {
   const email = (values.email ?? '').trim().toLowerCase();
   const name = (values.name ?? '').trim();
   if (!email || !name) throw new AdminCliError(USAGE, 2);
-  if (!EMAIL.test(email) || email.length > 254)
+  // The demo data's marker domain is never a real admin's (DECISIONS 2026-11-08 "Demo data"; users_demo_email_check).
+  if (!EMAIL.test(email) || email.length > 254 || isDemoEmail(email))
     throw new AdminCliError('That is not a valid email address.');
   if (name.length > 100) throw new AdminCliError('The name must be at most 100 characters.');
   return { email, name, passwordStdin };

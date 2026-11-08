@@ -49,6 +49,11 @@ export class EnvVars {
   @IsInt() @Min(10) @Max(10_000) API_LIMIT_PER_USER_PER_MINUTE: number = 120;
   /** Session cookies carry `Secure` unless this is 'false' (local plain-http development only; refused in production). */
   @IsIn(['true', 'false']) COOKIE_SECURE: string = 'true';
+  /**
+   * Demo data (DECISIONS 2026-11-08): load allowed only while 'true' (dev, and the VPS before launch). An env var, so a
+   * compromised admin session cannot turn it on; prelaunch-check fails while it is 'true' or any demo row exists.
+   */
+  @IsIn(['true', 'false']) DEMO_DATA_ALLOWED: string = 'false';
 
   // Login limits (owner, 2026-10-31). Only failed logins count.
   /** Failed logins per minute from one IP, all accounts together (owner: about 60-100; a school shares one IP). */
@@ -120,6 +125,8 @@ export class EnvVars {
   @IsOptional() @Matches(/^[A-Za-z0-9_-]{1,64}$/) AMBASSADOR_QUEUE_NAME?: string;
   /** Tests only: a run's own certificates queue (the issue job). Blank: "certificates". */
   @IsOptional() @Matches(/^[A-Za-z0-9_-]{1,64}$/) CERTIFICATES_QUEUE_NAME?: string;
+  /** Tests only: a run's own demo data queue (load and remove). Blank: "demo". */
+  @IsOptional() @Matches(/^[A-Za-z0-9_-]{1,64}$/) DEMO_QUEUE_NAME?: string;
 }
 
 const MIN_SECRET_LENGTH = 32;
