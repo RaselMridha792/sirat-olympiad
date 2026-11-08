@@ -478,7 +478,7 @@ async function phase2Graph() {
   const video = await prisma.round.create({
     data: {
       name: 'DEMO - Video round',
-      sortOrder: 8,
+      sortOrder: 101,
       type: 'video',
       opensAt: new Date(now - 72 * HOUR),
       closesAt: new Date(now - 24 * HOUR),
@@ -487,7 +487,7 @@ async function phase2Graph() {
     },
   });
   const final = await prisma.round.create({
-    data: { name: 'DEMO - Final', sortOrder: 9, type: 'final', demoBatchId: batchId },
+    data: { name: 'DEMO - Final', sortOrder: 102, type: 'final', demoBatchId: batchId },
   });
   await register(batchId, 'rounds', [video.id, final.id]);
   const intoVideo = await prisma.promotionRun.create({
@@ -647,6 +647,18 @@ describe('demo_clear v3: demo tasks and demo rounds (phase 2)', () => {
     await expect(
       prisma.$executeRaw`UPDATE "rounds" SET "demo_batch_id" = ${g.batch.id}::uuid WHERE "id" = ${g.from.id}::uuid`,
     ).rejects.toThrow(/demo_marker_immutable/);
+  });
+
+  it('keeps demo rounds in 101-110 and real rounds in 1-10, so the two never meet on sort_order (A2)', async () => {
+    const g = await phase2Graph();
+    await expect(
+      prisma.round.create({
+        data: { name: 'DEMO - Low', sortOrder: 7, type: 'final', demoBatchId: g.batch.id },
+      }),
+    ).rejects.toThrow(/rounds_sort_order_check/);
+    await expect(
+      prisma.round.create({ data: { name: 'Real high', sortOrder: 103, type: 'final' } }),
+    ).rejects.toThrow(/rounds_sort_order_check/);
   });
 
   it('keeps real certificate serials out of the demo range: the sequence stops at 899999', async () => {

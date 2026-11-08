@@ -4,6 +4,8 @@
 -- demo_clear v3 removes demo tasks and demo rounds after everything that hangs off them, and refuses (deleting nothing)
 -- while a real row sits on a demo task or a demo round. A promotion run from or into a demo round is a demo run.
 -- certificate_serial_seq stops at 899999: demo certificates use SLO-YYYY-9NNNNN, which a real serial never reaches.
+-- Demo rounds order among themselves in 101-110, real rounds keep 1-10 (A2's review): the two sides never meet on the
+-- unique sort_order, and "the next round" or "max + 1" over real rounds can never land on a demo one.
 
 CREATE TRIGGER "admin_tasks_demo_marker_immutable" BEFORE UPDATE OF "demo_batch_id" ON "admin_tasks"
   FOR EACH ROW EXECUTE FUNCTION "demo_marker_immutable"();
@@ -219,3 +221,8 @@ END
 $$;
 
 ALTER SEQUENCE "certificate_serial_seq" MAXVALUE 899999;
+
+ALTER TABLE "rounds" DROP CONSTRAINT "rounds_sort_order_check",
+  ADD CONSTRAINT "rounds_sort_order_check" CHECK (
+    ("demo_batch_id" IS NULL AND "sort_order" BETWEEN 1 AND 10)
+    OR ("demo_batch_id" IS NOT NULL AND "sort_order" BETWEEN 101 AND 110));
