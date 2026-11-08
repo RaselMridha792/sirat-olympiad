@@ -1,12 +1,13 @@
 import type { Metadata } from 'next';
 import { Prose } from '@sirat/ui';
-import { publicPath, site, type PublicPage } from '@/content/site';
+import { POLICY_PAGES, publicPath, site, type PublicPage } from '@/content/site';
 import type { Locale } from '@/i18n';
 import { formatDate } from '@/i18n/format';
 import { pick } from '@/i18n/messages';
 import { aboutMessages } from '@/i18n/messages/about';
 import { homeMessages } from '@/i18n/messages/home';
 import { legalMessages } from '@/i18n/messages/legal';
+import { pagesMessages } from '@/i18n/messages/pages';
 import { withHonorificText } from './home/home-view';
 import { PublicShell } from './PublicShell';
 
@@ -16,7 +17,11 @@ import { PublicShell } from './PublicShell';
  * components/public/home/; the policy pages render their texts from i18n/messages/legal.ts here.
  */
 
-type LegalPage = Exclude<PublicPage, 'home' | 'about'>;
+type LegalPage = (typeof POLICY_PAGES)[number];
+type TopicPage = 'participate' | 'rounds' | 'prizes' | 'syllabus';
+
+const isTopic = (page: PublicPage): page is TopicPage =>
+  page === 'participate' || page === 'rounds' || page === 'prizes' || page === 'syllabus';
 
 /** Title, description, hreflang alternates, and noindex while any text is a placeholder. */
 export function publicMetadata(page: PublicPage, locale: Locale): Metadata {
@@ -33,10 +38,15 @@ export function publicMetadata(page: PublicPage, locale: Locale): Metadata {
             title: `${pick(aboutMessages, locale).title} | ${name}`,
             description: pick(aboutMessages, locale).metaDescription,
           }
-        : {
-            title: `${pick(legalMessages, locale)[page].title} | ${name}`,
-            description: pick(legalMessages, locale)[page].metaDescription,
-          };
+        : isTopic(page)
+          ? {
+              title: `${pick(pagesMessages, locale)[page].title} | ${name}`,
+              description: pick(pagesMessages, locale)[page].metaDescription,
+            }
+          : {
+              title: `${pick(legalMessages, locale)[page].title} | ${name}`,
+              description: pick(legalMessages, locale)[page].metaDescription,
+            };
   return {
     title: { absolute: title },
     description,

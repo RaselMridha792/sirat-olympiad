@@ -890,7 +890,7 @@ select r.name, c.type, count(*) filter (where c.revoked_at is null) as valid, co
 SQL
 ```
 
-## 24. Public homepage and About: changing a fact (draft, 2026-11-03)
+## 24. The public site: changing a fact (draft, 2026-11-03; multi-page 2026-11-08)
 
 The homepage (`/`, `/en`) and About (`/about`, `/en/about`) are static pages built from files, so a change needs a release (they are not admin settings). The fee and whether registration is open are the exception: they come from the admin's registration settings, and the pages pick them up within 60 s.
 
@@ -899,6 +899,8 @@ The homepage (`/`, `/en`) and About (`/about`, `/en/about`) are static pages bui
 | The name or the season line | `apps/web/src/content/site.ts` (`name.bn`, `name.en`, `season`) | Every public page, the page titles and the legal texts read it |
 | The honorific | `apps/web/src/i18n/messages/home.ts` (`brand.honorific`, bn and en) | ﷺ now; the plain forms are "(সা.)" and "(pbuh)" |
 | Dates, the knockout method, the qualifiers, the social links | `apps/web/src/content/home.ts` | Dates are Dhaka calendar days; `null` means "to be announced" |
+| The prize counts per group and the total value | `content/home.ts` `prizes` (`poolTaka: null` hides the total) | The old site's figures, to confirm |
+| The pages in the header menu and the footer | `apps/web/src/content/site.ts` (`MENU_PAGES`) | A page there needs its route under `app/(marketing)/` and `en/` |
 | The album link | `content/home.ts` `albumUrl` | Empty hides the button; only an `https://` link is shown |
 | Offline centres | `content/home.ts` `offline: true` | Only once the client confirms them; the text is in `home.ts` |
 | The advisory board and the convenor team | `apps/web/src/content/about.ts` (`team.show`, the names and roles) | Both stay hidden while `show` is false or a list is empty |

@@ -35,45 +35,8 @@ Source of truth: `apps/api/prisma/schema.prisma` (validated; see note at bottom)
 | `pending_registrations` one `open` attempt per email and per phone (partial unique indexes) | No double charge from two browsers (owner, DECISIONS "No refund handling") |
 | `users UNIQUE(phone)` (NULL allowed) and `phone ~ '^01[3-9][0-9]{8}$'` on `users` and `pending_registrations` | One phone number, one student, in one stored form (owner) |
 | `payments` status transitions follow the state machine; a new row is `initiated`; `refunded` is never entered (trigger) | A stale answer never downgrades `paid`; no refund handling (owner) |
-| `payments` CHECKs: whole taka, `currency = 'BDT'`, paid ⇒ `paid_amount_minor = amount_minor`, invoice `^[A-Z0-9]{10,20}# 05 — Database
-
-Source of truth: `apps/api/prisma/schema.prisma` (validated; see note at bottom). PostgreSQL 17 behind PgBouncer (transaction pooling).
-
-## Conventions
-
-* Migrations only. Never edit the schema by hand on the server. A fresh environment must be rebuildable from the repo alone.
-* UUID primary keys, `created_at`/`updated_at` as `timestamptz` (UTC). Admin UI displays Asia/Dhaka.
-* Money = integer minor units + currency code. Never floats.
-* Real FKs, `NOT NULL`, `UNIQUE`, `CHECK`. Multi-step writes (payment confirmation, registration, submission, promotion) are transactions.
-* Every FK and every hot-path `WHERE/ORDER BY` column has an index; verify with `EXPLAIN ANALYZE`.
-
-## Tables (by area)
-
-| Area | Tables | Notes |
-|---|---|---|
-| Identity | `users`, `sessions`, `auth_tokens`, `audit_logs` | `sessions` = refresh families (rotation + reuse detection). Tokens stored as hashes |
-| Config | `grade_levels`, `settings`, `rank_thresholds` | Grade→category mapping and runtime settings are DATA |
-| Payments | `pending_registrations` (one registration attempt), `payments` (N per attempt), `registrations`, `payment_events` | One paid payment ↔ one registration; the form lives server-side in the attempt; `payment_events` is append-only (plan: `docs/plans/PAYMENTS-PLAN.md` section 4) |
-| Exams | `exams`, `questions`, `attempts`, `submissions`, `leaderboard_entries`, `answer_key_corrections` | `attempts` UNIQUE(user, exam); `submissions` idempotent and append-only; `questions` = one row per version; `leaderboard_entries` = the results snapshot (EXAM-PLAN D8); `answer_key_corrections` = append-only key corrections after publish, the newest per question is the key in effect (E7b) |
-| Rounds | `rounds`, `round_entries`, `jury_scores`, `certificates` | Data-driven rounds; append-only jury history |
-| Ambassadors | `ambassador_profiles`, `point_ledger`, `teams`, `team_members`, `admin_tasks`, `task_assignments` | Ledger append-only |
-| Content | `announcements` | |
-| Free book | `book_orders` (one per paid student), `book_images` (covers, bytea) | `book_orders` UNIQUE(user_id) and a composite FK `(registration_id, user_id)` → `registrations (id, user_id)`: an order only for the student's own paid registration. CHECKs: the phone, the 64 districts (the same list as `BD_DISTRICTS`, pinned by `districts-check.spec.ts`), lengths, shipped ⇔ `shipped_at` and `shipped_by`. Trigger `book_orders_locked_after_shipping`: a new order starts `confirmed`; once `shipped` nothing changes. `book_images` CHECKs: JPEG/PNG/WebP, ≤ 800 KB, 100–4000 px, sha256. Migrations `*_book_orders` + `*_book_checks` (PAYMENTS-PLAN §16.2) |
-
-## Constraints that MUST exist (asserted by `apps/api/test/db-constraints.int-spec.ts`)
-
-| Constraint | Why |
-|---|---|
-| `attempts UNIQUE(user_id, exam_id)` | One attempt per student; timer cannot be reset |
-| `submissions UNIQUE(attempt_id)`, `UNIQUE(request_id)` | Idempotent final submit |
-| `payments UNIQUE(invoice_number)`, `UNIQUE(trx_id)` | No reused invoice; no double-applied transaction |
-| `registrations UNIQUE(user_id)`, `UNIQUE(payment_id)` | One payment ↔ one registration |
-| `payments` one active (`initiated`/`pending`) payment per attempt (partial unique index) | "Try again" never runs two checkouts at once |
-| `pending_registrations` one `open` attempt per email and per phone (partial unique indexes) | No double charge from two browsers (owner, DECISIONS "No refund handling") |
-| `users UNIQUE(phone)` (NULL allowed) and `phone ~ '^01[3-9][0-9]{8}$'` on `users` and `pending_registrations` | One phone number, one student, in one stored form (owner) |
-| `payments` status transitions follow the state machine; a new row is `initiated`; `refunded` is never entered (trigger) | A stale answer never downgrades `paid`; no refund handling (owner) |
-, `trx_id <> ''`, account label format | Raw SQL (`*_payments_checks`) |
-| `payments.gateway_env` in (`sandbox`, `live`, `fake`, `demo`): the PayStation environment at start, or demo data | Raw SQL (`*_payments_gateway_env`); start always writes `PAYSTATION_ENV`; the demo loader refuses a database with a paid `live` row |
+| `payments` CHECKs: whole taka, `currency = 'BDT'`, paid ⇒ `paid_amount_minor = amount_minor`, invoice `^[A-Z0-9]{10,20}$`, `trx_id <> ''`, account label format | Raw SQL (`*_payments_checks`) |
+| `payments.gateway_env` in (`sandbox`, `live`, `fake`, `demo`): the PayStation environment at start, or demo data | Raw SQL (`*_payments_gateway_env`); start always writes `PAYSTATION_ENV`; no default after the backfill, so a write that forgets it fails; the demo loader refuses a database with a paid `live` row |
 | `pending_registrations` CHECK: `completed` ⇔ `user_id` and `completed_at` set | Raw SQL |
 | `payment_events` append-only (UPDATE, DELETE, TRUNCATE refused); `payment_id` deliberately not a FK, like `audit_logs.actor_id` | The gateway log keeps unknown invoices and is never blocked by payment rows |
 | `settings` CHECK: `registration_fee_minor` is a positive whole-taka number | Raw SQL; the fee is 40000 (owner) |

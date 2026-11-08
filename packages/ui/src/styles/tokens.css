@@ -1,7 +1,8 @@
 /*
  * GLOBAL DESIGN TOKENS — single source of truth for colors, fonts, radii.
- * Brand colors are carried over from the previous site (Primary #E3621C orange, Secondary #083E5F navy).
- * Change a color HERE, never hardcode hex in components. See docs/08-DESIGN-TOKENS.md.
+ * Brand: the Sirat Olympiad colours the client gave (owner, 2026-11-08; the scales are the client's old site's, to
+ * confirm): green and gold. Change a colour HERE, never in a component: apps/web/src/design/no-raw-colours.test.ts
+ * fails on any hex, rgb/hsl/oklch literal or default palette class elsewhere. See docs/08-DESIGN-TOKENS.md.
  * Tailwind v4: tokens declared in @theme become utilities (bg-primary, text-ink, ...).
  */
 @theme {
@@ -11,19 +12,49 @@
    * buttons use the -strong variants, which reach 4.5:1 on white and on their -soft background.
    */
 
-  /* Brand */
-  --color-primary: #e3621c;
-  --color-primary-hover: #c95416;
-  --color-primary-soft: #fdeee5;
-  --color-primary-strong: #b4470f; /* small text, filled buttons (owner decision 2026-10-31) */
-  --color-primary-strong-hover: #963a0b;
-  --color-secondary: #083e5f;
-  --color-secondary-hover: #062f48;
-  --color-secondary-soft: #e6eff5;
+  /* Brand scales (the client's). Components never use these directly: they use the semantic names below. */
+  --color-green-50: #eaf6f0;
+  --color-green-100: #d0ebe0;
+  --color-green-200: #a3d7c2;
+  --color-green-300: #6cbd9d;
+  --color-green-400: #38a077;
+  --color-green-500: #0f8a5c;
+  --color-green-600: #007a48;
+  --color-green-700: #00623b;
+  --color-green-800: #044e31;
+  --color-green-900: #06402a;
+  --color-green-950: #021c12;
+  --color-gold-50: #fef8ec;
+  --color-gold-100: #fcedcb;
+  --color-gold-200: #f8d992;
+  --color-gold-300: #f4c159;
+  --color-gold-400: #f1ad33;
+  --color-gold-500: #ed9d19;
+  --color-gold-600: #d2820f;
+  --color-gold-800: #8a5a05;
 
-  /* Neutral / surfaces (admin & dashboard shell used #0f172a sidebar, #f8fafc page) */
-  --color-shell: #0f172a;
-  --color-shell-soft: #1e293b;
+  /* Brand, semantic. Primary is the client's green: white on it reads 5.4:1, so it fills buttons too. */
+  --color-primary: var(--color-green-600);
+  --color-primary-hover: var(--color-green-700);
+  --color-primary-soft: var(--color-green-50);
+  --color-primary-strong: var(--color-green-700); /* small text, filled buttons */
+  --color-primary-strong-hover: var(--color-green-800);
+  --color-secondary: var(--color-green-800); /* links, dark cards */
+  --color-secondary-hover: var(--color-green-900);
+  --color-secondary-soft: var(--color-green-100);
+  /*
+   * Accent: the client's gold. A light colour: never text on white (only accent-strong is), and dark text on a gold
+   * fill (ink on gold reads 8:1). On the deep-green shell, gold is the text colour for kickers and icons (8.1:1),
+   * where the green primary would read only 3.3:1.
+   */
+  --color-accent: var(--color-gold-500);
+  --color-accent-hover: var(--color-gold-600);
+  --color-accent-soft: var(--color-gold-50);
+  --color-accent-strong: var(--color-gold-800); /* gold text on white and on accent-soft */
+
+  /* Neutral / surfaces. The shell (headers, heroes, the dashboard sidebar) is the brand's deep green. */
+  --color-shell: var(--color-green-950);
+  --color-shell-soft: var(--color-green-900);
   --color-page: #f8fafc;
   --color-surface: #ffffff;
   --color-line: #e2e8f0;

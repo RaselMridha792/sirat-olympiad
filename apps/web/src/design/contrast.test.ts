@@ -11,17 +11,26 @@ const AA = 4.5;
 const uiSrc = fileURLToPath(new URL('../../../../packages/ui/src/', import.meta.url));
 const webSrc = fileURLToPath(new URL('../', import.meta.url));
 
+const TOKENS_CSS = readFileSync(join(uiSrc, 'styles/tokens.css'), 'utf8');
 const COLORS: Record<string, string> = {
   white: '#ffffff',
   black: '#000000',
   ...Object.fromEntries(
-    [
-      ...readFileSync(join(uiSrc, 'styles/tokens.css'), 'utf8').matchAll(
-        /--color-([\w-]+):\s*(#[0-9a-f]{6})\s*;/gi,
-      ),
-    ].map((m) => [m[1] as string, (m[2] as string).toLowerCase()]),
+    [...TOKENS_CSS.matchAll(/--color-([\w-]+):\s*(#[0-9a-f]{6})\s*;/gi)].map((m) => [
+      m[1] as string,
+      (m[2] as string).toLowerCase(),
+    ]),
   ),
 };
+// Semantic tokens refer to the brand scales (`--color-primary: var(--color-green-600)`): resolve them, so a palette
+// swap is an edit of the scales only and this test still checks the result.
+for (const [, name, ref] of TOKENS_CSS.matchAll(
+  /--color-([\w-]+):\s*var\(--color-([\w-]+)\)\s*;/g,
+)) {
+  const hex = COLORS[ref as string];
+  assert.ok(hex, `--color-${name} refers to an unknown --color-${ref}`);
+  COLORS[name as string] = hex;
+}
 
 function color(token: string): string {
   const hex = COLORS[token];
@@ -66,6 +75,7 @@ test('text tokens are readable on cards (surface) and on the page background', (
     'ink-faint',
     'secondary',
     'primary-strong',
+    'accent-strong',
     'success-strong',
     'warning-strong',
     'danger-strong',
@@ -78,6 +88,36 @@ test('text tokens are readable on cards (surface) and on the page background', (
     }
   }
   assert.deepEqual(failures, []);
+});
+
+test('the brand pairs reach AA: white on the greens, ink on gold, gold text, gold on the deep-green shell', () => {
+  const pairs: Array<[fg: string, bg: string]> = [
+    ['white', 'primary'],
+    ['white', 'primary-strong'],
+    ['white', 'primary-strong-hover'],
+    ['white', 'secondary'],
+    ['white', 'shell'],
+    ['white', 'shell-soft'],
+    ['ink', 'accent'],
+    ['ink', 'accent-hover'],
+    ['accent-strong', 'surface'],
+    ['accent-strong', 'page'],
+    ['accent-strong', 'accent-soft'],
+    ['primary-strong', 'primary-soft'],
+    ['secondary', 'secondary-soft'],
+    // Kickers, dates and the active menu item on dark bands are gold, not green (green on the shell is 3.3:1).
+    ['accent', 'shell'],
+  ];
+  const failures = pairs
+    .map(([fg, bg]) => ({ fg, bg, r: ratio(fg, bg) }))
+    .filter(({ r }) => r < AA)
+    .map(({ fg, bg, r }) => `${fg} on ${bg} = ${r.toFixed(2)}:1`);
+  assert.deepEqual(failures, []);
+  // Gold icons and the large quote mark on the dark-green cards: non-text and large text need 3:1 (WCAG 1.4.11,
+  // 1.4.3). Text on those cards stays white.
+  assert.ok(ratio('accent', 'secondary') >= 3, 'accent icons on secondary');
+  // The reason gold, not green, carries text on the shell.
+  assert.ok(ratio('primary', 'shell') < AA);
 });
 
 // Every className string in the UI code that sets both a solid background and a text colour is

@@ -28,6 +28,8 @@ test('roadmap days read in each language, in Dhaka time', () => {
 
 test('offline participation and the team stay hidden until the client confirms them', () => {
   assert.equal(homeFacts.offline, false);
+  // A prize amount is a public promise of money: only once the client confirms it.
+  assert.equal(homeFacts.prizes.poolTaka, null);
   assert.deepEqual(participationModes(homeFacts), ['online']);
   assert.deepEqual(participationModes({ offline: true }), ['online', 'offline']);
   assert.equal(aboutFacts.team.show, false);

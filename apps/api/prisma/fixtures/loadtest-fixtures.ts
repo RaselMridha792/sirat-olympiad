@@ -114,6 +114,7 @@ export async function ensureLoadUsers(
           currency: 'BDT',
           payWithCharge: false,
           gatewayAccount: LOAD_GATEWAY_ACCOUNT,
+          gatewayEnv: 'fake', // load-test money: never a PayStation payment
           expiresAt: now,
         })),
       });

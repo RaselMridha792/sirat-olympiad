@@ -29,10 +29,44 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - the verifier returns `demo` first, with no status call, no event (payment_events is append-only) and no account-mismatch alert;
    - admin re-check and reconcile answer 409 `DEMO_PAYMENT`;
    - payment.config refuses `PAYSTATION_ACCOUNT_LABEL=demo`.
-2. **`payments.gateway_env`** records the PayStation environment at start (`sandbox`, `live`, `fake`) or `demo`. Labels alone cannot tell sandbox money from real money (rasel-sandbox-vps, test-fake, load-fake…). Existing rows became `sandbox`: no payment had ever been started live.
+2. **`payments.gateway_env`** records the PayStation environment at start (`sandbox`, `live`, `fake`) or `demo`. Labels alone cannot tell sandbox money from real money (rasel-sandbox-vps, test-fake, load-fake…). Existing rows became `sandbox`: no payment had ever been started live. The default exists only for that backfill and is dropped in the same migration (lead's fail-closed note): a future write path that forgot the column fails loudly instead of making a live payment look like sandbox money.
 3. **The load guard** (`paymentsAllowDemo`): demo data is refused while `PAYSTATION_ENV=live`, and once a paid `live` payment exists. Sandbox, fake and demo payments never count: none moved money. Registration may stay open (lead).
 4. **The marker email domain** (`DEMO_EMAIL_DOMAIN`, `@demo.sirat.invalid`): the registration form refuses exactly that domain, so a real attempt, and the account its payment makes, can never carry it.
 5. **Demo payments get no events:** `payment_events` cannot be cleared, so demo data never writes to it. A demo "refund" is a paid payment with review reason `refund_reported`; the `refunded` status is never entered.
+
+## 2026-11-08 — The public site is multi-page (owner, via the lead; core)
+
+- **Decision:**
+  - The homepage becomes an overview: the hero, a short intro, a card per topic page, the dated milestones and last season's numbers.
+  - Each topic has its own page, Bangla at `/…` and English at `/en/…`:
+    - `/how-to-take-part`: groups, registration steps, what you get, the exam rules;
+    - `/rounds`: the rounds, the final, the roadmap, results;
+    - `/prizes`: the prizes, the counts per group, certificates;
+    - `/syllabus`: the books, the questions, where to get the books.
+    The second PR adds ambassador, gallery, FAQ and contact.
+  - The header's second row is the main menu (`MENU_PAGES` in content/site.ts, `aria-current` on the page), a native `<details>` "Menu" on phones (no JavaScript needed); the footer is a site map.
+- **Content rules:**
+  - The texts are the client's PDFs, with the old site where the PDFs are silent.
+  - How the system works comes from the system: the exam rules are exam's terms, word for word.
+  - Facts with numbers live in `content/*.ts`; the contested ones are "to confirm" there and listed in the PR. Among them: the prize counts per group and the 12-lakh total, from the old site only.
+  - Not shown, because neither the PDFs nor the system have them: the old site's points-to-cash, its application form, SMS results.
+- **Who:** Rasel (owner, 2026-11-08), passed on by the lead; built by core.
+
+## 2026-11-08 — The client's brand colours, from one place (owner, via the lead; core)
+
+- **Decision:**
+  - The brand is the Sirat Olympiad green and gold. The scales come from the client's old site (green-600 `#007a48`, its theme colour; gold-500 `#ed9d19`), to confirm with the client.
+  - `packages/ui/src/styles/tokens.css` holds the scales and maps them to the semantic tokens:
+    - primary = green-600;
+    - secondary = green-800;
+    - accent = gold-500 (new; `accent-strong` gold-800 for gold text);
+    - shell = green-950.
+    The neutrals stay slate.
+  - On the deep-green shell, text and small icons are gold: green on it reads 3.3:1, gold 8.1:1.
+  - A test fails on any raw colour or palette class outside tokens.css (`apps/web/src/design/no-raw-colours.test.ts`). The contrast test checks every brand pair.
+- **Why:** Rasel asked for the client's colours, controlled globally. The components already used only semantic tokens, so the dashboards follow without code changes.
+- **Not here:** A2's maintenance page and the email templates have their own inline colours (reported; the lead queues them).
+- **Who:** Rasel (owner, 2026-11-08), passed on by the lead; built by core.
 
 ## 2026-11-08 — The admin 2FA requirement is a setting (A2; Rasel's request of 3 Nov, the lead's design)
 
