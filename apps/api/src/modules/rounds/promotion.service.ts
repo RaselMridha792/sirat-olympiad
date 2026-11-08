@@ -121,13 +121,18 @@ export class PromotionService {
       select: { id: true, name: true, type: true, sortOrder: true, closesAt: true },
     });
     if (!from) throw new NotFoundException('Round not found');
+    // Demo rounds follow Round 1 (demo data): a real promotion would move real students into them, and the demo
+    // promotions are the loader's own. None runs while demo rounds exist; the admin removes the demo data first.
+    if (await tx.round.count({ where: { demoBatchId: { not: null } } }))
+      throw conflict('demo_rounds_present');
     const done = await tx.promotionRun.findUnique({
       where: { fromRoundId_category: { fromRoundId: from.id, category: q.category } },
       select: { id: true },
     });
     if (done) throw conflict('already_promoted');
+    // The next real round: a real promotion never moves anyone into a demo round.
     const to = await tx.round.findFirst({
-      where: { sortOrder: { gt: from.sortOrder } },
+      where: { sortOrder: { gt: from.sortOrder }, demoBatchId: null },
       orderBy: { sortOrder: 'asc' },
       select: { id: true, name: true, type: true },
     });
@@ -138,8 +143,10 @@ export class PromotionService {
       const exams = await tx.exam.findMany({
         where: {
           roundId: from.id,
-          // An archived exam is retired: never a promotion source.
+          // An archived exam is retired: never a promotion source. Nor is a demo exam on the real Round 1 (demo data):
+          // a real promotion moves real students only.
           status: 'published',
+          demoBatchId: null,
           OR: [{ category: q.category }, { category: null }],
         },
         select: { id: true, title: true, resultsPublishedAt: true, resultsGeneration: true },

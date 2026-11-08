@@ -29,6 +29,7 @@ const isRoundJury = (v: unknown): v is AdminRoundJury =>
   isRecord(v.round) &&
   text(v.round.id) &&
   text(v.round.name) &&
+  typeof v.round.demo === 'boolean' &&
   Array.isArray(v.assignments) &&
   v.assignments.every(
     (a) =>
@@ -91,7 +92,7 @@ export function adminJury(
       const jury = await getJsonOrNull(get, `/admin/rounds/${id}/jury`, isRoundJury);
       return (
         jury && {
-          round: { id: jury.round.id, name: jury.round.name },
+          round: { id: jury.round.id, name: jury.round.name, demo: jury.round.demo },
           assignments: jury.assignments.map((a) => ({
             id: a.id,
             judge: person(a.judge),

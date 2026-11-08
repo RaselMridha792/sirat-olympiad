@@ -45,7 +45,8 @@ const isRow = (v: unknown): v is AdminCertificateRow =>
   text(v.issuedAt) &&
   textOrNull(v.revokedAt) &&
   textOrNull(v.revokeReason) &&
-  text(v.updatedAt);
+  text(v.updatedAt) &&
+  typeof v.demo === 'boolean';
 
 const isRowPage = (v: unknown): v is Paginated<AdminCertificateRow> =>
   isRecord(v) &&
@@ -107,6 +108,7 @@ export function adminCertificates(get: ApiGet): Pick<DataSource['admin'], 'listC
           revokedAt: r.revokedAt,
           revokeReason: r.revokeReason,
           updatedAt: r.updatedAt,
+          demo: r.demo,
         })),
         page: page.page,
         pageSize: page.pageSize,

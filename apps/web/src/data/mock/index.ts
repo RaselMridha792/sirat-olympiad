@@ -984,7 +984,7 @@ export function createMockSource(state: MockState | null): DataSource {
             if (!round) return null;
             const judges = w.users.filter((u) => u.role === 'jury').slice(0, 3);
             return {
-              round: { id: round.id, name: round.name },
+              round: { id: round.id, name: round.name, demo: false },
               assignments: judges.slice(0, 2).flatMap((u, i) =>
                 (i === 0 ? CATEGORIES : (['activist'] as const)).map((category) => ({
                   id: `ja-${u.id}-${category}`,
@@ -1061,6 +1061,7 @@ export function createMockSource(state: MockState | null): DataSource {
                 revokedAt: i === 3 ? '2026-11-21T06:00:00.000Z' : null,
                 revokeReason: i === 3 ? 'Issued by mistake' : null,
                 updatedAt: '2026-11-20T06:00:00.000Z',
+                demo: false,
               }));
             return paginate(rows, query);
           },
@@ -1095,6 +1096,7 @@ export function createMockSource(state: MockState | null): DataSource {
                         createdAt: r.closesAt ?? at,
                       }))
                     : [],
+                demo: false,
                 createdAt: at,
                 updatedAt: at,
               };
@@ -1112,6 +1114,7 @@ export function createMockSource(state: MockState | null): DataSource {
               owner: { userId: a.user.id, name: a.user.name },
               open: true,
               memberCount: i === 0 ? w.team.memberCount : 3 + (i % 5),
+              demo: false,
               createdAt: a.user.createdAt,
               updatedAt: a.user.createdAt,
             }));
@@ -1136,6 +1139,7 @@ export function createMockSource(state: MockState | null): DataSource {
               owner: { userId: a.user.id, name: a.user.name },
               open: true,
               memberCount: members.length,
+              demo: false,
               createdAt: a.user.createdAt,
               updatedAt: a.user.createdAt,
               members: members.map((u) => ({
@@ -1180,6 +1184,7 @@ export function createMockSource(state: MockState | null): DataSource {
                     approved: status === 'approved' ? 5 : 1,
                     rejected: status === 'rejected' ? 1 : 0,
                   },
+                  demo: false,
                 }),
               );
             return paginate(rows, query);
@@ -1202,6 +1207,7 @@ export function createMockSource(state: MockState | null): DataSource {
                   proof:
                     'Held the session with 32 students. Attendance photo: https://example.org/photo',
                   submittedAt: t.submittedAt ?? t.createdAt,
+                  demo: false,
                 })),
               );
             return paginate(rows, query);
@@ -1241,6 +1247,7 @@ export function createMockSource(state: MockState | null): DataSource {
                   referralCount: a.referralCount,
                   points: a.points,
                   rankName: RANKS.filter((r) => r.minPoints <= a.points).at(-1)?.name ?? null,
+                  demo: false,
                 })),
               query,
             ),

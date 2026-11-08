@@ -83,6 +83,24 @@ const register = (batchId: string, table: string, ids: string[]) =>
     data: ids.map((rowId) => ({ batchId, tableName: table, rowId })),
   });
 
+/**
+ * Writes a row core's side triggers refuse (`*_core_demo_side_triggers`: a task or round entry only on its account's
+ * side), to prove that demo_clear's own blockers and cleanup still hold for such a mix. The trigger is off for this
+ * one transaction only: a failure rolls the DISABLE back with the write.
+ */
+async function pastSideTrigger<T>(
+  table: 'task_assignments' | 'round_entries',
+  write: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  const trigger = `${table}_same_side`;
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(`ALTER TABLE "${table}" DISABLE TRIGGER "${trigger}"`);
+    const out = await write(tx);
+    await tx.$executeRawUnsafe(`ALTER TABLE "${table}" ENABLE TRIGGER "${trigger}"`);
+    return out;
+  });
+}
+
 const clear = async (batchId: string) => {
   const [row] = await prisma.$queryRaw<{ counts: Record<string, number> }[]>`
     SELECT demo_clear(${batchId}::uuid) AS counts`;
@@ -232,9 +250,12 @@ describe('demo_clear', () => {
         createdById: (await anAdmin()).id,
       },
     });
-    const entry = await prisma.roundEntry.create({
-      data: { userId: demo.user.id, roundId: to.id, promotionRunId: run.id },
-    });
+    // Phase 1's shape (a demo account's entry in a real round), which core's side trigger now refuses.
+    const entry = await pastSideTrigger('round_entries', (tx) =>
+      tx.roundEntry.create({
+        data: { userId: demo.user.id, roundId: to.id, promotionRunId: run.id },
+      }),
+    );
     await prisma.juryScore.create({
       data: { entryId: entry.id, judgeId: judge.id, total: 70, criteria: { idea: 70 } },
     });
@@ -642,7 +663,9 @@ describe('demo_clear v3: demo tasks and demo rounds (phase 2)', () => {
     });
     const by = (await anAdmin()).id;
     if (kind === 'real_assignments_on_demo_tasks')
-      await prisma.taskAssignment.create({ data: { taskId: g.task.id, userId: real.id } });
+      await pastSideTrigger('task_assignments', (tx) =>
+        tx.taskAssignment.create({ data: { taskId: g.task.id, userId: real.id } }),
+      );
     if (kind === 'real_points_on_demo_tasks')
       await prisma.pointLedger.create({
         data: {
@@ -655,7 +678,9 @@ describe('demo_clear v3: demo tasks and demo rounds (phase 2)', () => {
         },
       });
     if (kind === 'real_entries_on_demo_rounds')
-      await prisma.roundEntry.create({ data: { userId: real.id, roundId: g.final.id } });
+      await pastSideTrigger('round_entries', (tx) =>
+        tx.roundEntry.create({ data: { userId: real.id, roundId: g.final.id } }),
+      );
     if (kind === 'real_exams_on_demo_rounds')
       await prisma.exam.create({
         data: {

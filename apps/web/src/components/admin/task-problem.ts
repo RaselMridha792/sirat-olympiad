@@ -6,6 +6,7 @@ export type TaskProblem =
   | 'notArchived'
   | 'nothingToUpdate'
   | 'notAmbassador'
+  | 'taskSideMismatch'
   | 'notOpen'
   | 'notSubmitted'
   | 'limit'
@@ -18,6 +19,7 @@ const BY_CODE: Record<string, TaskProblem> = {
   not_archived: 'notArchived',
   nothing_to_update: 'nothingToUpdate',
   not_ambassador: 'notAmbassador',
+  task_side_mismatch: 'taskSideMismatch',
   not_open: 'notOpen',
   not_submitted: 'notSubmitted',
 };

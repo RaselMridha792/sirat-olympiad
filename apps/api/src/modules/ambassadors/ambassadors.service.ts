@@ -147,7 +147,7 @@ export class AmbassadorsService {
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: { user: { select: { name: true, email: true } } },
+        include: { user: { select: { name: true, email: true, demoBatchId: true } } },
       }),
     ]);
     const ids = profiles.map((p) => p.userId);
@@ -179,6 +179,7 @@ export class AmbassadorsService {
           referralCount: referralsOf.get(p.userId) ?? 0,
           points: total,
           rankName: rankOf(total, thresholds).current?.name ?? null,
+          demo: p.user.demoBatchId !== null,
         };
       }),
       page,

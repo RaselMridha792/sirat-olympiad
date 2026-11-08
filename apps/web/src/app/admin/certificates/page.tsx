@@ -13,6 +13,7 @@ import {
 } from '@sirat/ui';
 import { IssueForm } from '@/components/certificates/IssueForm';
 import { RevokeButton } from '@/components/certificates/RevokeButton';
+import { DemoBadge } from '@/components/admin/demo/DemoBadge';
 import { getData } from '@/data';
 import { hrefWith, parseEnum, parsePageQuery, totalPages, type SearchParams } from '@/data/query';
 import { common } from '@/i18n/common';
@@ -92,7 +93,10 @@ export default async function AdminCertificatesPage({
               header: m.admin.table.student,
               render: (r) => (
                 <span>
-                  <span className="font-semibold text-ink">{r.nameOnCertificate}</span>
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-ink">{r.nameOnCertificate}</span>
+                    <DemoBadge demo={r.demo} locale={locale} />
+                  </span>
                   <span className="block text-xs text-ink-muted">{r.user.email}</span>
                 </span>
               ),

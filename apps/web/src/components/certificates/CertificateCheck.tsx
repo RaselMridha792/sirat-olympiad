@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { BadgeCheck, CircleX } from 'lucide-react';
+import { BadgeCheck, CircleX, TriangleAlert } from 'lucide-react';
 import { CERTIFICATE_CODE_PATTERN, type CertificateCheck as Check } from '@sirat/shared';
 import { api, ApiRequestError } from '@/lib/api';
 import type { Locale } from '@/i18n';
@@ -12,7 +12,8 @@ type State =
 
 /**
  * The public check (core C6c-1). The browser calls GET /api/certificates/verify/:code itself, through nginx, so the
- * per-IP limit counts the visitor, not the web server. Only the name and the award ever come back.
+ * per-IP limit counts the visitor, not the web server. Only the name and the award ever come back. A demo certificate
+ * (demo data) says plainly that it is not a real award (lead, 2026-11-09).
  */
 export function CertificateCheck({ locale, code }: { locale: Locale; code: string }) {
   const m = pick(certificatesMessages, locale);
@@ -44,10 +45,20 @@ export function CertificateCheck({ locale, code }: { locale: Locale; code: strin
   if (state.kind === 'valid')
     return (
       <div className="flex flex-col gap-3" aria-live="polite">
-        <p className="flex items-center gap-2 text-lg font-bold text-success-strong">
-          <BadgeCheck aria-hidden="true" size={22} />
-          {m.check.valid}
-        </p>
+        {state.check.demo === false ? (
+          <p className="flex items-center gap-2 text-lg font-bold text-success-strong">
+            <BadgeCheck aria-hidden="true" size={22} />
+            {m.check.valid}
+          </p>
+        ) : (
+          <div className="flex flex-col gap-1">
+            <p className="flex items-center gap-2 text-lg font-bold text-warning-strong">
+              <TriangleAlert aria-hidden="true" size={22} />
+              {m.check.demo}
+            </p>
+            <p className="text-sm text-ink-muted">{m.check.demoHint}</p>
+          </div>
+        )}
         <dl className="grid gap-2 text-sm sm:grid-cols-[auto_1fr] sm:gap-x-4">
           <dt className="text-ink-muted">{m.check.name}</dt>
           <dd className="font-semibold text-ink">{state.check.name}</dd>

@@ -11,6 +11,7 @@ import {
   SearchBox,
 } from '@sirat/ui';
 import { RenameTeamButton } from '@/components/admin/RenameTeamButton';
+import { DemoBadge } from '@/components/admin/demo/DemoBadge';
 import { LinkPendingIcon } from '@/components/LinkPendingIcon';
 import { RouteDialog } from '@/components/RouteDialog';
 import { getData } from '@/data';
@@ -88,7 +89,12 @@ export default async function AdminTeamsPage({
             {
               key: 'team',
               header: m.table.team,
-              render: (t) => <span className="font-semibold text-ink">{t.name}</span>,
+              render: (t) => (
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold text-ink">{t.name}</span>
+                  <DemoBadge demo={t.demo} locale={locale} />
+                </span>
+              ),
             },
             { key: 'owner', header: m.table.owner, render: (t) => t.owner.name },
             {

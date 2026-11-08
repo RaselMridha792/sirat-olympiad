@@ -72,6 +72,7 @@ export class AmbassadorTasksService {
         archivedAt: t.archivedAt?.toISOString() ?? null,
         createdAt: t.createdAt.toISOString(),
         updatedAt: t.updatedAt.toISOString(),
+        demo: t.demoBatchId !== null,
         counts: Object.fromEntries(
           COUNTED.map((s) => [
             s,
@@ -152,6 +153,16 @@ export class AmbassadorTasksService {
         },
       });
       if (eligible !== userIds.length) throw conflict('not_ambassador');
+      // Demo data never mixes with real data (DECISIONS 2026-11-08 "Demo data"): a demo task goes only to demo
+      // ambassadors and a real task only to real ones. One on the other side refuses the whole call; the
+      // task_assignments trigger is the backstop.
+      const otherSide = await tx.user.count({
+        where: {
+          id: { in: userIds },
+          demoBatchId: task.demoBatchId === null ? { not: null } : null,
+        },
+      });
+      if (otherSide > 0) throw conflict('task_side_mismatch');
       const created = await tx.taskAssignment.createMany({
         data: userIds.map((userId) => ({ taskId: id, userId })),
         skipDuplicates: true,
@@ -180,7 +191,7 @@ export class AmbassadorTasksService {
           id: true,
           proofText: true,
           submittedAt: true,
-          task: { select: { id: true, title: true, points: true } },
+          task: { select: { id: true, title: true, points: true, demoBatchId: true } },
           user: { select: { id: true, name: true } },
         },
       }),
@@ -194,6 +205,7 @@ export class AmbassadorTasksService {
         ambassador: { userId: r.user.id, name: r.user.name },
         proof: r.proofText ?? '',
         submittedAt: (r.submittedAt ?? new Date(0)).toISOString(),
+        demo: r.task.demoBatchId !== null,
       })),
       page,
       pageSize,
@@ -293,6 +305,7 @@ function toRow(t: {
   archivedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  demoBatchId: string | null;
 }): AdminTaskRow {
   return {
     id: t.id,
@@ -303,6 +316,7 @@ function toRow(t: {
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
     counts: { assigned: 0, submitted: 0, approved: 0, rejected: 0 },
+    demo: t.demoBatchId !== null,
   };
 }
 

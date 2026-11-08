@@ -98,7 +98,8 @@ const isRow = (v: unknown): v is AdminAmbassadorRow =>
   text(v.createdAt) &&
   count(v.referralCount) &&
   count(v.points) &&
-  textOrNull(v.rankName);
+  textOrNull(v.rankName) &&
+  typeof v.demo === 'boolean';
 
 const isRowPage = (v: unknown): v is Paginated<AdminAmbassadorRow> =>
   isRecord(v) &&
@@ -163,6 +164,7 @@ export function adminAmbassadors(
           referralCount: r.referralCount,
           points: r.points,
           rankName: r.rankName,
+          demo: r.demo,
         })),
         page: page.page,
         pageSize: page.pageSize,
