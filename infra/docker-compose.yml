@@ -155,8 +155,10 @@ services:
       - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
     command: ['postgres', '-c', 'config_file=/etc/postgresql/postgresql.conf']
     healthcheck:
-      # $$ = read the container's own env at runtime, not compose interpolation
-      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      # $$ = read the container's own env at runtime, not compose interpolation. Over TCP, not the socket: on a fresh
+      # volume (a new server's first start, a restore) the image first runs a temporary init server on the socket only,
+      # which pg_isready on the socket reports as ready just before it stops.
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
       interval: 10s
     deploy: { resources: { limits: { cpus: '3', memory: 12G } } }
 
