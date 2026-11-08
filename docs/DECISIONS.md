@@ -25,6 +25,25 @@ One short entry per non-obvious technical or product decision. Newest first. For
   - The web shows the card only to an admin whose session proved the code, and only while 2FA is on; a failed read shows a note in the card, not an error page.
 - **Why:** Rasel wants to test the site before go-live without the code on every admin page, and switch it back on without anyone enrolling again. A setting with an audited, step-up switch keeps that reversible and visible; the prelaunch line keeps it from staying off at launch.
 - **Who:** A2, on the lead's approved design.
+## 2026-11-08 — The repository is public; its history no longer holds reference/ (Rasel; the lead ran the move)
+
+- **Why:** GitHub Actions stopped on the private repository (a failed payment and the spending limit). A public repository runs CI for free.
+- **History:** rewritten with `git filter-branch`, removing `reference/` only: the old Zero Olympiad's code and its bug audit, a third party's live code that must never be public.
+  - Trees are otherwise identical: the same 876 commits, authors and messages, each with a new SHA. Main `ae8b06f` is the old `da934fc` without `reference/`.
+- **Archive:** the old history, its PRs up to #87 and the lead's notes stay in the private `RaselMridha792/sirat-olympiad-archive`.
+- **New numbering:** public PR numbers restart: #1 is the old #87, #2 the old #80, #3 the old #64 (L8).
+- **reference/ is local-only:** git-ignored on main, kept at `G:\sirat-reference` and in the archive. CLAUDE.md's rule stands: a read-only specification, never copied blindly.
+- **Main is protected:**
+  - the four CI checks are required, and a PR;
+  - no force push or deletion;
+  - secret scanning and push protection on;
+  - workflows from fork PRs need approval.
+
+  This supersedes A1 #18, "CI is advisory on main".
+- **Never push an old-history commit.** Before every push: `git merge-base --is-ancestor 7587f2f HEAD` must fail (an old-history commit is the ancestor).
+- **Commit emails are public now.**
+- **The VPS clone** fetches `origin` over https; no deploy key is needed. `bootstrap.sh` clones over https by default; an SSH `BOOTSTRAP_REPO_URL` still makes a read-only deploy key.
+- **Who:** Rasel decided; the lead ran the filter and the move; A2 recorded it.
 
 ## 2026-11-03 — The page CSP is enforced; a checkout's gateway decides its scheme (A2; L3's condition, the lead's proposal A)
 
@@ -73,6 +92,13 @@ One short entry per non-obvious technical or product decision. Newest first. For
 2. **Nothing is written:** no attempt row, no Redis checkpoint, no cache, no audit row (it is a read, like `GET /admin/exams/:id`, which already carries the keys). Each call is a new draw; the page's "Draw again" is a refresh. A test counts attempts, audit rows and `exam:att:*`/`exam:ckpt:*` keys before and after, and checks that the response carries no attempt id, receipt, request id, token or option key.
 3. **A short pool:** a draft shows what it has, with an "n of m questions" note (lead's pick b). A published exam always has its full pool (the publish rule), so a short one is refused like a publish (`question_count`).
 4. **The web reuses the student's look:** `QuestionCard` and the question-number list moved out of `ExamRoom.tsx` first, as a refactor with no behaviour change. The preview has no controller, timer, checkpoint, submit or violation listeners. "Show answers" is off by default and shows the correct option on its own line, so the student card is not changed for it.
+
+## 2026-11-01 — PayStation sandbox on the production VPS, once, before launch (Rasel; payments, lead)
+
+1. **A one-time exception to PAYMENTS-PLAN D8 and §13.1** (sandbox payments never on the production database; the test account never points at production). Rasel gave the go so that the sandbox could be tested through the real nginx, TLS and a public HTTPS callback.
+2. **The condition:** the production database is started again from an empty volume at the launch deploy, which the owner confirms then because it is destructive (RUNBOOK §9 has the check).
+3. **Marked test data:** the account label `rasel-sandbox-vps`, `TV…` invoices, and `TEST SBX nn` students with `@test.invalid` addresses and the agreed phone list. Never deleted by hand.
+4. **Results** in `docs/paystation/SANDBOX-E2E.md` and the checklist. Rasel's pre-KYC panel has no IPN URL field, so the IPN (S9, S20) remains for the client's account.
 
 ## 2026-11-01 — Certificates without the PDF (core C6c-1; the C6 plan, the lead's notes, owner Q4 defaults)
 

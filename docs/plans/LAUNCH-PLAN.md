@@ -93,7 +93,7 @@ L12 is `bootstrap.sh` + `prelaunch-check.sh` + RUNBOOK §9 (4–5 h). In all: 14
   - a `deploy` user, SSH keys only, no root login;
   - the firewall in the provider panel or as DOCKER-USER rules, because UFW does not filter Docker-published ports;
   - fail2ban, chrony, security updates without automatic reboot, swap, `vm.overcommit_memory=1`;
-  - a clone with a read-only deploy key, and the release file;
+  - a clone over https (the repository is public since 2026-11-08), and the release file;
   - `.env` from the example at mode 600, for the owner to type the secrets into;
   - the backup and monitor timers, the root-owned `sirat-backup.service`, and the one sudo rule that lets `deploy` start it.
 
@@ -488,7 +488,7 @@ Each question has a default; the work goes ahead on the default until Rasel answ
 4. **Production access and deploys.**
    Default:
    - **Access:** a non-root `deploy` user with SSH keys for Rasel and one named backup person; root login and passwords off.
-   - **Deploys:** run by Rasel, or by the lead session while Rasel watches. Sessions never read the VPS `.env`. A read-only GitHub deploy key on the VPS, plus a read-only token so `deploy.sh` can check CI for the exact commit.
+   - **Deploys:** run by Rasel, or by the lead session while Rasel watches. Sessions never read the VPS `.env`. The VPS clones the public repository over https (no deploy key since 2026-11-08), with a read-only token so `deploy.sh` can check CI for the exact commit.
    - **Images:** built on the VPS from the commit CI passed, with SHA tags for rollback. RULEBOOK §14 has the deploy script build, while §18 says "CI deploys a build artifact"; a registry would cost money, so a CI-built artifact comes after launch (a DECISIONS entry).
    - **The deploy gap** (RULEBOOK §14 asks for new containers first, then a traffic switch): at launch `deploy.sh` restarts the replicas in place, 10–20 s, off-peak behind the maintenance page. Zero-downtime switching comes after launch.
    - **Freeze:** 48 h, from Fri 13 Nov 00:00 (RULEBOOK §13). It ends payments' non-critical deploys on Thu 12 instead of Sat 14 (`PAYMENTS-PLAN.md` §10.3). Configuration-only switches (the PayStation live account, the SES keys) and critical fixes still go ahead. After launch, deploys run between 00:00 and 07:00 Asia/Dhaka.
