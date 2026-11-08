@@ -467,10 +467,14 @@ export class RegistrationService {
       );
   }
 
-  /** The referring ambassador: an approved promo code (case-insensitive). */
+  /**
+   * The referring ambassador: an approved promo code (case-insensitive). A demo account's code counts as unknown: a
+   * real form pointing at demo data would block the one-click demo removal (demo_clear_blocked). The marker never
+   * changes (exam's demo_marker_immutable trigger), so this check at start is enough.
+   */
   private async referrer(promoCode: string): Promise<string> {
     const profile = await this.prisma.ambassadorProfile.findFirst({
-      where: { promoCode, approvedAt: { not: null } },
+      where: { promoCode, approvedAt: { not: null }, user: { demoBatchId: null } },
       select: { userId: true },
     });
     if (!profile)

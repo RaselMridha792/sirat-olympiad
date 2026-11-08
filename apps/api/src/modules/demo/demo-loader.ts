@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { buildExamResults } from '../attempts/exam-jobs';
+import { paymentsDemoGenerator } from '../payments/demo/payments.demo';
 import { demoRandom, seedOf } from './demo-random';
 import type { DemoContext, DemoGenerator } from './demo.types';
 import { announcementsDemoGenerator } from './generators/announcements.demo';
@@ -8,12 +9,13 @@ import { usersDemoGenerator } from './generators/users.demo';
 
 /**
  * Every area's generator (DECISIONS 2026-11-08 "Demo data"). The framework orders them by dependsOn; an area added
- * later only appends itself here. Payments adds its registrations, payments and book orders (PR C).
+ * later only appends itself here. Payments adds its attempts, payments, registrations and book orders.
  */
 export const DEMO_GENERATORS: readonly DemoGenerator[] = [
   usersDemoGenerator,
   examsDemoGenerator,
   announcementsDemoGenerator,
+  paymentsDemoGenerator,
 ];
 
 /** The generators in dependency order (each after everything it depends on); throws on a cycle or a missing area. */

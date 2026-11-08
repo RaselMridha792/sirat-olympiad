@@ -135,7 +135,7 @@ The web refuses any other scheme, a relative URL and an unknown gateway. An answ
   - `START_IN_PROGRESS`: a parallel submit is still being prepared.
 - **The same browser** (its `sirat_reg`), with a payment in progress for the same email, gets that checkout back: 201, no second payment.
 - **The same `startRequestId` again** (a double click, a lost response): the same payment, with a fresh cookie token. Used with another email: 400 `START_REQUEST_REUSED`.
-- **400:** a validation error, `GRADE_LEVEL_UNKNOWN`, or `PROMO_INVALID` (only an approved ambassador's code; case-insensitive). An email on the demo marker domain (`DEMO_EMAIL_DOMAIN`, exactly `@demo.sirat.invalid`) is a validation error like any invalid address, so no real registration can look like demo data.
+- **400:** a validation error, `GRADE_LEVEL_UNKNOWN`, or `PROMO_INVALID` (only an approved ambassador's code; case-insensitive; a demo account's code counts as unknown). An email on the demo marker domain (`DEMO_EMAIL_DOMAIN`, exactly `@demo.sirat.invalid`) is a validation error like any invalid address, so no real registration can look like demo data.
 - **429 `TOO_MANY_ATTEMPTS`:** over 10 an hour for one email or phone.
 - **502 `PAYMENT_START_FAILED`:** PayStation refused or did not answer. The payment is `failed`; the cookie is set, so `retry` works.
 - **The payment row** is written before PayStation is called. It snapshots the fee from `settings` (`amount_minor`), the currency, `pay_with_charge = false` and the account label. Its invoice is `PREFIX + yymmdd + 10 random`. The password is stored only as argon2id inside the attempt and cleared at completion.
