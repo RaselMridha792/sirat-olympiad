@@ -244,8 +244,12 @@ export async function publishDemoResults(prisma: PrismaClient, batchId: string):
   let published = 0;
   for (const { id } of exams) {
     if ((await buildExamResults(prisma, id)) !== 'built') continue;
+    // Dated as an admin would have done it: snapshot and publication a few hours after the window closed for
+    // everyone, so they come before the demo's promotions (core's review). Never later than now.
     published += await prisma.$executeRaw`
-      UPDATE "exams" SET "results_published_at" = now()
+      UPDATE "exams" SET
+        "results_snapshot_at" = LEAST(now(), "window_end" + make_interval(secs => "grace_seconds") + interval '3 hours'),
+        "results_published_at" = LEAST(now(), "window_end" + make_interval(secs => "grace_seconds") + interval '6 hours')
       WHERE "id" = ${id}::uuid AND "results_published_at" IS NULL AND "results_snapshot_at" IS NOT NULL`;
   }
   return published;

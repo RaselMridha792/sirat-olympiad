@@ -519,6 +519,21 @@ describe('load, use, remove', () => {
         );
     }
     expect(await prisma.roundEntry.count({ where: { roundId: final!.id } })).toBeGreaterThan(0);
+    // The results came before the first promotion, as the service requires (core's review).
+    const r1Exam = await prisma.exam.findFirstOrThrow({
+      where: { demoBatchId: batchId, roundId: r1!.id },
+      select: { windowEnd: true, resultsSnapshotAt: true, resultsPublishedAt: true },
+    });
+    const firstRun = await prisma.promotionRun.findFirstOrThrow({
+      where: { fromRoundId: r1!.id },
+      orderBy: { createdAt: 'asc' },
+      select: { createdAt: true },
+    });
+    expect(r1Exam.resultsSnapshotAt!.getTime()).toBeGreaterThan(r1Exam.windowEnd.getTime());
+    expect(r1Exam.resultsPublishedAt!.getTime()).toBeGreaterThanOrEqual(
+      r1Exam.resultsSnapshotAt!.getTime(),
+    );
+    expect(r1Exam.resultsPublishedAt!.getTime()).toBeLessThan(firstRun.createdAt.getTime());
 
     // Certificates: the demo serial range only; the public check answers for one like any code.
     const certificates = await prisma.certificate.findMany({
@@ -526,7 +541,8 @@ describe('load, use, remove', () => {
       select: { serial: true, verificationCode: true, type: true },
     });
     expect(new Set(certificates.map((c) => c.type))).toEqual(
-      new Set(['participation', 'promotion', 'winner']),
+      // No winner yet: the demo final is still ahead (every final entry pending).
+      new Set(['participation', 'promotion']),
     );
     for (const c of certificates) expect(c.serial).toMatch(/^SLO-\d{4}-9\d{5}$/);
     const check = await call(

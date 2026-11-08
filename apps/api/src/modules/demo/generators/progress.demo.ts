@@ -55,7 +55,6 @@ export const progressDemoGenerator: DemoGenerator = {
     const scores: Prisma.JuryScoreCreateManyInput[] = [];
     const inVideo: string[] = [];
     const inFinal: string[] = [];
-    const winners: string[] = [];
     const keys = DEFAULT_VIDEO_CRITERIA.map((c) => c.key);
 
     for (const category of CATEGORIES) {
@@ -203,7 +202,6 @@ export const progressDemoGenerator: DemoGenerator = {
           updatedAt: run2At,
         });
       }
-      winners.push(toFinal[0]!.userId);
     }
     if (runs.length === 0) return;
 
@@ -231,7 +229,7 @@ export const progressDemoGenerator: DemoGenerator = {
     );
 
     await ctx.progress('certificates');
-    await certificates(ctx, rounds, board, inVideo, inFinal, winners);
+    await certificates(ctx, rounds, board, inVideo, inFinal);
   },
 };
 
@@ -245,7 +243,8 @@ function upTo<T>(sorted: readonly T[], n: number, tie: (a: T, b: T) => boolean):
 }
 
 /**
- * Participation for the Round 1 field, promotion for the video round and the final, a winner per category; the name
+ * Participation for the Round 1 field, promotion for the video round and the final; no winner, since the final is
+ * still ahead (its entries are pending, core's review); the name
  * copied at issue (certificate-issuer). Serials from the demo range, never certificate_serial_seq.
  */
 async function certificates(
@@ -254,7 +253,6 @@ async function certificates(
   board: readonly { userId: string }[],
   inVideo: readonly string[],
   inFinal: readonly string[],
-  winners: readonly string[],
 ): Promise<void> {
   const users = await ctx.tx.user.findMany({
     where: { demoBatchId: ctx.batchId },
@@ -265,7 +263,7 @@ async function certificates(
   const issuedAt = new Date(ctx.now.getTime() - 3_600_000);
   let serial = DEMO_SERIAL_START;
   const rows: Prisma.CertificateCreateManyInput[] = [];
-  const add = (userId: string, type: 'participation' | 'promotion' | 'winner', roundId: string) =>
+  const add = (userId: string, type: 'participation' | 'promotion', roundId: string) =>
     rows.push({
       id: randomUUID(),
       userId,
@@ -281,7 +279,6 @@ async function certificates(
   for (const b of board) add(b.userId, 'participation', rounds.r1);
   for (const u of inVideo) add(u, 'promotion', rounds.video);
   for (const u of inFinal) add(u, 'promotion', rounds.final);
-  for (const u of winners) add(u, 'winner', rounds.final);
   if (rows.length === 0) return;
   await ctx.tx.certificate.createMany({ data: rows });
   await ctx.register(
