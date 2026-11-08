@@ -650,12 +650,25 @@ describe('load, use, remove', () => {
 
   it('teams never mix: a real account cannot join a demo team, nor a demo account a real team', async () => {
     // The generator made the demo teams; the joiner is a demo student in none of them.
-    // The generator draws 3-10 members per team (a full team is real data too): join the one with the most room.
-    const demoTeam = await prisma.team.findFirstOrThrow({
-      where: { owner: { demoBatchId: batchId } },
-      orderBy: { members: { _count: 'asc' } },
-      select: { id: true, joinCode: true, _count: { select: { members: true } } },
-    });
+    // The generator draws 3-10 members per team (a full team is real data too): join the one with the most room, and
+    // if even that one is full, make room by taking out one member who is not the owner (test data only).
+    const pick = () =>
+      prisma.team.findFirstOrThrow({
+        where: { owner: { demoBatchId: batchId } },
+        orderBy: { members: { _count: 'asc' } },
+        select: { id: true, ownerId: true, joinCode: true, _count: { select: { members: true } } },
+      });
+    let demoTeam = await pick();
+    if (demoTeam._count.members >= TEAM_LIMITS.maxMembers) {
+      const member = await prisma.teamMember.findFirstOrThrow({
+        where: { teamId: demoTeam.id, NOT: { userId: demoTeam.ownerId } },
+        select: { userId: true },
+      });
+      await prisma.teamMember.delete({
+        where: { teamId_userId: { teamId: demoTeam.id, userId: member.userId } },
+      });
+      demoTeam = await pick();
+    }
     expect(demoTeam._count.members).toBeLessThan(TEAM_LIMITS.maxMembers);
     const demoJoiner = await prisma.user.findFirstOrThrow({
       where: { demoBatchId: batchId, role: 'student', teamMember: { none: {} } },
