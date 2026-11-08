@@ -19,19 +19,6 @@ export const homeMessages = defineMessages({
     shell: { skip: 'Skip to main content', footerNav: 'Site links' },
     metaDescription:
       'The country’s largest Sirat event, on the life and ideals of the Messenger of Allah {saw}: groups, syllabus, rounds, prizes and dates.',
-    sectionNav: {
-      label: 'On this page',
-      intro: 'About',
-      groups: 'Groups and fee',
-      syllabus: 'Syllabus',
-      rounds: 'Rounds',
-      prizes: 'Prizes',
-      roadmap: 'Roadmap',
-      highlights: 'Highlights',
-      ambassador: 'Ambassadors',
-      faq: 'FAQ',
-      contact: 'Contact',
-    },
     hero: {
       tagline:
         'The country’s largest Sirat event, on the life and ideals of the Messenger of Allah {saw}',
@@ -268,19 +255,6 @@ export const homeMessages = defineMessages({
     shell: { skip: 'মূল অংশে যান', footerNav: 'সাইটের লিংক' },
     metaDescription:
       'রাসূলুল্লাহ {saw}-এর জীবন ও আদর্শ নিয়ে দেশের সর্ববৃহৎ সিরাতভিত্তিক আয়োজন: গ্রুপ, সিলেবাস, পর্যায়, পুরস্কার ও তারিখ।',
-    sectionNav: {
-      label: 'এই পাতায়',
-      intro: 'পরিচিতি',
-      groups: 'গ্রুপ ও ফি',
-      syllabus: 'সিলেবাস',
-      rounds: 'পর্যায়সমূহ',
-      prizes: 'পুরস্কার',
-      roadmap: 'রোডম্যাপ',
-      highlights: 'হাইলাইটস',
-      ambassador: 'অ্যাম্বাসেডর',
-      faq: 'প্রশ্নোত্তর',
-      contact: 'যোগাযোগ',
-    },
     hero: {
       tagline: 'রাসূলুল্লাহ {saw}-এর জীবন ও আদর্শ নিয়ে দেশের সর্ববৃহৎ সিরাতভিত্তিক আয়োজন',
       register: 'রেজিস্ট্রেশন করুন',
