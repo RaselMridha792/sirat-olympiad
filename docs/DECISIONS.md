@@ -13,6 +13,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 3. **The load guard** (`paymentsAllowDemo`): demo data is refused while `PAYSTATION_ENV=live`, and once a paid `live` payment exists. Sandbox, fake and demo payments never count: none moved money. Registration may stay open (lead).
 4. **The marker email domain** (`DEMO_EMAIL_DOMAIN`, `@demo.sirat.invalid`): the registration form refuses exactly that domain, so a real attempt, and the account its payment makes, can never carry it.
 5. **Demo payments get no events:** `payment_events` cannot be cleared, so demo data never writes to it. A demo "refund" is a paid payment with review reason `refund_reported`; the `refunded` status is never entered.
+
 ## 2026-11-08 — The public site is multi-page (owner, via the lead; core)
 
 - **Decision:**
