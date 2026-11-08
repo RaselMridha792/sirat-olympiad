@@ -51,6 +51,9 @@ describe('create-admin arguments', () => {
 
   it('refuses an invalid email and an overlong name', () => {
     expect(failure(['--email', 'not-an-email', '--name', 'A']).message).toMatch(/valid email/);
+    expect(failure(['--email', 'ops@Demo.Sirat.Invalid', '--name', 'A']).message).toMatch(
+      /valid email/,
+    );
     expect(failure(['--email', 'a@b.co', '--name', 'x'.repeat(101)]).message).toMatch(
       /at most 100/,
     );
