@@ -50,6 +50,7 @@ beforeAll(async () => {
     finalizeAfterMs: 0,
     buildAfterMs: 0,
     rescoreAfterMs: 0,
+    keyRescoreAfterMs: 0,
   });
   admin = await loginAs(env, prisma, { role: 'admin' }, { registered: false });
 }, 60_000);
@@ -437,6 +438,7 @@ describe('the minute sweep never stops at one attempt (EXAM-PLAN 3.10)', () => {
       finalizeAfterMs: 0,
       buildAfterMs: 0,
       rescoreAfterMs: 0,
+      keyRescoreAfterMs: 0,
     });
     await expect(flaky.sweep()).rejects.toThrow(/1 item\(s\) failed/);
     expect(await statusOf(good.id)).not.toBe('in_progress');

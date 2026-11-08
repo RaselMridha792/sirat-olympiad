@@ -37,3 +37,5 @@ infra/nginx/.loadtest-realip.local.conf.*
 apps/web/AGENTS.md
 # Throwaway copy used to type-check each commit in isolation (git archive + offline install).
 /.verify/
+# Authenticator secrets of local-stack e2e admins (apps/web/scripts/lib/totp.mjs, e2e:2fa-enrol); never commit.
+apps/web/.e2e-totp.json

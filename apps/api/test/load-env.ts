@@ -8,6 +8,9 @@ import { parseEnv } from 'node:util';
 const file = join(__dirname, '..', '.env');
 if (existsSync(file)) {
   for (const [key, value] of Object.entries(parseEnv(readFileSync(file, 'utf8')))) {
+    // Admin 2FA stays off in the integration tests unless a suite sets its own throwaway key (auth-two-factor):
+    // a developer's local key would otherwise send every admin suite's session to 403 TWO_FACTOR_REQUIRED.
+    if (key.startsWith('TOTP_ENCRYPTION_KEY')) continue;
     if (process.env[key] === undefined) process.env[key] = value;
   }
 }

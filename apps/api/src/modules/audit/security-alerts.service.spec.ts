@@ -54,6 +54,17 @@ describe('alert categories', () => {
       at,
     ).text;
     expect(ops).not.toContain('Account:');
+    // The break-glass 2FA reset has no actor: it names its target in the details, never "no account".
+    const reset = securityAlertMessage(
+      TO,
+      'two_factor.reset',
+      { actorId: null, meta: { via: 'cli', targetUserId: 'user-2' } },
+      at,
+    ).text;
+    expect(reset).not.toContain('Account:');
+    expect(reset).toContain('targetUserId: user-2');
+    expect(ALERT_CATEGORY['two_factor.reset']).toBe('security');
+    expect(ALERT_CATEGORY['two_factor.recovery_used']).toBe('security');
   });
 
   it('name the account whenever there is one, in every category', () => {

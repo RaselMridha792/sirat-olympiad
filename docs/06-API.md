@@ -6,20 +6,21 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 
 ## Public allow-list (reviewed)
 
-`GET /health`, `GET /ready`, `POST /auth/login`, `POST /auth/refresh` (cookie), `POST /auth/forgot-password`, `POST /auth/reset-password`, `POST /auth/verify-email`, `POST /auth/resend-verification`, `POST /registrations/start`, `GET /registrations/info`, `GET /registrations/current`, `POST /registrations/current/{resume,retry,recheck,cancel}` (the `sirat_reg` cookie; no id, no personal data), `GET /payments/paystation/callback/:invoice`, `POST /payments/paystation/ipn` (the only CSRF-exempt route; neither is trusted, see below), `GET /book/cover/:imageId` (the free book's cover image, no personal data), `GET /content/*` (public site content), `GET /certificates/verify/:code`.
+`GET /health`, `GET /ready`, `POST /auth/login`, `POST /auth/refresh` (cookie), `POST /auth/forgot-password`, `POST /auth/reset-password`, `POST /auth/verify-email`, `POST /auth/resend-verification`, `POST /auth/2fa/verify` (the `sirat_2fa` challenge cookie from the password step), `POST /registrations/start`, `GET /registrations/info`, `GET /registrations/current`, `POST /registrations/current/{resume,retry,recheck,cancel}` (the `sirat_reg` cookie; no id, no personal data), `GET /payments/paystation/callback/:invoice`, `POST /payments/paystation/ipn` (the only CSRF-exempt route; neither is trusted, see below), `GET /book/cover/:imageId` (the free book's cover image, no personal data), `GET /content/*` (public site content), `GET /certificates/verify/:code`.
 
 ## Endpoints
 
 | Module | Method + path | Guard | Notes |
 |---|---|---|---|
-| auth | `POST /auth/login` | Public, failed-login limits | 204, empty body; sets the httpOnly cookies. 401 one message for any failure; 429 + `Retry-After` during a lock or limit (the password is not checked); 403 for a blocked account, only after the right password. Built (A2.1d) |
+| auth | `POST /auth/login` | Public, failed-login limits | 204, empty body; sets the httpOnly cookies. 401 one message for any failure; 429 + `Retry-After` during a lock or limit (the password is not checked); 403 for a blocked account, only after the right password. An account with two-factor login on gets **200 `{ "twoFactorRequired": true }`** and the `sirat_2fa` cookie instead, no session and no reset of the failure counts until `POST /auth/2fa/verify` (Two-factor login, below). Built (A2.1d; 2FA: A2) |
 | | `POST /auth/refresh` | Public (cookie) | Rotation + reuse detection. 204 + new cookies; 409 = another tab refreshed a moment ago (retry); 503 = the rotation did not finish within its budget, or the database refused for a passing reason, and was rolled back (retry with backoff; the old cookies still work); 401 = log in again (cookies cleared). Built (A2.1b; budget: DECISIONS "Refresh rotation inside a time budget") |
 | | `POST /auth/logout`, `POST /auth/logout-all` | Auth | Logout ends this device's session family; logout-all ends all of them (audited). Built (A2.1b) |
-| | `GET /auth/me` | Auth | Session user only, read fresh from the DB (`SessionUser`); a blocked user gets 401. No writes in GET. Built (A2.1b) |
+| | `GET /auth/me` | Auth | Session user only, read fresh from the DB (`SessionUser`), with `twoFactor: { enabled, required, verified }`; a blocked user gets 401. No writes in GET. Built (A2.1b; 2FA: A2) |
 | | `POST /auth/forgot-password`, `POST /auth/resend-verification` | Public; forgot 120/min, resend 300/min per IP; per-address caps | `{email}`. Always 204 at once, empty body; the email (if any) follows from the background. Nothing tells whether the account exists. Built (A2.1e) |
 | | `POST /auth/reset-password` | Public, 300/min per IP | `{token, password}`. 204; ends every session, verifies the email, unlocks the account; no login. 400 "This link is invalid or has expired" for every bad link; 400 "Validation failed" for a refused password (the link stays usable). Built (A2.1e) |
 | | `POST /auth/verify-email` | Public, 300/min per IP | `{token}`. 204; never logs in (no session, no cookie). One 400 for every bad link. Built (A2.1e) |
-| | `POST /auth/change-password` | Auth, login limits | `{currentPassword, newPassword}`. 204 + fresh cookies for this device; one transaction writes the hash, ends every session and retires reset links. 400 for a wrong current password or a refused new one; 429 + `Retry-After` while locked. Built (A2.1d) |
+| | `POST /auth/change-password` | Auth, login limits | `{currentPassword, newPassword}`. 204 + fresh cookies for this device; one transaction writes the hash, ends every session and retires reset links. 400 for a wrong current password or a refused new one; 429 + `Retry-After` while locked. 401 when the token's session row is no longer alive; 403 `TWO_FACTOR_REQUIRED` (nothing changed) for an enrolled user whose session row did not prove the code. The new session keeps the row's 2FA proof. Built (A2.1d; 2FA rule: A2) |
+| | `GET /auth/2fa`, `POST /auth/2fa/{setup,enable,recovery-codes,disable}`, `POST /auth/2fa/verify` | Role(admin, manager) / Public (verify) | Two-factor login (below). Built (A2) |
 | users | `GET /users/me`, `PATCH /users/me` | Role(student, ambassador) | Student profile (below). Built (core C3) |
 | | `GET /content/profile-options` | Role(student, ambassador, admin) | The form's option lists; admins use them for the grade correction. Built (core C3) |
 | registrations | `GET /registrations/info`, `POST /registrations/start`, `GET /registrations/current`, `POST /registrations/current/{resume,retry,cancel}`, `GET /registrations/me` | Public (cookie) / Auth | Registration and payment section below. Built (payments PR 2) |
@@ -36,29 +37,52 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | leaderboard | `GET /leaderboard?exam=&page=&pageSize=&q=` | Auth | Published snapshot only; rank, name, institution. Results (below). Built (E3) |
 | | `GET /admin/leaderboard?exam=&page=&pageSize=&q=` | Role(admin, manager) | The snapshot with email, score and time, also before publishing. Built (E3) |
 | | `GET /admin/exams/:id/results`, `POST /admin/exams/:id/results/{build,publish,unpublish}`, `GET /admin/exams/:id/attempts[/:attemptId]` | admin | Results (below). Built (E3) |
-| rounds | `GET /rounds/me` | Auth | |
-| | `POST /rounds/:id/video` | Owner | Inside round window |
-| certificates | `GET /certificates/mine`, `GET /certificates/:id/pdf` | Owner | |
-| | `GET /certificates/verify/:code` | Public | |
+| rounds | `GET /rounds/me` | Role(student, ambassador) | Rounds (below). Built (core C6a) |
+| | `PUT /rounds/:id/video` | Role(student, ambassador) | Own entry, inside the window. Rounds (below). Built (core C6b) |
+| jury | `GET /jury/rounds`, `GET /jury/entries`, `POST /jury/entries/:entryId/scores` | Role(jury) | Own rounds and categories only, blind. Rounds (below). Built (core C6b) |
+| certificates | `GET /certificates/mine` | Role(student, ambassador) | Certificates (below). Built (core C6c-1) |
+| | `GET /certificates/verify/:code` | Public | Name and award only; the same 404 for unknown and revoked; 30/min per IP. Built (core C6c-1) |
+| | `GET /certificates/:id/pdf` | Owner | Core C6c-2 (the PDF library waits for the owner) |
+| | `POST /admin/certificates/issue`, `GET /admin/certificates`, `POST /admin/certificates/:id/revoke` | admin | Certificates (below): issuing in the queue, revoke with a reason, audited. Built (core C6c-1) |
 | announcements | `GET /announcements` | Role(student, ambassador) | Announcements (below). Built (core C4) |
 | ambassadors | `GET /ambassador/me` | Role(ambassador) | Ambassadors (below). Built (core C5a) |
 | | `POST /ambassador/tasks/:assignmentId/submit`, `POST /ambassador/teams` | Role(ambassador) | Own data only, the ambassador re-read. Built (core C5b-2, C5b-3) |
 | teams | `GET /teams/mine`, `POST /teams/join`, `POST /teams/mine/leave` | Role(student, ambassador) | Own team only. Ambassadors (below). Built (core C5b-3) |
 | admin (all `Role(admin)` unless noted) | `GET /admin/users`, `GET /admin/users/:id`, `POST /admin/users/export` | admin | Students list (below). Built (core C1) |
 | | `POST /admin/users/:id/grade-level` | admin | Student profile (below). Built (core C3) |
+| | `POST /admin/users/:id/2fa/reset` | admin with a proved second factor, 5/hour per admin | Two-factor login (below): a lost device. Built (A2) |
 | | `PATCH /admin/users/:id`, `POST /admin/users/:id/role` | admin | Audited. Not built (role change and block are later admin writes) |
 | | `GET /admin/exams?page=&pageSize=&q=&status=`, `GET /admin/exams/:id`, `POST /admin/exams`, `PATCH /admin/exams/:id`, `POST /admin/exams/:id/{publish,unpublish,archive}`, `POST /admin/exams/:id/questions`, `POST /admin/exams/:id/questions/import?dryRun=`, `PUT`/`DELETE /admin/exams/:id/questions/:questionId`, `GET /admin/exams/:id/questions/:questionId/versions` | admin | Exam admin (below). Lock after publish; questions versioned, never deleted once published. Built (E1; the CSV import E7a) |
 | | `GET /admin/settings`, `PUT /admin/settings/:key` | admin | Single writer (`expected`), audited. Built (payments PR 3) |
 | | `GET /admin/payments`, `GET /admin/payments/:id`, `POST /admin/payments/:id/{recheck,reconcile}` | admin | Audited. Built (payments PR 3), below |
 | | `GET /admin/stats` | admin/manager | Admin statistics (below). Counts only, cached 60 s. Built (core) |
-| | `POST /admin/rounds/:id/promote` | admin | Idempotent, audited |
-| | `GET/POST /admin/jury/*` | jury/admin | Judge recorded |
+| | `GET/POST /admin/rounds`, `GET/PATCH /admin/rounds/:id`, `POST /admin/rounds/:id/promotion/preview`, `POST /admin/rounds/:id/promotion` | admin | Rounds (below): one promotion per round and category, audited. Built (core C6a) |
+| | `GET/POST /admin/rounds/:id/jury`, `DELETE /admin/rounds/:id/jury/:assignmentId` | admin | Jury assignment per category, audited. Built (core C6b) |
 | | `GET/POST /admin/announcements`, `PATCH /admin/announcements/:id`, `POST /admin/announcements/:id/{archive,restore}` | admin | Announcements (below). Built (core C4) |
 | | `GET /admin/ambassadors`, `POST /admin/ambassadors/:userId/{approve,revoke}` | admin | Ambassadors (below). Built (core C5a) |
 | | `GET/PUT /admin/ambassador-points`, `POST /admin/points/adjust` | admin | Points per referral and the ranks (single writer), compensating entries; audited. Built (core C5b-1) |
 | | `GET/POST /admin/tasks`, `PATCH /admin/tasks/:id`, `POST /admin/tasks/:id/{archive,restore,assign}`, `GET /admin/task-assignments`, `POST /admin/task-assignments/:id/{approve,reject}` | admin | Ambassador tasks (below), audited; tasks are never deleted. Built (core C5b-2) |
 | | `GET /admin/teams`, `GET /admin/teams/:id`, `PATCH /admin/teams/:id` | admin | Ambassador teams (below); a rename is audited with its reason. Built (core C5b-3) |
 | | `GET /admin/audit`, `GET /admin/audit/:id`, `POST /admin/audit/export` | admin | Audit log (below). Read only; the export is audited. Built (core) |
+
+## Two-factor login (A2; DECISIONS "Admin two-factor login")
+
+TOTP for admins and managers. While 2FA is on (`TOTP_ENCRYPTION_KEY` set; production requires it), a route whose `@Roles()` names admin or manager refuses an admin or manager session that has not proved the code: 403 `TWO_FACTOR_REQUIRED`. The exceptions (`@TwoFactorOptional()`, reviewed in the routes test) are `GET /auth/me`, `POST /auth/logout`, `GET /auth/2fa`, `POST /auth/2fa/setup` and `POST /auth/2fa/enable`. While it is off (no key: development only) nothing is enforced and every route below answers 503 `TWO_FACTOR_UNAVAILABLE`. Codes, secrets, recovery codes, challenge ids and emails are never logged.
+
+| Method + path | Guard | Body | Answers |
+|---|---|---|---|
+| `POST /auth/login` (enrolled account) | Public | `{email, password}` | 200 `{ "twoFactorRequired": true }` + `sirat_2fa` (httpOnly, SameSite=Strict, Path `/api/auth/2fa`, Max-Age 300). No session, no reset of the failure counts. A blocked account still gets 403 after the right password |
+| `POST /auth/2fa/verify` | Public (the `sirat_2fa` cookie), CSRF header, login limits | `{code}` (6 digits) or `{recoveryCode}` (`XXXXX-XXXXX`, any case, spaces or dash), exactly one | 204 + session cookies (`tfa` true), `sirat_2fa` cleared. 401 `TWO_FACTOR_CODE_INVALID` (counted in the login limits; each verify first reserves one of the challenge's 5 attempts atomically, so at most 5 codes are ever checked, also in parallel; the 5th wrong one ends it); 401 `TWO_FACTOR_CHALLENGE_INVALID` (missing, expired, used or used up; cookie cleared: log in again); 429 + `Retry-After` during a lock, even for the right code. A code works once; two parallel right codes give one session. A recovery code raises the alert `two_factor.recovery_used` |
+| `GET /auth/2fa` | Role(admin, manager), 2FA optional | — | `{ enabled, pending, required, verified, recoveryCodesRemaining }` |
+| `POST /auth/2fa/setup` | Role(admin, manager), 2FA optional, login limits | `{password}` | 200 `{ otpauthUri, qrDataUri }`: a new secret, shown once, pending until enable (a second setup replaces it). 400 `PASSWORD_INCORRECT`; 409 `TWO_FACTOR_ALREADY_ENABLED`; 429 |
+| `POST /auth/2fa/enable` | Role(admin, manager), 2FA optional | `{code}` from the pending secret | 200 `{ recoveryCodes }` (10, shown once) + new session cookies with the proof; every other session of the user ends. 400 `TWO_FACTOR_CODE_INVALID`; the 5th wrong code deletes the pending setup: 409 `TWO_FACTOR_SETUP_REQUIRED` (run setup again; attempts are reserved before the check, so parallel guesses cannot pass 5); 409 `TWO_FACTOR_ALREADY_ENABLED` |
+| `POST /auth/2fa/recovery-codes` | Role(admin, manager) with `tfa`, login limits | `{code}` (TOTP only) | 200 `{ recoveryCodes }`: all replaced, shown once. 400 `TWO_FACTOR_CODE_INVALID`; 409 `TWO_FACTOR_NOT_ENABLED`; 429 |
+| `POST /auth/2fa/disable` | Role(admin, manager) with `tfa`, login limits | `{password, code}` or `{password, recoveryCode}` | 204 + new session cookies without `tfa` (an admin is then sent to enrolment again); every other session ends. 400 `PASSWORD_INCORRECT` or `TWO_FACTOR_CODE_INVALID`; 429 |
+| `POST /admin/users/:id/2fa/reset` | Role(admin) with `tfa`, the role re-read from the database (403 unless still admin); 5/hour per admin; login limits on the step-up | `{reason (3–200), code}`: the ACTING admin's own current TOTP code | 200 `{ sessionsEnded }`: the target's factor and codes removed, all its sessions ended; audit `auth.2fa_reset` with the reason; alert `two_factor.reset`. 403 `TWO_FACTOR_RESET_NOT_ALLOWED` (oneself, or a target that is not admin or manager); 404; 409 `TWO_FACTOR_NOT_ENABLED`; 400 `TWO_FACTOR_CODE_INVALID`; 429 |
+
+- Signed-in step-ups answer 400, never 401, so the web never takes them for an expired session. Only the login's code step answers 401.
+- The proof lives on the session row (`two_factor_verified`); the token's `tfa` copies it. `startVerified` after the code step or enable stores true, `start` false. A refresh carries the row's proof AND the user's current enrolment, so it can drop the claim but never raise it. change-password needs a live row, and for an enrolled user a proved one (above). Enable, disable and both resets end the user's other sessions. An access token already issued stays valid until it expires (15 min).
+- Break-glass without the API: `pnpm --filter @sirat/api admin:2fa-reset --email <address> --reason "<why>"` (`node dist/cli/admin-2fa-reset.js` on the VPS; RUNBOOK §22).
 
 ## Registration and payment (payments PR 2 and 3; plan: `docs/plans/PAYMENTS-PLAN.md` 6.1–6.7)
 
@@ -67,9 +91,9 @@ Pay first, account second: the form waits server-side in a registration attempt;
 | Method + path | Guard | Request → response |
 |---|---|---|
 | `GET /registrations/info` | Public; 3,000/min per IP | → `{ open, opensAt, closesAt, fee: { amountMinor, currency } \| null, gradeLevels: [{ id, label }], districts, educationTypes }`. Cached 30 s; `open` is false while the fee is invalid or PayStation is not configured |
-| `POST /registrations/start` | Public; 300/min per IP (shared IPs: schools, mobile CGNAT); 10/hour per email and per phone | `{ startRequestId (uuid), name, phone, email, password, district (one of 64), institution, educationType (one of 5), gradeLevelId, promoCode? }` → **201** `{ paymentUrl, invoiceNumber, amountMinor, currency }` and the `sirat_reg` cookie (httpOnly, SameSite=Lax, Path `/api/registrations`, 7 days). Details below |
+| `POST /registrations/start` | Public; 300/min per IP (shared IPs: schools, mobile CGNAT); 10/hour per email and per phone | `{ startRequestId (uuid), name, phone, email, password, district (one of 64), institution, educationType (one of 5), gradeLevelId, promoCode? }` → **201** `{ paymentUrl, gateway, invoiceNumber, amountMinor, currency }` and the `sirat_reg` cookie (httpOnly, SameSite=Lax, Path `/api/registrations`, 7 days). Details below |
 | `GET /registrations/current` | Public (cookie); 3,000/min per IP | → `{ state: awaiting_payment \| confirming \| completed \| failed \| expired \| needs_help, invoiceNumber, amountMinor, currency, expiresAt, canResume, canRetry }`; 404 `NO_REGISTRATION` without a cookie. No personal data |
-| `POST /registrations/current/resume` | Public (cookie) | → 200 `{ paymentUrl }` while the checkout is valid; 409 `NOTHING_TO_RESUME` for a finished attempt or a checkout no longer valid |
+| `POST /registrations/current/resume` | Public (cookie) | → 200 `{ paymentUrl, gateway }` while the checkout is valid; 409 `NOTHING_TO_RESUME` for a finished attempt or a checkout no longer valid |
 | `POST /registrations/current/retry` | Public (cookie); limits as start | After the last payment failed or expired, while registration is open: a new payment with a new invoice → 201 as start; 409 `RETRY_NOT_ALLOWED` while one is active |
 | `POST /registrations/current/cancel` | Public (cookie) | 204 and the cookie cleared, only while no payment is active (409 `CANNOT_CANCEL`) |
 | `POST /registrations/current/recheck` | Public (cookie); 3,000/min per IP | "Check my payment status": **202** `{ requested }`. Asks the worker to ask PayStation about the latest payment, at most once per 10 s; `requested: false` when throttled or nothing is left to check. The page keeps polling `current`. 404 `NO_REGISTRATION` as above |
@@ -83,6 +107,12 @@ Pay first, account second: the form waits server-side in a registration attempt;
 - httpOnly, SameSite=Lax, `Secure` (`COOKIE_SECURE`; refused as false in production), Path `/api/registrations`, 7 days.
 
 Without it, or with one that matches no attempt (forged, or one the browser expired), every `current/*` route answers **404 `NO_REGISTRATION`**. A cancelled or abandoned attempt answers the same. A completed attempt shows only its state in `current`; `resume` answers 409, and `retry` and `cancel` answer 404. **Tiers:** start and retry 300/min per IP; info, current, resume and cancel 3,000/min per IP. Every non-GET needs `X-Requested-With` (CSRF).
+
+**`gateway`** (start, retry, resume) says which checkout `paymentUrl` opens:
+- `'paystation'`: the browser follows it over https only, in every build;
+- `'fake'`: the dev/CI fake server; http is allowed. The API sends it only while `PAYSTATION_ENV=fake`, which it refuses with `NODE_ENV=production`.
+
+The web refuses any other scheme, a relative URL and an unknown gateway. An answer without `gateway` counts as `'paystation'` (`apps/web/src/components/registration/checkout.ts`).
 
 **`POST /registrations/start` in detail:**
 - **403 `REGISTRATION_CLOSED`:** the switch is off, or now is outside `registration_opens_at`/`registration_closes_at`. Nothing is written.
@@ -176,9 +206,10 @@ Scoring and the snapshot run in the worker (queue `exam`): each submit queues `s
 | `GET /leaderboard?exam=` | any signed-in user | `ExamLeaderboard`: `unpublished` (empty) or `published` with rank, name, institution; equal score and time share a rank (1, 2, 2, 4); search by name or institution; pages cached per snapshot. Without `exam`: the latest exam with published results. 404 unknown or draft exam |
 | `GET /attempts/:id/review` | the attempt's student | `ReviewView`: own score, rank, server time taken, end reason, and per question the options as shown, the student's choice, the correct option and the explanation. 403 `results_not_published`; 404 another student's attempt |
 | `GET /admin/leaderboard?exam=` | admin, manager | `AdminExamLeaderboard`: the snapshot with email, category, score and time, and whether it is public |
-| `GET /admin/exams/:id/results` | admin | `ExamResultsStatus`: attempts by status, window closed, snapshot generation and time, published or not, `canBuild`, `canPublish` |
-| `POST /admin/exams/:id/results/build` | admin | 202 `{queued}`: a rebuild in the worker. 409 `window_open`, `attempts_unfinished` |
-| `POST /admin/exams/:id/results/publish`, `/unpublish` | admin | Body `expectedUpdatedAt`. 409 `stale`, `no_snapshot`, `window_open`, `results_published`. Audited (`results.published`, `results.unpublished`) |
+| `GET /admin/exams/:id/results` | admin | `ExamResultsStatus`: attempts by status, window closed, snapshot generation and time, published or not, `canBuild`, `canPublish`; after an answer-key correction (E7b): `keyCorrectedAt`, `rescorePending` (scored attempts not yet re-scored after the newest correction), `snapshotStale` (the snapshot is older than it), `lastCorrection` (position, from → to, and once nothing is pending how many attempts were re-scored and how many scores changed) |
+| `POST /admin/exams/:id/results/build` | admin | 202 `{queued}`: a rebuild in the worker. 409 `window_open`, `rescore_pending`, `attempts_unfinished` |
+| `POST /admin/exams/:id/results/publish`, `/unpublish` | admin | Body `expectedUpdatedAt`. 409 `stale`, `no_snapshot`, `window_open`, `snapshot_stale` (a correction is newer than the snapshot), `results_published`. Audited (`results.published`, `results.unpublished`) |
+| `POST /admin/exams/:id/questions/:questionId/key-corrections` | admin | E7b. Body `toKey` (`^[A-Z]$`), `reason` (3–200, trimmed, no control characters), `expectedUpdatedAt` (the exam's). 201 `AnswerKeyCorrectionView` (`fromKey` is the key in effect before). The question row is not changed; the corrected key is used from then on by scoring, the re-scoring, the review and the admin views. 409 `stale`, `exam_draft` (edit the question instead), `exam_archived`, `results_published` (unpublish first), `same_key`, `key_unknown` (not an option of that version); 404 `question_not_in_exam`. Queues `rescore-exam` (jobId `rescore.<exam>.<correction>`); the minute sweep catches up a lost or failed one after 2 minutes. Audited (`answer_key.corrected`; the job writes `answer_key.rescored` per batch with its counts). Bumps the exam's `updatedAt`. `GET /admin/exams/:id` lists the corrections (`keyCorrections`, newest first) |
 | `GET /admin/exams/:id/attempts?status=&endReason=&minViolations=&q=` | admin | `Paginated<AdminAttemptRow>`: each student's status, end reason, violation count, times, score (owner Q4) |
 | `GET /admin/exams/:id/attempts/:attemptId` | admin | `AdminAttemptDetail`: the row and its violation and connection events with times (from the submission, or the live checkpoint while running) |
 
@@ -190,6 +221,7 @@ Scoring and the snapshot run in the worker (queue `exam`): each submit queues `s
 |---|---|---|
 | `GET /admin/exams` | — | `Paginated<AdminExamCard>`, newest window first; `q` searches the title; `status` filters. `questionCount` = active questions; `locked` = not a draft |
 | `GET /admin/exams/:id` | — | `AdminExamView`: config, `updatedAt` (the concurrency token), active questions **with** correct keys and explanations. 404 if unknown |
+| `GET /admin/exams/:id/preview` | — | D2 (P1). `AdminExamPreview`: one sample draw made with the start's own `drawLayout` and `renderQuestions` (random draw, option shuffle, kept orders), the texts in that order, and `correct` (displayed positions, with the key in effect after E7b corrections). Writes nothing: no attempt, checkpoint, cache or audit row; each call is a new draw. A draft with a short pool shows what it has; a published exam with a short pool is 409 `question_count`. 404 if unknown |
 | `POST /admin/exams` | `title`, `category` (null = everyone), `roundId` (null or a round), `windowStart`, `windowEnd` (ISO), `durationMinutes` (1–30), `questionsPerAttempt` (1–200), `graceSeconds` (0–300), `randomDraw` | 201 `AdminExamView` of a new `draft`. 400 if the window is not at least one duration long or the round does not exist |
 | `PATCH /admin/exams/:id` | `expectedUpdatedAt` + any create field; `reason` for a published exam | Draft: any field. Published: only `title`, and `windowEnd` later than now and than before, while the window is still open (`reason` required). 409 `stale` (someone changed it), 409 `exam_published` / `exam_archived` (field not changeable) |
 | `POST /admin/exams/:id/publish` | `expectedUpdatedAt` | Draft → published. 409 with the failed checks: `question_count` (active questions must equal `questionsPerAttempt`, or be at least that with `randomDraw`), `window_too_short`, `window_over`, `duplicate_question_text` |
@@ -221,7 +253,7 @@ POST for the export keeps the reason and the search out of URLs (nginx logs quer
 
 | Method + path | Request | Answers |
 |---|---|---|
-| `GET /users/me` | — | `StudentProfile`: name, email, phone, district, institution, education type, category, role, `emailVerifiedAt`, `createdAt`, grade level (id, label), `currentRound` (null until rounds exist) |
+| `GET /users/me` | — | `StudentProfile`: name, email, phone, district, institution, education type, category, role, `emailVerifiedAt`, `createdAt`, grade level (id, label), `currentRound` (the round of `GET /rounds/me`: id and name) |
 | `GET /content/profile-options` | — | `ProfileOptions`: grade levels (id, label, category, in order), the 5 education types and the 64 districts (payments' `registration.ts`, one list for registration and profile) |
 | `PATCH /users/me` | Any of `name` (2–100), `phone` (any BD form, stored `01XXXXXXXXX`), `district` (one of 64), `institution` (2–150), `educationType` (one of 5); at least one; none can be cleared. The same limits as the registration form | 200 `StudentProfile`. 400 `Validation failed` (details: the field messages) or `nothing_to_update`; any other field (`email`, `gradeLevelId`, `role`, `category`, `promoCode` …) → 400. 409 `PHONE_REGISTERED` (`ApiError.code`, the owner's text in `REGISTRATION_MESSAGES`) when another account has the number or a registration in progress holds it, also when two people claim it at once (the UNIQUE index decides). Audit `user.profile_updated` with the changed field names only, never the values |
 | `POST /admin/users/:id/grade-level` (admin) | `{ gradeLevelId, reason }` (reason 3–200) | 200 `StudentProfile` of that student; the category follows the grade table. 409 `has_attempt` once the student has any exam attempt (a category decides the exam), `not_a_student` for staff; 400 `grade_level_unknown`; 404 unknown user. Audit `user.grade_corrected` (old and new label, category, reason) in the same transaction. The admin is re-read |
@@ -295,6 +327,65 @@ The database keeps the limits and the status rules (`*_core_ambassador_tasks_che
 
 The database keeps the name length and the code format (`*_core_ambassador_teams_checks`); `teams.name`, `teams.join_code` and `teams.owner_id` are unique, and `team_members.user_id` is unique (one team per student).
 
+## Rounds (core C6a; plan: `docs/plans/CORE-PLAN.md` §7, owner Q4 defaults, lead's review)
+
+Shapes `AdminRound`, `RoundCreateRequest`, `RoundUpdateRequest`, `RoundCriterion`, `DEFAULT_VIDEO_CRITERIA`, `PromotionQuery`, `PromotionPreview`, `PromotionRequest`, `PromotionResult`, `MyRound`, `ROUND_LIMITS`, `ROUND_REFUSALS` (`core.ts`). Every admin route re-reads the admin (admin only: managers, jury, students and ambassadors get 403). Writes are audited (`round.created`, `round.updated` with the field names, `round.promoted` with the counts only, never a student).
+
+| Method + path | Request | Answers |
+|---|---|---|
+| `GET /admin/rounds` | — | `{ items: AdminRound[] }`: every round in order (at most 10, so no paging), with the criteria (video rounds), `scored`, the entries by status and the promotions out of it |
+| `GET /admin/rounds/:id` | — | `AdminRound`; 404 |
+| `POST /admin/rounds` | `{ name (2–60), type (video, final), opensAt?, closesAt?, criteria? (1–20 of { key, en, bn }) }` | 201. Round 1 (quiz) exists; a round is appended (the server's next `sort_order`, under a lock). A video round needs both times; a final round has both or neither; the close follows the opening and lies in the future (400 `bad_window`). Criteria only for a video round, keys unique (400 `bad_criteria`); left out, the old ten (0–10 each). 409 `after_final` (nothing follows the final), `too_many_rounds` (10) |
+| `PATCH /admin/rounds/:id` | any of `name`, `opensAt`, `closesAt`, `criteria`; `expectedUpdatedAt` | 200. Row lock: 409 `stale`, `nothing_to_update`. Round 1: the name only (409 `quiz_round`). Once open, the start stays (409 `window_started`) and the close only moves later (409 `window_shortened`); once closed, it stays (409 `window_closed`). Criteria: video rounds only (409 `not_video_round`), frozen once a jury score exists (409 `criteria_frozen`). The type and the order never change |
+| `POST /admin/rounds/:id/promotion/preview` | `{ topN (1–25,000), category }` | 200 `PromotionPreview`, nothing written: the source, `candidates`, `promoted`, **`tieCount`** (promoted beyond N because of a tie at the cut), `eliminated`, the cut (rank, score, time), and `expected` |
+| `POST /admin/rounds/:id/promotion` | `{ topN, category, expected }` (the preview's) | 201 `PromotionResult`. 409 `stale` when the source changed since the preview (another results version, a changed score) |
+| `GET /rounds/me` (student, ambassador, re-read) | — | `MyRound`: the latest round with an own entry and its status; with none, Round 1 and `entryStatus: null`. The home and `/users/me` `currentRound` read the same |
+
+**Promotion** (one category from a round to the next):
+- **From a quiz round:** the category's rows of the **published** snapshot of the round's one published exam (for that category or for all), ranked inside the category in exam's order (score, then time; equal score and time share a rank). 409 `no_exam`, `ambiguous_source` (two published exams cover the category; an archived exam is never a source), `results_not_published`.
+- **From a video round:** after its close (409 `window_not_closed`), with every sent video scored (409 `unscored_entries`), ranked by the jury average; an entry without a video is eliminated.
+- **The cut:** rank ≤ N goes through, **ties at the cut included** (owner Q4a default). 409 `no_entries` when nobody would.
+- **One transaction under the round's row lock:** a `promotion_runs` row; the next round's entries (`pending`, `INSERT … SELECT … ON CONFLICT (user_id, round_id) DO NOTHING`: an existing entry, its video and score are never overwritten); the source round's entries set to `promoted` or `eliminated` (Round 1's are created then, for everyone on the snapshot); the audit row.
+- **One run per (round, category)** (UNIQUE; 409 `already_promoted`, also on the preview). Nothing after the last round (409 `no_next_round`). A student whose snapshot row has no category is in no category's promotion.
+- **`promotion_runs` is append-only** (`*_core_rounds_append_only`): UPDATE, DELETE and TRUNCATE are refused (TRUNCATE only passes in a database named `*_test`), and `sirat_app` has no UPDATE or DELETE on it. A student who already had an entry in the next round keeps it and is counted in `promoted`.
+
+The database keeps the limits (`*_core_rounds_checks`): round name 2–60, at most 10 rounds, the window order, 1–20 criteria, a video round with its window and criteria; an entry's score 0–100, the video link ≤ 500 with its time; a run's top N 1–25,000, counts ≥ 0, from ≠ to, and the source (`exam` with its exam and results version, or `jury`).
+
+**Video and jury (core C6b; the C6 plan, the lead's notes, owner Q4b–Q4d defaults).** Shapes `VideoSubmitRequest`, `AdminRoundJury`, `JuryAssignRequest`, `JuryAssignResult`, `JuryRound`, `JuryEntryRow`, `JuryEntryQuery`, `JuryScoreRequest`, `JuryScoreResult`, `VIDEO_HOSTS`, `isAllowedVideoUrl`, `JURY_LIMITS`, `JURY_REFUSALS` (`core.ts`). The video link is a minor's input: it is never logged or audited (the audit rows keep ids). Blind judging: the jury never gets a student's name, institution, user id or contact.
+
+| Method + path | Request | Answers |
+|---|---|---|
+| `PUT /rounds/:id/video` (student, ambassador, re-read) | `{ url (≤ 500) }` | 200 `MyRound` of that round. Own entry only (none is 404, as for an unknown round). https to `youtube.com`, `www.youtube.com`, `m.youtube.com`, `youtu.be` or `drive.google.com` only, with no user name, password or port (400 `bad_video_url`). Inside the window by the server's clock (409 `window_not_open`, `window_closed`); a video round only (409 `not_video_round`); while the entry is pending or sent (409 `entry_closed`). Status `submitted`. Takes the round's share lock, so it never runs during a promotion. Audit `round.video_submitted` (ids) |
+| `GET /admin/rounds/:id/jury` (admin) | — | `AdminRoundJury`: the assignments (judge with name and email, category) and up to 200 unblocked jury accounts to add |
+| `POST /admin/rounds/:id/jury` (admin) | `{ judgeId, categories (1–3, unique) }` | 200 `{ assigned, alreadyAssigned }`: one row per category, existing ones skipped. A video round only (409 `not_video_round`); an unblocked jury account only (409 `not_jury`). Audit `jury.assigned` |
+| `DELETE /admin/rounds/:id/jury/:assignmentId` (admin) | — | 204; 404 when it is not this round's. The judge's scores stay in the history but stop counting: in the same transaction (under the round's share lock) every entry of that category the judge scored is recomputed, and one left with no assigned score is `submitted` again with no score. Audit `jury.unassigned` (with the number recomputed) |
+| `GET /jury/rounds` (jury, re-read) | — | `JuryRound[]`: the video rounds the judge is assigned to, with the criteria, the judge's categories, `scoringOpen` (the window has closed) and the judge's own counts (`pending`: sent videos not scored by them; `evaluated`: scored by them) |
+| `GET /jury/entries` (jury) | `round`, `status` (`pending` default, `evaluated`), `page`, `pageSize` (≤ 50) | `Paginated<JuryEntryRow>`, oldest video first: an entry number (`E-` + the last 8 hex digits of the entry id), the category, the link, the time it was sent, and the judge's own latest score. Only the judge's categories (another round is 404); 409 `window_open` before the close. Pending leaves out the categories already promoted |
+| `POST /jury/entries/:entryId/scores` (jury) | `{ criteria: { key: 0–10 }, comment? (≤ 1,000) }` | 201 `JuryScoreResult`. Every criterion of the round, whole numbers 0–10 (400 `bad_scores`). An entry outside the judge's categories, without a video or not in a video round is 404. After the close only (409 `window_open`), before the category's promotion (409 `already_promoted`). The total is out of 100: the sum × 100 / (10 × the number of criteria), so with the default ten it is the plain sum. A new `jury_scores` row (append-only); the entry's score becomes the average of the latest total of each judge assigned now to its round and category, under the entry's row lock and the round's share lock; status `evaluated`. Audit `jury.scored` (ids only; never the comment, which the student never sees) |
+
+The database keeps the limits (`*_core_jury_checks`): a score's total 0–100, the criteria a JSON object, the comment ≤ 1,000; one assignment per (round, judge, category). `jury_scores` is append-only (UPDATE, DELETE and TRUNCATE refused; TRUNCATE passes only in a database named `*_test`), and `sirat_app` has no UPDATE or DELETE on it.
+
+## Certificates (core C6c-1; plan: `docs/plans/CORE-PLAN.md` §7, owner Q4 defaults, lead's notes)
+
+Shapes `CertificateIssueRequest`, `CertificateIssueResult`, `MyCertificate`, `AdminCertificateRow`, `AdminCertificateQuery`, `CertificateRevokeRequest`, `CertificateCheck`, `CERTIFICATE_TYPES`, `CERTIFICATE_LIMITS`, `CERTIFICATE_CODE_PATTERN`, `CERTIFICATE_REFUSALS` (`core.ts`). Admin routes re-read the admin (managers, jury, students and ambassadors get 403). A certificate is revoked, never deleted.
+
+| Method + path | Request | Answers |
+|---|---|---|
+| `POST /admin/certificates/issue` (admin) | `{ type, roundId, emails? (1–50, winners), reason? (3–200, winners) }` | **202** `{ queued, type, roundId, candidates }`: one job on the `certificates` queue (DO 8), done by the worker. `candidates` is how many qualify now; anyone who has one already is skipped. 409 `wrong_round`; `results_not_published` (participation, no published Round 1 exam with published results); `unknown_user`, `not_in_round` (winners); 400 `no_winners` (winners without emails or a reason, or emails for another type); 503 `queue_unavailable`. Audit `certificates.issue_requested` (the type, the count, a winner's reason; never an email) |
+| `GET /admin/certificates` (admin) | `q` (a name, or an exact `SLO-` number), `type`, `round`, `page`, `pageSize` (≤ 50) | `Paginated<AdminCertificateRow>` newest first, with the student's name and email. No verification code |
+| `POST /admin/certificates/:id/revoke` (admin) | `{ reason (3–200), expectedUpdatedAt }` | 200 the row. A row lock: 409 `stale`, `already_revoked`. Audit `certificate.revoked` (the reason) |
+| `GET /certificates/mine` (student, ambassador, re-read) | — | `MyCertificate[]`, a few at most (one per type and round), so no paging: the award, the number, the check code, the name as printed, `revoked` (never the reason) |
+| `GET /certificates/verify/:code` (**public**, reviewed allow-list) | the 12-hex code, any letter case | 200 `{ name, award: { type, roundName } }` **only** (lead). An unknown, malformed or revoked code gets the same 404. **30 per minute per IP** (the route's tier); the web's `/verify/[code]` page calls it from the browser, so the limit counts the visitor, not the web server |
+
+**The issue job** (worker, `certificates` queue, 3 tries): one `INSERT … SELECT … ON CONFLICT (user_id, type, round_id) DO NOTHING`, so a run twice adds nothing. Who:
+- `participation`: everyone on the latest snapshot of Round 1's **published** exams whose results are published (an archived exam is retired, as for promotion);
+- `promotion`: everyone with an entry in a round after Round 1;
+- `winner`: the students named by email (resolved to ids by the API: no email reaches Redis) who have an entry in the final round.
+
+Blocked accounts are left out. Each row gets the next serial (`SLO-<year>-<number>` from `certificate_serial_seq`; a number drawn for a skipped row is not used) and a random verification code (12 hex digits, 48 bits). The name is copied as it is at issue time. Audit `certificates.issued` (the type and the count) with the requesting admin.
+
+The database keeps the rules (`*_core_certificates_checks`): the three types, the serial and code formats, the name 1–200, the revoke fields all three or none, a reason 3–200; one certificate per (user, type, round).
+
 ## Admin statistics (core; lead 2026-11-01)
 
 `GET /admin/stats` (admin and manager, re-read: a demoted or blocked user gets 403; jury, students and ambassadors get 403, and the web does not call it for jury) → `AdminStats` (`dashboard.ts`). **Counts only**: no name, email, phone, id or money sum. Read from payments' and exam's tables, never written.
@@ -303,7 +394,7 @@ The database keeps the name length and the code format (`*_core_ambassador_teams
 |---|---|
 | `totals.registered`, `paid`, `pendingPayments` | `registrations`; payments `paid`; payments `initiated` + `pending` |
 | `totals.activeAttempts`, `submittedAttempts` | exam attempts `in_progress`; `submitted` + `expired` + `scored` |
-| `totals.secondRound`, `finalists` | `null` until rounds exist (core C6) |
+| `totals.secondRound`, `finalists` | entries in the round with `sort_order` 2 and in the final round; `null` while that round does not exist (core C6a) |
 | `registrationsDaily` | `registrations.created_at` per Asia/Dhaka calendar day, the last 45 days, oldest first, with 0 for an empty day |
 | `byCategory` | student and ambassador accounts per category |
 | `registrationAttempts` | `pending_registrations` per status (`open`, `completed`, `abandoned`, `conflict`) |
@@ -330,8 +421,8 @@ Admins only (re-read: a demoted or blocked admin gets 403; manager, jury, studen
 
 * `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })`. Unknown fields are rejected, so `role`, `points`, `rank`, `status` can never be injected.
 * Acting user = `req.user` from the verified cookie. Never `user_id` in body/query. Any `:id` is ownership-checked.
-* Session: the access token travels only in the httpOnly cookie `sirat_access` (an `Authorization` header is ignored). HS256, issuer `sirat-api`, audience `sirat-web`, 15 min, verified locally; claims `sub`, `role`, `sid`.
+* Session: the access token travels only in the httpOnly cookie `sirat_access` (an `Authorization` header is ignored). HS256, issuer `sirat-api`, audience `sirat-web`, 15 min, verified locally; claims `sub`, `role`, `sid`, `tfa` (the session proved a second factor; missing = false).
 * State-changing requests (anything but GET/HEAD/OPTIONS) require a non-empty `X-Requested-With` header (CSRF) on top of SameSite=Lax, public routes included (login CSRF). The API never enables CORS. Only `POST /payments/paystation/ipn` may skip it (`@SkipCsrf()`, reviewed list in the routes test). GET handlers never change state.
 * A handler that has not answered within 25 s gets 503 `Request timed out` (nginx gives up at 30 s); every DB statement stops at 10 s.
-* Throttle tiers (DECISIONS "Per-user API limits"): a request with a verified session counts against its user, 120/min per route; anything else counts against the client IP, 600/min per route by default. Anonymous auth routes: login has no request limit (the login limiter counts failures), refresh 3,000/min, forgot-password 120/min, resend/reset/verify 300/min each. Exam checkpoint/submit fall under the per-user limit (schools and mobile operators share IPs).
+* Throttle tiers (DECISIONS "Per-user API limits"): a request with a verified session counts against its user, 120/min per route; anything else counts against the client IP, 600/min per route by default. Anonymous auth routes: login has no request limit (the login limiter counts failures), refresh 3,000/min, forgot-password 120/min, resend/reset/verify 300/min each; `POST /auth/2fa/verify` has the per-IP default (the login limiter counts its failures). The admin 2FA reset: 5/hour per admin. Exam checkpoint/submit fall under the per-user limit (schools and mobile operators share IPs).
 * Responses never include `correct_key`, other users' data, stack traces or raw DB errors.

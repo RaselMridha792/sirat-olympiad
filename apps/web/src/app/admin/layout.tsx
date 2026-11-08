@@ -8,10 +8,14 @@ import {
   Megaphone,
   ScrollText,
   Settings,
+  ShieldCheck,
   Trophy,
   Truck,
   Users,
   UsersRound,
+  Milestone,
+  Gavel,
+  BadgeCheck,
   type LucideIcon,
 } from 'lucide-react';
 import { Avatar, initialOf, type NavItem } from '@sirat/ui';
@@ -23,12 +27,14 @@ import { common } from '@/i18n/common';
 import { adminShellMessages, type AdminShellMessages } from '@/i18n/messages/admin-shell';
 import { getMessages } from '@/i18n/server';
 import { canOpen } from '@/lib/access';
+import { needsTwoFactor, TWO_FACTOR_PAGE } from '@/lib/auth/two-factor';
 import { requireArea } from '@/lib/session';
 
 /**
  * Sidebar links, shown to the roles that may open them (lib/access.ts). Hiding a link only shapes the UI: each
  * admin page checks access itself and each API endpoint has its own server guard. Screens that are not
- * built yet (jury) are not linked at all.
+ * built yet are not linked at all. Until an admin or manager has proved the second factor, only the
+ * enrolment page is linked (the others send them back to it).
  */
 const NAV: ReadonlyArray<{
   key: keyof AdminShellMessages['nav'];
@@ -42,12 +48,16 @@ const NAV: ReadonlyArray<{
   { key: 'ambassadors', href: '/admin/ambassadors', Icon: Award },
   { key: 'tasks', href: '/admin/tasks', Icon: ClipboardList },
   { key: 'teams', href: '/admin/teams', Icon: UsersRound },
+  { key: 'rounds', href: '/admin/rounds', Icon: Milestone },
+  { key: 'jury', href: '/admin/jury', Icon: Gavel },
+  { key: 'certificates', href: '/admin/certificates', Icon: BadgeCheck },
   { key: 'announcements', href: '/admin/announcements', Icon: Megaphone },
   { key: 'payments', href: '/admin/payments', Icon: CreditCard },
   { key: 'settings', href: '/admin/settings', Icon: Settings },
   { key: 'book', href: '/admin/book', Icon: BookOpen },
   { key: 'bookOrders', href: '/admin/book-orders', Icon: Truck },
   { key: 'audit', href: '/admin/audit', Icon: ScrollText },
+  { key: 'security', href: TWO_FACTOR_PAGE, Icon: ShieldCheck },
 ];
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -56,13 +66,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     getMessages(adminShellMessages),
     getMessages(common),
   ]);
-  const items: NavItem[] = NAV.filter(({ href }) => canOpen(href, user.role)).map(
-    ({ key, href, Icon }) => ({
-      href,
-      label: m.nav[key],
-      icon: <Icon size={20} aria-hidden="true" />,
-    }),
-  );
+  const enrolOnly = needsTwoFactor(user.twoFactor);
+  const items: NavItem[] = NAV.filter(
+    ({ href }) => canOpen(href, user.role) && (!enrolOnly || href === TWO_FACTOR_PAGE),
+  ).map(({ key, href, Icon }) => ({
+    href,
+    label: m.nav[key],
+    icon: <Icon size={20} aria-hidden="true" />,
+  }));
   const roleLabel = c.roles[user.role];
   // Worked out here on the server: the browser may split a Bangla name differently.
   const userInitial = initialOf(user.name);

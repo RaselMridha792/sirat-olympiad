@@ -71,9 +71,12 @@ headers=$(https -D - -o /dev/null "https://$host:$p443/healthz")
 grep -q '^HTTP/[0-9.]* 200' <<< "$headers" && pass "https /healthz answers 200" || fail "https /healthz answers 200"
 [ "$(echo "$headers" | grep -ci '^strict-transport-security: max-age=300')" = 1 ] &&
   pass "exactly one HSTS header (max-age=300)" || fail "exactly one HSTS header (max-age=300)"
-for h in X-Content-Type-Options Referrer-Policy Content-Security-Policy-Report-Only; do
+for h in X-Content-Type-Options Referrer-Policy Content-Security-Policy Permissions-Policy; do
   grep -qi "^$h:" <<< "$headers" && pass "$h on https" || fail "$h on https"
 done
+grep -qi '^permissions-policy: camera=(), microphone=(), geolocation=()' <<< "$headers" &&
+  pass "Permissions-Policy turns off the camera, the microphone and the location" ||
+  fail "Permissions-Policy turns off the camera, the microphone and the location"
 
 # The API is not running here, so nginx answers with its own JSON 502 (a named location with its own add_header).
 q="q$RANDOM$RANDOM$RANDOM"
@@ -81,7 +84,7 @@ r="r$RANDOM$RANDOM$RANDOM"
 error=$(https -D - -H "Referer: https://$host/admin/users?q=$r" "https://$host:$p443/api/health?q=$q")
 grep -q 'BAD_GATEWAY' <<< "$error" && pass "nginx's own 502 is JSON" || fail "nginx's own 502 is JSON"
 once=0
-for h in Strict-Transport-Security X-Content-Type-Options Referrer-Policy Content-Security-Policy-Report-Only; do
+for h in Strict-Transport-Security X-Content-Type-Options Referrer-Policy Content-Security-Policy Permissions-Policy; do
   [ "$(echo "$error" | grep -ci "^$h:")" = 1 ] || once=1
 done
 [ "$once" = 0 ] && pass "nginx's own errors carry each security header exactly once" ||

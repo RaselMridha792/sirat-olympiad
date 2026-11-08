@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type {
   AdminAttemptDetail,
   AdminExamCard,
+  AdminExamPreview,
   AdminExamView,
   ExamResultsStatus,
 } from '@sirat/shared';
@@ -67,6 +68,18 @@ const view: AdminExamView = {
       updatedAt: '2026-11-10T04:00:00.000Z',
     },
   ],
+  keyCorrections: [
+    {
+      id: 'k-1',
+      questionId: 'q-1',
+      position: 0,
+      fromKey: 'A',
+      toKey: 'B',
+      reason: 'The printed key was wrong',
+      createdAt: '2026-11-21T04:00:00.000Z',
+      createdByName: 'Admin',
+    },
+  ],
 };
 
 const results: ExamResultsStatus = {
@@ -78,6 +91,10 @@ const results: ExamResultsStatus = {
   publishedAt: null,
   canBuild: false,
   canPublish: false,
+  keyCorrectedAt: '2026-11-21T04:00:00.000Z',
+  rescorePending: 0,
+  snapshotStale: true,
+  lastCorrection: { position: 0, fromKey: 'A', toKey: 'B', attempts: 41, changed: 7 },
 };
 
 const attempt: AdminAttemptDetail = {
@@ -124,6 +141,7 @@ test('admin.getExam picks the view at every level; null for unknown and malforme
       examId: 'x',
       options: q.options.map((o) => ({ ...o, x: 1 })),
     })),
+    keyCorrections: view.keyCorrections.map((k) => ({ ...k, createdById: 'u-9' })),
   };
   const get = fakeApi({ [`/admin/exams/${EXAM}`]: { status: 200, body } });
   const source = createHttpSource(get).admin;
@@ -135,6 +153,8 @@ test('admin.getExam picks the view at every level; null for unknown and malforme
     { ...view, updatedAt: undefined },
     { ...view, questions: [{ ...view.questions[0], correctKey: null }] },
     { ...view, status: 'live' },
+    { ...view, keyCorrections: undefined },
+    { ...view, keyCorrections: [{ ...view.keyCorrections[0], toKey: null }] },
   ]) {
     const wrong = fakeApi({ [`/admin/exams/${EXAM}`]: { status: 200, body: bad } });
     await assert.rejects(createHttpSource(wrong).admin.getExam(EXAM), DataRequestError);
@@ -143,15 +163,54 @@ test('admin.getExam picks the view at every level; null for unknown and malforme
 
 test('admin.getExamResults picks the status and refuses a missing count', async () => {
   const path = `/admin/exams/${EXAM}/results`;
-  const get = fakeApi({ [path]: { status: 200, body: { ...results, secret: 1 } } });
+  const body = { ...results, secret: 1, lastCorrection: { ...results.lastCorrection, id: 'k-1' } };
+  const get = fakeApi({ [path]: { status: 200, body } });
   assert.deepEqual(await createHttpSource(get).admin.getExamResults(EXAM), results);
-  const bad = fakeApi({
-    [path]: {
-      status: 200,
-      body: { ...results, counts: { ...results.counts, expired: undefined } },
-    },
-  });
-  await assert.rejects(createHttpSource(bad).admin.getExamResults(EXAM), DataRequestError);
+  for (const wrong of [
+    { ...results, counts: { ...results.counts, expired: undefined } },
+    { ...results, rescorePending: undefined },
+    { ...results, lastCorrection: { ...results.lastCorrection, changed: 'x' } },
+  ]) {
+    const bad = fakeApi({ [path]: { status: 200, body: wrong } });
+    await assert.rejects(createHttpSource(bad).admin.getExamResults(EXAM), DataRequestError);
+  }
+});
+
+const preview: AdminExamPreview = {
+  examId: EXAM,
+  title: 'Round 1',
+  status: 'draft',
+  durationMinutes: 30,
+  questionsPerAttempt: 3,
+  violationWarnings: 5,
+  questions: [
+    { text: 'Q1', options: ['b', 'a'] },
+    { text: 'Q2', options: ['c', 'd', 'e'] },
+  ],
+  correct: [0, 2],
+};
+
+test('admin.getExamPreview picks the draw; malformed shapes and ids are refused', async () => {
+  const path = `/admin/exams/${EXAM}/preview`;
+  const body = {
+    ...preview,
+    attemptId: 'x',
+    questions: preview.questions.map((q) => ({ ...q, id: 'q-x', correctKey: 'A' })),
+  };
+  const get = fakeApi({ [path]: { status: 200, body } });
+  const source = createHttpSource(get).admin;
+  assert.deepEqual(await source.getExamPreview(EXAM), preview);
+  assert.equal(await source.getExamPreview('ex-1'), null);
+  assert.equal(get.calls.length, 1, 'a malformed id sends no request');
+  for (const bad of [
+    { ...preview, correct: [0] },
+    { ...preview, correct: [0, -1] },
+    { ...preview, questions: [{ text: 'Q1', options: [1, 2] }, preview.questions[1]] },
+    { ...preview, status: 'live' },
+  ]) {
+    const wrong = fakeApi({ [path]: { status: 200, body: bad } });
+    await assert.rejects(createHttpSource(wrong).admin.getExamPreview(EXAM), DataRequestError);
+  }
 });
 
 test('admin.listAttempts sends the violation filters and picks the rows', async () => {

@@ -9,14 +9,20 @@ import {
   CalendarX,
   CheckCircle,
   Clock,
+  Eye,
   Hourglass,
   Layers,
   ListChecks,
   Lock,
 } from 'lucide-react';
 import { EXAM_VIOLATION_WARNINGS } from '@sirat/shared';
-import { Badge, Card, cn, EmptyState, PageHeader } from '@sirat/ui';
-import { pickQuestion, pickSettings, questionRules } from '@/components/exam/admin/exam-authoring';
+import { Badge, buttonClasses, Card, cn, EmptyState, PageHeader } from '@sirat/ui';
+import {
+  correctedKeys,
+  pickQuestion,
+  pickSettings,
+  questionRules,
+} from '@/components/exam/admin/exam-authoring';
 import { ExamStateActions } from '@/components/exam/admin/ExamStateActions';
 import {
   ATTEMPT_FILTERS,
@@ -24,6 +30,7 @@ import {
   ExamResultsSection,
   MIN_VIOLATIONS_FILTER,
 } from '@/components/exam/admin/ExamResultsPanel';
+import { KeyCorrectionButton } from '@/components/exam/admin/KeyCorrection';
 import { AddQuestionButton, QuestionActions } from '@/components/exam/admin/QuestionEditor';
 import { ImportQuestionsButton } from '@/components/exam/admin/QuestionImport';
 import { examStatusTone } from '@/components/status';
@@ -32,6 +39,7 @@ import { parseEnum, parseId, parsePageQuery, type SearchParams } from '@/data/qu
 import { common } from '@/i18n/common';
 import { formatDateTime, formatNumber } from '@/i18n/format';
 import { adminExamAuthoringMessages } from '@/i18n/messages/admin-exam-authoring';
+import { adminExamPreviewMessages } from '@/i18n/messages/admin-exam-preview';
 import { adminExamResultsMessages } from '@/i18n/messages/admin-exam-results';
 import { adminExamsMessages } from '@/i18n/messages/admin-exams';
 import { getMessages } from '@/i18n/server';
@@ -48,8 +56,9 @@ export async function generateMetadata(): Promise<Metadata> {
  * Admin exam detail (old quiz-management/view/[id]) with the answer keys. Staff only: no student
  * shape carries `correctKey`. Once published, the results panel and the attempts with their
  * violations (owner Q4) come first. Authoring (E5b): edit settings, publish, unpublish, archive, and
- * the questions (add, edit or version, delete or retire); a draft also takes a CSV import (E7a). The client parts get
- * picked props only.
+ * the questions (add, edit or version, delete or retire); a draft also takes a CSV import (E7a). A published exam whose
+ * results are not published takes an answer-key correction per question (E7b); the key shown is the one in effect.
+ * The client parts get picked props only.
  */
 export default async function AdminExamDetailPage({
   params,
@@ -62,11 +71,12 @@ export default async function AdminExamDetailPage({
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const examId = parseId(id);
   if (!examId) notFound();
-  const [{ locale, m }, { m: c }, { m: r }, { m: a }, data] = await Promise.all([
+  const [{ locale, m }, { m: c }, { m: r }, { m: a }, { m: pv }, data] = await Promise.all([
     getMessages(adminExamsMessages),
     getMessages(common),
     getMessages(adminExamResultsMessages),
     getMessages(adminExamAuthoringMessages),
+    getMessages(adminExamPreviewMessages),
     getData(query),
   ]);
   const filter = parseEnum(query.filter, ATTEMPT_FILTERS);
@@ -85,6 +95,8 @@ export default async function AdminExamDetailPage({
   if (!exam) notFound();
   const path = `/admin/exams/${encodeURIComponent(exam.id)}`;
   const rules = questionRules(exam, exam.questions.length);
+  const corrected = correctedKeys(exam.keyCorrections); // E7b: the key in effect per question
+  const canCorrect = exam.status === 'published' && exam.resultsPublishedAt === null;
 
   const info: Array<{ key: string; label: string; value: string; icon: ReactNode; tone: string }> =
     [
@@ -171,6 +183,18 @@ export default async function AdminExamDetailPage({
                 </span>
               </Badge>
             ) : null}
+            {exam.status !== 'archived' ? (
+              <Link
+                href={`${path}/preview`}
+                aria-label={pv.openLabel(exam.title)}
+                className={buttonClasses({ variant: 'outline', size: 'sm' })}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <Eye size={14} aria-hidden="true" />
+                  {pv.open}
+                </span>
+              </Link>
+            ) : null}
           </div>
         }
       />
@@ -252,85 +276,114 @@ export default async function AdminExamDetailPage({
           <EmptyState icon={<ListChecks size={26} />} title={m.detail.noQuestions} />
         ) : (
           <ol className="space-y-4">
-            {exam.questions.map((question, index) => (
-              <li key={question.id}>
-                <Card>
-                  <p className="mb-4 text-lg font-bold text-ink">
-                    {/* Real spaces (not only margins), so copied and read-aloud text is not run together. */}
-                    <span className="mr-2 text-secondary">
-                      {m.detail.questionNo(formatNumber(locale, index + 1))}
-                    </span>{' '}
-                    {question.text}
-                    {question.version > 1 ? (
-                      <>
-                        {' '}
-                        <span className="ml-2 inline-flex rounded-full bg-secondary-soft px-2 py-0.5 align-middle text-xs font-bold text-secondary">
-                          {m.detail.version(formatNumber(locale, question.version))}
-                        </span>
-                      </>
-                    ) : null}
-                  </p>
-
-                  <ul className="grid gap-3 md:grid-cols-2">
-                    {question.options.map((option) => {
-                      const correct = option.key === question.correctKey;
-                      return (
-                        <li
-                          key={option.key}
-                          className={cn(
-                            'flex items-center gap-3 rounded-control border p-3',
-                            correct ? 'border-success bg-success-soft' : 'border-line bg-page',
-                          )}
-                        >
-                          <span
-                            className={cn(
-                              'flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm font-bold',
-                              correct
-                                ? 'border-success bg-surface text-ink'
-                                : 'border-line bg-surface text-ink-muted',
-                            )}
-                          >
-                            {option.key}
+            {exam.questions.map((stored, index) => {
+              const question = {
+                ...stored,
+                correctKey: corrected.get(stored.id) ?? stored.correctKey,
+              };
+              const number = formatNumber(locale, index + 1);
+              return (
+                <li key={question.id}>
+                  <Card>
+                    <p className="mb-4 text-lg font-bold text-ink">
+                      {/* Real spaces (not only margins), so copied and read-aloud text is not run together. */}
+                      <span className="mr-2 text-secondary">
+                        {m.detail.questionNo(formatNumber(locale, index + 1))}
+                      </span>{' '}
+                      {question.text}
+                      {question.version > 1 ? (
+                        <>
+                          {' '}
+                          <span className="ml-2 inline-flex rounded-full bg-secondary-soft px-2 py-0.5 align-middle text-xs font-bold text-secondary">
+                            {m.detail.version(formatNumber(locale, question.version))}
                           </span>
-                          <span
-                            className={cn(
-                              'min-w-0 flex-1 break-words text-ink',
-                              correct && 'font-bold',
-                            )}
-                          >
-                            {option.text}
+                        </>
+                      ) : null}
+                      {question.correctKey !== stored.correctKey ? (
+                        <>
+                          {' '}
+                          <span className="ml-2 inline-flex rounded-full bg-warning-soft px-2 py-0.5 align-middle text-xs font-bold text-warning-strong">
+                            {m.detail.keyCorrected(stored.correctKey, question.correctKey)}
                           </span>
-                          {correct ? (
-                            <>
-                              <CheckCircle
-                                size={20}
-                                aria-hidden="true"
-                                className="shrink-0 text-success"
-                              />
-                              <span className="sr-only">{m.detail.correct}</span>
-                            </>
-                          ) : null}
-                        </li>
-                      );
-                    })}
-                  </ul>
-
-                  {question.explanation ? (
-                    <p className="mt-4 text-sm text-ink-muted">
-                      <span className="font-semibold text-ink">{m.detail.explanation}</span>{' '}
-                      {question.explanation}
+                        </>
+                      ) : null}
                     </p>
-                  ) : null}
-                  <QuestionActions
-                    locale={locale}
-                    examId={exam.id}
-                    question={pickQuestion(question)}
-                    number={formatNumber(locale, index + 1)}
-                    rules={rules}
-                  />
-                </Card>
-              </li>
-            ))}
+
+                    <ul className="grid gap-3 md:grid-cols-2">
+                      {question.options.map((option) => {
+                        const correct = option.key === question.correctKey;
+                        return (
+                          <li
+                            key={option.key}
+                            className={cn(
+                              'flex items-center gap-3 rounded-control border p-3',
+                              correct ? 'border-success bg-success-soft' : 'border-line bg-page',
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                'flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm font-bold',
+                                correct
+                                  ? 'border-success bg-surface text-ink'
+                                  : 'border-line bg-surface text-ink-muted',
+                              )}
+                            >
+                              {option.key}
+                            </span>
+                            <span
+                              className={cn(
+                                'min-w-0 flex-1 break-words text-ink',
+                                correct && 'font-bold',
+                              )}
+                            >
+                              {option.text}
+                            </span>
+                            {correct ? (
+                              <>
+                                <CheckCircle
+                                  size={20}
+                                  aria-hidden="true"
+                                  className="shrink-0 text-success"
+                                />
+                                <span className="sr-only">{m.detail.correct}</span>
+                              </>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+
+                    {question.explanation ? (
+                      <p className="mt-4 text-sm text-ink-muted">
+                        <span className="font-semibold text-ink">{m.detail.explanation}</span>{' '}
+                        {question.explanation}
+                      </p>
+                    ) : null}
+                    <QuestionActions
+                      locale={locale}
+                      examId={exam.id}
+                      question={pickQuestion(question)}
+                      number={number}
+                      rules={rules}
+                    >
+                      {canCorrect ? (
+                        <KeyCorrectionButton
+                          locale={locale}
+                          examId={exam.id}
+                          examUpdatedAt={exam.updatedAt}
+                          question={{
+                            id: question.id,
+                            options: question.options,
+                            correctKey: question.correctKey,
+                          }}
+                          number={number}
+                        />
+                      ) : null}
+                    </QuestionActions>
+                  </Card>
+                </li>
+              );
+            })}
           </ol>
         )}
       </section>

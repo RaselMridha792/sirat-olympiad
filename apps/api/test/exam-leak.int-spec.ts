@@ -33,7 +33,7 @@ afterAll(async () => {
 });
 
 const FORBIDDEN_FIELDS =
-  /"(correctKey|correct_key|explanation|score|timeTaken\w*|time_taken\w*|key|lineageId|layout)"\s*:/;
+  /"(correctKey|correct_key|explanation|score|timeTaken\w*|time_taken\w*|key|lineageId|layout|fromKey|toKey|keyCorrections)"\s*:/;
 
 describe('nothing secret reaches a student before results', () => {
   it('scans every exam-engine response for answers, explanations, scores and canaries', async () => {
@@ -41,6 +41,18 @@ describe('nothing secret reaches a student before results', () => {
     const { exam, questions } = await seedExam(env, prisma, {
       count: 3,
       question: (i) => ({ explanation: `${canary}-explanation-${i}` }),
+    });
+    // E7b: an answer-key correction made during the window: neither its keys nor its reason reach a student.
+    const corrector = await makeUser(prisma, { role: 'admin' });
+    await prisma.answerKeyCorrection.create({
+      data: {
+        examId: exam.id,
+        questionId: questions[0]!.id,
+        fromKey: questions[0]!.correctKey,
+        toKey: 'A',
+        reason: `${canary}-correction`,
+        createdById: corrector.id,
+      },
     });
     // Another student already scored, with a distinctive time: neither may show up anywhere.
     const rival = await makeUser(prisma, { role: 'student' });

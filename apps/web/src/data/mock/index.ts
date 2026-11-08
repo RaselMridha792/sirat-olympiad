@@ -1,5 +1,10 @@
 import {
   ADMIN_AUDIT_EXPORT,
+  CATEGORIES,
+  DEFAULT_VIDEO_CRITERIA,
+  type AdminRound,
+  type AdminCertificateRow,
+  type JuryEntryRow,
   BD_DISTRICTS,
   type AdminAnnouncement,
   type AdminTaskReviewRow,
@@ -23,6 +28,7 @@ import {
   type AdminAttemptDetail,
   type AdminAttemptRow,
   type AdminExamLeaderboard,
+  type AdminExamPreview,
   type AdminExamView,
   type ExamEvent,
   type ExamResultsStatus,
@@ -497,6 +503,48 @@ export function createMockSource(state: MockState | null): DataSource {
           () => emptyPage<AnnouncementItem>(query),
         ),
 
+      getMyRound: () =>
+        run(
+          () => {
+            const w = getWorld();
+            const r = w.rounds.find((x) => x.id === w.currentRoundId) ?? w.rounds[0];
+            return r
+              ? {
+                  round: {
+                    id: r.id,
+                    name: r.name,
+                    type: r.type,
+                    sortOrder: r.sortOrder,
+                    opensAt: r.opensAt,
+                    closesAt: r.closesAt,
+                  },
+                  entryStatus: 'pending' as const,
+                  videoUrl: null,
+                  videoSubmittedAt: null,
+                }
+              : null;
+          },
+          () => null,
+        ),
+
+      listMyCertificates: () =>
+        run(
+          () => {
+            const w = getWorld();
+            return w.rounds.slice(0, 2).map((r, i) => ({
+              id: `ct-me-${i}`,
+              type: i === 0 ? ('participation' as const) : ('promotion' as const),
+              round: { id: r.id, name: r.name },
+              serial: `SLO-2026-${String(120 + i).padStart(6, '0')}`,
+              verificationCode: i === 0 ? '3FA9C1D27B10' : '9E04B2C6A1F3',
+              nameOnCertificate: w.me.name,
+              issuedAt: r.closesAt ?? '2026-11-20T06:00:00.000Z',
+              revoked: false,
+            }));
+          },
+          () => [],
+        ),
+
       getMyTeam: () =>
         run(
           () => {
@@ -839,6 +887,31 @@ export function createMockSource(state: MockState | null): DataSource {
                 createdAt: e.createdAt,
                 updatedAt: e.createdAt,
               })),
+              keyCorrections: [],
+            };
+          },
+          () => null,
+        ),
+
+      getExamPreview: (id) =>
+        run(
+          (): AdminExamPreview | null => {
+            const e = getWorld().exams.find((x) => x.id === id);
+            if (!e) return null;
+            // The mock draws nothing: the active questions in their stored order, options as written.
+            const questions = e.questions.filter((q) => q.isActive).slice(0, e.questionsPerAttempt);
+            return {
+              examId: e.id,
+              title: e.title,
+              status: e.status,
+              durationMinutes: e.durationMinutes,
+              questionsPerAttempt: e.questionsPerAttempt,
+              violationWarnings: EXAM_VIOLATION_WARNINGS,
+              questions: questions.map((q) => ({
+                text: q.text,
+                options: q.options.map((o) => o.text),
+              })),
+              correct: questions.map((q) => q.options.findIndex((o) => o.key === q.correctKey)),
             };
           },
           () => null,
@@ -867,6 +940,10 @@ export function createMockSource(state: MockState | null): DataSource {
               publishedAt: e.resultsPublishedAt,
               canBuild: open,
               canPublish: open && snapshot,
+              keyCorrectedAt: null,
+              rescorePending: 0,
+              snapshotStale: false,
+              lastCorrection: null,
             };
           },
           () => null,
@@ -896,6 +973,132 @@ export function createMockSource(state: MockState | null): DataSource {
             return (e && examAttempts(w, e).find((a) => a.attemptId === attemptId)) ?? null;
           },
           () => null,
+        ),
+
+      getRoundJury: (id) =>
+        run(
+          () => {
+            const w = getWorld();
+            const round = w.rounds.find((r) => r.id === id && r.type === 'video');
+            if (!round) return null;
+            const judges = w.users.filter((u) => u.role === 'jury').slice(0, 3);
+            return {
+              round: { id: round.id, name: round.name },
+              assignments: judges.slice(0, 2).flatMap((u, i) =>
+                (i === 0 ? CATEGORIES : (['activist'] as const)).map((category) => ({
+                  id: `ja-${u.id}-${category}`,
+                  judge: { userId: u.id, name: u.name, email: u.email },
+                  category,
+                  createdAt: round.opensAt ?? '2026-10-01T00:00:00.000Z',
+                })),
+              ),
+              candidates: judges.map((u) => ({ userId: u.id, name: u.name, email: u.email })),
+            };
+          },
+          () => null,
+        ),
+
+      listJuryRounds: () =>
+        run(
+          () =>
+            getWorld()
+              .rounds.filter((r) => r.type === 'video')
+              .map((r) => ({
+                id: r.id,
+                name: r.name,
+                closesAt: r.closesAt,
+                scoringOpen: true,
+                criteria: DEFAULT_VIDEO_CRITERIA.map((c) => ({ ...c })),
+                categories: [...CATEGORIES],
+                pending: 12,
+                evaluated: 5,
+              })),
+          () => [],
+        ),
+
+      listJuryEntries: (query) =>
+        run(
+          () => {
+            const scored = query.status === 'evaluated';
+            const rows = Array.from({ length: scored ? 5 : 12 }, (_, i) => ({
+              entryId: `00000000-0000-7000-8000-${String(i + (scored ? 100 : 0)).padStart(12, '0')}`,
+              code: `E-${(0x3fa9c1d2 + i * 7919 + (scored ? 99 : 0)).toString(16).toUpperCase().slice(-8)}`,
+              category: CATEGORIES[i % CATEGORIES.length]!,
+              videoUrl: `https://youtu.be/mock${i}`,
+              videoSubmittedAt: `2026-11-1${i % 9}T08:00:00.000Z`,
+              myScore: scored
+                ? {
+                    criteria: Object.fromEntries(
+                      DEFAULT_VIDEO_CRITERIA.map((c) => [c.key, 6 + (i % 4)]),
+                    ),
+                    total: (6 + (i % 4)) * 10,
+                    comment: i === 0 ? 'Clear message, good sound.' : null,
+                    scoredAt: '2026-11-20T10:00:00.000Z',
+                  }
+                : null,
+            }));
+            return paginate(rows, query);
+          },
+          () => emptyPage<JuryEntryRow>(query),
+        ),
+
+      listCertificates: (query) =>
+        run(
+          () => {
+            const w = getWorld();
+            const rows: AdminCertificateRow[] = w.users
+              .filter((u) => u.role === 'student')
+              .slice(0, 30)
+              .map((u, i) => ({
+                id: `ct-${i}`,
+                user: { userId: u.id, name: u.name, email: u.email },
+                type: i < 24 ? 'participation' : i < 29 ? 'promotion' : 'winner',
+                round: { id: w.rounds[i < 24 ? 0 : 1]!.id, name: w.rounds[i < 24 ? 0 : 1]!.name },
+                serial: `SLO-2026-${String(i + 1).padStart(6, '0')}`,
+                nameOnCertificate: u.name,
+                issuedAt: '2026-11-20T06:00:00.000Z',
+                revokedAt: i === 3 ? '2026-11-21T06:00:00.000Z' : null,
+                revokeReason: i === 3 ? 'Issued by mistake' : null,
+                updatedAt: '2026-11-20T06:00:00.000Z',
+              }));
+            return paginate(rows, query);
+          },
+          () => emptyPage<AdminCertificateRow>(query),
+        ),
+
+      listRounds: () =>
+        run(
+          () =>
+            getWorld().rounds.map((r, i): AdminRound => {
+              const at = r.opensAt ?? '2026-10-01T00:00:00.000Z';
+              return {
+                ...r,
+                criteria: r.type === 'video' ? DEFAULT_VIDEO_CRITERIA.map((c) => ({ ...c })) : null,
+                scored: false,
+                entries: {
+                  pending: i === 1 ? 180 : 0,
+                  submitted: i === 1 ? 64 : 0,
+                  evaluated: 0,
+                  promoted: i === 0 ? 246 : 0,
+                  eliminated: i === 0 ? 1240 : 0,
+                },
+                promotions:
+                  i === 0
+                    ? CATEGORIES.map((category, k) => ({
+                        id: `pr-${k}`,
+                        category,
+                        toRoundId: 'rd-2',
+                        topN: 80,
+                        promoted: k === 1 ? 86 : 80,
+                        eliminated: 400 + k * 20,
+                        createdAt: r.closesAt ?? at,
+                      }))
+                    : [],
+                createdAt: at,
+                updatedAt: at,
+              };
+            }),
+          () => [],
         ),
 
       listTeams: (query) =>

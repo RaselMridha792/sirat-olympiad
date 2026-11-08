@@ -1,9 +1,16 @@
 import { Module } from '@nestjs/common';
+import { AdminRoundsController, JuryController, RoundsController } from './rounds.controller';
+import { JuryService } from './jury.service';
+import { PromotionService } from './promotion.service';
+import { RoundsService } from './rounds.service';
+import { VideoService } from './video.service';
 
 /**
- * rounds module — SCAFFOLD STUB.
- * Spec: docs/04-FEATURES.md and docs/06-API.md. Rules: docs/RULEBOOK.md (sections 4-9, 18, 19).
- * Add: controller (explicit guard on every route), service, DTOs (class-validator), tests.
+ * Rounds (core C6a): rounds as data, promotion from a round to the next, the student's own round; C6b: the video
+ * and the jury (assignment, blind scoring). Plan: docs/plans/CORE-PLAN.md section 7; contract: docs/06-API.md "Rounds".
  */
-@Module({})
+@Module({
+  controllers: [RoundsController, AdminRoundsController, JuryController],
+  providers: [RoundsService, PromotionService, VideoService, JuryService],
+})
 export class RoundsModule {}

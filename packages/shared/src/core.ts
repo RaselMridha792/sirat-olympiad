@@ -1,6 +1,6 @@
 import type { Category, Role } from './index';
 import type { AdminUserQuery, AnnouncementItem, PageQuery } from './dashboard';
-import type { AnnouncementRecord } from './records';
+import type { AnnouncementRecord, EntryStatus, RoundRecord, RoundType } from './records';
 
 /*
  * Shapes of the core session's endpoints that are not dashboard reads (docs/plans/CORE-PLAN.md). Dashboard read
@@ -379,4 +379,395 @@ export interface TeamRenameRequest {
   name: string;
   reason: string;
   expectedUpdatedAt: string;
+}
+
+// ───────────── Rounds and promotion (core C6a) ─────────────
+
+export const ROUND_LIMITS = {
+  nameMin: 2,
+  nameMax: 60,
+  /** Rounds in all, Round 1 included (rounds_sort_order_check). */
+  maxRounds: 10,
+  criteriaMin: 1,
+  criteriaMax: 20,
+  criterionKeyMax: 40,
+  criterionLabelMax: 80,
+  /** Points a judge gives per criterion (0 to this). */
+  criterionMax: 10,
+  topNMax: 25_000,
+} as const;
+
+/** A criterion key: lower case, digits and underscores, starting with a letter. */
+export const CRITERION_KEY_PATTERN = /^[a-z][a-z0-9_]{1,39}$/;
+
+/** Refusal codes in ApiError.details for rounds and promotion. */
+export const ROUND_REFUSALS = [
+  'stale',
+  'nothing_to_update',
+  'after_final',
+  'too_many_rounds',
+  'bad_window',
+  'bad_criteria',
+  'window_started',
+  'window_shortened',
+  'window_closed',
+  'quiz_round',
+  'not_video_round',
+  'criteria_frozen',
+  'no_next_round',
+  'no_exam',
+  'ambiguous_source',
+  'results_not_published',
+  'window_not_closed',
+  'unscored_entries',
+  'no_entries',
+  'already_promoted',
+] as const;
+export type RoundRefusal = (typeof ROUND_REFUSALS)[number];
+
+/** One jury criterion of a video round; the labels are shown to judges in both languages. */
+export interface RoundCriterion {
+  key: string;
+  en: string;
+  bn: string;
+}
+
+/** The old Zero Olympiad's ten criteria (0–10 each, total 0–100): a new video round's default (owner Q4 default). */
+export const DEFAULT_VIDEO_CRITERIA: readonly RoundCriterion[] = [
+  { key: 'content_relevance', en: 'Content Relevance', bn: 'বিষয়বস্তুর প্রাসঙ্গিকতা' },
+  { key: 'creativity', en: 'Creativity and Innovation', bn: 'সৃজনশীলতা ও উদ্ভাবন' },
+  { key: 'clarity', en: 'Clarity and Communication', bn: 'স্পষ্টতা ও যোগাযোগ' },
+  { key: 'impact', en: 'Impact and Call to Action', bn: 'প্রভাব ও কাজের আহ্বান' },
+  { key: 'presentation', en: 'Presentation and Visual Appeal', bn: 'উপস্থাপনা ও দৃশ্যমান আকর্ষণ' },
+  { key: 'technical_quality', en: 'Technical Quality', bn: 'কারিগরি মান' },
+  { key: 'research', en: 'Research and Data Usage', bn: 'গবেষণা ও তথ্যের ব্যবহার' },
+  { key: 'engagement', en: 'Engagement and Storytelling', bn: 'আকর্ষণ ও গল্প বলা' },
+  { key: 'inclusivity', en: 'Inclusivity and Diversity', bn: 'অন্তর্ভুক্তি ও বৈচিত্র্য' },
+  { key: 'overall', en: 'Overall Learning and Execution', bn: 'সামগ্রিক শিক্ষা ও বাস্তবায়ন' },
+];
+
+/** One promotion out of a round, per category. */
+export interface AdminPromotionRun {
+  id: string;
+  category: Category;
+  toRoundId: string;
+  topN: number;
+  promoted: number;
+  eliminated: number;
+  createdAt: string;
+}
+
+/** GET /admin/rounds (all rounds, at most 10, in order) and GET /admin/rounds/:id. */
+export type AdminRound = Pick<
+  RoundRecord,
+  'id' | 'name' | 'sortOrder' | 'type' | 'opensAt' | 'closesAt'
+> & {
+  /** Video rounds only. */
+  criteria: RoundCriterion[] | null;
+  /** A jury score exists, so the criteria can no longer change. */
+  scored: boolean;
+  /** This round's entries by status. */
+  entries: Record<EntryStatus, number>;
+  promotions: AdminPromotionRun[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** POST /admin/rounds: Round 1 (quiz) exists; admins add video and final rounds after it, in order. */
+export interface RoundCreateRequest {
+  name: string;
+  type: Exclude<RoundType, 'quiz'>;
+  /** Required for a video round (the submission window); optional for a final round (both or neither). */
+  opensAt?: string;
+  closesAt?: string;
+  /** Video rounds; DEFAULT_VIDEO_CRITERIA when left out. */
+  criteria?: RoundCriterion[];
+}
+
+/** PATCH /admin/rounds/:id: the fields sent change; `expectedUpdatedAt` is the version the admin saw. */
+export interface RoundUpdateRequest {
+  name?: string;
+  opensAt?: string;
+  closesAt?: string;
+  criteria?: RoundCriterion[];
+  expectedUpdatedAt: string;
+}
+
+/** The body of both promotion calls. */
+export interface PromotionQuery {
+  /** Everyone ranked at or above this goes through, ties at the cut included (owner Q4a default). */
+  topN: number;
+  category: Category;
+}
+
+/** Echoed back by the run: refused (409 `stale`) when the source changed after the preview. */
+export interface PromotionExpected {
+  promoted: number;
+  sourceKey: string;
+}
+
+/** POST /admin/rounds/:id/promotion/preview: counts only, no names (exam's admin leaderboard has the list). */
+export interface PromotionPreview {
+  from: Pick<RoundRecord, 'id' | 'name' | 'type'>;
+  to: Pick<RoundRecord, 'id' | 'name' | 'type'>;
+  category: Category;
+  topN: number;
+  source:
+    { kind: 'exam'; examId: string; examTitle: string; generation: number } | { kind: 'jury' };
+  /** Ranked rows of this category in the source. */
+  candidates: number;
+  promoted: number;
+  /** Promoted beyond topN because they tie with the student at the cut (lead: the admin sees why N + k). */
+  tieCount: number;
+  eliminated: number;
+  /** The last promoted rank and its score; null when nobody would be promoted. */
+  cut: { rank: number; score: number; timeTakenSeconds: number | null } | null;
+  expected: PromotionExpected;
+}
+
+/** POST /admin/rounds/:id/promotion. */
+export interface PromotionRequest extends PromotionQuery {
+  expected: PromotionExpected;
+}
+
+export interface PromotionResult {
+  runId: string;
+  promoted: number;
+  eliminated: number;
+  toRound: Pick<RoundRecord, 'id' | 'name'>;
+}
+
+/** GET /rounds/me (student, ambassador): the student's current round and own entry. */
+export interface MyRound {
+  round: Pick<RoundRecord, 'id' | 'name' | 'type' | 'sortOrder' | 'opensAt' | 'closesAt'>;
+  /** null: no entry yet (Round 1 before its promotion). */
+  entryStatus: EntryStatus | null;
+  /** The student's own video link, shown back as text (core C6b). */
+  videoUrl: string | null;
+  videoSubmittedAt: string | null;
+}
+
+// ───────────── Video and jury (core C6b) ─────────────
+
+/**
+ * Hosts a student's video link may point to (owner Q4b default: YouTube and Google Drive). The server refuses any
+ * other; the jury's page makes a link only for these (lead), and never embeds a video in v1.
+ */
+export const VIDEO_HOSTS = [
+  'youtube.com',
+  'www.youtube.com',
+  'm.youtube.com',
+  'youtu.be',
+  'drive.google.com',
+] as const;
+
+export const JURY_LIMITS = {
+  videoUrlMax: 500,
+  commentMax: 1000,
+  /** Jury-role accounts offered in the admin's assignment form. */
+  candidatesMax: 200,
+} as const;
+
+/**
+ * An https link whose host is exactly one of VIDEO_HOSTS: the only kind a student may send. The host part allows
+ * letters, digits, dots and hyphens only, so a user name (`@`), a port (`:`), a backslash or a space never gets
+ * through; after the host only a path, query or fragment without spaces may follow.
+ */
+const VIDEO_URL = /^https:\/\/([A-Za-z0-9.-]+)(?:[/?#]\S*)?$/;
+
+export function isAllowedVideoUrl(value: string): boolean {
+  if (value.length > JURY_LIMITS.videoUrlMax) return false;
+  const host = VIDEO_URL.exec(value)?.[1]?.toLowerCase();
+  return host !== undefined && (VIDEO_HOSTS as readonly string[]).includes(host);
+}
+
+/** Refusal codes in ApiError.details for the video and the jury. */
+export const JURY_REFUSALS = [
+  'not_video_round',
+  'window_not_open',
+  'window_closed',
+  'entry_closed',
+  'bad_video_url',
+  'not_jury',
+  'window_open',
+  'already_promoted',
+  'bad_scores',
+] as const;
+export type JuryRefusal = (typeof JURY_REFUSALS)[number];
+
+/** PUT /rounds/:id/video. */
+export interface VideoSubmitRequest {
+  url: string;
+}
+
+/** One judge's share of a video round, for admins. */
+export interface JuryAssignmentRow {
+  id: string;
+  judge: { userId: string; name: string; email: string };
+  category: Category;
+  createdAt: string;
+}
+
+/** GET /admin/rounds/:id/jury: the round's judges and the jury-role accounts that can be added. */
+export interface AdminRoundJury {
+  round: Pick<RoundRecord, 'id' | 'name'>;
+  assignments: JuryAssignmentRow[];
+  candidates: Array<{ userId: string; name: string; email: string }>;
+}
+
+/** POST /admin/rounds/:id/jury: one judge for one or more categories (one row each). */
+export interface JuryAssignRequest {
+  judgeId: string;
+  categories: Category[];
+}
+
+export interface JuryAssignResult {
+  assigned: number;
+  alreadyAssigned: number;
+}
+
+/** GET /jury/rounds: the video rounds a judge scores in, with their own counts. */
+export interface JuryRound {
+  id: string;
+  name: string;
+  closesAt: string | null;
+  /** The window has closed: the videos no longer change and scoring is open (until a category is promoted). */
+  scoringOpen: boolean;
+  criteria: RoundCriterion[];
+  categories: Category[];
+  /** Sent videos in the judge's categories that this judge has not scored, and has. */
+  pending: number;
+  evaluated: number;
+}
+
+/** GET /jury/entries: blind (lead, Q4c default): an entry number, the category and the link; never a name. */
+export interface JuryEntryRow {
+  entryId: string;
+  /** A short number to talk about an entry, e.g. "E-3FA9C1D2". */
+  code: string;
+  category: Category;
+  videoUrl: string;
+  videoSubmittedAt: string;
+  /** This judge's latest score of the entry. */
+  myScore: {
+    criteria: Record<string, number>;
+    total: number;
+    comment: string | null;
+    scoredAt: string;
+  } | null;
+}
+
+export interface JuryEntryQuery extends PageQuery {
+  round: string;
+  status?: 'pending' | 'evaluated';
+}
+
+/** POST /jury/entries/:entryId/scores: every criterion of the round, 0–10 each. */
+export interface JuryScoreRequest {
+  criteria: Record<string, number>;
+  comment?: string;
+}
+
+export interface JuryScoreResult {
+  entryId: string;
+  /** This score out of 100: the sum scaled by the number of criteria (with ten, the plain sum). */
+  total: number;
+  /** The entry's score: the average of each judge's latest total. */
+  score: number;
+  judges: number;
+}
+
+// ───────────── Certificates (core C6c) ─────────────
+
+/**
+ * participation: on a published Round 1 snapshot; promotion: an entry in a round after Round 1; winner: an admin
+ * names final-round students (owner Q4 defaults).
+ */
+export const CERTIFICATE_TYPES = ['participation', 'promotion', 'winner'] as const;
+export type CertificateType = (typeof CERTIFICATE_TYPES)[number];
+
+export const CERTIFICATE_LIMITS = {
+  reasonMin: 3,
+  reasonMax: 200,
+  /** Winners named in one request. */
+  winnersMax: 50,
+  /** The public check per IP and minute. */
+  checksPerMinute: 30,
+} as const;
+
+/** The verification code as printed: 12 hex digits (any letter case when typed). */
+export const CERTIFICATE_CODE_PATTERN = /^[0-9A-Fa-f]{12}$/;
+
+/** Refusal codes in ApiError.details for certificates. */
+export const CERTIFICATE_REFUSALS = [
+  'wrong_round',
+  'results_not_published',
+  'no_winners',
+  'unknown_user',
+  'not_in_round',
+  'already_revoked',
+  'stale',
+  'queue_unavailable',
+] as const;
+export type CertificateRefusal = (typeof CERTIFICATE_REFUSALS)[number];
+
+/** POST /admin/certificates/issue: queues one job; `emails` and `reason` for winners only. */
+export interface CertificateIssueRequest {
+  type: CertificateType;
+  roundId: string;
+  emails?: string[];
+  reason?: string;
+}
+
+/** 202: the job is queued; `candidates` is how many would get one now (those who have one already are skipped). */
+export interface CertificateIssueResult {
+  queued: true;
+  type: CertificateType;
+  roundId: string;
+  candidates: number;
+}
+
+/** GET /certificates/mine: the student's own certificates. */
+export interface MyCertificate {
+  id: string;
+  type: CertificateType;
+  round: Pick<RoundRecord, 'id' | 'name'>;
+  serial: string;
+  verificationCode: string;
+  nameOnCertificate: string;
+  issuedAt: string;
+  revoked: boolean;
+}
+
+/** GET /admin/certificates: one row, with the student's contact (admins only). */
+export interface AdminCertificateRow {
+  id: string;
+  user: { userId: string; name: string; email: string };
+  type: CertificateType;
+  round: Pick<RoundRecord, 'id' | 'name'>;
+  serial: string;
+  nameOnCertificate: string;
+  issuedAt: string;
+  revokedAt: string | null;
+  revokeReason: string | null;
+  updatedAt: string;
+}
+
+export interface AdminCertificateQuery extends PageQuery {
+  /** A name (contains) or a serial (exact). */
+  q?: string;
+  type?: CertificateType;
+  round?: string;
+}
+
+/** POST /admin/certificates/:id/revoke. */
+export interface CertificateRevokeRequest {
+  reason: string;
+  expectedUpdatedAt: string;
+}
+
+/** GET /certificates/verify/:code (public, lead): the name and the award only; revoked and unknown are both 404. */
+export interface CertificateCheck {
+  name: string;
+  award: { type: CertificateType; roundName: string };
 }

@@ -1,3 +1,4 @@
+import type { CheckoutGateway } from '@sirat/shared';
 import { PLACEHOLDER, type EnvVars } from '../../config/env';
 
 /**
@@ -61,6 +62,14 @@ export type PaymentEnv = Pick<
 
 /** A configuration error. The message names the variable and the rule, never a value. */
 export class PaymentConfigError extends Error {}
+
+/**
+ * Which checkout a payment URL opens, for the browser's scheme check (06-API "Registration and payment"). 'fake' only
+ * in fake mode, which buildPaymentConfig refuses with NODE_ENV=production: a live or sandbox API never says it.
+ */
+export function checkoutGateway(config: PaymentConfig): CheckoutGateway {
+  return config.enabled && config.env === 'fake' ? 'fake' : 'paystation';
+}
 
 const fail = (message: string): never => {
   throw new PaymentConfigError(message);

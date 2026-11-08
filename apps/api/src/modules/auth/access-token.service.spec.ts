@@ -12,7 +12,12 @@ import {
 
 const secret = randomBytes(32).toString('base64');
 const service = new AccessTokenService(new JwtService(accessTokenJwtOptions(secret, 900)));
-const user = (): AuthUser => ({ id: randomUUID(), role: 'student', sessionId: randomUUID() });
+const user = (twoFactor = false): AuthUser => ({
+  id: randomUUID(),
+  role: 'student',
+  sessionId: randomUUID(),
+  twoFactor,
+});
 const now = () => Math.floor(Date.now() / 1000);
 const b64url = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url');
 
@@ -30,9 +35,41 @@ const valid = (extra: object = {}) => ({
 });
 
 describe('AccessTokenService', () => {
-  it('round-trips the session user (id, role, session id)', async () => {
-    const u = user();
-    await expect(service.verify(await service.sign(u))).resolves.toEqual(u);
+  it('round-trips the session user (id, role, session id, second factor)', async () => {
+    for (const u of [user(false), user(true)])
+      await expect(service.verify(await service.sign(u))).resolves.toEqual(u);
+  });
+
+  it('signs the second factor as the boolean claim tfa', async () => {
+    const claims = (token: string) =>
+      JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString()) as {
+        tfa?: unknown;
+      };
+    expect(claims(await service.sign(user(true))).tfa).toBe(true);
+    expect(claims(await service.sign(user(false))).tfa).toBe(false);
+  });
+
+  it('reads a token without tfa (issued before 2FA existed) and any non-true value as not proved', async () => {
+    const plain = valid();
+    await expect(service.verify(await raw(plain))).resolves.toEqual({
+      id: plain.sub,
+      role: 'student',
+      sessionId: plain.sid,
+      twoFactor: false,
+    });
+    for (const tfa of ['true', 1, 'yes', {}, null])
+      await expect(service.verify(await raw(valid({ tfa })))).resolves.toMatchObject({
+        twoFactor: false,
+      });
+    await expect(service.verify(await raw(valid({ tfa: true })))).resolves.toMatchObject({
+      twoFactor: true,
+    });
+  });
+
+  it('rejects a token whose tfa claim was switched on after signing', async () => {
+    const [h, , s] = (await service.sign(user(false))).split('.');
+    const forged = `${h}.${b64url(valid({ tfa: true }))}.${s}`;
+    await expect(service.verify(forged)).resolves.toBeNull();
   });
 
   it('signs HS256 with issuer, audience and the configured lifetime', async () => {

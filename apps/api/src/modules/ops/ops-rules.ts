@@ -26,6 +26,7 @@ export const OPS_CHECKS = [
   'certificate',
   'backup_age',
   'time_sync',
+  'trusted_generators',
 ] as const;
 export type OpsCheck = (typeof OPS_CHECKS)[number];
 
@@ -65,10 +66,15 @@ export interface HostFacts {
   certificateDaysLeft: number | null;
   backupAgeHours: number | null;
   timeSynced: boolean | null;
+  /**
+   * Minutes until the trusted load-test generators expire (A2's loadtest-realip file); negative once past it; null
+   * when the file is absent. While it exists, nginx takes any client address those machines send.
+   */
+  trustedGeneratorsMinutesLeft: number | null;
 }
 
 export interface QueueFacts {
-  name: 'email' | 'payments' | 'exam' | 'housekeeping' | 'ambassador';
+  name: 'email' | 'payments' | 'exam' | 'housekeeping' | 'ambassador' | 'certificates';
   workers: number;
   waiting: number;
   oldestWaitingSeconds: number | null;
@@ -233,6 +239,12 @@ export function evaluate(
     host.backupAgeHours,
   );
   add('time_sync', host.timeSynced === false ? 'warn' : 'ok', host.timeSynced === false ? 0 : 1);
+  const generators = host.trustedGeneratorsMinutesLeft;
+  add(
+    'trusted_generators',
+    generators === null ? 'ok' : generators < 0 ? 'critical' : 'warn',
+    generators,
+  );
   return { results, streaks };
 }
 

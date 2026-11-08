@@ -51,7 +51,7 @@ The defaults are used if no answer comes before the PR that needs them.
 | D1 | The students list and its export are **admin only** (not `manager`, `jury`). |
 | D2 | **Phone masked in the list** (last 3 digits only, as payments masks stored payloads); full number in the detail dialog and in the CSV. Search by the full number still works. |
 | D3 | The CSV needs a **reason** (3–200 characters, kept in the audit row) and contains only `student` and `ambassador` accounts. At most 5 exports per admin per hour, at most 50,000 rows per export. |
-| D4 | Public pages: English at `/`, `/about`, `/privacy`, `/terms`, `/refund-policy`; Bangla at the same paths under `/bn`. All static (no cookie read), a language link on each page. |
+| D4 | Public pages: **Bangla at `/`, `/about`, `/privacy`, `/terms`, `/refund-policy`; English at the same paths under `/en`** (owner, 2026-11-03, DECISIONS "Public pages Bangla-first"; before that English was at the root and Bangla under `/bn`, which now redirects). All static (no cookie read), a language link on each page. |
 | D5 | Announcements are plain text (line breaks kept, no HTML, links not clickable), for everyone or one category, publish now or at a set time, archived instead of deleted. No email to students (SES quota). |
 | D6 | The student dashboard home is composed in the web from existing endpoints (`/users/me`, `/exams`, `/announcements`, payments' `/registrations/me`), so the planned `GET /dashboard/home` is dropped and no team's module changes for it. |
 | D7 | A team: one per ambassador, students join with the team's code, at most 10 members, one team per student. |
@@ -89,12 +89,13 @@ The defaults are used if no answer comes before the PR that needs them.
 
 **Web only; no API, no schema.** Not Phase D: no design work, no marketing sections beyond what PayStation's approval needs.
 
-| Route (en; bn under `/bn`) | Content |
+| Route (bn; en under `/en`) | Content |
 |---|---|
 | `/` | Name, one paragraph about the olympiad, the three steps (register and pay, log in, sit the exam), the fee and whether registration is open (from payments' `GET /registrations/info`, cached 60 s; if the API cannot be reached, the page shows no fee and keeps the buttons), Register and Log in buttons, contact block, footer |
 | `/about` | About GLTS Leadership × Sirat Olympiad (placeholder) and the organiser's registered name |
 | `/privacy`, `/terms`, `/refund-policy` | The client's texts; placeholders until then. The refund placeholder: the registration fee is non-refundable (owner); a payment taken by mistake is reported to the contact email (the client confirms the wording) |
 
+- **Update 2026-11-03 (owner):** `/` and `/about` are now the homepage and About first drafts from the client's PDFs (DECISIONS "Public pages Bangla-first"); the policy texts are exam's (#80).
 - **One content source:** `apps/web/src/content/site.ts` (registered business name, address, email, phone, effective date, `placeholder: true`) and a typed message module `i18n/messages/legal.ts` (bn mirrors en at compile time, as every message module does). Legal texts are structured data (headings, paragraphs, lists) rendered by a new `Prose` component in `packages/ui`: no HTML strings, no `dangerouslySetInnerHTML`.
 - **Footer** on every public page: the five links, the contact details and the business name from `site.ts`.
 - **Static:** no cookie read; `<html lang>` stays `en` in the shared root layout (DECISIONS UI port #16 keeps that for Phase D) and Bangla pages set `lang="bn"` on their wrapper, as the dashboards do. While `placeholder` is true, every page carries `noindex`.
@@ -169,18 +170,29 @@ Split into three PRs (lead, 2026-11-01): C5b-1 points (built: the sweep, bounded
 - **Admin:** `GET/PUT /admin/rank-thresholds` (`expected` + audit), `POST /admin/points/adjust { userId, amount, reason }` (a compensating entry, audited).
 - **Tests:** the sweep is idempotent and back-fills; one award per task; compensating entries only; rank from thresholds; team visibility; mutation checks on the event key and the visibility check.
 
-## 7. C6 Rounds, jury, certificates (task 6; outline)
+## 7. C6 Rounds, jury, certificates (task 6)
 
-Starts after exam's E4/E5 are on `main` and Q4 is answered, with a short plan update (exact contracts) reviewed by the lead first. The tables exist since A1.
+The plan update with the exact contracts was approved by the lead on 2026-11-01, on the Q4 defaults (Q4a–e went to the owner through the lead). One PR after another; exam's tables are read only (`exams`, `leaderboard_entries`).
 
-| PR | Content |
-|---|---|
-| C6a rounds + promotion | Admin round settings (window, type, criteria as data); a promotion run reads exam's `leaderboard_entries` (read only), previews the top N per category, then in one transaction inserts the next round's `round_entries` with `ON CONFLICT (user_id, round_id) DO NOTHING`, never overwriting a video or a score; a `promotion_runs` row (rule, count, admin) and an audit row; never past the last round |
-| C6b video + jury | `POST /rounds/:id/video` (a link, only inside the round window, editable until it closes); jury assignment per round; `jury_scores` append-only (trigger), each criterion 0–10 validated, the total computed by the server, the judge recorded; a judge sees only their assigned entries |
-| C6c certificates | Issued by a queue job from database state (idempotent: UNIQUE per user, type and round), with a serial and a random verification code; the name is copied at issue time; revoke with a reason (audited). `GET /certificates/mine`, `GET /certificates/:id/pdf` (owner; the first request queues the render and answers 202, the page polls; the PDF stays in the cache Redis for an hour, so 25,000 PDFs never sit in Postgres or its backups), public `GET /certificates/verify/:code` (name, type, round, date only) |
+| PR | Content | Status |
+|---|---|---|
+| C6a rounds + promotion | Rounds as data after Round 1 (windows, video criteria); promotion of the top N per category from Round 1's published snapshot or a video round's jury averages, ties at the cut included, one run per (round, category), `expected` from the preview; `GET /rounds/me`, the home and profile round, the stats' `secondRound`/`finalists`; `/admin/rounds`. Migration CX4 `*_core_rounds` + `_checks` | **Built** (06-API "Rounds", DECISIONS) |
+| C6b video + jury | `PUT /rounds/:id/video` (https, a host allow-list: YouTube, Google Drive; inside the window); jury assignment per round and category; blind judging (entry number, category, link); `jury_scores` append-only; the entry's score = the average of each judge's latest total; scoring only after the close and before the promotion. Migration CX5 | **Built** (06-API "Rounds", DECISIONS) |
+| C6c-1 certificates | Issued by one queue job from database state (`ON CONFLICT (user_id, type, round_id) DO NOTHING`), serial and a random verification code, the name copied at issue; list, revoke with a reason; the public verify route. Migration CX6 | **Built** (06-API "Certificates", DECISIONS) |
+| C6c-2 PDF | The render in the queue (202 then poll, 10 minutes in the cache Redis), after a 30-minute spike and the owner's approval of the library | After the owner approves |
 
-- **PDF and Bangla:** names need Bangla shaping (conjuncts). A 30-minute spike first compares `pdfkit` (fontkit has an Indic shaper) with `harfbuzzjs` + `pdf-lib`, rendering a fixed list of Bangla names against a reference. Either is a **new dependency and a lockfile change, approved by the owner before it lands**; the font is self-hosted (OFL), as the web fonts are.
-- **Schema (CX4+, in the plan update):** `promotion_runs`; `round_entries.promotion_run_id`; `jury_assignments`; `certificates` + `round_id`, `name_on_certificate`, `revoked_at`, `revoke_reason`, UNIQUE `(user_id, type, round_id)`; append-only trigger on `jury_scores`.
+**The lead's notes (binding):**
+1. C6b's migration itself runs `REVOKE UPDATE, DELETE ON jury_scores FROM sirat_app`, and the trigger function is named `*_append_only` (A2's catalog test enforces both).
+2. Video links: https plus the host allow-list on the server. The jury gets a link (`rel="noopener noreferrer"`, `target="_blank"`) only for allow-listed hosts; never an iframe in v1. Students see their own link as text.
+3. Promotion: the typed-count confirmation, `expected` with the results version, one run per (round, category), and the tie count in the preview (built in C6a).
+4. Certificates: verify answers only the name and the award, with the same 404 for revoked and unknown codes, throttled. The PDF waits for the owner's library approval and stays "coming soon" until the client's text and signatures arrive.
+5. The new `@Public` verify route is announced to A2 before the push (`app-routes.int-spec.ts`).
+
+- **PDF and Bangla:** names need Bangla shaping (conjuncts). The spike compares `pdfkit` (fontkit has an Indic shaper) with `harfbuzzjs` + `pdf-lib` on a fixed list of Bangla names against a reference, and measures the size (target < 150 KB with a font subset). Either is a **new dependency and a lockfile change, approved by the owner before it lands**; the font is self-hosted (OFL), as the web fonts are.
+- **Schema:**
+  - CX4 (built): `promotion_runs`, `rounds.criteria`, `round_entries.promotion_run_id`, `video_submitted_at`.
+  - CX5: `jury_assignments` (UNIQUE NULLS NOT DISTINCT (round_id, judge_id, category)), the `jury_scores` append-only trigger with the REVOKE, total 0–100, comment ≤ 1,000.
+  - CX6: `certificates` + `round_id`, `name_on_certificate`, `revoked_at`, `revoked_by`, `revoke_reason`, UNIQUE `(user_id, type, round_id)`, a type CHECK, a serial sequence.
 
 ## 8. Cross-cutting
 

@@ -7,8 +7,10 @@ import {
   type AdminAttemptDetail,
   type AdminAttemptRow,
   type AdminExamCard,
+  type AdminExamPreview,
   type AdminExamView,
   type AdminQuestion,
+  type AnswerKeyCorrectionView,
   type ExamResultsStatus,
   type Paginated,
 } from '@sirat/shared';
@@ -27,6 +29,7 @@ const isFlag = (value: unknown): value is boolean => typeof value === 'boolean';
 const oneOf = (list: readonly string[], value: unknown): boolean =>
   (list as readonly unknown[]).includes(value);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isCountOrNull = (value: unknown): value is number | null => value === null || isCount(value);
 
 function isCard(value: unknown): value is AdminExamCard {
   return (
@@ -64,6 +67,20 @@ function isQuestion(value: unknown): value is AdminQuestion {
   );
 }
 
+function isCorrection(value: unknown): value is AnswerKeyCorrectionView {
+  return (
+    isRecord(value) &&
+    isText(value.id) &&
+    isText(value.questionId) &&
+    isCount(value.position) &&
+    isText(value.fromKey) &&
+    isText(value.toKey) &&
+    isText(value.reason) &&
+    isText(value.createdAt) &&
+    isText(value.createdByName)
+  );
+}
+
 function isView(value: unknown): value is AdminExamView {
   if (!isCard(value)) return false;
   const v = value as unknown as Record<string, unknown>;
@@ -78,7 +95,9 @@ function isView(value: unknown): value is AdminExamView {
     isTextOrNull(v.publishedAt) &&
     isText(v.updatedAt) &&
     Array.isArray(v.questions) &&
-    v.questions.every(isQuestion)
+    v.questions.every(isQuestion) &&
+    Array.isArray(v.keyCorrections) &&
+    v.keyCorrections.every(isCorrection)
   );
 }
 
@@ -93,7 +112,41 @@ function isResults(value: unknown): value is ExamResultsStatus {
     isCount(value.generation) &&
     isTextOrNull(value.publishedAt) &&
     isFlag(value.canBuild) &&
-    isFlag(value.canPublish)
+    isFlag(value.canPublish) &&
+    isTextOrNull(value.keyCorrectedAt) &&
+    isCount(value.rescorePending) &&
+    isFlag(value.snapshotStale) &&
+    (value.lastCorrection === null ||
+      (isRecord(value.lastCorrection) &&
+        isCount(value.lastCorrection.position) &&
+        isText(value.lastCorrection.fromKey) &&
+        isText(value.lastCorrection.toKey) &&
+        isCountOrNull(value.lastCorrection.attempts) &&
+        isCountOrNull(value.lastCorrection.changed)))
+  );
+}
+
+function isPreview(value: unknown): value is AdminExamPreview {
+  return (
+    isRecord(value) &&
+    isText(value.examId) &&
+    isText(value.title) &&
+    oneOf(EXAM_STATUSES, value.status) &&
+    isCount(value.durationMinutes) &&
+    isCount(value.questionsPerAttempt) &&
+    isCount(value.violationWarnings) &&
+    Array.isArray(value.questions) &&
+    value.questions.every(
+      (q) => isRecord(q) && isText(q.text) && Array.isArray(q.options) && q.options.every(isText),
+    ) &&
+    Array.isArray(value.correct) &&
+    value.correct.length === value.questions.length &&
+    value.correct.every(
+      (c, i) =>
+        isCount(c) &&
+        c >= 0 &&
+        c < (value.questions as Array<{ options: unknown[] }>)[i]!.options.length,
+    )
   );
 }
 
@@ -172,6 +225,16 @@ const pickView = (e: AdminExamView): AdminExamView => ({
     createdAt: q.createdAt,
     updatedAt: q.updatedAt,
   })),
+  keyCorrections: e.keyCorrections.map((c) => ({
+    id: c.id,
+    questionId: c.questionId,
+    position: c.position,
+    fromKey: c.fromKey,
+    toKey: c.toKey,
+    reason: c.reason,
+    createdAt: c.createdAt,
+    createdByName: c.createdByName,
+  })),
 });
 
 const pickResults = (r: ExamResultsStatus): ExamResultsStatus => ({
@@ -188,6 +251,27 @@ const pickResults = (r: ExamResultsStatus): ExamResultsStatus => ({
   publishedAt: r.publishedAt,
   canBuild: r.canBuild,
   canPublish: r.canPublish,
+  keyCorrectedAt: r.keyCorrectedAt,
+  rescorePending: r.rescorePending,
+  snapshotStale: r.snapshotStale,
+  lastCorrection: r.lastCorrection && {
+    position: r.lastCorrection.position,
+    fromKey: r.lastCorrection.fromKey,
+    toKey: r.lastCorrection.toKey,
+    attempts: r.lastCorrection.attempts,
+    changed: r.lastCorrection.changed,
+  },
+});
+
+const pickPreview = (p: AdminExamPreview): AdminExamPreview => ({
+  examId: p.examId,
+  title: p.title,
+  status: p.status,
+  durationMinutes: p.durationMinutes,
+  questionsPerAttempt: p.questionsPerAttempt,
+  violationWarnings: p.violationWarnings,
+  questions: p.questions.map((q) => ({ text: q.text, options: [...q.options] })),
+  correct: [...p.correct],
 });
 
 const pickAttempt = (a: AdminAttemptRow): AdminAttemptRow => ({
@@ -211,7 +295,7 @@ export function adminExams(
   get: ApiGet,
 ): Pick<
   DataSource['admin'],
-  'listExams' | 'getExam' | 'getExamResults' | 'listAttempts' | 'getAttempt'
+  'listExams' | 'getExam' | 'getExamResults' | 'getExamPreview' | 'listAttempts' | 'getAttempt'
 > {
   return {
     /** GET /admin/exams (E1). */
@@ -238,6 +322,13 @@ export function adminExams(
       if (!UUID.test(id)) return null;
       const results = await getJsonOrNull(get, `${examPath(id)}/results`, isResults);
       return results && pickResults(results);
+    },
+
+    /** GET /admin/exams/:id/preview (D2): a fresh sample draw on every call, never cached. */
+    async getExamPreview(id) {
+      if (!UUID.test(id)) return null;
+      const preview = await getJsonOrNull(get, `${examPath(id)}/preview`, isPreview);
+      return preview && pickPreview(preview);
     },
 
     /** GET /admin/exams/:id/attempts (E3; owner Q4). */

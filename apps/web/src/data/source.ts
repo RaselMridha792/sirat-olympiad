@@ -1,4 +1,13 @@
 import type {
+  AdminCertificateQuery,
+  AdminCertificateRow,
+  MyCertificate,
+  AdminRound,
+  AdminRoundJury,
+  JuryEntryQuery,
+  JuryEntryRow,
+  JuryRound,
+  MyRound,
   AdminTeamDetail,
   AdminTeamRow,
   MyTeam,
@@ -21,6 +30,7 @@ import type {
   AdminAttemptDetail,
   AdminAttemptQuery,
   AdminAttemptRow,
+  AdminExamPreview,
   AdminExamView,
   AdminExamQuery,
   AdminExamLeaderboard,
@@ -79,6 +89,10 @@ export interface DataSource {
     getAmbassador(): Promise<AmbassadorOverview>;
     /** GET /teams/mine (the own team, first names only; null = not in a team) */
     getMyTeam(): Promise<MyTeam | null>;
+    /** GET /rounds/me (the current round and the own entry; null = there is no round at all) */
+    getMyRound(): Promise<MyRound | null>;
+    /** GET /certificates/mine (the own certificates, revoked ones marked) */
+    listMyCertificates(): Promise<MyCertificate[]>;
     /** GET /book (the free book's title and cover) */
     getBook(): Promise<BookInfo>;
     /** GET /book-order/me (eligible, and the student's own order) */
@@ -103,6 +117,8 @@ export interface DataSource {
     getExam(id: string): Promise<AdminExamView | null>;
     /** GET /admin/exams/:id/results (counts, snapshot, what can be built or published; null = not found) */
     getExamResults(id: string): Promise<ExamResultsStatus | null>;
+    /** GET /admin/exams/:id/preview (D2: one sample draw with the correct positions; nothing written; null = not found) */
+    getExamPreview(id: string): Promise<AdminExamPreview | null>;
     /** GET /admin/exams/:id/attempts?status=&endReason=&minViolations=&q=&page= (owner Q4: violations) */
     listAttempts(examId: string, query: AdminAttemptQuery): Promise<Paginated<AdminAttemptRow>>;
     /** GET /admin/exams/:id/attempts/:attemptId (with the events and their times; null = not found) */
@@ -119,6 +135,16 @@ export interface DataSource {
     listTeams(query: PageQuery): Promise<Paginated<AdminTeamRow>>;
     /** GET /admin/teams/:id, with the members' names and emails (null = not found) */
     getTeam(id: string): Promise<AdminTeamDetail | null>;
+    /** GET /admin/rounds (every round in order, with entries by status and the promotions; admin only) */
+    listRounds(): Promise<AdminRound[]>;
+    /** GET /admin/rounds/:id/jury (a video round's judges and the jury accounts to add; null = not found) */
+    getRoundJury(id: string): Promise<AdminRoundJury | null>;
+    /** GET /jury/rounds (role jury: the video rounds this judge scores in) */
+    listJuryRounds(): Promise<JuryRound[]>;
+    /** GET /jury/entries?round=&status=&page= (role jury: blind rows after the close) */
+    listJuryEntries(query: JuryEntryQuery): Promise<Paginated<JuryEntryRow>>;
+    /** GET /admin/certificates?q=&type=&round=&page= (admin only; with the student's contact) */
+    listCertificates(query: AdminCertificateQuery): Promise<Paginated<AdminCertificateRow>>;
     /** GET /admin/announcements?page=&status= (every status, with audience and author) */
     listAnnouncements(query: AdminAnnouncementQuery): Promise<Paginated<AdminAnnouncement>>;
     /** GET /admin/payments?invoice=&trx=&phone=&email=&status=&review=1&page= (admin only) */

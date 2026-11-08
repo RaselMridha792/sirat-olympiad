@@ -10,8 +10,10 @@ import {
 import { Prisma, type Exam, type Question } from '@prisma/client';
 import {
   EXAM_LIMITS,
+  EXAM_VIOLATION_WARNINGS,
   QUESTION_IMPORT_LIMITS,
   type AdminExamCard,
+  type AdminExamPreview,
   type AdminExamView,
   type AdminQuestion,
   type AdminQuestionInput,
@@ -23,6 +25,9 @@ import {
 } from '@sirat/shared';
 import { errorLogFields } from '../../common/all-exceptions.filter';
 import { PrismaService } from '../../prisma/prisma.service';
+import { drawLayout, renderQuestions, type QuestionVersion, type Rng } from '../attempts/layout';
+import { correctPosition } from '../attempts/scoring';
+import { correctedKeys, effectiveKey } from './answer-keys';
 import type {
   CreateExamDto,
   ExamListQueryDto,
@@ -71,6 +76,10 @@ const DEFAULT_PAGE_SIZE = 20;
 const examInclude = {
   round: { select: { id: true, name: true } },
   questions: { where: { isActive: true }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] },
+  keyCorrections: {
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    include: { question: { select: { position: true } }, createdBy: { select: { name: true } } },
+  },
 } satisfies Prisma.ExamInclude;
 type ExamWithQuestions = Prisma.ExamGetPayload<{ include: typeof examInclude }>;
 
@@ -437,6 +446,63 @@ export class AdminExamsService {
     return result;
   }
 
+  /**
+   * D2 (P1): one sample draw for the admin, with the same drawLayout and renderQuestions a student's start uses (a
+   * random draw from the active pool, options shuffled unless kept). Reads Postgres only; writes nothing (no attempt,
+   * no checkpoint, no cache). A draft whose pool is short shows what it has; a published exam always has its full
+   * pool (the publish rule), so a short one there is refused like a publish (`question_count`).
+   */
+  async preview(id: string, rng?: Rng): Promise<AdminExamPreview> {
+    const exam = await this.prisma.exam.findUnique({
+      where: { id },
+      include: { questions: { where: { isActive: true } } },
+    });
+    if (!exam) throw new NotFoundException('Exam not found');
+    const pool = exam.questions;
+    if (pool.length < exam.questionsPerAttempt && exam.status !== 'draft')
+      throw refuse('question_count');
+    const count = Math.min(pool.length, exam.questionsPerAttempt);
+    const versions = new Map<string, QuestionVersion>(
+      pool.map((q) => [
+        q.id,
+        {
+          text: q.text,
+          options: q.options as unknown as QuestionOption[],
+          keepOptionOrder: q.keepOptionOrder,
+        },
+      ]),
+    );
+    // A draft's pool can differ from its count either way; drawing `count` of it is what a start would do.
+    const layout = drawLayout(
+      pool.map((q) => q.id),
+      count,
+      exam.randomDraw || pool.length > count,
+      versions,
+      rng,
+    );
+    const corrected = await correctedKeys(
+      this.prisma,
+      pool.map((q) => q.id),
+    );
+    const byId = new Map(pool.map((q) => [q.id, q]));
+    return {
+      examId: exam.id,
+      title: exam.title,
+      status: exam.status,
+      durationMinutes: exam.durationMinutes,
+      questionsPerAttempt: exam.questionsPerAttempt,
+      violationWarnings: EXAM_VIOLATION_WARNINGS,
+      questions: renderQuestions(layout, versions),
+      correct: layout.q.map((qid, i) => {
+        const q = byId.get(qid)!;
+        return correctPosition(layout, i, {
+          options: q.options as unknown as QuestionOption[],
+          correctKey: effectiveKey(corrected, q),
+        });
+      }),
+    };
+  }
+
   async versions(examId: string, questionId: string): Promise<AdminQuestion[]> {
     const question = await findQuestion(this.prisma, examId, questionId);
     const rows = await this.prisma.question.findMany({
@@ -586,6 +652,16 @@ function toView(exam: ExamWithQuestions): AdminExamView {
     publishedAt: exam.publishedAt?.toISOString() ?? null,
     updatedAt: exam.updatedAt.toISOString(),
     questions: exam.questions.map(toQuestion),
+    keyCorrections: exam.keyCorrections.map((c) => ({
+      id: c.id,
+      questionId: c.questionId,
+      position: c.question.position,
+      fromKey: c.fromKey,
+      toKey: c.toKey,
+      reason: c.reason,
+      createdAt: c.createdAt.toISOString(),
+      createdByName: c.createdBy.name,
+    })),
   };
 }
 

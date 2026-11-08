@@ -48,6 +48,15 @@ $DCD up -d --build --no-deps migrate api worker web nginx   # the shared stack (
 
 Signing secret: the API refuses to start (in every `NODE_ENV`) when `JWT_ACCESS_SECRET` is blank, shorter than 32 characters, too repetitive, or contains a placeholder word such as `fake`, `example` or `change me`. The error names the rule, never the value. Use a separate value per environment and never reuse the dev value on the VPS.
 
+**The two-factor key (admin 2FA, DECISIONS "Admin two-factor login"):**
+- **The stack:** every worktree's root `.env` needs `TOTP_ENCRYPTION_KEY`, since the stack's api runs with `NODE_ENV=production` and refuses to start without it. Add it once without printing it: `printf 'TOTP_ENCRYPTION_KEY=%s\n' "$(openssl rand -base64 32)" >> .env`.
+- **Host-side `pnpm dev:api`:** the same line in `apps/api/.env` turns 2FA on for that API. Without it 2FA is off there: nothing is enforced, and the 2FA routes answer 503 (development only).
+- **Enrolments follow the key:** it decrypts the stored secrets. An admin who enrolled under one key gets no code accepted under another (a recovery code or `admin:2fa-reset` still works, §22). So dev enrolments must be redone after a stack turn from a worktree with a different key, unless every worktree uses the same value.
+- **Tests:** the integration tests ignore the key in `apps/api/.env` (`test/load-env.ts`). Only the 2FA suites set their own throwaway key; every other suite runs with 2FA off.
+- **Admins on the stack:** with the key set, an admin from `admin:create` logs in but gets 403 `TWO_FACTOR_REQUIRED` on the admin pages until they enrol on `/admin/security` (§22).
+- **The e2e scripts' admins:** run `E2E_ADMIN_EMAIL=... E2E_ADMIN_PASSWORD=... pnpm --filter @sirat/web e2e:2fa-enrol` once for each admin or manager they sign in with. It enrols the account through the API and keeps its secret in `apps/web/.e2e-totp.json` (git-ignored, mode 600, never printed). The scripts then pass the code step by themselves (`scripts/lib/totp.mjs`).
+- **The 2FA browser test:** `E2E_2FA_EMAIL=... E2E_2FA_PASSWORD=... pnpm --filter @sirat/web e2e:2fa`, with a throwaway admin that has no 2FA. It covers enrolment, the code step, a recovery code, a refresh and turning it off, and leaves the account as it found it.
+
 Fixtures: 3 verified students with paid registrations, `student1@fixtures.invalid` … `student3@fixtures.invalid`, password = your `FIXTURE_PASSWORD` in `apps/api/.env`. They refuse to run unless `NODE_ENV` is development/test, the confirmation is set for that run, the URL is local with no `host`/`hostaddr` parameter, and the connected Postgres server carries `sirat.environment=development` (only the dev override sets it; after pulling this change once, recreate the dev Postgres with `$DCD up -d postgres`, data is kept). PowerShell: `$env:ALLOW_DEV_FIXTURES='yes-this-is-not-production'; pnpm --filter @sirat/api db:fixtures:dev`. Each student has a distinct phone (`01700000001`…`01700000003`) and a paid 400 BDT payment that went initiated → pending → paid, like a real one.
 
 ### Payments migration on an old dev database (once)
@@ -301,7 +310,7 @@ Credentials are read inside the postgres container; nothing secret is typed on t
 
 ## 6. Rebuild on a fresh VPS (< 1 hour)
 
-`scripts/bootstrap.sh` (L12), as root on a fresh Ubuntu 24.04 host. It is idempotent: every step looks first, and a run with nothing left to do prints `0 change(s) made`. Run it again after each owner step below.
+`scripts/bootstrap.sh` (L12), as root on a fresh Ubuntu 24.04 or 26.04 host. It is idempotent: every step looks first, and a run with nothing left to do prints `0 change(s) made`. Run it again after each owner step below.
 
 ```bash
 # On the new host, as root (copy the script over, or take it from any checkout).
@@ -323,7 +332,7 @@ scripts/prelaunch-check.sh
   - Docker from Docker's own apt repository;
   - UTC with chrony (the monitor's 02:00 UTC digest is 08:00 Asia/Dhaka);
   - swap and `vm.overcommit_memory=1`; security updates without automatic reboot;
-  - the `deploy` user, in the docker group, with SSH keys only. Root and password logins go off only once deploy has keys (no lockout), and `sshd -t` checks the change first;
+  - the `deploy` user, in the docker group, with SSH keys only. Root and password logins go off only once deploy has keys (no lockout), and `sshd -t` checks the change first. The drop-in is `00-sirat.conf`, read before a cloud image's `50-cloud-init.conf` (sshd keeps the first value it reads). Every run checks with `sshd -T` that passwords, root and keyboard-interactive logins are really off; if an earlier file overrides them, it removes its drop-in, reloads ssh and stops;
   - UFW for the host, plus `sirat-docker-user.service`: Docker's published ports bypass UFW, so from outside only 80 and 443 may reach a container;
   - fail2ban for SSH;
   - the clone in `/srv/sirat` through a read-only deploy key, with GitHub's host key pinned;
@@ -356,6 +365,7 @@ scripts/prelaunch-check.sh
 | `certificate` | the origin certificate ends within 14 days | section 3 of LAUNCH-PLAN / the TLS steps in this runbook |
 | `backup_age` | no off-server backup in 26 h (critical) | `journalctl -u sirat-backup.service -n 50` (section 5) |
 | `time_sync` | the clock is not synchronised | `timedatectl`; `systemctl restart systemd-timesyncd` |
+| `trusted_generators` | load-test generators may set any client address: an `infra/nginx/loadtest-realip*.conf` exists (a warning); past the earliest `# expires` line, or without a readable one, it is critical (`scripts/loadtest-generators-left.sh` prints the minutes left) | no load test running: `scripts/loadtest-generators.sh off` (after a staging window: `sudo scripts/load-staging.sh close`); `scripts/loadtest-generators.sh status` shows it |
 | `monitor` (heartbeat only) | ops-check could not run | the api container: `$DC ps api`, `$DC logs --tail=50 api` |
 
 **The exam window, step by step** (E6; the load test behind it: `loadtests/README.md`):
@@ -376,6 +386,8 @@ scripts/prelaunch-check.sh
 - **An outage during the window** (students could not reach the site): extend the window, while it is still open, on the exam's edit page (`windowEnd` later, with a reason; audited). Attempts already started keep their end time; only students who have not started yet gain the time. Tell the owner.
 - **After the window:** within a minute of `window_end` plus the grace the sweep has submitted every open attempt from its last checkpoint (`server_checkpoint`), or as empty when there was none (`server_empty`). Then `/admin/exams/<id>` → Results: every attempt scored → Build → check the leaderboard → Publish. The database refuses results before the window and grace are over for everyone. Unpublish takes them back down if something is wrong.
 - **A student says "my answers are gone":** the attempt's own submission is the record (`/admin/exams/<id>` → attempts: the end reason, submit time, violation count, events and, once scored, the score). The browser keeps its copy and retries a failed submit with the same request id until a receipt arrives, so a lost submit shows as `server_checkpoint` with the last checkpoint's answers, never as nothing.
+
+- **A wrong answer key** (found after students took the exam; E7b): if the results are published, unpublish them first. On `/admin/exams/<id>`, "Correct the key" on that question: choose the right option and write the reason (kept in the history). The question itself does not change. The results panel then shows the attempts waiting for their re-scoring (a job, usually seconds; the minute sweep catches up after 2 minutes if the job was lost), then how many scores changed and that the snapshot is stale: build it again, check the leaderboard, publish. Build and Publish refuse until then (`rescore_pending`, `snapshot_stale`). A failed re-scoring shows in `failed_jobs` (job `rescore-exam`): `$DC logs --since 10m worker | grep -E 'rescore|exam sweep'`. A wrong correction is undone by another correction back to the old key.
 
 **Site slow:** `docker stats` (CPU/RAM) → PgBouncer waiting clients (`SHOW POOLS;`) → slow queries (log > 500 ms) → queue depth/failed jobs (BullMQ) → API p95 in monitoring → consider `--scale api=N`, then tell the owner.
 **Site down:** `$DC ps` → Nginx logs → `df -h` (disk full?) → Postgres/Redis health → restart failing service → if data loss suspected, restore plan (section 5).
@@ -434,7 +446,9 @@ Client: — · PayStation support: — · Email provider: Amazon SES (AWS accoun
 - [ ] `scripts/prelaunch-check.sh` on the VPS (`--registration closed` until opening, `open` after): every line PASS, never a value printed. It checks:
   - only nginx publishes ports;
   - `.env` mode 600, `APP_URL` https, `COOKIE_SECURE` not false;
-  - the runtime role (not the database owner); no development marker; no Mailpit;
+  - the runtime role (not the database owner), and each API and worker's boot line `database role=sirat_app superuser=false` (it FAILs until L8); no development marker; no Mailpit;
+
+    If that boot-line check FAILs after L8, the line may simply be gone: Docker rotates a container's log by size (`max-size 50m`, 5 files), so a long-running replica can lose its boot line. Check with `$DC logs api worker 2>&1 | grep -c 'database role='`. If a replica has no line, restart one replica at a time (`docker restart <container>`, one only while the others serve) and run the check again. A line that says another role or `superuser=true` is a real failure: the app is not on `sirat_app`.
   - every app container on the recorded release; migrations up to date; the worker healthy;
   - each API's PayStation boot line (live, the client's account and prefix, https callback and IPN);
   - no fixture users, no test invoices, no published exam, the fee 40000, `registration_open` as intended;
@@ -452,7 +466,7 @@ Client: — · PayStation support: — · Email provider: Amazon SES (AWS accoun
 See `RULEBOOK.md` section 13: load test at 1.5–2× peak, backup + restore drill, 48 h code freeze, patches before freeze, monitoring + fake alert, Cloudflare verified, email deliverability, real small PayStation payment, rollback rehearsed, owner watching dashboards.
 
 Also before launch:
-- [ ] The API connects to Postgres with a **non-superuser runtime role** (OPEN-QUESTIONS #27); the bootstrap superuser is used only for migrations, backup and restore.
+- [ ] The API connects to Postgres with a **non-superuser runtime role** (OPEN-QUESTIONS #27); the bootstrap superuser is used only for migrations, backup and restore. `prelaunch-check.sh` reads it from every API and worker's newest boot line.
 - [ ] PayStation sandbox checklist done (`docs/paystation/SANDBOX-CHECKLIST.md`) and the accepted `trx_status` values confirmed.
 - [ ] `PAYSTATION_ENV=live` on the VPS, and the boot log's PayStation line matches the client account: `$DC logs api | grep "PayStation env="` shows `env=live`, the live host, the client's account label and invoice prefix, and the production callback and IPN URLs. It never shows any part of the merchant id or password. A `payments are DISABLED` WARN, or a `payments.disabled_in_production` alert, means PAYSTATION_ENV is blank: no registration can be paid.
 - [ ] The free book: an admin has set the real title and uploaded the cover (`/admin/book`), before registration opens.
@@ -707,3 +721,148 @@ SQL
 - **"This team is not taking new members":** the team lead is no longer an approved ambassador (revoked or blocked). The members keep the team; there is no dissolve or hand-over in v1.
 - **The lead cannot leave** their own team (by design). A member leaves from the team page.
 - **An unsuitable team name:** an admin renames it on `/admin/teams` with a reason (audited `team.renamed`; the audit row keeps the reason, not the names).
+
+## 19. Load test on the VPS (staging, `scripts/load-staging.sh`)
+
+The steps and the k6 commands: `loadtests/README.md`, "On the VPS". The rules around them:
+
+- **When:** staging shares the server's CPU, memory and disk with the live stack, which keeps running.
+  - Before launch: freely.
+  - After launch: only with Rasel's OK; never during a registration peak or within an exam window; `scripts/load-staging.sh down` right after the run.
+  - `up` prints the host's load average and free memory first, so whoever runs it sees what is live.
+- **What it is:** project `sirat-staging`, built from the deployed release's images (no build; only payments' fake PayStation is built, with `--registration`).
+  - its own volumes and throwaway settings in `/var/lib/sirat/staging` (mode 700);
+  - Postgres with the test marker, so the load fixtures accept only this server;
+  - payments off, or on the fake;
+  - emails to nowhere.
+
+  It never reads the clone's `.env` and never touches project `sirat`.
+- **The firewall:** nginx's staging port (8088) is dropped from outside by the DOCKER-USER guard. `scripts/load-staging.sh window --ips <ip>,<ip> --minutes N`, as root, lets at most 4 single public addresses in. It runs in the foreground, and the allow-list closes:
+  - on Ctrl-C;
+  - when the session is lost;
+  - on any error;
+  - when the minutes are over;
+  - and by a systemd timer if the script itself is killed.
+
+  It also switches A2's trusted generators on, and off again when it closes. `scripts/load-staging.sh status` (as root) must say `allow-list: closed` afterwards. When in doubt, `scripts/load-staging.sh close` (as root; it is safe to repeat).
+- **Root, from the provider's console:** `window`, `close` and the firewall part of `status` run as root in Hostinger's browser console. Root has no SSH login (bootstrap, #70), and deploy's only sudo rule is the backup unit. **Never add a sudo rule for `load-staging.sh`:** the clone is deploy-writable, so deploy could edit the script and run anything as root. Everything else runs as deploy.
+- **Every k6 run ends with the trusted generators off.** The window does it when it closes; a run without the window ends with `scripts/loadtest-generators.sh off`, and `scripts/loadtest-generators.sh status` must say off. Nothing removes their file at its expiry: the monitor alerts (`trusted_generators`, section 7) and `prelaunch-check.sh` fails while one is left.
+- **After the run:**
+  1. `scripts/load-staging.sh report <examId>`;
+  2. the numbers into DECISIONS;
+  3. `scripts/load-staging.sh down` (refused while the window's timer is active), which removes the stack, its volumes and its settings;
+  4. `scripts/prelaunch-check.sh` again: the real-IP lines must show Cloudflare addresses once the trusted generators are off.
+- **CI** runs the script on faked commands (`scripts/test/load-staging.test.sh`): the window opens only for the listed addresses, with its timer, and closes on a signal, on an error and by `close`; a dry run changes nothing; no secret is printed.
+- **A rehearsal against real Docker,** on a PC with the release's images: `SIRAT_TAG=<tag> [PARTS="exam registration"] bash scripts/test/run-load-staging-rehearsal.sh`. It runs up, exam, k6 inside, the report and down, then the registration staging with payments' fake, on 127.0.0.1:18088. It leaves nothing behind. The window is not part of it (no DOCKER-USER chain there).
+
+## 20. Rounds and promotion (core C6a)
+
+- **Where:** `/admin/rounds` (admins only). Round 1 is the quiz; add Round 2 (video, with its window) and the final after it, in order. Times are Bangladesh time.
+- **Before promoting from Round 1:**
+  - The Round 1 exam of the category (or the one for all categories) has its results **published** (exam's results panel).
+  - Exactly one published Round 1 exam covers each category: archive a test or replaced exam first (else "More than one published Round 1 exam…").
+  - Round 2 exists.
+- **Promote, one category at a time:**
+  1. "Promote", choose the category and N, then "Preview": the counts, the tie count (students tied with the last place also go through) and the last place.
+  2. Type the number that will go through, then "Promote now".
+  3. It cannot be undone, and each category is promoted from a round once (audited `round.promoted`, counts only).
+- **"Someone changed this in the meantime":** the results were re-published or a score changed after the preview. Preview again.
+- **A student who already had an entry in the next round** keeps it as it was (its video and score, `promotion_run_id` empty) and still counts in the run's "went through" number. A promotion never overwrites an entry.
+- **From the video round:** after its close and once every sent video has a jury score (C6b). Students without a video are eliminated.
+- **Check the counts** (no names):
+
+```bash
+$DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+select r.sort_order, r.name, e.status, count(*) from round_entries e join rounds r on r.id = e.round_id group by 1, 2, 3 order by 1, 3;
+select r.name as from_round, p.category, p.top_n, p.promoted_count, p.eliminated_count, p.created_at from promotion_runs p join rounds r on r.id = p.from_round_id order by p.created_at;
+SQL
+```
+
+## 21. Video round and jury (core C6b)
+
+- **Students** send their video link on "My round" (`/dashboard/round`) while the video round is open: an https link to YouTube or Google Drive only. They can change it until the close; after the close it stays.
+- **Judges** are jury-role accounts (created like the other staff accounts). On `/admin/rounds`, an admin opens the video round's "Jury" dialog, picks a judge and ticks the categories. Removing a judge (for example a wrong or compromised account) keeps their scores in the history but takes them out of every entry's score at once; an entry with no other score is "to score" again.
+- **Scoring starts when the round closes.** A judge sees "To score" and "Scored" on `/admin/jury`, with entry numbers only (no names). Every criterion gets 0–10; the total is out of 100. Scoring an entry again adds a new score: the judge's latest one counts, and the entry's score is the average of the judges' latest totals.
+- **Before promoting from the video round** (§20), every sent video needs at least one score ("Some sent videos have no jury score yet"). Once a category is promoted, its entries take no more scores.
+- **"Link not allowed"** on the jury page means the stored link is not on the allow-list. The server refuses such links, so this should not happen; report it rather than opening the link.
+- **Check the progress** (counts only, no names):
+
+```bash
+$DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+select r.name, e.status, count(*), count(e.video_url) as with_video from round_entries e join rounds r on r.id = e.round_id where r.type = 'video' group by 1, 2 order by 1, 2;
+select r.name, a.category, count(distinct a.judge_id) as judges from jury_assignments a join rounds r on r.id = a.round_id group by 1, 2 order by 1, 2;
+SQL
+```
+
+## 22. Admin two-factor login: enrolment and a lost authenticator
+
+Admins and managers sign in with a password and a 6-digit code from an authenticator app (DECISIONS "Admin two-factor login"; 06-API "Two-factor login"). Production requires `TOTP_ENCRYPTION_KEY` in `.env`; the api logs `two-factor=on` at boot.
+
+- **The key** decrypts every stored secret. Keep a copy with the other server secrets; the database backup does not contain it. A restore onto a new server needs the same key. Without it every enrolled admin needs the CLI reset below.
+- **Enrolment** on `/admin/security`, where an admin or manager without a proved code is sent from every admin page (the API answers the others 403 `TWO_FACTOR_REQUIRED`):
+  1. The password, then the QR code: scan it in the authenticator app, or type the key shown under it.
+  2. The app's first 6-digit code turns it on. Every other session of the admin ends.
+  3. 10 recovery codes are shown once: store them offline (print or write them down).
+
+  The same page makes new recovery codes and turns 2FA off (for a new phone). Through the API: `POST /api/auth/2fa/setup {password}`, then `POST /api/auth/2fa/enable {code}`.
+- **Rotating the key:** set `TOTP_ENCRYPTION_KEY_PREVIOUS` to the old value and `TOTP_ENCRYPTION_KEY` to a new one, then recreate api. Each secret is re-sealed with the new key at its owner's next right code. Remove the previous key only once every enrolled admin has signed in since.
+
+**Lost authenticator, recovery codes at hand:** sign in with a recovery code at the code step. Each code works once, and an alert email goes to the operator. Then turn 2FA off (`POST /api/auth/2fa/disable {password, recoveryCode}`) and enrol the new phone, or ask for new codes.
+
+**Lost authenticator, no recovery codes:** another admin, signed in with 2FA, resets it. `POST /api/admin/users/<user id>/2fa/reset {reason, code}`, where `code` is the acting admin's OWN current code. The target's sessions end; they log in with the password alone and must enrol again before any admin page opens. 5 resets an hour per admin. Audit `auth.2fa_reset` (with the reason) and the alert `security.two_factor.reset`.
+
+**Break-glass, no other admin reachable** (needs the database and both Redis; never the TOTP key; prints the user id only):
+
+```bash
+# VPS: a one-off container from the api image (works even while the api replicas are down). -T: no prompt.
+$DC run --rm --no-deps -T api node dist/cli/admin-2fa-reset.js --email ops@example.org --reason "Lost phone, ticket 12"
+#   2FA reset: <id>
+
+# Check the audit and alert rows
+$DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+select created_at, action, actor_id, entity_id, meta from audit_logs
+where action in ('auth.2fa_reset', 'security.two_factor.reset') order by created_at desc limit 5;
+SQL
+
+# Local (uses apps/api/.env)
+pnpm --filter @sirat/api admin:2fa-reset --email ops@example.org --reason "Lost phone"
+```
+
+- **Exit codes:** 0 reset; 1 refused (no such account, or no two-factor login: nothing changed) or the database or Redis unreachable; 2 usage.
+- **The known gap:** an access token already issued stays valid until it expires. After any reset the old session keeps admin access for at most `JWT_ACCESS_TTL_SECONDS` (15 min), and refreshing fails at once. If the device was stolen, also change the password: a reset alone leaves the password valid.
+
+## 23. Certificates (core C6c-1)
+
+- **Issue** on `/admin/certificates`: choose the type and the round, then "Issue". The answer says how many qualify now; the worker issues them within seconds (refresh the list). Asking twice is safe: anyone who has one already is skipped.
+  - Participation: after Round 1's exam results are published (§20). Archive a replaced Round 1 exam first, or its students count too.
+  - Promotion: for a round after Round 1, once its entries exist (after the promotion into it).
+  - Winners: in the final round, the winners' emails (one per line) and a reason.
+- **"The background queue does not answer"**: the queue Redis is down or slow (§7). Nothing was issued; ask again when it is back. A job that failed three times is kept 7 days, and `ops-check` reports it (queue `certificates`).
+- **Two certificates drawing the same check code** (48 random bits, so rare) fails the whole issue run on the unique code; the job tries again by itself (3 tries) and draws new codes, so nothing is half-issued. Only three failures in a row show in `ops-check`.
+- **Revoke** a wrong certificate on `/admin/certificates` with a reason. It stops checking online at once; it is never deleted, and the same student cannot get the same one again (one per type and round).
+- **The public check** is `/verify/<code>`, printed on the certificate. It shows only the name and the award; a revoked or unknown code shows "No valid certificate". One network can check 30 times a minute.
+- **The PDF** is not built yet (C6c-2, after the owner approves the library): students see "comes soon".
+- **Check the counts** (no names):
+
+```bash
+$DC exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+select r.name, c.type, count(*) filter (where c.revoked_at is null) as valid, count(c.revoked_at) as revoked from certificates c join rounds r on r.id = c.round_id group by 1, 2 order by 1, 2;
+SQL
+```
+
+## 24. Public homepage and About: changing a fact (draft, 2026-11-03)
+
+The homepage (`/`, `/en`) and About (`/about`, `/en/about`) are static pages built from files, so a change needs a release (they are not admin settings). The fee and whether registration is open are the exception: they come from the admin's registration settings, and the pages pick them up within 60 s.
+
+| To change | Where | Note |
+|---|---|---|
+| The name or the season line | `apps/web/src/content/site.ts` (`name.bn`, `name.en`, `season`) | Every public page, the page titles and the legal texts read it |
+| The honorific | `apps/web/src/i18n/messages/home.ts` (`brand.honorific`, bn and en) | ﷺ now; the plain forms are "(সা.)" and "(pbuh)" |
+| Dates, the knockout method, the qualifiers, the social links | `apps/web/src/content/home.ts` | Dates are Dhaka calendar days; `null` means "to be announced" |
+| The album link | `content/home.ts` `albumUrl` | Empty hides the button; only an `https://` link is shown |
+| Offline centres | `content/home.ts` `offline: true` | Only once the client confirms them; the text is in `home.ts` |
+| The advisory board and the convenor team | `apps/web/src/content/about.ts` (`team.show`, the names and roles) | Both stay hidden while `show` is false or a list is empty |
+| The contact email | `content/site.ts` `email` | Also shown in the footer of every public page |
+| Removing the draft note and `noindex` | `content/site.ts` `placeholder: false` | Only with the client's final texts and facts in place |
+
+Check after the release: `/`, `/en`, `/about` and `/en/about` answer 200, and an old `/bn` link redirects to the same page.

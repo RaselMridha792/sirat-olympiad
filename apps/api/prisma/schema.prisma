@@ -116,32 +116,39 @@ model User {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  gradeLevel          GradeLevel?           @relation(fields: [gradeLevelId], references: [id], onDelete: Restrict)
-  referredBy          User?                 @relation("Referrals", fields: [referredById], references: [id], onDelete: Restrict)
-  referrals           User[]                @relation("Referrals")
-  sessions            Session[]
-  authTokens          AuthToken[]
-  payments            Payment[]
-  registration        Registration?
-  attempts            Attempt[]
-  ambassador          AmbassadorProfile?
-  pointEntries        PointLedger[]         @relation("PointOwner")
-  pointEntriesCreated PointLedger[]         @relation("PointCreatedBy")
-  teamsOwned          Team[]
-  teamMember          TeamMember[]
-  taskAssigns         TaskAssignment[]      @relation("TaskAssignee")
-  taskApprovals       TaskAssignment[]      @relation("TaskApprover")
-  tasksCreated        AdminTask[]
-  roundEntries        RoundEntry[]
-  juryScores          JuryScore[]
-  certificates        Certificate[]
-  announcements       Announcement[]
-  registrationAttempt PendingRegistration?  @relation("AttemptUser")
-  referredAttempts    PendingRegistration[] @relation("AttemptReferrer")
-  bookOrder           BookOrder?            @relation("BookOrderOwner")
-  bookOrdersShipped   BookOrder[]           @relation("BookOrderShipper")
-  bookImages          BookImage[]           @relation("BookImageUploader")
-  leaderboardEntries  LeaderboardEntry[]
+  gradeLevel             GradeLevel?             @relation(fields: [gradeLevelId], references: [id], onDelete: Restrict)
+  referredBy             User?                   @relation("Referrals", fields: [referredById], references: [id], onDelete: Restrict)
+  referrals              User[]                  @relation("Referrals")
+  sessions               Session[]
+  authTokens             AuthToken[]
+  payments               Payment[]
+  registration           Registration?
+  attempts               Attempt[]
+  ambassador             AmbassadorProfile?
+  pointEntries           PointLedger[]           @relation("PointOwner")
+  pointEntriesCreated    PointLedger[]           @relation("PointCreatedBy")
+  teamsOwned             Team[]
+  teamMember             TeamMember[]
+  taskAssigns            TaskAssignment[]        @relation("TaskAssignee")
+  taskApprovals          TaskAssignment[]        @relation("TaskApprover")
+  tasksCreated           AdminTask[]
+  roundEntries           RoundEntry[]
+  juryScores             JuryScore[]
+  certificates           Certificate[]
+  announcements          Announcement[]
+  registrationAttempt    PendingRegistration?    @relation("AttemptUser")
+  referredAttempts       PendingRegistration[]   @relation("AttemptReferrer")
+  bookOrder              BookOrder?              @relation("BookOrderOwner")
+  bookOrdersShipped      BookOrder[]             @relation("BookOrderShipper")
+  bookImages             BookImage[]             @relation("BookImageUploader")
+  twoFactor              UserTwoFactor?
+  twoFactorRecoveryCodes TwoFactorRecoveryCode[]
+  leaderboardEntries     LeaderboardEntry[]
+  promotionRuns          PromotionRun[]
+  juryAssignments        JuryAssignment[]        @relation("JuryAssignmentJudge")
+  juryAssignmentsMade    JuryAssignment[]        @relation("JuryAssignmentCreatedBy")
+  certificatesRevoked    Certificate[]           @relation("CertificateRevokedBy")
+  keyCorrections         AnswerKeyCorrection[]
 
   @@index([referredById])
   @@index([gradeLevelId])
@@ -153,17 +160,20 @@ model User {
 /// Refresh-token session. Rotation: each refresh creates a new row in the same family and revokes the old one.
 /// Presenting a revoked token = reuse => revoke the whole family.
 model Session {
-  id        String    @id @default(uuid(7)) @db.Uuid
-  userId    String    @map("user_id") @db.Uuid
-  familyId  String    @map("family_id") @db.Uuid
-  tokenHash String    @unique @map("token_hash")
-  expiresAt DateTime  @map("expires_at") @db.Timestamptz
-  revokedAt DateTime? @map("revoked_at") @db.Timestamptz
-  userAgent String?   @map("user_agent")
-  ip        String?
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                String    @id @default(uuid(7)) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  familyId          String    @map("family_id") @db.Uuid
+  tokenHash         String    @unique @map("token_hash")
+  expiresAt         DateTime  @map("expires_at") @db.Timestamptz
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz
+  /// The family proved a second factor (DECISIONS "Admin two-factor login"): set only when it starts after the code
+  /// step or enable; a refresh copies it and never raises it.
+  twoFactorVerified Boolean   @default(false) @map("two_factor_verified")
+  userAgent         String?   @map("user_agent")
+  ip                String?
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([familyId])
@@ -365,10 +375,12 @@ model Exam {
   createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz
   updatedAt           DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  round              Round?             @relation(fields: [roundId], references: [id], onDelete: Restrict)
+  round              Round?                @relation(fields: [roundId], references: [id], onDelete: Restrict)
   questions          Question[]
   attempts           Attempt[]
   leaderboardEntries LeaderboardEntry[]
+  promotionRuns      PromotionRun[]
+  keyCorrections     AnswerKeyCorrection[]
 
   @@index([status, windowStart])
   @@index([roundId])
@@ -379,21 +391,22 @@ model Exam {
 /// inserts version + 1 in the same lineage and deactivates the old row; nothing is deleted. Attempts keep the exact
 /// version ids they were given. One active version per lineage (partial unique index in raw SQL).
 model Question {
-  id              String    @id @default(uuid(7)) @db.Uuid
-  examId          String    @map("exam_id") @db.Uuid
-  lineageId       String    @map("lineage_id") @db.Uuid // groups the versions of one question
+  id              String                @id @default(uuid(7)) @db.Uuid
+  examId          String                @map("exam_id") @db.Uuid
+  lineageId       String                @map("lineage_id") @db.Uuid // groups the versions of one question
   text            String
   options         Json // [{ "key": "A", "text": "..." }, ...] (2-6, CHECK in raw SQL)
-  correctKey      String    @map("correct_key") // server-only, never serialized to clients before results open
+  correctKey      String                @map("correct_key") // server-only, never serialized to clients before results open
   explanation     String?
-  version         Int       @default(1)
+  version         Int                   @default(1)
   position        Int // admin order; versions keep it
-  keepOptionOrder Boolean   @default(false) @map("keep_option_order") // e.g. "all of the above"
-  isActive        Boolean   @default(true) @map("is_active")
-  deactivatedAt   DateTime? @map("deactivated_at") @db.Timestamptz
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-  exam            Exam      @relation(fields: [examId], references: [id])
+  keepOptionOrder Boolean               @default(false) @map("keep_option_order") // e.g. "all of the above"
+  isActive        Boolean               @default(true) @map("is_active")
+  deactivatedAt   DateTime?             @map("deactivated_at") @db.Timestamptz
+  createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  exam            Exam                  @relation(fields: [examId], references: [id])
+  keyCorrections  AnswerKeyCorrection[]
 
   @@unique([lineageId, version])
   @@index([examId, isActive])
@@ -481,10 +494,18 @@ model Round {
   type      RoundType
   opensAt   DateTime?    @map("opens_at") @db.Timestamptz
   closesAt  DateTime?    @map("closes_at") @db.Timestamptz
+  /// Video rounds: the jury's criteria, [{ key, en, bn }], 0–10 each (core C6a); null for quiz and final rounds.
+  /// Frozen once the round has a jury score.
+  criteria  Json?
   createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   exams     Exam[]
   entries   RoundEntry[]
+
+  promotionsFrom  PromotionRun[]   @relation("PromotionFrom")
+  promotionsTo    PromotionRun[]   @relation("PromotionTo")
+  juryAssignments JuryAssignment[]
+  certificates    Certificate[]
 
   @@unique([sortOrder])
   @@map("rounds")
@@ -492,24 +513,79 @@ model Round {
 
 /// One row per (user, round). Promotion creates the NEXT round's row with ON CONFLICT DO NOTHING — never overwrites.
 model RoundEntry {
-  id        String      @id @default(uuid(7)) @db.Uuid
-  userId    String      @map("user_id") @db.Uuid
-  roundId   String      @map("round_id") @db.Uuid
-  status    EntryStatus @default(pending)
-  score     Decimal?    @db.Decimal(8, 2)
-  videoUrl  String?     @map("video_url")
-  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-  user      User        @relation(fields: [userId], references: [id])
-  round     Round       @relation(fields: [roundId], references: [id])
-  scores    JuryScore[]
+  id               String        @id @default(uuid(7)) @db.Uuid
+  userId           String        @map("user_id") @db.Uuid
+  roundId          String        @map("round_id") @db.Uuid
+  status           EntryStatus   @default(pending)
+  score            Decimal?      @db.Decimal(8, 2)
+  videoUrl         String?       @map("video_url")
+  /// When the student last sent the video link (core C6b).
+  videoSubmittedAt DateTime?     @map("video_submitted_at") @db.Timestamptz
+  /// The promotion that created this entry; null for Round 1 entries (core C6a).
+  promotionRunId   String?       @map("promotion_run_id") @db.Uuid
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  user             User          @relation(fields: [userId], references: [id])
+  round            Round         @relation(fields: [roundId], references: [id])
+  scores           JuryScore[]
+  promotionRun     PromotionRun? @relation(fields: [promotionRunId], references: [id], onDelete: Restrict)
 
   @@unique([userId, roundId])
   @@index([roundId, status])
+  @@index([promotionRunId])
   @@map("round_entries")
 }
 
-/// Append-only jury scoring history: who scored, 10 criteria, server-computed total.
+/// One promotion from a round to the next, per category (core C6a). Written once, in the same transaction as the
+/// entries it creates; never changed. A category is promoted once per round (UNIQUE).
+model PromotionRun {
+  id               String       @id @default(uuid(7)) @db.Uuid
+  fromRoundId      String       @map("from_round_id") @db.Uuid
+  toRoundId        String       @map("to_round_id") @db.Uuid
+  category         Category
+  topN             Int          @map("top_n")
+  /// `exam`: a quiz round's published snapshot (source_exam_id, source_generation); `jury`: a video round's averages.
+  sourceKind       String       @map("source_kind")
+  sourceExamId     String?      @map("source_exam_id") @db.Uuid
+  sourceGeneration Int?         @map("source_generation")
+  promotedCount    Int          @map("promoted_count")
+  eliminatedCount  Int          @map("eliminated_count")
+  createdById      String       @map("created_by_id") @db.Uuid
+  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  fromRound        Round        @relation("PromotionFrom", fields: [fromRoundId], references: [id], onDelete: Restrict)
+  toRound          Round        @relation("PromotionTo", fields: [toRoundId], references: [id], onDelete: Restrict)
+  sourceExam       Exam?        @relation(fields: [sourceExamId], references: [id], onDelete: Restrict)
+  createdBy        User         @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  entries          RoundEntry[]
+
+  @@unique([fromRoundId, category])
+  @@index([toRoundId])
+  @@index([sourceExamId])
+  @@index([createdById])
+  @@map("promotion_runs")
+}
+
+/// A judge's share of a video round (core C6b): the judge sees and scores the sent videos of these categories only,
+/// without the students' names. "All categories" is one row per category.
+model JuryAssignment {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  roundId     String   @map("round_id") @db.Uuid
+  judgeId     String   @map("judge_id") @db.Uuid
+  category    Category
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  round       Round    @relation(fields: [roundId], references: [id], onDelete: Restrict)
+  judge       User     @relation("JuryAssignmentJudge", fields: [judgeId], references: [id], onDelete: Restrict)
+  createdBy   User     @relation("JuryAssignmentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@unique([roundId, judgeId, category])
+  @@index([judgeId])
+  @@index([createdById])
+  @@map("jury_assignments")
+}
+
+/// Append-only jury scoring history (core C6b): who scored, the criteria scores, the total out of 100 the server
+/// computed. A judge scores again with a new row; the entry's score is the average of each judge's latest total.
 model JuryScore {
   id        String     @id @default(uuid(7)) @db.Uuid
   entryId   String     @map("entry_id") @db.Uuid
@@ -526,18 +602,31 @@ model JuryScore {
   @@map("jury_scores")
 }
 
+/// A certificate (core C6c): issued by the worker from database state, one per (user, type, round); revoked, never
+/// deleted. The name is copied at issue time, so a later profile edit does not change a certificate.
 model Certificate {
-  id               String   @id @default(uuid(7)) @db.Uuid
-  userId           String   @map("user_id") @db.Uuid
-  type             String // participation | promotion | winner ...
-  serial           String   @unique
-  verificationCode String   @unique @map("verification_code")
-  issuedAt         DateTime @default(now()) @map("issued_at") @db.Timestamptz
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-  user             User     @relation(fields: [userId], references: [id])
+  id                String    @id @default(uuid(7)) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  type              String // participation | promotion | winner (CHECK in raw SQL)
+  roundId           String    @map("round_id") @db.Uuid
+  serial            String    @unique
+  /// Random, for the public check; the only way to look a certificate up without a session.
+  verificationCode  String    @unique @map("verification_code")
+  nameOnCertificate String    @map("name_on_certificate")
+  issuedAt          DateTime  @default(now()) @map("issued_at") @db.Timestamptz
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz
+  revokedById       String?   @map("revoked_by_id") @db.Uuid
+  revokeReason      String?   @map("revoke_reason")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  user              User      @relation(fields: [userId], references: [id])
+  round             Round     @relation(fields: [roundId], references: [id], onDelete: Restrict)
+  revokedBy         User?     @relation("CertificateRevokedBy", fields: [revokedById], references: [id], onDelete: Restrict)
 
+  @@unique([userId, type, roundId])
   @@index([userId])
+  @@index([roundId, type])
+  @@index([revokedById])
   @@map("certificates")
 }
 
@@ -739,4 +828,57 @@ model BookOrder {
   @@index([recipientPhone])
   @@index([shippedBy]) // every foreign key has an index (schema invariant)
   @@map("book_orders")
+}
+
+/// Admin two-factor login (TOTP, RFC 6238). The secret is sealed with AES-256-GCM (TOTP_ENCRYPTION_KEY,
+/// `v1:<keyId>:…`), never stored in clear. enabledAt NULL: enrolment started, not confirmed yet. lastStep: the newest
+/// time step accepted, so a code works once.
+model UserTwoFactor {
+  userId           String    @id @map("user_id") @db.Uuid
+  secretCiphertext String    @map("secret_ciphertext")
+  enabledAt        DateTime? @map("enabled_at") @db.Timestamptz
+  lastStep         BigInt?   @map("last_step")
+  /// Codes tried on a PENDING factor (reserved before the check): the 5th wrong one deletes the row. 0 once enabled.
+  enableAttempts   Int       @default(0) @map("enable_attempts")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_two_factor")
+}
+
+/// One-time recovery codes for two-factor login: SHA-256 of the normalised code (50 bits of entropy each), used once.
+model TwoFactorRecoveryCode {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  codeHash  String    @unique @map("code_hash")
+  usedAt    DateTime? @map("used_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("two_factor_recovery_codes")
+}
+
+/// E7b: a correction of a published question's key, after attempts were taken. The question row stays as it was (it is
+/// frozen once published); the newest correction's to_key is the key everywhere a key is read (scoring, the review).
+/// Append-only (a revert is another correction); the rescore job brings the scores in line.
+model AnswerKeyCorrection {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  examId      String   @map("exam_id") @db.Uuid
+  /// The question version the attempts saw.
+  questionId  String   @map("question_id") @db.Uuid
+  fromKey     String   @map("from_key")
+  toKey       String   @map("to_key")
+  reason      String
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  exam        Exam     @relation(fields: [examId], references: [id], onDelete: Restrict)
+  question    Question @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  createdBy   User     @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([questionId, createdAt(sort: Desc)])
+  @@index([examId, createdAt(sort: Desc)])
+  @@index([createdById]) // the foreign key's index (db-constraints' catalog check)
+  @@map("answer_key_corrections")
 }

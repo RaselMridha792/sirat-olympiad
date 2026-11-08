@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { nextCode } from './totp.mjs';
 
 export function findBrowser() {
   const candidates = [
@@ -63,10 +64,20 @@ async function connect(url) {
   };
 }
 
-/** Starts the browser. `close()` ends it and deletes the profile. */
-export async function launchBrowser() {
-  const executable = findBrowser();
-  if (!executable) throw new Error('cdp: needs Chrome or Edge (set CHROME_PATH)');
+/** A busy CI runner can take longer than 30 s to start Chrome (seen once in CI's docker job, after the stack build). */
+const START_TIMEOUT_MS = process.env.CI ? 90_000 : 30_000;
+
+/** The end of Chrome's own output, on one line: it names why a start failed. */
+const lastOutput = (text) =>
+  text.trim()
+    ? JSON.stringify(text.trim().split(/\r?\n/).slice(-8).join(' | ').slice(-800))
+    : '(none)';
+
+/**
+ * Starts Chrome on a new profile: its DevTools URL, the child and the profile. A start that fails is stopped and its
+ * profile removed, and the error carries the end of Chrome's output.
+ */
+async function startBrowser(executable) {
   const profile = mkdtempSync(join(tmpdir(), 'sirat-cdp-'));
   const args = [
     '--headless=new',
@@ -82,22 +93,52 @@ export async function launchBrowser() {
     'about:blank',
   ];
   const child = spawn(executable, args, { stdio: ['ignore', 'ignore', 'pipe'] });
-  const wsUrl = await new Promise((resolve, reject) => {
-    let output = '';
-    const timer = setTimeout(() => reject(new Error('cdp: the browser did not start')), 30_000);
-    child.stderr.on('data', (chunk) => {
-      output += chunk;
-      const match = output.match(/DevTools listening on (ws:\/\/\S+)/);
-      if (match) {
+  let output = '';
+  try {
+    const wsUrl = await new Promise((resolve, reject) => {
+      const fail = (why) =>
+        reject(new Error(`cdp: the browser ${why}; its last output: ${lastOutput(output)}`));
+      const timer = setTimeout(
+        () => fail(`did not start within ${START_TIMEOUT_MS / 1000} s`),
+        START_TIMEOUT_MS,
+      );
+      child.stderr.on('data', (chunk) => {
+        output += chunk;
+        const match = output.match(/DevTools listening on (ws:\/\/\S+)/);
+        if (match) {
+          clearTimeout(timer);
+          resolve(match[1]);
+        }
+      });
+      child.on('exit', (code) => {
         clearTimeout(timer);
-        resolve(match[1]);
-      }
+        fail(`exited (${code})`);
+      });
     });
-    child.on('exit', (code) => {
-      clearTimeout(timer);
-      reject(new Error(`cdp: the browser exited (${code})`));
-    });
-  });
+    return { wsUrl, child, profile };
+  } catch (error) {
+    child.kill();
+    try {
+      rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    } catch {
+      /* best effort: a profile left behind fails no check */
+    }
+    throw error;
+  }
+}
+
+/** Starts the browser (one more try on a new profile if the first start fails). `close()` ends it and deletes the profile. */
+export async function launchBrowser() {
+  const executable = findBrowser();
+  if (!executable) throw new Error('cdp: needs Chrome or Edge (set CHROME_PATH)');
+  let started;
+  try {
+    started = await startBrowser(executable);
+  } catch (error) {
+    console.warn(`${error.message}; starting it once more`);
+    started = await startBrowser(executable);
+  }
+  const { wsUrl, child, profile } = started;
   const conn = await connect(wsUrl);
   // Content-Security-Policy, seen by every page: the violations (enforced or Report-Only) and which documents carried
   // nginx's page policy. e2e.mjs and e2e-exam.mjs check both once at the end (cspReport below, LAUNCH-PLAN §3).
@@ -363,19 +404,46 @@ async function openPage(conn, browserContextId, onCspViolation = () => {}, onDoc
   return page;
 }
 
-/** Logs in through the API (POST /api/auth/login) and returns the session cookies by name. */
-export async function apiLogin(apiBase, email, password) {
-  const res = await fetch(`${apiBase}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-requested-with': 'sirat-web' },
-    body: JSON.stringify({ email, password }),
-  });
-  if (res.status !== 204) throw new Error(`login for ${email} answered ${res.status}`);
+/** The cookies a response sets, by name. */
+function cookiesOf(res) {
   const cookies = {};
   for (const line of res.headers.getSetCookie()) {
     const [pair] = line.split(';');
     const eq = pair.indexOf('=');
     cookies[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim();
+  }
+  return cookies;
+}
+
+const AUTH_HEADERS = { 'content-type': 'application/json', 'x-requested-with': 'sirat-web' };
+
+/**
+ * Logs in through the API (POST /api/auth/login) and returns the session cookies by name. An admin or manager with
+ * two-factor login gets a challenge instead (200 { twoFactorRequired }): the code step follows with the account's
+ * secret from apps/web/.e2e-totp.json (lib/totp.mjs; `pnpm --filter @sirat/web e2e:2fa-enrol` writes it).
+ */
+export async function apiLogin(apiBase, email, password) {
+  const res = await fetch(`${apiBase}/api/auth/login`, {
+    method: 'POST',
+    headers: AUTH_HEADERS,
+    body: JSON.stringify({ email, password }),
+  });
+  let cookies;
+  if (res.status === 200 && (await res.json().catch(() => null))?.twoFactorRequired) {
+    const challenge = cookiesOf(res).sirat_2fa;
+    if (!challenge) throw new Error(`login for ${email} set no two-factor challenge cookie`);
+    const verify = await fetch(`${apiBase}/api/auth/2fa/verify`, {
+      method: 'POST',
+      headers: { ...AUTH_HEADERS, cookie: `sirat_2fa=${challenge}` },
+      body: JSON.stringify({ code: await nextCode(email) }),
+    });
+    if (verify.status !== 204)
+      throw new Error(`the code step for ${email} answered ${verify.status}`);
+    cookies = cookiesOf(verify);
+  } else if (res.status === 204) {
+    cookies = cookiesOf(res);
+  } else {
+    throw new Error(`login for ${email} answered ${res.status}`);
   }
   if (!cookies.sirat_access) throw new Error(`login for ${email} set no access cookie`);
   return cookies;

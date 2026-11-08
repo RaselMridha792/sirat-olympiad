@@ -18,6 +18,14 @@ const nextConfig = {
       },
     ];
   },
+  async redirects() {
+    // The public pages were Bangla under /bn until 2026-11-03 (core plan D4 now: Bangla at /, English under /en).
+    // Old links land on the same page. Temporary, so no browser caches it for good.
+    return [
+      { source: '/bn', destination: '/', permanent: false },
+      { source: '/bn/:path*', destination: '/:path*', permanent: false },
+    ];
+  },
   async rewrites() {
     // Dev only: in production Nginx routes /api/* to NestJS on the same origin. API_INTERNAL_URL lets a session that
     // runs its own API on another port (RUNBOOK §0, parallel sessions) point its dev web at it.

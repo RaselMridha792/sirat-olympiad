@@ -10,7 +10,12 @@ import { formatNumber } from '@/i18n/format';
 import { pick } from '@/i18n/messages';
 import { registrationMessages, type RegistrationMessages } from '@/i18n/messages/registration';
 import { ApiRequestError } from '@/lib/api';
-import { goToCheckout, newStartRequestId, registrationApi } from './registration-api';
+import {
+  goToCheckout,
+  newStartRequestId,
+  registrationApi,
+  type Checkout,
+} from './registration-api';
 import {
   EMPTY_FORM,
   STEPS,
@@ -129,7 +134,7 @@ export function RegisterWizard({ locale, info }: { locale: Locale; info: WizardI
       const started = retryMode
         ? await registrationApi.retry()
         : await withBusyRetry(() => registrationApi.start(input));
-      if (goToCheckout(started.paymentUrl)) return; // stay busy while PayStation loads
+      if (goToCheckout(started)) return; // stay busy while PayStation loads
       setFormError(m.errors.PAYMENT_START_FAILED);
     } catch (err) {
       fail(err);
@@ -460,13 +465,13 @@ function PreviousAttempt({ m }: { m: RegistrationMessages }) {
 
   if (!current) return null;
 
-  async function act(call: () => Promise<{ paymentUrl: string } | void>) {
+  async function act(call: () => Promise<Checkout | void>) {
     if (busy) return;
     setBusy(true);
     setError('');
     try {
       const result = await call();
-      if (result && goToCheckout(result.paymentUrl)) return;
+      if (result && goToCheckout(result)) return;
       if (!result) setCurrent(null); // cancelled: a fresh form
     } catch (err) {
       const problem = registrationProblem(answerOf(err));

@@ -5,7 +5,7 @@ import type {
   PageQuery,
   StudentExamCard,
 } from './dashboard';
-import type { QuestionOption, QuestionRecord } from './records';
+import type { ExamStatus, QuestionOption, QuestionRecord } from './records';
 import type { AttemptStatus, Category, Paginated } from './index';
 
 // ───────────── Student side (E2; EXAM-PLAN 1.1, 1.3, 3.15) ─────────────
@@ -188,6 +188,20 @@ export interface ExamResultsStatus {
   publishedAt: string | null;
   canBuild: boolean;
   canPublish: boolean;
+  /** E7b: the newest answer-key correction, or null when the exam has none. */
+  keyCorrectedAt: string | null;
+  /** Scored attempts not yet re-scored after the newest correction: Build waits until this is 0. */
+  rescorePending: number;
+  /** The snapshot was built before the newest correction: Publish waits for a new Build. */
+  snapshotStale: boolean;
+  /** The newest correction and what its re-scoring changed (null while it is still pending). */
+  lastCorrection: {
+    position: number;
+    fromKey: string;
+    toKey: string;
+    attempts: number | null;
+    changed: number | null;
+  } | null;
 }
 
 /** GET /admin/exams/:id/attempts (owner Q4: each student's violations and how the exam ended). */
@@ -220,6 +234,8 @@ export const EXAM_RESULTS_REFUSALS = [
   'attempts_unfinished',
   'no_snapshot',
   'results_published',
+  'rescore_pending',
+  'snapshot_stale',
 ] as const;
 export type ExamResultsRefusal = (typeof EXAM_RESULTS_REFUSALS)[number];
 
@@ -269,7 +285,54 @@ export type AdminExamView = Omit<AdminExamDetail, 'questions'> & {
   updatedAt: string;
   /** Active questions, in admin order. */
   questions: AdminQuestion[];
+  /** E7b: the answer-key corrections, newest first (empty for a draft). */
+  keyCorrections: AnswerKeyCorrectionView[];
 };
+
+/*
+ * Answer-key correction (E7b): a published question's key changed after attempts were taken. The question row stays
+ * as it was; the newest correction's key is the key everywhere a key is read, and a re-scoring job brings the scores
+ * in line. Admin only; refused while results are published (unpublish first).
+ */
+export interface AnswerKeyCorrectionInput {
+  toKey: string;
+  /** 3–200 characters, kept in the record and the audit row. */
+  reason: string;
+  /** The exam's concurrency token, as for every exam write. */
+  expectedUpdatedAt: string;
+}
+/**
+ * GET /admin/exams/:id/preview (admins only; D2): one sample draw, exactly as a student's start would draw and show
+ * it, with nothing written (no attempt, no checkpoint, no cache). Each request is a new draw. Carries the correct
+ * positions, so it is an admin shape like AdminExamView and never reaches a student route.
+ */
+export interface AdminExamPreview {
+  examId: string;
+  title: string;
+  status: ExamStatus;
+  durationMinutes: number;
+  questionsPerAttempt: number;
+  violationWarnings: number;
+  /** Texts only, in the drawn order. Fewer than questionsPerAttempt only for a draft whose pool is short. */
+  questions: Array<{ text: string; options: string[] }>;
+  /** The correct option's displayed position per question, with the key in effect (E7b corrections included). */
+  correct: number[];
+}
+
+/** A correction's reason, trimmed (KeyCorrectionDto; the CHECK answer_key_corrections_reason_check). */
+export const KEY_CORRECTION_LIMITS = { reasonMin: 3, reasonMax: 200 } as const;
+
+export interface AnswerKeyCorrectionView {
+  id: string;
+  questionId: string;
+  /** The question's admin position, for "question 7". */
+  position: number;
+  fromKey: string;
+  toKey: string;
+  reason: string;
+  createdAt: string;
+  createdByName: string;
+}
 
 /** POST /admin/exams. Times are ISO 8601 with an explicit zone (stored UTC, shown in Asia/Dhaka). */
 export interface AdminExamInput {
@@ -318,6 +381,11 @@ export const EXAM_ADMIN_REFUSALS = [
   'duplicate_option_key',
   'correct_key_missing',
   'round_not_found',
+  'exam_draft',
+  'results_published',
+  'question_not_in_exam',
+  'same_key',
+  'key_unknown',
 ] as const;
 export type ExamAdminRefusal = (typeof EXAM_ADMIN_REFUSALS)[number];
 
@@ -354,7 +422,7 @@ export type QuestionImportField = (typeof QUESTION_IMPORT_COLUMNS)[number] | 'ro
 
 /**
  * C0 control characters and DEL, except tab and line feed. None belongs in a question, and Postgres refuses U+0000 in
- * text and jsonb (a 500 instead of a row error). The CSV import refuses them; QuestionDto is meant to use it too.
+ * text and jsonb (a 500 instead of a row error). The CSV import, QuestionDto and KeyCorrectionDto refuse them.
  */
 export const CONTROL_CHARACTERS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
 

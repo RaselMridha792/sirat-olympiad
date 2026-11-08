@@ -2,6 +2,255 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-03 — The page CSP is enforced; a checkout's gateway decides its scheme (A2; L3's condition, the lead's proposal A)
+
+- **The page CSP is enforced** (`infra/nginx/security-headers.conf`), no longer Report-Only.
+  - L3's condition: payments' wizard e2e passes under it with no violation, the full round trip (wizard, the fake gateway's checkout, callback and IPN, result page, login, and a failed checkout retried).
+  - CI's docker job runs that e2e through nginx on every PR. The fake listens on 127.0.0.1:18090 for that step only.
+  - **A violation in production:** rename the header to `Content-Security-Policy-Report-Only` and reload nginx.
+- **Start, retry and resume answer `gateway`.**
+  - `'paystation'` is followed over https only, in every build. `'fake'` may be http.
+  - The API says `'fake'` only in fake mode (`checkoutGateway`), which `buildPaymentConfig` refuses with `NODE_ENV=production`, so a live or sandbox API never sends it.
+  - **Why:** the web's old rule allowed http only outside a production build (`NODE_ENV` inlined at build time). The fake's http checkout therefore failed in CI's production-built web, and the CSP proof never reached the gateway.
+  - The new rule follows the API's mode instead of the build, and loosens nothing in production. An answer without `gateway` (an older API during a deploy) counts as `'paystation'`.
+- **One helper:** `goToCheckout` is the only way to a checkout: the wizard's start, retry and continue, and the result page's "Try again". A test checks that no component navigates by itself.
+- **Who:** A2, on the lead's proposal A. It touches payments' files (registration.service, registration-api.ts, RegisterWizard, PaymentResult, 06-API), for payments to review when back.
+
+## 2026-11-03 — Pre-launch security sweep: four small fixes (A2; the lead's sweep, read-only first)
+
+- **`/api/ready` stays public** (the uptime monitor polls it by keyword), but each replica answers from a check at most 1 s old (`READY_CACHE_MS`). Concurrent probes share one check. A flood costs one database round trip and two Redis pings a second per replica, not one per request. The answer keeps `no-store`, and a failed check is logged once, not once per request.
+- **The login's code step (`POST /api/auth/2fa/verify`) is in nginx's auth zone**, with login and the email-link endpoints: one bucket per client for every endpoint that takes a credential. The API's own caps stay: 5 attempts per challenge, the login limits.
+- **`Permissions-Policy: camera=(), microphone=(), geolocation=()`** on every page nginx serves. No page uses them, the exam room included.
+- **The judges' blindness test** checks every identifying field of the students: name, user id, email, phone and institution.
+- **Not changed:** judges sign in without 2FA (the design covers admins and managers); it is on Rasel's list for later, with "not required" as the default.
+- **Who:** the sweep and its fixes by A2; the lead chose which to fix and how.
+
+## 2026-11-03 — Public pages Bangla-first; the homepage and About as a first draft (owner, via the lead)
+
+- **Decision:**
+  - **Routes:** every public page is Bangla at its path (`/`, `/about`, `/privacy`, `/terms`, `/refund-policy`) and English under `/en`, one rule for all (core plan D4). Old `/bn` links get a temporary redirect to the same page (`next.config.mjs`). `hreflang` alternates on every page.
+  - **The homepage and About are built now** as a first draft from the client's two PDFs. The PDFs win over the old site; the old site's About text is used where the PDFs do not contradict it (the purpose and the five goals). This overrides CLAUDE.md §1b's "public site only after the design is confirmed" for these two pages only. The policy texts are exam's (#80).
+  - **One source per fact, each "to confirm" with the client:**
+    - the name and the season line in `content/site.ts` (`site.name.bn/en`, `site.season`); the homepage, the shell, the page titles and the legal texts read it;
+    - dates, the knockout method, the qualifiers, the social links, the album URL and the offline flag in `content/home.ts`;
+    - the team flag in `content/about.ts`;
+    - the texts in `i18n/messages/home.ts` and `about.ts`;
+    - the fee and the open state from the API.
+  - **Hidden until confirmed:** offline participation, the album link (empty URL), the advisory board and the convenor team. Left out: the registration check by SMS, the advisers, the sponsors. The two groups are content only (the system's categories question is with the owner).
+  - **ﷺ** is one key (`homeMessages.brand.honorific`), drawn with a system Arabic font stack (`--font-arabic`, no font package). It rendered well in Chrome on Windows; the plain fallback "(সা.)" is a one-key change. A `{saw}` token in a message marks its place, rendered by `<WithHonorific>` (plain text, no HTML).
+  - **New in `@sirat/ui`:** `Section`, `Timeline` (dates and steps), `Accordion` (native `details`/`summary`, no script), `BigStats`, `StarMark`, `GeometricPattern` and `StarOrnament` (inline SVG geometry in `currentColor`), `Honorific`/`WithHonorific`; the tokens `--font-arabic` and `--animate-rise` (used only behind `motion-safe:`).
+  - **Look:** our own design, never the old site's layout. Geometric and arabesque motifs only: **never a depiction of the Prophet ﷺ or any prophet**.
+- **Why:** the client needs a draft to react to, and its readers are Bangla first. Static server-rendered pages, no new dependency, no HTML from strings.
+- **Who:** Rasel (owner, 2026-11-03), passed on by the lead; built by core.
+
+## 2026-11-03 — The admin exam preview draws like a start and writes nothing (D2, P1; exam session, the design the lead approved)
+
+1. **`GET /admin/exams/:id/preview`, admins only:** one sample draw, made with the same `drawLayout` and `renderQuestions` that a student's start uses. A preview cannot drift from what students see. The correct positions use the key in effect (E7b).
+2. **Nothing is written:** no attempt row, no Redis checkpoint, no cache, no audit row (it is a read, like `GET /admin/exams/:id`, which already carries the keys). Each call is a new draw; the page's "Draw again" is a refresh. A test counts attempts, audit rows and `exam:att:*`/`exam:ckpt:*` keys before and after, and checks that the response carries no attempt id, receipt, request id, token or option key.
+3. **A short pool:** a draft shows what it has, with an "n of m questions" note (lead's pick b). A published exam always has its full pool (the publish rule), so a short one is refused like a publish (`question_count`).
+4. **The web reuses the student's look:** `QuestionCard` and the question-number list moved out of `ExamRoom.tsx` first, as a refactor with no behaviour change. The preview has no controller, timer, checkpoint, submit or violation listeners. "Show answers" is off by default and shows the correct option on its own line, so the student card is not changed for it.
+
+## 2026-11-01 — Certificates without the PDF (core C6c-1; the C6 plan, the lead's notes, owner Q4 defaults)
+
+1. **Issuing is a queue job** (DO 8): the admin asks, the API answers 202 with how many qualify now, and the worker runs one idempotent `INSERT … SELECT … ON CONFLICT (user_id, type, round_id) DO NOTHING`. It is on a new `certificates` queue (C6c-2's render joins it), in `ops-check` like the others.
+2. **Who gets which** (Q4 default):
+   - participation: on Round 1's published snapshot, from **published** exams only (as for promotion, an archived exam is retired);
+   - promotion: an entry in a round after Round 1;
+   - winner: named by email in the final, with a reason in the audit log.
+   - Blocked accounts are left out. A winner's email is resolved to an id by the API, so no email reaches Redis.
+3. **Serial and code:** `SLO-<year>-<number>` from `certificate_serial_seq` (gaps when a run skips existing ones; the number only has to be unique). The verification code is 12 random hex digits (48 bits, `gen_random_uuid()`'s random part), case-insensitive when typed. At 30 tries a minute per IP a code cannot be guessed (A2 agreed).
+4. **The name is copied at issue time**, so a later profile edit does not change a printed certificate.
+5. **Revoke, never delete:** with a reason and the version seen (row lock); the student sees "revoked", not the reason. No API deletes a certificate.
+6. **The public check** (lead): only `{ name, award: { type, roundName } }`; one 404 for unknown, malformed and revoked codes (the body differs only by the request id). It was already on A2's reviewed allow-list. The web page `/verify/[code]` calls it **from the browser**: a server-side call would carry the web server's IP, so every visitor would share one per-IP limit. The page is `noindex` and outside the marketing design.
+7. **Web:** `/dashboard/certificates` (the awards, numbers, codes and a link to the check; the PDF marked as coming); `/admin/certificates` (issue, search, revoke); nav items in both shells.
+8. **Tests:**
+   - `certificates.int-spec.ts`: participation through the real queue and worker, once, with the name as it was and a blocked student left out; promotion and winners and 12 refusals; the check (name and award only, lower case, the same 404 for unknown, malformed and revoked) and the revoke (stale, twice, the student's view); the per-IP limit; admins only, a demoted admin; the CHECKs.
+   - The rounds and jury tests also empty `certificates` (a certificate on a round would block deleting it).
+   - web: the area file picks, a message for every refusal code in both languages.
+
+## 2026-11-03 — VPS specs confirmed; L14 part 1 needs no change (A2; specs read on the VPS by the lead)
+
+- **Specs, as `deploy` on the VPS:**
+  - 8 vCPU (`nproc`): AMD EPYC 9354P, an 8-vCPU slice (Hostinger KVM 8);
+  - 31 GB memory usable (32 GB nominal);
+  - 387 GB disk, `/var/lib/docker` on the same filesystem, 7 % used;
+  - Ubuntu 26.04.1 LTS, kernel 7.0.0-38-generic, not the 24.04 the plan assumed (bootstrap accepts it);
+  - from bootstrap: 4 GB swap, `vm.overcommit_memory=1`.
+- **Decision:** no retune of `postgresql.conf` or the compose limits, which assumed 8 vCPU / 32 GB.
+  - The long-running services' memory limits add up to about 21.25 GB: Postgres 12, the api 4 × 1, Redis 2 + 1, web 1, worker 0.5, nginx 0.5, PgBouncer 0.25.
+  - That leaves about 10 GB of the 31 for the OS and the page cache, in line with `effective_cache_size = 20GB` (8 GB `shared_buffers` plus the page cache).
+  - The CPU limits are caps, not reservations.
+- **Why:** LAUNCH-PLAN L14 part 1 retunes only a box that differs, and this one does not. Part 2 (the nginx zones, the API refresh tier, the monitor thresholds) waits for exam's k6 numbers from the VPS staging.
+- **Who:** the lead read the specs on the VPS; A2 checked the limits against them. This answers OPEN-QUESTIONS #22's specs part; the Malaysia/AWS fallback stays open.
+
+## 2026-11-01 — Answer-key correction after publish (E7b; exam session, the design the lead approved with four notes)
+
+1. **The question rows stay frozen** (DON'T 8, `questions_frozen_after_publish`). A wrong key is fixed by a row in the new `answer_key_corrections` (exam, question version, from, to, reason, who, when); the newest correction per question is the key in effect.
+   - Every reader goes through one helper (`answer-keys.ts`: `correctedKeys`, `effectiveKey`): scoring, the re-scoring, the student review and the admin views. The admin page marks a corrected question ("Key corrected C → B") and highlights the key in effect; editing a published question starts its next version from that key.
+   - Append-only (lead's note 1): UPDATE, DELETE and TRUNCATE refused by `answer_key_corrections_append_only` (TRUNCATE only in a `*_test` database), and `REVOKE UPDATE, DELETE … FROM sirat_app` in the migration; the runtime-role test finds the table by its trigger's `*_append_only` name. A revert is another correction.
+   - A trigger refuses a correction of a draft (edit the question instead), of a question of another exam, and to or from a key that is not an option of that version; CHECKs keep the keys `^[A-Z]$`, different, and the reason 3–200 characters.
+2. **Only while the results are unpublished** (`results_published`: unpublish first), so published scores never change underneath students. A draft is refused (`exam_draft`), an archived exam too. The exam's `updatedAt` is the token (`stale`), and a correction bumps it, so two admins never correct from the same view.
+3. **The lock (lead's note 2):** the correction holds the exam row FOR NO KEY UPDATE; every scoring and each re-scoring batch holds it FOR SHARE. A score written before the correction is re-scored; one that waited reads the new key.
+   - Nothing on a student's path (start, checkpoint, submit, time-up) updates or locks the exam row: those lock only the attempt (`FOR UPDATE OF a`). A start's foreign key takes FOR KEY SHARE on the exam row, which FOR UPDATE would block for the length of the correction and FOR NO KEY UPDATE does not. So students never wait, and a scoring (in the worker) waits at most for one short correction.
+   - Tested with a transaction held open: both orders of correction and scoring, and an exam start during a held correction lock. Each test fails on its mutation (the timestamp taken before the lock; the FOR SHARE removed; FOR UPDATE in place of FOR NO KEY UPDATE).
+4. **One clock:** the correction's `created_at` and every `scored_at` are Postgres's `clock_timestamp()` read after the lock, never a Node clock: "scored before the correction" and "snapshot older than the correction" then compare one clock (a Docker host's clock can drift from the database container's).
+5. **Re-scoring (lead's note 3):** the correction queues `rescore-exam` (jobId per correction). Each batch (500 attempts) takes the attempts scored before the newest correction FOR UPDATE SKIP LOCKED, recomputes from the submission and the layout, sets `scored_at` after the correction, and writes its counts in an `answer_key.rescored` audit row in the same transaction. So it is idempotent (a second run finds nothing), two runs never take the same attempt, and the totals stay right across a retry or a run that failed half-way. A job that failed for good shows in ops-check's `failed_jobs` (queue `exam`), and the minute sweep re-scores an exam whose newest correction is 2 minutes old with attempts still waiting.
+6. **Build and Publish wait for it (lead's note 4):** Build is refused while attempts wait (`rescore_pending`; the worker's build checks the same under the exam lock, and the sweep never auto-builds then); Publish is refused for a snapshot older than the newest correction (`snapshot_stale`). The results panel shows the correction (question, from → to, when), the attempts still waiting or how many were re-scored and how many scores changed, and the stale snapshot, before either button; the history of corrections (who, why, when) follows.
+7. **Question text, options and explanations now refuse control characters** in the admin API too (`@NoControlCharacters()`, the same `CONTROL_CHARACTERS` as the CSV import), so a NUL is a 400, not a 500.
+
+## 2026-11-01 — Ready by 15 Nov; registration opens when an admin opens it, expected 25 Nov (owner, via the lead)
+
+- **Decision:**
+  - Everything is ready on Sun 15 Nov as planned (LAUNCH-PLAN): deployed, checked, `prelaunch-check.sh` all PASS.
+  - Registration stays closed (`registration_open=false`). An admin opens it from `/admin/settings` (audited) when the owner says. Expected Wed 25 Nov, the client's date.
+  - The "coming soon" states stay on until then.
+- **Why:** the client's published dates are registration 25 Nov – 15 Feb, the selection round 19–20 Mar and the knockout 18 Apr. Opening is a setting, not a deploy, so it needs no release and no freeze.
+- **Who:** Rasel (owner, 2026-11-01), passed on by the lead; recorded by A2. Per-group fees (senior and junior, set by an admin) are payments' work.
+
+## 2026-11-01 — Admin two-factor login (A2; design approved by the lead, groundwork by payments)
+
+1. **What:** TOTP (RFC 6238: SHA-1, 6 digits, 30 s, one step either side) for **admin and manager** (`TWO_FACTOR_ROLES`).
+   - The secret is sealed with AES-256-GCM under `TOTP_ENCRYPTION_KEY` (`v1:<keyId>:…`). The key is required in production for the API only; the worker and the break-glass CLI never need it.
+   - Without the key (development and tests only) 2FA is **off**: nothing is enforced, and every 2FA route answers 503 `TWO_FACTOR_UNAVAILABLE`. The API logs `two-factor=on` at boot.
+   - Rotation: the old value goes to `TOTP_ENCRYPTION_KEY_PREVIOUS`; each secret is re-sealed with the new key at its next right code.
+2. **The claim:** the access token carries `tfa` (boolean). A token without it (issued before this change) reads as false.
+   - **The proof lives on the session row** (`sessions.two_factor_verified`, migration `20261101080002_session_two_factor_proof`); the token's `tfa` is only a copy of it. `start()` stores false; `startVerified()` true, only after the login's code step or turning 2FA on with a code.
+   - **A refresh never raises it:** the successor carries the previous row's proof AND the user's current enrolment (`user_two_factor.enabled_at` set). So turning 2FA off or a reset drops it, and enrolling later never upgrades a session that skipped the code.
+   - **change-password** (review fix): the access token's session row must still be alive, else 401 (a token outlives its row by up to 15 minutes). For an enrolled user that row must have proved the code, else 403 `TWO_FACTOR_REQUIRED` with nothing changed. The new session inherits that row's proof (AND enrolled now), never the token's claim.
+   - This closes the upgrade the review found: an attacker who logged in with the password before the admin enrolled used change-password, after enable had ended the sessions, to mint a fresh session, then refreshed it to `tfa`. It also closes the same upgrade through races (a login or a rotation committing around enable's end-all): their sessions carry false.
+   - **Also:** turning 2FA on or off, the admin reset and the CLI reset end every other session of the user; on and off also reissue this device's cookies with the new flag.
+3. **The guard:** a route whose `@Roles()` names admin or manager refuses an admin or manager session without `tfa` (403 `TWO_FACTOR_REQUIRED`) while 2FA is on.
+   - `@TwoFactorOptional()` exempts exactly `GET /auth/me`, `POST /auth/logout`, `GET /auth/2fa`, `POST /auth/2fa/setup` and `POST /auth/2fa/enable` (the routes test fails on any other). So an admin who has not enrolled can log in, enrol, and nothing else.
+   - `/auth/me` reports `twoFactor: { enabled, required, verified }` for the web.
+4. **Login:** for an enrolled account the order is limits, password (a failure counts as today), the blocked check, rehash, then a challenge. There is **no** `recordSuccess` and no session yet.
+   - The answer is 200 `{ "twoFactorRequired": true }` with the `sirat_2fa` cookie (httpOnly, SameSite=Strict, Secure like the others, Path `/api/auth/2fa`, Max-Age 300). Everyone else keeps the 204.
+   - The challenge lives in the cache Redis under the SHA-256 of its id and holds the user id only, for 5 minutes. `GETDEL` makes it single use.
+   - **At most 5 codes per challenge, also in parallel** (review fix): each verify first reserves an attempt in one Lua script (missing challenge → refused; INCR; past 5 → both keys deleted, refused), and only then checks its code. The 5th wrong code ends the challenge. The login limits count as before.
+   - Only students' logins stay at one read: the 2FA row is read only for the roles that may enrol.
+5. **`POST /auth/2fa/verify`** (`{ code }` or `{ recoveryCode }`, exactly one; public, the CSRF header like login):
+   - The login limits come first: a lock refuses even the right code (429 + Retry-After). A wrong code counts there (with login's lock audit and alerts) and on the challenge.
+   - A right code claims the challenge, then is used once by a conditional update (`last_step < step`, or `used_at IS NULL` for a recovery code). Two parallel right codes give exactly one session, and a code never works twice. Only then `recordSuccess` and `startVerified`.
+   - Answers: 401 `TWO_FACTOR_CODE_INVALID`; 401 `TWO_FACTOR_CHALLENGE_INVALID` (gone: the cookie is cleared, log in again).
+   - A recovery code is audited with the count left and raises the alert `two_factor.recovery_used`.
+6. **Enrolment and the rest** (`@Roles('admin', 'manager')`):
+   - `setup` asks for the password again under the login limits, creates or replaces a PENDING row, and returns `{ otpauthUri, qrDataUri }` (the QR is rendered server-side).
+   - `enable` takes a code from the pending secret. It is not under the login limits (the caller holds the secret it confirms). It returns 10 recovery codes once (SHA-256 stored), ends every session, and sets new cookies with the proof.
+   - **The enable cap** (review fix): a stolen session with a pending setup must not guess at the per-user rate. Each enable attempt reserves one on the pending row (`user_two_factor.enable_attempts`, migration `20261101080003_two_factor_enable_attempts`, CHECK 0–5) before its code is checked; the 5th wrong code deletes the row, answering 409 `TWO_FACTOR_SETUP_REQUIRED`, so setup (which asks for the password) must run again. A right code and a new setup reset the count.
+   - Why a column, not Redis: the count dies with the row, a new setup resets it in the same statement, and the cache Redis (allkeys-lru) may evict a key.
+   - `recovery-codes` needs a current TOTP code under the limits. `disable` needs both factors under the limits, ends every session, and sets new cookies without `tfa`.
+   - Signed-in step-ups answer **400** (`PASSWORD_INCORRECT`, `TWO_FACTOR_CODE_INVALID`), never 401, so the web never mistakes them for an expired session.
+7. **A lost device:**
+   - `POST /admin/users/:id/2fa/reset` (`{ reason, code }`): the acting admin must have `tfa`, still be admin in the database (the role re-read like `assertAdmin`, 403 otherwise; review fix), and give their **own** current TOTP code (no recovery code; under the limits). The target exists (404), is admin or manager and is never the actor (403 `TWO_FACTOR_RESET_NOT_ALLOWED`), and has 2FA (409 `TWO_FACTOR_NOT_ENABLED`). The reset ends all of the target's sessions and is limited to 5 an hour per admin. Audit `auth.2fa_reset` carries the reason; the alert `two_factor.reset` follows.
+   - The CLI `admin:2fa-reset --email --reason` is break-glass when no other admin is reachable. It needs the database and both Redis, decrypts nothing, audits with no actor, alerts, and prints the user id only.
+8. **Never logged:** a code, a secret, a recovery code, a challenge id or an email. Audit actions: `auth.2fa_failed` (with `purpose`), `auth.2fa_password_failed`, `auth.2fa_setup_started`, `auth.2fa_enabled`, `auth.2fa_recovery_codes_replaced`, `auth.2fa_disabled`, `auth.2fa_recovery_used`, `auth.2fa_reset`.
+9. **Known gaps:**
+   - An access token stays valid until it expires. After a reset (or disable) ends the sessions, the target keeps admin access for at most the access-token TTL (`JWT_ACCESS_TTL_SECONDS`, 15 min); refreshing fails at once.
+   - A rotation committing at the same moment as a reset's or disable's end-all can leave its successor alive (READ COMMITTED; the same holds for every end-all, password changes included). It never gains a proof it lacked. A proved one keeps `tfa` for at most one access-token TTL, and its next refresh drops it, since the user is no longer enrolled.
+   - Losing the key makes every enrolled factor unreadable: every admin then needs the CLI reset. Keep the key with the other server secrets; the database backup does not contain it.
+   - Role changes are not built. When they are, a change away from admin or manager should remove the factor, since the login reads the 2FA row only for those roles.
+10. **Ops:**
+    - Compose pins `NODE_ENV=production` for the api, so the stack requires the key and enforces 2FA.
+    - CI's docker job, the drill, the rehearsal, exam-load and the VPS load staging (`load-staging.sh up`) give their throwaway `.env` a random key.
+    - The integration tests ignore a key in `apps/api/.env` (`test/load-env.ts`): only the 2FA suites set their own, so every other admin suite runs with 2FA off.
+
+## 2026-11-01 — Video and jury (core C6b; the C6 plan, the lead's notes, owner Q4b–Q4d defaults)
+
+1. **The video link** (Q4b default):
+   - https to `youtube.com`, `www.youtube.com`, `m.youtube.com`, `youtu.be` or `drive.google.com` only, with no user name, password or port (`isAllowedVideoUrl` in shared, used by the server and the web).
+   - A strict pattern, not `URL` parsing, because shared has no DOM or Node types; the host part admits letters, digits, dots and hyphens only, so `@`, `:`, `\` and spaces cannot reach the host check.
+   - The student's own entry only, inside the window by the server's clock, changeable until the close; status `submitted`.
+   - **Never logged or audited** (a minor's input; the audit row keeps ids). The student sees it back as text; the jury gets a link (`rel="noopener noreferrer"`, `target="_blank"`) only for an allowed host, and never an embedded video (lead).
+2. **Assignment per category:** "all categories" is one row per category, not a NULL category, so the UNIQUE `(round_id, judge_id, category)` is a plain index Prisma can describe (NULLS NOT DISTINCT would be drift). Removing an assignment keeps the judge's scores.
+3. **Blind judging** (Q4c default): the jury sees an entry number (`E-` + the last 8 hex digits of the entry id, the random part of a UUIDv7), the category, the link and the time it was sent; never a name, institution, user id or contact.
+4. **Scoring:**
+   - Only after the window closed, so the video is frozen; only before the category's promotion.
+   - Every criterion of the round, whole numbers 0–10.
+   - **The total is out of 100 whatever the number of criteria:** sum × 100 / (10 × criteria), two decimals. With the default ten it is the plain sum. A round may have 1–20 criteria (C6a), while an entry's score and a total stay 0–100.
+   - `jury_scores` is append-only: scoring again adds a row. The entry's score is the average of the **latest** total of each judge **assigned now** to its round and category, recomputed under the entry's row lock.
+   - **Unassigning a judge takes their scores out at once** (lead's review of #75): it is the admin's remedy for a wrong or compromised judge. In the same transaction, under the round's share lock, every entry of that category the judge scored is recomputed. An entry left with no assigned score goes back to `submitted` with no score, so it blocks that category's promotion until someone scores it. The history rows stay. Entries already promoted or eliminated keep their result.
+   - The comment stays with the judges: never the student (Q4d default), never the audit log.
+5. **Locks** (lead's note): the video and a score take a **share** lock (`FOR SHARE`) on the round, and a promotion takes `FOR UPDATE`. So many students and judges work at once, but never while a promotion of that round runs, and the promotion sees settled scores.
+6. **Append-only `jury_scores`** (lead's note 1): `jury_scores_append_only()` refuses UPDATE and DELETE (row trigger) and TRUNCATE (statement trigger), except TRUNCATE in a database whose name ends exactly in `_test` (truncateAll cascades into it through users and round entries). The migration has its own guarded `REVOKE UPDATE, DELETE … FROM sirat_app`: the table is from A1, so it had full rights, and #57's REVOKE loop ran before it became append-only.
+7. **Web:**
+   - `/dashboard/round` (students and ambassadors): the round, the status, the video form; also a nav item and a link from the home's round card for a video round.
+   - `/admin/jury` (jury only): rounds, "To score" and "Scored", the score dialog with the live total. The jury's `/admin` home now opens it (the placeholder is gone).
+   - `/admin/rounds`: a "Jury" dialog on video rounds.
+8. **Tests:**
+   - `jury.int-spec.ts`: the video (inside the window, changed, shown back, no link in the audit row, the refusals); assignment; scoring (blind, only the judge's categories, after the close, the average of the latest totals, bad scores, 404s, stopped by the promotion, the counts); the total out of 100 with four criteria; jury only, a demoted and a blocked judge; the CHECKs and append-only, with the migration's SQL in a `…xtest` scratch database.
+   - `video-url.spec.ts`: the allowed links and 14 refusals (look-alike hosts, a user name, a port, a backslash, javascript, protocol-relative).
+   - web: the area file, the refusal helper, the total and the window helpers.
+
+## 2026-11-01 — A CI exam smoke that counts outcomes, never time (E6 follow-up; exam session, lead's conditions)
+
+1. **Every PR runs 20 students through a 1-minute exam** in the docker job: `loadtests/exam-local.sh` with `SMOKE=1 NO_BUILD=1 LOAD_TAG=latest`.
+   - It runs on the images the job just built, in its own project `sirat-exam-load`, with nothing published, and is removed at the end.
+   - It costs about 3.5–4 minutes: the exam, the 30 s grace, and up to one minute for the sweep to submit the students who left.
+2. **Only counted outcomes fail it:**
+   - errors over 0.5 %;
+   - a failed check;
+   - a submit without a receipt, or a receipt the waiting room does not show;
+   - an attempt not submitted or not scored;
+   - receipts not equal to the students' own submissions, or sweep submissions not equal to the students who left.
+
+   No latency limit and no timed write window: a shared CI runner's timing proves nothing, and a wall-time assert would only add flakes.
+3. **The runner's fixtures now run in a container** that shares Postgres's network (the migrate image, with the clone's fixtures and `src` mounted read-only), as in the VPS kit. The docker job has no pnpm, and the local runner no longer publishes Postgres on 127.0.0.1.
+4. **Validated locally before the PR:** a build run, and then CI's path with no build (220 s). Each had 20 attempts submitted and scored, receipts equal to the own submissions, and the sweep taking exactly the leavers.
+
+## 2026-11-01 — Rounds and promotion (core C6a; the C6 plan the lead approved, owner Q4 defaults)
+
+1. **Rounds are data** (Q4 default): Round 1 (quiz) exists; admins append a video and a final round. The server picks the order under an advisory lock; the type and the order never change; nothing follows the final; at most 10.
+2. **Windows:**
+   - A video round has both times; a final round has both or neither.
+   - Once open, the start stays and the close only moves later; once closed, the window stays closed, because the jury scores frozen videos (C6b).
+   - Round 1's times come from its exam (exam's), so only its name changes here.
+3. **Criteria are data** on the round: the old ten by default (0–10 each, total 0–100). They are frozen once a jury score exists.
+4. **Promotion** (lead's review):
+   - **The source:** from a quiz round, the category's rows of the round's one **published** exam snapshot. An archived exam is retired, never a source. The rank is recomputed inside the category in exam's order, because an all-category exam's rank is global. From a video round, the jury averages, after the close and with every sent video scored.
+   - **Ties at the cut all go through** (Q4a default). The preview shows the tie count, so an admin sees why N + k were promoted.
+   - **The run:** the preview's `expected` (the count and a source key: the exam and its results version, or a digest of the round's entries) comes back with the run, so a re-published snapshot or a changed score after the preview is refused (409 `stale`). The web asks the admin to type the number that will go through; Bangla digits count too.
+   - **One run per (round, category)** (UNIQUE), under the round's row lock, in one transaction: the run row, the next round's entries (`ON CONFLICT DO NOTHING`: an existing entry, video or score is never overwritten), and the source entries marked promoted or eliminated. Round 1's entries are created at its promotion, so the home can say "promoted" or "eliminated".
+   - **The audit row** keeps the counts, never a student. The snapshot decides: a disqualification is exam's rebuild before the promotion, not a filter here.
+5. **The student's round** (`GET /rounds/me`, the home, the profile): the latest round with an own entry; before any entry, Round 1.
+6. **Stats:** `secondRound` and `finalists` count the entries of Round 2 and of the final round, in the same snapshot; null while that round does not exist.
+7. **Schema** (a generated, a CHECKs and an append-only migration): `promotion_runs` (new); `rounds.criteria`; `round_entries.promotion_run_id`, `video_submitted_at` (for C6b); CHECKs for the limits.
+   - **`promotion_runs` is append-only** (lead's review of #71): a historical record. `promotion_runs_append_only()` refuses UPDATE and DELETE (row trigger) and TRUNCATE (statement trigger), and the migration has its own `REVOKE UPDATE, DELETE … FROM sirat_app`, guarded on the role. A new table gets #57's default privileges but not its REVOKE.
+   - **TRUNCATE is allowed where the name ends exactly in `_test`** (`right(current_database(), 5) = '_test'`), unlike `payment_events`: this table references users and rounds, so the tests' `truncateAll` (TRUNCATE … CASCADE) reaches it. Production's database is `sirat`, and the runtime role has no TRUNCATE right anyway. A test runs the migration's own SQL in a scratch database named `…xtest` and sees all three refused there.
+   - **The category is the student's current one** in the jury ranking (lead's note): it cannot change after the student's first exam attempt (an admin's grade correction is refused once an attempt exists, core C3), so a promoted student's category is fixed.
+8. **Web:**
+   - `/admin/rounds` (admin only): the rounds in order with entries and promotions.
+   - Dialogs: "Add round", "Edit" (Bangladesh times, the criteria as `key | English | বাংলা` lines) and "Promote" (preview, tie count, typed confirmation).
+   - One page with dialogs instead of the planned `/admin/rounds/[id]`: there are at most 10 rounds, so a detail page adds a route and no information.
+   - The home's round card already showed every status: it now reads `GET /rounds/me`.
+9. **Tests:**
+   - `rounds.int-spec.ts`: rounds and their rules; frozen criteria; promotion from Round 1 (in-category rank, ties, stale, the run, nothing overwritten, already promoted, the audit counts); the student's round, the profile and the stats; the source refusals; two simultaneous runs (one wins); promotion from a video round (close, unscored, stale after a score change, statuses, videos and scores kept); admins only; the CHECKs.
+   - The test cleans its own rounds, because rounds are global data in the shared test database. `admin-stats` and `users-me` follow the new values.
+   - web: the area file picks, the problem mapper (a message for every code in both languages), the criteria lines, the typed count.
+
+## 2026-11-01 — The VPS load test runs on a staging stack behind a timed firewall window (E6 kit; exam session, RULEBOOK §13, LAUNCH-PLAN L14)
+
+1. **A staging project, `sirat-staging`,** from the deployed release's images, never a build (only payments' fake PayStation is built, as test code that no release image holds). Its own volumes and throwaway settings in `/var/lib/sirat/staging` (700); Postgres carries the test marker; payments are off or on the fake. It never reads the clone's `.env` (the overlay replaces `env_file`, as the drill's does) and never touches project `sirat`.
+2. **The load fixtures run in a container that shares staging Postgres's network** (`--network container:<postgres>`), with the migrate image (it holds tsx and the dependencies) and the clone's fixtures and `src` mounted read-only. So `127.0.0.1` there is staging's own Postgres: the fixtures' local-URL guard and the server's test marker both still hold, and the server needs no node.
+3. **The firewall window** (`scripts/load-staging.sh window`, as root from the provider's console: root has no SSH login, and deploy gets no sudo rule for it, since the clone is deploy-writable):
+   - nginx's staging port (8088) is dropped from outside by the DOCKER-USER guard (L12) until a window inserts one `RETURN` rule per generator address, above the guard's `DROP`;
+   - at most 4 single public IPv4 addresses (A2's limit for trusted generators); private, loopback and network ranges are refused;
+   - the window runs in the foreground and closes on Ctrl-C, a lost session (SIGHUP), any error and the end of its minutes (a trap); a `systemd-run` timer, started before the first rule, closes it too if the script is killed;
+   - `up` refuses to start when the DOCKER-USER guard is not active, since the published port would otherwise be open from the start.
+4. **Trusted generators:** the window switches A2's `scripts/loadtest-generators.sh` on for the same addresses (as the clone's owner, never root) and off again when it closes, then reloads staging's nginx, which reads the same folder. k6 then sends each simulated student's address in `CF-Connecting-IP` (`IP_HEADER`).
+5. **The registration surge runs inside the stack** (`up --registration`, `k6 registration`): the payer must reach the fake's checkout at `http://fake-paystation:18090`, which only the project's network has. Payments' overlay runs api and worker in development mode there (the API refuses the fake in production), so the exam simulation stays on a plain `up`.
+6. **CI** runs the script on faked commands (iptables, systemd-run, docker and the rest): 59 checks, no Docker and no root. A dry run prints every change and makes none.
+7. **A forgotten trusted generator cannot go unnoticed** (A2's L4/L14 items).
+   - `scripts/loadtest-generators-left.sh` gives the minutes to the earliest `# expires` line among the `infra/nginx/loadtest-realip*.conf` files (nginx's wildcard). It is negative past an expiry or without a readable one, and prints nothing when there is no file.
+   - monitor.sh reports that number. ops-check's `trusted_generators` check warns while any file exists and goes critical past the expiry.
+   - `prelaunch-check.sh` fails while any file exists, and every k6 run ends with `off`.
+   - Nothing else enforces the expiry: nginx keeps trusting the file until `off`.
+8. **The registration staging's cookies are not Secure** (`COOKIE_SECURE=false`, only there): payments' k6 script uses k6's cookie jar, which does not send Secure cookies over plain http, so the result page could never read its registration. The first rehearsal failed exactly there (`current 200`: 0 of 1,275). The API allows it because that staging runs in development mode; the exam staging stays in production mode with Secure cookies, which the exam simulation keeps itself.
+
+## 2026-11-01 — bootstrap's sshd drop-in sorts first, and sshd -T proves it (L12 fix; exam session, found by the lead on the VPS)
+
+1. **sshd keeps the first value it reads, and it reads `/etc/ssh/sshd_config.d/*.conf` in lexical order.** The VPS image ships `50-cloud-init.conf` with `PasswordAuthentication yes`, which sorted before bootstrap's `50-sirat.conf` ('c' < 's'), so password logins would have stayed on. The drop-in is now `00-sirat.conf`, and the old name is removed.
+2. **Every run checks the effective settings with `sshd -T`:** `passwordauthentication no`, `permitrootlogin no`, `kbdinteractiveauthentication no`. If a file that sorts even earlier overrides them, bootstrap removes its drop-in, reloads ssh and exits 1 (the previous state, so no lockout), and names the setting.
+3. **Ubuntu 26.04 LTS is accepted** next to 24.04 (the VPS runs 26.04.1). The bootstrap test runs on either image (`BOOTSTRAP_TEST_IMAGE`). **`Etc/UTC` counts as UTC**, so a cloud image's zone is no longer re-set.
+
 ## 2026-11-01 — Real IPs and shared IPs (Claude; LAUNCH-PLAN L4)
 
 1. **The key:** nginx's zones keep one bucket per IPv4 address and one per IPv6 /64 (`$sirat_limit_key`). One client holds a whole /64 (a home line, a phone), so a key per address would let it rotate through 2^64 buckets.

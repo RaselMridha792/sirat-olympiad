@@ -89,6 +89,10 @@ check "APP_URL is https" bash -c '[[ "$1" == https://* ]]' _ "$(envval APP_URL)"
 check "COOKIE_SECURE is not false" test "$(envval COOKIE_SECURE)" != false
 check "the API connects as a runtime role, not the database owner" bash -c \
   '[ -n "$1" ] && [ "$1" != "$2" ]' _ "$(envval DATABASE_URL | sed -n 's|^postgresql://\([^:@]*\).*|\1|p')" "$(envval POSTGRES_USER)"
+# Admin two-factor login (RUNBOOK section 22): the API refuses to boot in production without the key, and every
+# enrolled admin's secret is sealed with it. The format only (as the API parses it); the value is never printed.
+totp_key_ok() { [[ "$(envval TOTP_ENCRYPTION_KEY)" =~ ^([0-9a-fA-F]{64}|[A-Za-z0-9+/_-]{43}=?)$ ]]; }
+check "TOTP_ENCRYPTION_KEY is set: 32 random bytes, base64 or 64 hex (admin 2FA)" totp_key_ok
 check "no development marker on Postgres" test -z "$(pg "select coalesce(current_setting('sirat.environment', true), '')")"
 check "no Mailpit in the project" test -z "$(service_ids mailpit)"
 
@@ -118,6 +122,29 @@ paystation_live() {
   done
 }
 vps "every API's PayStation boot line: live, the client's account and prefix, https callback and IPN" paystation_live
+# Each API replica's boot line: admin two-factor login is enforced (two-factor.config.ts).
+two_factor_on() {
+  local c
+  [ -n "$(service_ids api)" ] || return 1
+  for c in $(service_ids api); do
+    grep -q 'two-factor=on' <<< "$(docker logs "$c" 2>&1)" || return 1
+  done
+}
+check "every API logs two-factor=on (admin 2FA enforced)" two_factor_on
+# Each API and worker replica's newest boot line from prisma.service.ts (`database role=<name> superuser=<bool>`): the
+# app runs as the runtime role sirat_app and never as a superuser (OPEN-QUESTIONS #27, LAUNCH-PLAN L8). A missing line
+# fails too. Until L8 switches production to sirat_app this FAILs, which is right for a pre-launch gate. Names only.
+runtime_role() {
+  local s c line
+  for s in api worker; do
+    [ -n "$(service_ids "$s")" ] || return 1
+    for c in $(service_ids "$s"); do
+      line=$(grep -oE 'database role=[^ "]+ superuser=(true|false)' <<< "$(docker logs "$c" 2>&1)" | tail -n 1)
+      [ "$line" = 'database role=sirat_app superuser=false' ] || return 1
+    done
+  done
+}
+check "every API and worker logs database role=sirat_app superuser=false (L8)" runtime_role
 manual "paystation:selfcheck exits 0 on the VPS (RUNBOOK section 9)"
 
 # ---- a clean production database ----
@@ -156,6 +183,10 @@ cf_list_fresh() {
   [ -n "$d" ] && [ $(($(date -u +%s) - $(date -u -d "$d" +%s))) -le $((90 * 86400)) ]
 }
 check "the Cloudflare IP list is under 90 days old (RUNBOOK section 10)" cf_list_fresh
+# A2's trusted load-test generators: nginx takes any client address from them while a loadtest-realip*.conf exists, and
+# nothing removes it at its expiry. A k6 run ends with `scripts/loadtest-generators.sh off`; none may be on at launch.
+check "no trusted load-test generators (scripts/loadtest-generators.sh off)" \
+  test -z "$(bash scripts/loadtest-generators-left.sh)"
 
 # ---- the host ----
 disk_ok() {
