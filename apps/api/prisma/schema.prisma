@@ -516,8 +516,12 @@ model Round {
   promotionsTo    PromotionRun[]   @relation("PromotionTo")
   juryAssignments JuryAssignment[]
   certificates    Certificate[]
+  /// Demo data's root marker (DECISIONS "Demo data"): written only by the demo loader, never changed.
+  demoBatchId     String?          @map("demo_batch_id") @db.Uuid
+  demoBatch       DemoBatch?       @relation(fields: [demoBatchId], references: [id], onDelete: Restrict)
 
   @@unique([sortOrder])
+  @@index([demoBatchId])
   @@map("rounds")
 }
 
@@ -726,8 +730,12 @@ model AdminTask {
   createdBy    User             @relation(fields: [createdById], references: [id])
   assignments  TaskAssignment[]
   pointEntries PointLedger[]
+  /// Demo data's root marker (DECISIONS "Demo data"): written only by the demo loader, never changed.
+  demoBatchId  String?          @map("demo_batch_id") @db.Uuid
+  demoBatch    DemoBatch?       @relation(fields: [demoBatchId], references: [id], onDelete: Restrict)
 
   @@index([createdById])
+  @@index([demoBatchId])
   @@map("admin_tasks")
 }
 
@@ -799,6 +807,8 @@ model DemoBatch {
   users         User[]         @relation("DemoUsers")
   exams         Exam[]
   announcements Announcement[]
+  tasks         AdminTask[]
+  rounds        Round[]
 
   @@index([createdById])
   @@map("demo_batches")
