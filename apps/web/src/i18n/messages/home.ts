@@ -126,6 +126,13 @@ export const homeMessages = defineMessages({
       knockout: { title: 'Knockout qualifiers', prize: 'A special souvenir' },
       everyone: { title: 'Every participant', prize: 'Certificate' },
       note: 'There will also be book sets, gadgets, cash prizes and crests.',
+      /** What the client's own PDF says; shown until the old site's prize details are confirmed. */
+      pdf: {
+        champion: 'An Umrah journey',
+        toBeAnnounced: 'The prize will be announced soon.',
+        moreTitle: 'More prizes',
+        more: 'There will be book sets, gadgets, cash, certificates, crests and more. Each group has its own prizes.',
+      },
     },
     roadmap: {
       kicker: 'Schedule',
@@ -361,6 +368,12 @@ export const homeMessages = defineMessages({
       knockout: { title: 'নকআউট উত্তীর্ণ', prize: 'বিশেষ স্মারক' },
       everyone: { title: 'সকল অংশগ্রহণকারী', prize: 'সার্টিফিকেট' },
       note: 'এ ছাড়া বইসমগ্র, গ্যাজেট, নগদ অর্থ ও ক্রেস্টসহ আরও পুরস্কার থাকবে।',
+      pdf: {
+        champion: 'উমরাহ সফর',
+        toBeAnnounced: 'পুরস্কার শিগগিরই ঘোষণা করা হবে।',
+        moreTitle: 'আরও পুরস্কার',
+        more: 'বইসমগ্র, গ্যাজেট, নগদ অর্থ, সার্টিফিকেট ও ক্রেস্টসহ বিভিন্ন পুরস্কার থাকবে। দুটি গ্রুপে পৃথকভাবে পুরস্কার প্রদান করা হবে।',
+      },
     },
     roadmap: {
       kicker: 'সময়সূচি',

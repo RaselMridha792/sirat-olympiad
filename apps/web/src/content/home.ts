@@ -42,6 +42,12 @@ export interface HomeFacts {
     finalistsPerGroup: number;
     /** The total value across both groups, in taka; null hides the line. */
     poolTaka: number | null;
+    /**
+     * The old site's prize details (champion: a gold medal; runner-up: a laptop and a silver medal; finalists: a
+     * scholarship, crest and certificate; knockout qualifiers: a souvenir). Each is a public promise: false shows only
+     * what the client's PDF says until the client confirms them (lead, 2026-11-09).
+     */
+    oldSiteDetails: boolean;
   };
   roadmap: readonly RoadmapEntry[];
   social: readonly SocialLink[];
@@ -60,6 +66,7 @@ export const homeFacts: HomeFacts = {
     // The old site says 12,00,000 taka. A prize amount is a public promise of money: hidden (null) until the client
     // confirms it (lead, 2026-11-08).
     poolTaka: null,
+    oldSiteDetails: false,
   },
   // The PDFs give days without years; the season runs from Nov 2026 into 2027.
   roadmap: [

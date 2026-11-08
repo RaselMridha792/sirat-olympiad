@@ -23,7 +23,11 @@ One short entry per non-obvious technical or product decision. Newest first. For
     - `/rounds`: the rounds, the final, the roadmap, results;
     - `/prizes`: the prizes, the counts per group, certificates;
     - `/syllabus`: the books, the questions, where to get the books.
-    The second PR adds ambassador, gallery, FAQ and contact.
+    - Part 2 adds:
+      - `/ambassador`: the programme and how it works in the system (promo code, referrals counted on a successful payment, points and level, approved tasks, teams; a code never changes the fee);
+      - `/gallery`: last season's numbers; the album once the client's link arrives;
+      - `/faq`: in five groups;
+      - `/contact`: email, social, what helps us answer; no form, since there's no backend for it.
   - The header's second row is the main menu (`MENU_PAGES` in content/site.ts, `aria-current` on the page), a native `<details>` "Menu" on phones (no JavaScript needed); the footer is a site map.
 - **Content rules:**
   - The texts are the client's PDFs, with the old site where the PDFs are silent.

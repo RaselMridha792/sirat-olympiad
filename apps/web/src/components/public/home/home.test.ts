@@ -30,6 +30,8 @@ test('offline participation and the team stay hidden until the client confirms t
   assert.equal(homeFacts.offline, false);
   // A prize amount is a public promise of money: only once the client confirms it.
   assert.equal(homeFacts.prizes.poolTaka, null);
+  // The old site's prize details (medals, a laptop, a scholarship, a souvenir) wait for the client too.
+  assert.equal(homeFacts.prizes.oldSiteDetails, false);
   assert.deepEqual(participationModes(homeFacts), ['online']);
   assert.deepEqual(participationModes({ offline: true }), ['online', 'offline']);
   assert.equal(aboutFacts.team.show, false);

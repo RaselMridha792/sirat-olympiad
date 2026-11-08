@@ -24,7 +24,7 @@ import {
   Wifi,
   Youtube,
 } from 'lucide-react';
-import { Accordion, buttonClasses, GeometricPattern, Section, Timeline } from '@sirat/ui';
+import { buttonClasses, GeometricPattern, Section, Timeline } from '@sirat/ui';
 import { homeFacts, safeExternalUrl, type SocialLink } from '@/content/home';
 import { publicPath, site } from '@/content/site';
 import type { Locale } from '@/i18n';
@@ -210,12 +210,37 @@ export function PrizesSection({
   const counts = homeFacts.prizes;
   const perGroup = (count: number) =>
     detail ? detail.perGroup(formatNumber(detail.locale, count)) : null;
-  const others = [
-    { key: 'runnerUp', Icon: Medal, ...p.runnerUp, count: perGroup(counts.runnersUpPerGroup) },
-    { key: 'finalists', Icon: Award, ...p.finalists, count: perGroup(counts.finalistsPerGroup) },
-    { key: 'knockout', Icon: Star, ...p.knockout, count: null },
-    { key: 'everyone', Icon: ScrollText, ...p.everyone, count: null },
-  ];
+  const oldSite = counts.oldSiteDetails;
+  const others = oldSite
+    ? [
+        { key: 'runnerUp', Icon: Medal, ...p.runnerUp, count: perGroup(counts.runnersUpPerGroup) },
+        {
+          key: 'finalists',
+          Icon: Award,
+          ...p.finalists,
+          count: perGroup(counts.finalistsPerGroup),
+        },
+        { key: 'knockout', Icon: Star, ...p.knockout, count: null },
+        { key: 'everyone', Icon: ScrollText, ...p.everyone, count: null },
+      ]
+    : [
+        {
+          key: 'runnerUp',
+          Icon: Medal,
+          title: p.runnerUp.title,
+          prize: p.pdf.toBeAnnounced,
+          count: perGroup(counts.runnersUpPerGroup),
+        },
+        {
+          key: 'finalists',
+          Icon: Award,
+          title: p.finalists.title,
+          prize: p.pdf.toBeAnnounced,
+          count: perGroup(counts.finalistsPerGroup),
+        },
+        { key: 'everyone', Icon: ScrollText, ...p.everyone, count: null },
+        { key: 'more', Icon: Gift, title: p.pdf.moreTitle, prize: p.pdf.more, count: null },
+      ];
   const championCount = perGroup(counts.championsPerGroup);
   return (
     <Section id="prizes" kicker={p.kicker} title={p.title} lead={p.lead}>
@@ -224,7 +249,9 @@ export function PrizesSection({
           <GeometricPattern id="prize-pattern" size={48} className="text-white/[0.08]" />
           <Trophy aria-hidden="true" className="h-14 w-14 text-accent" />
           <h3 className="mt-6 text-3xl font-extrabold">{p.champion.title}</h3>
-          <p className="mt-2 text-lg leading-relaxed text-white/85">{p.champion.prize}</p>
+          <p className="mt-2 text-lg leading-relaxed text-white/85">
+            {oldSite ? p.champion.prize : p.pdf.champion}
+          </p>
           {championCount ? (
             <p className="mt-3 text-sm font-semibold text-white">{championCount}</p>
           ) : null}
@@ -247,7 +274,7 @@ export function PrizesSection({
           {detail.pool(formatNumber(detail.locale, counts.poolTaka))}
         </p>
       ) : null}
-      <p className="mt-4 text-center text-ink-muted">{p.note}</p>
+      {oldSite ? <p className="mt-4 text-center text-ink-muted">{p.note}</p> : null}
     </Section>
   );
 }
@@ -276,7 +303,7 @@ export function RoadmapSection({ m, locale }: { m: HomeText; locale: Locale }) {
 
 const TASK_ICONS = [ClipboardList, Footprints, UserPlus, ChartLine, Target, Award];
 
-export function AmbassadorSection({ m }: { m: HomeText }) {
+export function AmbassadorSection({ m, locale }: { m: HomeText; locale: Locale }) {
   const a = m.ambassador;
   return (
     <Section id="ambassador" kicker={a.kicker} title={a.title} lead={a.lead}>
@@ -309,59 +336,34 @@ export function AmbassadorSection({ m }: { m: HomeText }) {
           <UserPlus aria-hidden="true" className="h-10 w-10 text-accent" />
           <h3 className="mt-5 text-2xl font-extrabold">{a.join}</h3>
           <p className="mt-3 flex-1 leading-relaxed text-white/80">{a.how}</p>
-          <a
-            href="#contact"
+          <Link
+            href={publicPath('contact', locale)}
             className={buttonClasses({ size: 'lg', className: 'mt-6 self-start' })}
           >
             {a.cta}
-          </a>
+          </Link>
         </div>
       </div>
     </Section>
   );
 }
 
-type FaqTarget = 'register' | 'roadmap' | 'prizes' | 'rounds' | 'syllabus';
+export type FaqTarget = 'register' | 'roadmap' | 'prizes' | 'rounds' | 'syllabus';
 
 /** Where a FAQ answer's link goes: registration, or the page the question is about. */
-function faqHref(target: FaqTarget, locale: Locale): string {
+export function faqHref(target: FaqTarget, locale: Locale): string {
   if (target === 'register') return '/register';
   if (target === 'roadmap') return `${publicPath('rounds', locale)}#roadmap`;
   return publicPath(target, locale);
 }
 
-const FAQ_TARGETS: readonly string[] = ['register', 'roadmap', 'prizes', 'rounds', 'syllabus'];
-
-export function FaqSection({ m, locale }: { m: HomeText; locale: Locale }) {
-  const items = m.faq.items.map((item) => {
-    const target = FAQ_TARGETS.includes(item.id) ? (item.id as FaqTarget) : null;
-    return {
-      id: `faq-${item.id}`,
-      question: item.question,
-      answer: (
-        <>
-          <p>{item.answer}</p>
-          {target ? (
-            <p className="mt-3">
-              <Link
-                href={faqHref(target, locale)}
-                className="inline-flex items-center gap-1 font-semibold text-secondary underline-offset-4 hover:underline"
-              >
-                {m.faq.links[target]}
-                <ArrowRight aria-hidden="true" className="h-4 w-4" />
-              </Link>
-            </p>
-          ) : null}
-        </>
-      ),
-    };
-  });
-  return (
-    <Section id="faq" surface="surface" kicker={m.faq.kicker} title={m.faq.title}>
-      <Accordion items={items} name="home-faq" className="mx-auto max-w-3xl" />
-    </Section>
-  );
-}
+export const FAQ_TARGETS: readonly string[] = [
+  'register',
+  'roadmap',
+  'prizes',
+  'rounds',
+  'syllabus',
+];
 
 const SOCIAL_ICONS: Record<SocialLink['key'], typeof Facebook> = {
   facebook: Facebook,
