@@ -224,7 +224,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - name: Random signing secret for this run
-        run: echo "JWT_ACCESS_SECRET=$(openssl rand -base64 48 | tr -d '\n')" >> "$GITHUB_ENV"
+        run: echo "JWT_ACCESS_SECRET=$(openssl rand -hex 48)" >> "$GITHUB_ENV"
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @sirat/shared build
       - run: pnpm db:generate
@@ -286,7 +286,7 @@ jobs:
           sed -i "s|^JWT_ACCESS_SECRET=.*|JWT_ACCESS_SECRET=$(openssl rand -hex 32)|" .env
           sed -i "s|^POSTGRES_APP_PASSWORD=.*|POSTGRES_APP_PASSWORD=$(openssl rand -hex 32)|" .env
           # The api runs with NODE_ENV=production, which requires the admin 2FA key (commented out in the example).
-          printf 'TOTP_ENCRYPTION_KEY=%s\n' "$(openssl rand -base64 32)" >> .env
+          printf 'TOTP_ENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)" >> .env
           $DCD config --quiet
       - name: Nginx on the pinned image - both sites pass nginx -t; the TLS site, its headers and its logs
         run: infra/nginx/test/check-sites.sh

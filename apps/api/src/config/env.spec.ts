@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import {
+  PLACEHOLDER,
   emailConfigProblem,
   secretProblem,
   totpKeyProblem,
@@ -7,14 +8,24 @@ import {
   validateWorkerEnv,
 } from './env';
 
-const strongSecret = () => randomBytes(32).toString('base64');
+/**
+ * Random bytes as text that no placeholder word matches. A random base64 value sometimes contains one ("xxxx",
+ * "FaKe"), which made these tests flaky; hex never does, so only base64 redraws (DECISIONS 2026-11-09).
+ */
+const randomText = (bytes: number, encoding: 'base64' | 'base64url' | 'hex'): string => {
+  for (;;) {
+    const value = randomBytes(bytes).toString(encoding);
+    if (!PLACEHOLDER.test(value)) return value;
+  }
+};
+const strongSecret = () => randomText(32, 'base64');
 const valid = () => ({
   NODE_ENV: 'production',
   DATABASE_URL: 'postgresql://u:p@pgbouncer:6432/sirat?pgbouncer=true',
   REDIS_CACHE_URL: 'redis://redis-cache:6379',
   REDIS_QUEUE_URL: 'redis://redis-queue:6379',
   JWT_ACCESS_SECRET: strongSecret(),
-  TOTP_ENCRYPTION_KEY: randomBytes(32).toString('base64'),
+  TOTP_ENCRYPTION_KEY: randomText(32, 'base64'),
   APP_URL: 'https://sirat.test',
 });
 
@@ -61,6 +72,12 @@ describe('validateEnv (A2.0 gate 3: no placeholder or weak signing secrets)', ()
 
   it('secretProblem returns null for a good secret', () => {
     expect(secretProblem(strongSecret())).toBeNull();
+  });
+
+  it('no placeholder word fits in hex, so a hex secret is never refused as one (the "generate one with" advice)', () => {
+    const words = PLACEHOLDER.source.replace(/^\(|\)$/g, '').split('|');
+    expect(words.length).toBeGreaterThan(5);
+    for (const word of words) expect(word.replace(/\.\?/g, '')).toMatch(/[g-z]/i);
   });
 });
 
@@ -199,7 +216,7 @@ describe('validateWorkerEnv: Amazon SES (owner, 2026-10-31)', () => {
     EMAIL_FROM: 'Sirat Olympiad <no-reply@sirat.test>',
     SES_REGION: 'ap-south-1',
     SES_ACCESS_KEY_ID: 'AKIA4QWERTYUIOPASDFG',
-    SES_SECRET_ACCESS_KEY: randomBytes(30).toString('base64'),
+    SES_SECRET_ACCESS_KEY: randomText(30, 'base64'),
     ...extra,
   });
 
@@ -275,8 +292,8 @@ describe('TOTP_ENCRYPTION_KEY (admin two-factor login)', () => {
 
   it('takes 32 bytes as base64, base64url or 64 hex', () => {
     for (const value of [
-      key().toString('base64'),
-      key().toString('base64url'),
+      randomText(32, 'base64'),
+      randomText(32, 'base64url'),
       key().toString('hex'),
     ])
       expect(totpKeyProblem({ NODE_ENV: 'production', TOTP_ENCRYPTION_KEY: value })).toBeNull();
@@ -297,7 +314,7 @@ describe('TOTP_ENCRYPTION_KEY (admin two-factor login)', () => {
   });
 
   it('checks the previous key the same way, and only next to a current one', () => {
-    const current = key().toString('base64');
+    const current = randomText(32, 'base64');
     expect(
       totpKeyProblem({
         NODE_ENV: 'production',
