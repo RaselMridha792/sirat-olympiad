@@ -380,6 +380,7 @@ The superuser password also sits in every app container through `env_file`. The 
   - no development marker on Postgres, and no Mailpit;
   - every app container runs the image of the recorded release; the boot lines; migrations up to date;
   - a clean production database: no fixture users, no test invoices, no published exam, fee 40000, `registration_open` as intended;
+  - admin 2FA required for admin and manager (`settings.two_factor_required_roles`; a missing row passes): it FAILs while the requirement is switched off for testing, so switch it back on before the go/no-go (RUNBOOK §22);
   - the newest backup under 26 h old, with its off-server copy;
   - the worker healthy with SES; the page CSP present;
   - real client IPs (VPS only): access-log lines from the last hour that came through a Cloudflare edge (the outside monitors make some) show a client address that differs from the edge and is not a Docker, private, loopback or Pseudo IPv4 (240.0.0.0/4) address;
