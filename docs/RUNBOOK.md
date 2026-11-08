@@ -36,7 +36,7 @@ $DCD up -d --build --no-deps migrate api worker web nginx   # the shared stack (
 ```
 
 **The pre-push hook (every clone, once):** `git config core.hooksPath scripts/git-hooks`.
-- `scripts/git-hooks/pre-push` refuses a push whose commits descend from the old history's first commit (`7587f2f`) or touch `reference/`. The repository is public, and both must never reach it (DECISIONS 2026-11-08).
+- `scripts/git-hooks/pre-push` refuses a push whose commits descend from the old history's first commit (`7587f2f`) or touch `reference/`. The repository is public, and both must never reach it (DECISIONS 2026-11-08). A push to the private archive (its exact URLs) passes, since it holds both by design.
 - CI runs the same check on every pull request.
 - To check by hand before a push: `git merge-base --is-ancestor 7587f2f HEAD && echo STOP-old-history || echo ok`.
 
