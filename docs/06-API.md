@@ -28,7 +28,7 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `POST /payments/:id/recheck` | Owner, throttled | Calls PayStation status (payments PR 3) |
 | | `GET /payments/paystation/callback/:invoice` | Public | Hint only → status API → settle (payments PR 3) |
 | | `POST /payments/paystation/ipn` | Public | Re-confirm via status API; idempotent (payments PR 3) |
-| exams | `GET /exams`, `GET /exams/:id` | Role(student, ambassador) | Window state, never questions. Exam engine (below). Built (E2) |
+| exams | `GET /exams`, `GET /exams/next`, `GET /exams/:id` | Role(student, ambassador) | Window state, never questions. Exam engine (below). Built (E2; `next` for the admit card, 10 Nov) |
 | attempts | `POST /exams/:id/attempts` | Role(student, ambassador) + verified email + paid registration | Start or resume (server clock). Built (E2) |
 | | `GET /attempts/me?exam=:id` | Owner | Resume. Built (E2) |
 | | `PUT /attempts/:id/checkpoint` | Owner | Redis only. Built (E2) |
@@ -201,6 +201,7 @@ Every student who paid gets one free book: they confirm a Bangladeshi delivery a
 | Method + path | Body | Answers |
 |---|---|---|
 | `GET /exams` | — | `StudentExamListItem[]`: card, `state` (`upcoming`/`open`/`in_progress`/`submitted`/`closed`, from the server clock), `resultsPublished` |
+| `GET /exams/next` | — | `{ exam: StudentNextExam \| null }`: the next olympiad exam for the admit card's countdown, i.e. the published exam of a round whose window has not ended, nearest start first, among the student's visible exams (their category or everyone; demo and real apart). Never a practice exam (no round), a draft or an ended exam; nothing about attempts or scores. `windowStart` is the printed date and the countdown target, `windowEnd` the "until". `exam: null` = to be announced. The same as `nextExamFor(prisma, userId)` (`modules/exams/next-exam.ts`), which the PDF renderer calls without HTTP |
 | `GET /exams/:id` | — | `StudentExamDetail`: card, grace, `violationWarnings` (5), `serverNow`, the student's own attempt (`attemptId` for the review, `phase`, `endsAt`, receipt) |
 | `POST /exams/:id/attempts` | — | 201 new / 200 existing `AttemptView`: questions as texts in this attempt's order, options as texts in their shuffled order, `remainingSeconds` and `serverNow` from the server, the last checkpoint's answers and the server's violation count. 403 `email_unverified`, `registration_required` (no paid registration: read only from payments' tables); 409 `not_open_yet` / `window_closed`. An existing attempt in any phase answers 200 (a submitted one carries its receipt and no questions) |
 | `GET /attempts/me?exam=:id` | — | The same `AttemptView` (resume after a reload or on another device); 404 when none |

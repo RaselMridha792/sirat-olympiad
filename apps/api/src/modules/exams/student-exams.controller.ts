@@ -1,5 +1,5 @@
 import { Controller, Get, Param, ParseUUIDPipe } from '@nestjs/common';
-import type { StudentExamDetail, StudentExamListItem } from '@sirat/shared';
+import type { StudentExamDetail, StudentExamListItem, StudentNextExam } from '@sirat/shared';
 import type { AuthUser } from '../auth/access-token.service';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { StudentExamsService } from './student-exams.service';
@@ -13,6 +13,12 @@ export class StudentExamsController {
   @Get()
   list(@CurrentUser() user: AuthUser): Promise<StudentExamListItem[]> {
     return this.exams.list(user.id);
+  }
+
+  /** The next olympiad exam for the admit card's countdown (before ':id', so "next" is never read as an id). */
+  @Get('next')
+  next(@CurrentUser() user: AuthUser): Promise<{ exam: StudentNextExam | null }> {
+    return this.exams.next(user.id);
   }
 
   @Get(':id')
