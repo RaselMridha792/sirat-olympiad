@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { ChevronDown, Menu } from 'lucide-react';
-import { buttonClasses, cn, SkipLink, StarMark, WithHonorific } from '@sirat/ui';
+import Image from 'next/image';
+import { buttonClasses, cn, SkipLink, WithHonorific } from '@sirat/ui';
+import siratMark from './sirat-mark.png';
 import { MENU_PAGES, POLICY_PAGES, publicPath, site, type PublicPage } from '@/content/site';
 import type { Locale } from '@/i18n';
 import { pick } from '@/i18n/messages';
@@ -56,7 +58,7 @@ export function PublicShell({
     site.email ? { label: m.footer.email, value: site.email } : null,
     site.phone ? { label: m.footer.phone, value: site.phone } : null,
   ].filter((item) => item !== null);
-  const draftNote = site.placeholder ? m.draftNote : null;
+  const draftNote = site.placeholder && site.showDraftNote ? m.draftNote : null;
   const footerLink =
     'inline-flex min-h-6 items-center font-medium text-secondary underline-offset-4 hover:underline';
 
@@ -72,11 +74,12 @@ export function PublicShell({
       <header className="bg-shell text-white md:sticky md:top-0 md:z-40">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-3.5 sm:px-6">
           <Link href={publicPath('home', locale)} className="flex min-w-0 items-center gap-3">
+            {/* The client's logo mark (owner, 2026-11-10), on a white tile: its green would vanish on the deep-green shell. */}
             <span
               aria-hidden="true"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-primary-strong text-white"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-white p-1"
             >
-              <StarMark className="h-6 w-6" />
+              <Image src={siratMark} alt="" width={32} height={32} unoptimized priority />
             </span>
             <span className="flex min-w-0 flex-col leading-tight">
               <span className="text-base font-extrabold sm:text-lg">{home.brand.name}</span>
@@ -192,7 +195,7 @@ export function PublicShell({
         <div className="mx-auto grid max-w-6xl gap-8 px-4 py-10 text-sm sm:px-6 lg:grid-cols-[1.4fr_2fr_1fr]">
           <div>
             <p className="flex items-center gap-2 text-base font-extrabold text-ink">
-              <StarMark className="h-4 w-4 text-primary-strong" />
+              <Image src={siratMark} alt="" aria-hidden="true" width={20} height={20} unoptimized />
               {home.brand.name}
             </p>
             <p lang={seasonLang} className="mt-1 font-medium text-ink-muted">
