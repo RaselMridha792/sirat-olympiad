@@ -3,6 +3,13 @@ import { isIPv4, isIPv6 } from 'node:net';
 import { Logger } from '@nestjs/common';
 import type Redis from 'ioredis';
 import { withTimeout } from '../../common/with-timeout';
+import {
+  LOGIN_SPRAY,
+  SPRAY_ALERT_HOLD_MS,
+  SPRAY_BUCKET_TTL_MS,
+  SPRAY_WINDOW_MINUTES,
+  minuteOf,
+} from './login-spray';
 
 /**
  * Login limits (owner, 2026-10-31). Only failed logins are counted:
@@ -13,6 +20,8 @@ import { withTimeout } from '../../common/with-timeout';
  * - per account, all IPs together (about 50 per hour). At that limit only IPs that failed on the account within the
  *   hour are refused: an IP without failures (usually the student's own) can still log in, while an attacker gets
  *   one guess per fresh IP. So nobody can lock someone else's account on purpose from elsewhere (owner, A2 rule).
+ * Every failure also counts towards the spray signals across all accounts (login-spray.ts): failures per minute and
+ * distinct emails within 10 minutes. They raise alerts and never refuse anyone.
  * A completed password reset clears every lock and count of that account: the account's "generation" in the keys
  * changes, and old keys simply expire. Emails appear in keys only as SHA-256 hashes, and the same counting runs for
  * emails without an account, so nothing here reveals whether an account exists.
@@ -28,6 +37,9 @@ export interface LoginLimits {
   accountFailuresPerHour: number;
   /** More distinct IPs than this failing on one account within the hour is a separate signal (no blocking). */
   alertDistinctIps: number;
+  /** Spray signals across all accounts (no blocking); LOGIN_SPRAY by default, smaller only in tests. */
+  globalFailuresPerMinute?: number;
+  sprayAccountsPer10Min?: number;
 }
 
 /** Why an attempt is refused before the password is checked. The client sees one generic message for all three. */
@@ -46,6 +58,14 @@ export interface FailureResult {
   distinctIps: number;
   /** This failure took the account past alertDistinctIps (true once per window). */
   distributedSignal: boolean;
+  /** Failures of every account in this minute, this one included. */
+  failuresThisMinute: number;
+  /** Distinct emails that failed within the last 10 minutes (HyperLogLog), this one included. */
+  failedAccounts10Min: number;
+  /** The failures of this minute reached the burst threshold (true once per SPRAY_ALERT_HOLD_MS). */
+  burstSignal: boolean;
+  /** The distinct failed emails of 10 minutes reached the spray threshold (true once per SPRAY_ALERT_HOLD_MS). */
+  spraySignal: boolean;
 }
 
 const PAIR_WINDOW_MS = 15 * 60_000;
@@ -92,6 +112,18 @@ local function bump(key, ttl)
   return n
 end
 if g ~= '0' then redis.call('PEXPIRE', p .. 'gen:' .. h, ARGV[11]) end
+-- Across all accounts (login-spray.ts): this minute's failures, and the email hash in this minute's HyperLogLog.
+local minute = tonumber(ARGV[13])
+local perMinute = bump(p .. 'global:fail:' .. minute, ARGV[17])
+local hll = p .. 'global:acct:' .. minute
+redis.call('PFADD', hll, h)
+if redis.call('PTTL', hll) < 0 then redis.call('PEXPIRE', hll, ARGV[17]) end
+local window = {}
+for i = 0, tonumber(ARGV[18]) - 1 do window[#window + 1] = p .. 'global:acct:' .. (minute - i) end
+local accounts = redis.call('PFCOUNT', unpack(window))
+local burst, spray = 0, 0
+if perMinute >= tonumber(ARGV[14]) and redis.call('SET', p .. 'global:burst', '1', 'NX', 'PX', ARGV[16]) then burst = 1 end
+if accounts >= tonumber(ARGV[15]) and redis.call('SET', p .. 'global:spray', '1', 'NX', 'PX', ARGV[16]) then spray = 1 end
 bump(p .. 'ip:' .. ip, ARGV[10])
 local acct = bump(p .. 'acct:' .. scope, ARGV[9])
 redis.call('SET', p .. 'seen:' .. scope .. ':' .. ip, '1', 'PX', ARGV[9])
@@ -108,9 +140,9 @@ if bump(pairKey, ARGV[4]) >= tonumber(ARGV[5]) then
   local lockMs = math.floor(math.min(tonumber(ARGV[6]) * 2 ^ (level - 1), tonumber(ARGV[7])))
   redis.call('SET', p .. 'lock:' .. scope .. ':' .. ip, '1', 'PX', lockMs)
   redis.call('DEL', pairKey)
-  return { lockMs, level, acct, distinct, added }
+  return { lockMs, level, acct, distinct, added, perMinute, accounts, burst, spray }
 end
-return { 0, 0, acct, distinct, added }
+return { 0, 0, acct, distinct, added, perMinute, accounts, burst, spray }
 `;
 
 /** A right password while not locked: the pair's count, escalation and failed mark start again from zero. */
@@ -179,6 +211,8 @@ export class LoginLimiter {
     private readonly prefix = 'login:',
     /** How long one Redis call may take before the limiter fails open. Only tests on a loaded machine raise it. */
     private readonly timeoutMs = LOGIN_REDIS_TIMEOUT_MS,
+    /** The clock of the spray signals' minute buckets; tests fix it. */
+    private readonly now: () => number = Date.now,
   ) {
     const define = (name: string, lua: string): Script => {
       redis.defineCommand(name, { numberOfKeys: 0, lua });
@@ -225,10 +259,26 @@ export class LoginLimiter {
       IP_WINDOW_MS,
       GENERATION_TTL_MS,
       MAX_TRACKED_IPS,
+      minuteOf(this.now()),
+      this.limits.globalFailuresPerMinute ?? LOGIN_SPRAY.failuresPerMinute,
+      this.limits.sprayAccountsPer10Min ?? LOGIN_SPRAY.failedAccountsPer10Min,
+      SPRAY_ALERT_HOLD_MS,
+      SPRAY_BUCKET_TTL_MS,
+      SPRAY_WINDOW_MINUTES,
     );
-    const [lockedForMs, lockLevel, accountFailures, distinctIps, added] = Array.isArray(result)
-      ? (result as [number, number, number, number, number])
-      : [0, 0, 0, 0, 0];
+    const [
+      lockedForMs,
+      lockLevel,
+      accountFailures,
+      distinctIps,
+      added,
+      failuresThisMinute,
+      failedAccounts10Min,
+      burst,
+      spray,
+    ] = Array.isArray(result)
+      ? (result as [number, number, number, number, number, number, number, number, number])
+      : [0, 0, 0, 0, 0, 0, 0, 0, 0];
     return {
       lockedForMs,
       lockLevel,
@@ -236,6 +286,10 @@ export class LoginLimiter {
       accountLimitStarted: accountFailures === this.limits.accountFailuresPerHour,
       distinctIps,
       distributedSignal: added === 1 && distinctIps === this.limits.alertDistinctIps + 1,
+      failuresThisMinute,
+      failedAccounts10Min,
+      burstSignal: burst === 1,
+      spraySignal: spray === 1,
     };
   }
 
