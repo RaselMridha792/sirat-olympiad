@@ -43,6 +43,8 @@ import type {
   AdminUserDetail,
   AdminUserQuery,
   AdminUserRow,
+  AmbassadorLeaderboard,
+  AmbassadorListSort,
   AmbassadorOverview,
   AnnouncementItem,
   ExamLeaderboard,
@@ -88,6 +90,11 @@ export interface DataSource {
     listAnnouncements(query: PageQuery): Promise<Paginated<AnnouncementItem>>;
     /** GET /ambassador/me (role ambassador) */
     getAmbassador(): Promise<AmbassadorOverview>;
+    /** GET /ambassador/leaderboard: the caller's side by points, with their own place. */
+    getAmbassadorLeaderboard(query: {
+      page: number;
+      pageSize: number;
+    }): Promise<AmbassadorLeaderboard>;
     /** GET /teams/mine (the own team, first names only; null = not in a team) */
     getMyTeam(): Promise<MyTeam | null>;
     /** GET /rounds/me (the current round and the own entry; null = there is no round at all) */
@@ -125,7 +132,9 @@ export interface DataSource {
     /** GET /admin/exams/:id/attempts/:attemptId (with the events and their times; null = not found) */
     getAttempt(examId: string, attemptId: string): Promise<AdminAttemptDetail | null>;
     /** GET /admin/ambassadors?page=&q= */
-    listAmbassadors(query: PageQuery): Promise<Paginated<AdminAmbassadorRow>>;
+    listAmbassadors(
+      query: PageQuery & { sort?: AmbassadorListSort },
+    ): Promise<Paginated<AdminAmbassadorRow>>;
     /** GET /admin/ambassador-points (points per paid referral and the rank thresholds; admin only) */
     getAmbassadorPoints(): Promise<AmbassadorPointsConfig>;
     /** GET /admin/tasks?status=&page= (ambassador tasks with counts per status; admin only) */

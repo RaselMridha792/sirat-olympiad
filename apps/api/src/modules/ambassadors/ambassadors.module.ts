@@ -7,6 +7,7 @@ import {
   AmbassadorController,
   TeamsController,
 } from './ambassadors.controller';
+import { AmbassadorLeaderboardService } from './ambassador-leaderboard.service';
 import { AmbassadorPointsService } from './ambassador-points.service';
 import { AmbassadorTasksService } from './ambassador-tasks.service';
 import { TeamsService } from './teams.service';
@@ -27,6 +28,12 @@ import { AmbassadorsService } from './ambassadors.service';
     AdminTeamsController,
     TeamsController,
   ],
-  providers: [AmbassadorsService, AmbassadorPointsService, AmbassadorTasksService, TeamsService],
+  providers: [
+    AmbassadorsService,
+    AmbassadorPointsService,
+    AmbassadorTasksService,
+    TeamsService,
+    AmbassadorLeaderboardService,
+  ],
 })
 export class AmbassadorsModule {}

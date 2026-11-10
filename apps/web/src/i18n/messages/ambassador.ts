@@ -8,6 +8,27 @@ export const ambassadorMessages = defineMessages({
   en: {
     title: 'Ambassador Panel',
     intro: 'Grow your network and track your progress.',
+    board: {
+      title: 'Ambassador leaderboard',
+      subtitle: (time: string) => `Ambassadors by points. Updated ${time}.`,
+      link: 'See the leaderboard',
+      back: 'Back to the panel',
+      caption: 'Ambassadors by points',
+      columns: {
+        place: 'Place',
+        name: 'Ambassador',
+        institution: 'Institution',
+        points: 'Points',
+        tier: 'Rank',
+      },
+      you: 'You',
+      mine: (place: string, points: string) => `Your place: #${place} with ${points} points`,
+      notRanked: 'You are not on the leaderboard yet.',
+      empty: {
+        title: 'No ambassadors yet',
+        text: 'The leaderboard fills up as ambassadors earn points.',
+      },
+    },
     code: {
       label: 'Your promo code',
       hint: 'Students enter this code when they register.',
@@ -80,6 +101,27 @@ export const ambassadorMessages = defineMessages({
   bn: {
     title: 'অ্যাম্বাসেডর প্যানেল',
     intro: 'নেটওয়ার্ক বাড়ান, নিজের অগ্রগতি দেখুন।',
+    board: {
+      title: 'অ্যাম্বাসেডর লিডারবোর্ড',
+      subtitle: (time: string) => `পয়েন্ট অনুযায়ী অ্যাম্বাসেডরদের তালিকা। হালনাগাদ: ${time}।`,
+      link: 'লিডারবোর্ড দেখুন',
+      back: 'প্যানেলে ফিরুন',
+      caption: 'পয়েন্ট অনুযায়ী অ্যাম্বাসেডররা',
+      columns: {
+        place: 'অবস্থান',
+        name: 'অ্যাম্বাসেডর',
+        institution: 'প্রতিষ্ঠান',
+        points: 'পয়েন্ট',
+        tier: 'র‍্যাংক',
+      },
+      you: 'আপনি',
+      mine: (place: string, points: string) => `আপনার অবস্থান: #${place}, ${points} পয়েন্ট`,
+      notRanked: 'আপনি এখনো লিডারবোর্ডে নেই।',
+      empty: {
+        title: 'এখনো কোনো অ্যাম্বাসেডর নেই',
+        text: 'অ্যাম্বাসেডররা পয়েন্ট পেলে লিডারবোর্ড ভরে উঠবে।',
+      },
+    },
     code: {
       label: 'আপনার প্রোমো কোড',
       hint: 'রেজিস্ট্রেশনের সময় শিক্ষার্থীরা এই কোডটি লিখবে।',
