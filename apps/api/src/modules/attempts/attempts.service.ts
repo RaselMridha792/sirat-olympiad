@@ -21,7 +21,12 @@ import { uuidv7 } from '../../common/uuidv7';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AuthUser } from '../auth/access-token.service';
 import { type ExamConfig, ExamCache } from '../exams/exam-cache';
-import { hasPaidRegistration, studentAccount, visibleTo } from '../exams/student-access';
+import {
+  hasPaidRegistration,
+  studentAccount,
+  visibleTo,
+  withRoundEntries,
+} from '../exams/student-access';
 import { type AttemptMeta, AttemptStore, type CheckpointOutcome } from './attempt-store';
 import { ExamQueue } from './exam-queue';
 import type { CheckpointDto, SubmitDto } from './dto/attempt.dto';
@@ -64,8 +69,14 @@ export class AttemptsService {
 
   /** POST /exams/:id/attempts. `created` false = the student already had this attempt (resume, any phase). */
   async start(user: AuthUser, examId: string): Promise<{ created: boolean; view: AttemptView }> {
-    const student = await studentAccount(this.prisma, user.id);
     let config = await this.cache.config(examId);
+    // The round rule's entries only for a round-gated exam: Round 1's start surge pays no extra query.
+    const student = await withRoundEntries(
+      this.prisma,
+      user.id,
+      await studentAccount(this.prisma, user.id),
+      [config],
+    );
     if (!visibleTo(config, student)) throw new NotFoundException('Exam not found');
 
     const existing = await this.findAttempt(user.id, examId);
