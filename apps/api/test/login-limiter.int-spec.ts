@@ -10,6 +10,7 @@ import {
   LoginLimiter,
   type LoginLimits,
 } from '../src/modules/auth/login-limiter';
+import { readLoginGlobalFacts, SPRAY_WINDOW_MINUTES } from '../src/modules/auth/login-spray';
 
 const url = process.env.REDIS_CACHE_URL as string;
 const prefix = `login-test:${randomUUID()}:`;
@@ -54,6 +55,10 @@ async function fail(times: number, mail: string, from: string) {
     accountLimitStarted: false,
     distinctIps: 0,
     distributedSignal: false,
+    failuresThisMinute: 0,
+    failedAccounts10Min: 0,
+    burstSignal: false,
+    spraySignal: false,
   };
   for (let i = 0; i < times; i += 1) last = await limiter.recordFailure(mail, from);
   return last;
@@ -195,6 +200,108 @@ describe('LoginLimiter', () => {
     expect(keys.some((k) => k.includes(mail) || k.includes(mail.split('@')[0] as string))).toBe(
       false,
     );
+  });
+
+  describe('spray signals across all accounts (login-spray.ts)', () => {
+    // Its own prefix and a fixed clock: the global keys never mix with the other tests, and no minute ends mid-test.
+    const sprayPrefix = `login-spray-test:${randomUUID()}:`;
+    const minute = 29_000_000; // an arbitrary minute number (epoch minutes)
+    let at = minute * 60_000 + 1_000;
+    const spray = () =>
+      new LoginLimiter(
+        redis,
+        {
+          ...limits,
+          ipFailuresPerMinute: 1_000,
+          globalFailuresPerMinute: 5,
+          sprayAccountsPer10Min: 4,
+        },
+        sprayPrefix,
+        PATIENT_MS,
+        () => at,
+      );
+
+    afterAll(async () => {
+      const keys = await redis.keys(`${sprayPrefix}*`);
+      if (keys.length > 0) await redis.del(...keys);
+    });
+
+    it('counts every failure of the minute, signals the burst once at the threshold, and blocks nobody', async () => {
+      const limiter5 = spray();
+      const mail = email();
+      const results: FailureResult[] = [];
+      for (let i = 0; i < 7; i += 1) results.push(await limiter5.recordFailure(mail, ip()));
+      expect(results.map((r) => r.failuresThisMinute)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+      expect(results.map((r) => r.burstSignal)).toEqual([
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+      ]);
+      // One email only: the spray signal (distinct emails) stays quiet.
+      expect(results.every((r) => !r.spraySignal && r.failedAccounts10Min === 1)).toBe(true);
+      // A new minute starts its own count; the burst alert stays quiet for its hold (10 minutes).
+      at += 60_000;
+      const next = await limiter5.recordFailure(mail, ip());
+      expect(next).toMatchObject({ failuresThisMinute: 1, burstSignal: false });
+      expect(await limiter5.check(mail, ip())).toEqual({ allowed: true });
+    });
+
+    it('signals a spray once when distinct emails within 10 minutes reach the threshold, across minutes', async () => {
+      const limiter4 = spray();
+      at = (minute + 100) * 60_000;
+      const first = email();
+      // The same email again and again counts once.
+      for (let i = 0; i < 3; i += 1) await limiter4.recordFailure(first, ip());
+      at += 3 * 60_000; // three minutes later: still the same 10-minute window
+      const second = await limiter4.recordFailure(email(), ip());
+      const third = await limiter4.recordFailure(email(), ip());
+      const fourth = await limiter4.recordFailure(email(), ip());
+      const fifth = await limiter4.recordFailure(email(), ip());
+      expect([second, third, fourth, fifth].map((r) => r.failedAccounts10Min)).toEqual([
+        2, 3, 4, 5,
+      ]);
+      expect([second, third, fourth, fifth].map((r) => r.spraySignal)).toEqual([
+        false,
+        false,
+        true,
+        false,
+      ]);
+      // Past the window, the first minute's emails no longer count.
+      at += SPRAY_WINDOW_MINUTES * 60_000;
+      expect((await limiter4.recordFailure(email(), ip())).failedAccounts10Min).toBe(1);
+    });
+
+    it('lets ops-check read the busiest minute and the distinct failed emails of 10 minutes', async () => {
+      const limiter6 = spray();
+      at = (minute + 300) * 60_000;
+      for (let i = 0; i < 3; i += 1) await limiter6.recordFailure(email(), ip());
+      at += 60_000;
+      for (let i = 0; i < 2; i += 1) await limiter6.recordFailure(email(), ip());
+      expect(await readLoginGlobalFacts(redis, at, sprayPrefix)).toEqual({
+        maxFailuresPerMinute: 3,
+        failedAccounts10Min: 5,
+      });
+      // Nothing in those minutes: zeros, not an error.
+      expect(await readLoginGlobalFacts(redis, at + 60 * 60_000, sprayPrefix)).toEqual({
+        maxFailuresPerMinute: 0,
+        failedAccounts10Min: 0,
+      });
+    });
+
+    it('keeps no email in the global keys', async () => {
+      const mail = email();
+      at = (minute + 500) * 60_000;
+      await spray().recordFailure(mail, ip());
+      const keys = await redis.keys(`${sprayPrefix}global:*`);
+      expect(keys.length).toBeGreaterThan(0);
+      expect(keys.some((k) => k.includes(mail) || k.includes(mail.split('@')[0] as string))).toBe(
+        false,
+      );
+    });
   });
 
   it('fails open while the cache Redis is unavailable', async () => {

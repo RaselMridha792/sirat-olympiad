@@ -47,6 +47,18 @@ describe('alert categories', () => {
     ).text;
     expect(payments).not.toContain('Account:');
     expect(payments).toContain('amountMinor: 40000');
+    // The spray alerts are about all accounts: no Account line, the numbers instead.
+    for (const kind of ['login.failure_burst', 'login.spray'] as const) {
+      const wide = securityAlertMessage(
+        TO,
+        kind,
+        { actorId: null, meta: { failuresThisMinute: 2_000, failedAccounts10Min: 1_000 } },
+        at,
+      ).text;
+      expect(wide).not.toContain('Account:');
+      expect(wide).toContain('failedAccounts10Min: 1000');
+      expect(ALERT_CATEGORY[kind]).toBe('security');
+    }
     const ops = securityAlertMessage(
       TO,
       'ops.backup_failed',

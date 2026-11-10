@@ -5,6 +5,8 @@
  * raise. Thresholds are the launch defaults; L14 retunes them after the k6 run on the VPS.
  */
 
+import { isLoginSpray, type LoginGlobalFacts } from '../auth/login-spray';
+
 export type CheckLevel = 'ok' | 'warn' | 'critical';
 export const LEVEL_CODE: Record<CheckLevel, number> = { ok: 0, warn: 1, critical: 2 };
 
@@ -27,6 +29,7 @@ export const OPS_CHECKS = [
   'backup_age',
   'time_sync',
   'trusted_generators',
+  'login_failures',
 ] as const;
 export type OpsCheck = (typeof OPS_CHECKS)[number];
 
@@ -91,6 +94,8 @@ export interface AppFacts {
   /** Seconds since the payments reconciliation was due and did not run (0 = on time); null when it has no schedule. */
   reconcileOverdueSeconds: number | null;
   reconcileIntervalSeconds: number;
+  /** Failed logins across all accounts (login-spray.ts), from the cache Redis; absent = not measured. */
+  login?: LoginGlobalFacts;
 }
 
 export interface CheckResult {
@@ -244,6 +249,14 @@ export function evaluate(
     'trusted_generators',
     generators === null ? 'ok' : generators < 0 ? 'critical' : 'warn',
     generators,
+  );
+  // The spray defence: a warning while either measure is at its threshold. The API raised the security alert
+  // (login.failure_burst, login.spray) the moment it was crossed; this repeats it hourly while it holds.
+  const login = app.login;
+  add(
+    'login_failures',
+    login !== undefined && isLoginSpray(login) ? 'warn' : 'ok',
+    login === undefined ? null : login.failedAccounts10Min,
   );
   return { results, streaks };
 }

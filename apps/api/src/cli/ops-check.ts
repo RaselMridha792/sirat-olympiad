@@ -5,7 +5,8 @@
  *   echo '{"host":{...},"state":{...},"lastRunAt":...}' | $DC exec -T api node dist/cli/ops-check.js [--dry-run]
  *   echo '{"host":{...}}' | $DC exec -T api node dist/cli/ops-check.js --digest     (08:00 Asia/Dhaka)
  *
- * It adds the app facts (queues, workers, failed jobs, the reconciliation schedule, the queue Redis memory), decides
+ * It adds the app facts (queues, workers, failed jobs, the reconciliation schedule, the queue Redis memory, failed
+ * logins across all accounts), decides
  * each check's level (src/modules/ops/ops-rules.ts) and raises `ops.<check>` alerts on a change, hourly while a
  * problem holds, and once when it is resolved. It prints two lines for monitor.sh (no jq needed):
  *
@@ -28,6 +29,7 @@ import { AMBASSADOR_QUEUE } from '../modules/ambassadors/points-queue';
 import { CERTIFICATES_QUEUE } from '../modules/certificates/certificates-queue';
 import { HOUSEKEEPING_QUEUE } from '../modules/housekeeping/housekeeping-queue';
 import { EMAIL_QUEUE } from '../modules/notifications/email.types';
+import { readLoginGlobalFacts } from '../modules/auth/login-spray';
 import { collectAppFacts, type QueueSpec } from '../modules/ops/app-facts';
 import { sendDailyDigest } from '../modules/ops/digest';
 import {
@@ -226,6 +228,8 @@ async function main(): Promise<number> {
       sinceMs: input.lastRunAt ?? now.getTime() - 5 * 60_000,
       nowMs: now.getTime(),
     });
+    // Failed logins across all accounts: the login limiter counts them in the cache Redis.
+    app.login = await readLoginGlobalFacts(cache, now.getTime());
     const run = runChecks(input, app, now.getTime());
     let raised = 0;
     if (!dryRun) {

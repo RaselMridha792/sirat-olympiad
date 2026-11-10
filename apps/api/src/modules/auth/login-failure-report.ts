@@ -29,4 +29,14 @@ export async function reportLoginFailure(
     await deps.alerts.raise('login.account_limit', { actorId, ip, meta });
   if (failure.distributedSignal)
     await deps.alerts.raise('login.distributed', { actorId, ip, meta });
+  // Across all accounts (the spray defence, login-spray.ts): not about this account, so no actor. The IP is the one
+  // whose failure crossed the line; the audit row keeps it, the email does not.
+  const wide = {
+    failuresThisMinute: failure.failuresThisMinute,
+    failedAccounts10Min: failure.failedAccounts10Min,
+  };
+  if (failure.burstSignal)
+    await deps.alerts.raise('login.failure_burst', { actorId: null, ip, meta: wide });
+  if (failure.spraySignal)
+    await deps.alerts.raise('login.spray', { actorId: null, ip, meta: wide });
 }
