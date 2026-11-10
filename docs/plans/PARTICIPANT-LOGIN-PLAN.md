@@ -115,10 +115,11 @@ Exam's load fixtures and k6 scripts (`login-surge.js`, `exam-simulation.js`) nee
 - **Guessing:** 10^10 IDs against the limits above. A 10,000-IP botnet at full rate gets about 1.4·10^9 guesses a day across all accounts, roughly one account every week. Against one chosen account it gets about 10^-6 an hour.
 - **A leaked card** stays valid until an admin re-issues the ID. That's payments' P1b, before launch: a reason, audited, the new ID emailed, and the user's sessions ended with `endSessionsOf`.
 
-## 10. Questions for the lead
+## 10. The lead's answers (2026-11-10: plan approved)
 
-1. **A global failed-login alert** (e.g. more than 2,000 failures/min across all accounts) against spraying? Small: the monitor or `SecurityAlerts`.
-2. **forgot-password for a student sends the ID** (section 3): OK?
-3. **Jury keeps the password:** yes, as you suggested.
+1. **A global failed-login alert** against spraying: yes. Over 2,000 failures/min across all accounts, or over N distinct accounts failing within 10 minutes. It becomes an ops-check warning plus a security alert (`SecurityAlerts`), counted in the cache Redis beside the login limiter, without email addresses in the keys.
+2. **forgot-password for a student or ambassador sends the ID email** (section 3), with the same 204 and cap: yes.
+3. **The jury keeps the password:** yes.
+4. **Before the deploy turn** (P1 → this → P2): the counts of VPS students and ambassadors without a registration (counts only).
 
 Settled with payments (2026-11-10): the format and generator above; their settlement email (`registration-confirmed.<registrationId>`) never collides with this plan's `participant-id.<uuid>`; P2's migration NULLs the in-between student hashes and adds the reverse CHECK; the re-issue is P1b.
