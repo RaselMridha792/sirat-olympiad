@@ -2,6 +2,13 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-10 — The client's logo mark, favicon and gold; the draft banner hidden (Rasel; the lead, sessions not running)
+
+- The client sent its colours and logo files: primary `#007a48` (already ours), secondary `#ec9d19`. `gold-500` changes from the old site's `#ed9d19` to the client's `#ec9d19`; every gold use follows through the tokens.
+- Logo files: only the mark (`favicon.ico`, `icon-512.png`), no wordmark. The favicon and the app icons (`app/favicon.ico`, `app/icon.png`, `app/apple-icon.png`) and the public header and footer use it. The header puts it on a white tile, because its green disappears on the deep-green shell. The dashboards keep their letter tile until a wordmark or SVG arrives.
+- The visible draft banner is hidden (`site.showDraftNote = false`, owner). The pages keep `noindex` while `site.placeholder` is true, since facts are still to confirm.
+- Who: Rasel asked for it now while the sessions were not running, so the lead made this one small change (one-time exception to "the lead writes no product code").
+
 ## 2026-11-09 — Demo data: core's services keep the two sides apart (core; the lead's approval of 9 Nov)
 
 Phase 2 of the demo data (exam's #22) adds demo tasks and demo rounds (101–110). Core's services keep real and demo apart on top of the markers; a side is `demo_batch_id IS NULL` or not.

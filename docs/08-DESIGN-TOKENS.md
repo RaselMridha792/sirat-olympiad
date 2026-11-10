@@ -13,7 +13,7 @@ The brand is the client's green and gold. The scales come from the client's old 
 | `primary-strong` / `primary-strong-hover` | green-700 / green-800 | `#00623B` / `#044E31` | Green text on white, filled buttons (7.4:1) |
 | `secondary` | green-800 | `#044E31` | Links, dark cards (white text) |
 | `secondary-hover` / `secondary-soft` | green-900 / green-100 | `#06402A` / `#D0EBE0` | |
-| `accent` | gold-500 | `#ED9D19` | Brand gold: highlights, icons, rules. On the deep-green shell also text (kickers, dates, the active menu item), 8.1:1. **Never text on white**; on a gold fill, text is `ink` (8:1) |
+| `accent` | gold-500 | `#EC9D19` | Brand gold: highlights, icons, rules. On the deep-green shell also text (kickers, dates, the active menu item), 8.1:1. **Never text on white**; on a gold fill, text is `ink` (8:1) |
 | `accent-hover` / `accent-soft` | gold-600 / gold-50 | `#D2820F` / `#FEF8EC` | Hover of a gold fill; soft gold backgrounds |
 | `accent-strong` | gold-800 | `#8A5A05` | Gold text on white or `accent-soft` (5.9:1) |
 | `shell` / `shell-soft` | green-950 / green-900 | `#021C12` / `#06402A` | Headers, heroes, the dashboard sidebar and the auth brand panel. White on it is about 18:1. Green `primary` on it is only 3.3:1, so text and small icons on the shell use `accent` |

@@ -27,6 +27,11 @@ export interface SiteFacts {
    * Set to false only with the client's final texts and facts in place.
    */
   placeholder: boolean;
+  /**
+   * Whether the visible draft banner shows while `placeholder` is true (owner, 2026-11-10: hide it). The pages keep
+   * `noindex` as long as `placeholder` is true.
+   */
+  showDraftNote: boolean;
 }
 
 export const site: SiteFacts = {
@@ -41,6 +46,7 @@ export const site: SiteFacts = {
   phone: null,
   effectiveDate: null,
   placeholder: true,
+  showDraftNote: false,
 };
 
 /**
