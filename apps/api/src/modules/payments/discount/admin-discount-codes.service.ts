@@ -19,7 +19,7 @@ import type {
   CreateDiscountCodeDto,
   UpdateDiscountCodeDto,
 } from './admin-discount-codes.dto';
-import { usesOf } from './discount-pricing';
+import { asDiscountKind, usesOf } from './discount-pricing';
 
 export type DiscountActor = { id: string; ip: string | null };
 
@@ -372,7 +372,7 @@ function view(r: CodeRow, uses: { paid: number; live: number }): AdminDiscountCo
   return {
     id: r.id,
     code: r.code,
-    kind: r.kind,
+    kind: asDiscountKind(r.kind),
     value: r.value,
     maxUses: r.maxUses,
     startsAt: r.startsAt?.toISOString() ?? null,

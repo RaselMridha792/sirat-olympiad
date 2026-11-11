@@ -47,6 +47,7 @@ import { checkoutGateway, type PaymentConfig } from '../payment.config';
 import { PAYMENT_CONFIG } from '../payments-boot-check';
 import { isActive } from '../payment-state';
 import {
+  asDiscountKind,
   findDiscountCode,
   hasRoom,
   linkedReferrer,
@@ -614,7 +615,7 @@ export class RegistrationService {
     if (await this.findReferrer(raw)) return { ...listPrice(fee), currency: 'BDT', kind: null };
     const code = await findDiscountCode(this.prisma, raw);
     if (code && usableNow(code, now) && (await hasRoom(this.prisma, code, now)))
-      return { ...priceFor(fee, code), currency: 'BDT', kind: code.kind };
+      return { ...priceFor(fee, code), currency: 'BDT', kind: asDiscountKind(code.kind) };
     await recordQuoteMiss(this.redis, ip, now);
     throw promoInvalid();
   }

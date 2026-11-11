@@ -4,9 +4,6 @@
 -- discount_codes is a demo root like admin_tasks (demo_batch_id, written only by the loader, immutable), and
 -- demo_clear v4 removes demo codes after the forms and payments that used them.
 
--- CreateEnum
-CREATE TYPE "DiscountKind" AS ENUM ('amount', 'percent');
-
 -- AlterTable
 ALTER TABLE "payments" ADD COLUMN     "discount_code_id" UUID,
 ADD COLUMN     "discount_minor" INTEGER NOT NULL DEFAULT 0,
@@ -22,7 +19,7 @@ ADD COLUMN     "list_amount_minor" INTEGER;
 CREATE TABLE "discount_codes" (
     "id" UUID NOT NULL,
     "code" CITEXT NOT NULL,
-    "kind" "DiscountKind" NOT NULL,
+    "kind" TEXT NOT NULL,
     "value" INTEGER NOT NULL,
     "max_uses" INTEGER,
     "starts_at" TIMESTAMPTZ,
@@ -75,7 +72,8 @@ ALTER TABLE "discount_codes" ADD CONSTRAINT "discount_codes_demo_batch_id_fkey" 
 -- one promo field can tell them apart by the prefix alone.
 ALTER TABLE "discount_codes" ADD CONSTRAINT "discount_codes_code_check"
   CHECK ("code"::text ~ '^[A-Z0-9-]{4,20}$' AND "code"::text !~ '^(SR|TM)-');
--- amount: whole taka in paisa; percent: 1-99 (never a free registration).
+-- amount: whole taka in paisa; percent: 1-99 (never a free registration). kind is text, not an enum: these CHECKs
+-- compare it to literals (db-constraints.int-spec forbids that for enums).
 ALTER TABLE "discount_codes" ADD CONSTRAINT "discount_codes_value_check" CHECK (
   ("kind" = 'amount' AND "value" > 0 AND "value" % 100 = 0) OR ("kind" = 'percent' AND "value" BETWEEN 1 AND 99));
 ALTER TABLE "discount_codes" ADD CONSTRAINT "discount_codes_max_uses_check"

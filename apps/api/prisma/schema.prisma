@@ -965,32 +965,28 @@ model AnswerKeyCorrection {
   @@map("answer_key_corrections")
 }
 
-enum DiscountKind {
-  amount
-  percent
-}
-
 /// An admin-made discount code (DECISIONS "Discount codes"; payments D1). The server alone prices a registration:
 /// the code is applied at start and the price snapshotted on the attempt and its payments. CHECKs in raw SQL: the code
 /// format (canonical upper case, never SR- or TM-), the kind and value (amount: whole taka; percent: 1-99), the
 /// limits, the note. demo_batch_id: a demo root (written only by the demo loader; demo_marker_immutable).
 model DiscountCode {
-  id               String       @id @default(uuid(7)) @db.Uuid
-  code             String       @unique @db.Citext
-  kind             DiscountKind
+  id               String    @id @default(uuid(7)) @db.Uuid
+  code             String    @unique @db.Citext
+  /// amount | percent (CHECK; text, not an enum: a CHECK compares it to literals)
+  kind             String
   /// amount: paisa, whole taka; percent: 1-99
   value            Int
-  maxUses          Int?         @map("max_uses")
-  startsAt         DateTime?    @map("starts_at") @db.Timestamptz
-  endsAt           DateTime?    @map("ends_at") @db.Timestamptz
-  active           Boolean      @default(true)
+  maxUses          Int?      @map("max_uses")
+  startsAt         DateTime? @map("starts_at") @db.Timestamptz
+  endsAt           DateTime? @map("ends_at") @db.Timestamptz
+  active           Boolean   @default(true)
   /// An approved ambassador: a use also counts as that ambassador's referral.
-  ambassadorUserId String?      @map("ambassador_user_id") @db.Uuid
+  ambassadorUserId String?   @map("ambassador_user_id") @db.Uuid
   note             String?
-  createdById      String       @map("created_by_id") @db.Uuid
-  demoBatchId      String?      @map("demo_batch_id") @db.Uuid
-  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt        DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  createdById      String    @map("created_by_id") @db.Uuid
+  demoBatchId      String?   @map("demo_batch_id") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   ambassador User?                 @relation("DiscountCodeAmbassador", fields: [ambassadorUserId], references: [id], onDelete: Restrict)
   createdBy  User                  @relation("DiscountCodeCreator", fields: [createdById], references: [id], onDelete: Restrict)

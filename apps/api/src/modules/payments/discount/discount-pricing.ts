@@ -1,5 +1,11 @@
 import { PaymentStatus, type DiscountCode, type Prisma } from '@prisma/client';
-import { listPrice, priceWithDiscount, type Price } from '@sirat/shared';
+import {
+  DISCOUNT_KINDS,
+  listPrice,
+  priceWithDiscount,
+  type DiscountKind,
+  type Price,
+} from '@sirat/shared';
 
 /*
  * The one price rule for registration (DECISIONS "Discount codes"; payments D1): start, retry and the public quote
@@ -82,8 +88,16 @@ export async function linkedReferrer(
   return profile?.userId ?? null;
 }
 
+/** The column's kind (text with a CHECK) as the shared type; anything else is a broken row, never a price. */
+export function asDiscountKind(kind: string): DiscountKind {
+  if (!(DISCOUNT_KINDS as readonly string[]).includes(kind))
+    throw new Error('discount code kind out of range');
+  return kind as DiscountKind;
+}
+
 /** The price for this fee with this code (or none). */
 export const priceFor = (
   feeMinor: number,
   code: Pick<DiscountCode, 'kind' | 'value'> | null,
-): Price => (code ? priceWithDiscount(feeMinor, code.kind, code.value) : listPrice(feeMinor));
+): Price =>
+  code ? priceWithDiscount(feeMinor, asDiscountKind(code.kind), code.value) : listPrice(feeMinor);
