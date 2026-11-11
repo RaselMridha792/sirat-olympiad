@@ -24,6 +24,7 @@ import {
 } from '@sirat/ui';
 import { AmbassadorButton } from '@/components/admin/AmbassadorButton';
 import { CorrectGradeButton } from '@/components/admin/CorrectGradeButton';
+import { ReissueParticipantIdButton } from '@/components/admin/ReissueParticipantIdButton';
 import { ExportUsersButton } from '@/components/admin/ExportUsersButton';
 import { LinkPendingIcon } from '@/components/LinkPendingIcon';
 import { RouteDialog } from '@/components/RouteDialog';
@@ -481,6 +482,12 @@ function UserDetails({
             currentGradeId={user.gradeLevel?.id ?? null}
             gradeLevels={gradeLevels.map(({ id, label }) => ({ id, label }))}
           />
+        </div>
+      ) : null}
+      {/* A registration has a participant ID; a leaked one is replaced here (payments P1b). */}
+      {user.registration ? (
+        <div>
+          <ReissueParticipantIdButton locale={locale} userId={user.id} />
         </div>
       ) : null}
     </div>

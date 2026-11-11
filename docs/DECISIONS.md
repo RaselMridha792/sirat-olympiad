@@ -7,6 +7,11 @@ One short entry per non-obvious technical or product decision. Newest first. For
 - **On the panel**, for an approved ambassador: the client's mark, "International Sirat Olympiad 3.0", the role, the name, the ambassador code and the date they became an ambassador. Text only, no photo; the shared `IdCard` in @sirat/ui, so the admit card can reuse it.
 - **The participant ID, masked** (lead, 2026-11-11): since 10 Nov the ID is the login secret, and an ambassador card is exactly what ambassadors post to promote their code. So `GET /ambassador/me` returns only `maskParticipantId(...)` ("ON •••• •••• 552": the prefix and the last 3), the card shows that next to the public SR- code, and the web refuses anything else in that field. The full ID appears only on the admit card page, behind its copy button, with a "keep it private" note.
 - **Print:** "Print card" opens the browser's print dialog, and a print rule in globals.css prints only the card (`body:has(.print-card)`), in its colours. The PDF comes with the shared PDF renderer, which also serves the admit card and the certificates.
+## 2026-11-10 — The round rule: a later round's exam is only for students promoted into it (exam; lead)
+
+- **Decision:** an exam whose round is not its side's first round is visible and startable only to students with a non-eliminated entry in that round. The first round of each side (the real Round 1, the demo's own Round 1 at 101) and exams without a round stay open to every registered student of the category. The rule applies to the list, the waiting room, the start and `nextExamFor` (the admit card), through one predicate (`visibleTo` / `roundOpenTo`).
+- **Why:** the admin may attach an exam to any round, and the knockout method is still open (a later-round quiz is possible). Before this, such an exam was open to every student, eliminated ones included. Found while reviewing `nextExamFor` (#29).
+- **How:** `ExamConfig.roundGated` (cached) is true when a round with a lower sort_order exists on the same side. The student's non-eliminated round entries are read only when a gated exam is in question, so the Round 1 start surge pays no extra query. A config cached before the deploy counts as open for at most 60 s.
 
 ## 2026-11-10 — The ambassador leaderboard (core; the lead's approval of 10 Nov, the client's priority on the ambassador panel)
 
@@ -38,7 +43,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - a confirmation email at settlement (`registration-confirmed.<registrationId>`).
    The email carries a credential on the owner's choice, and says to keep it private. The ID is never logged or written to the audit.
 5. **Next:**
-   - P1b: the admin "issue a new ID" (reason, audit, email, ends the sessions);
+   - P1b (built): the admin "issue a new ID", `POST /admin/users/:id/participant-id` with a reason. One transaction draws the new ID (same prefix), ends every session (A2's `endSessionsOf`), and audits the reason and the session count. The new ID goes only to the student's email; the admin never sees it, and nothing logs it. Access tokens already issued live out their TTL, as with "log out everywhere";
    - P2: the registration form without a password, shipped with A2's login;
    - the RULEBOOK line comes in A2's login PR.
 

@@ -9,7 +9,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { attemptPhase, studentExamState } from '../attempts/exam-time';
 import { type ExamConfig, ExamCache } from './exam-cache';
 import { nextExamFor } from './next-exam';
-import { studentAccount, visibleTo } from './student-access';
+import { studentAccount, visibleTo, withRoundEntries } from './student-access';
 
 /** GET /exams and GET /exams/:id (EXAM-PLAN 1.1, 3.11): window state from the server clock, never questions. */
 @Injectable()
@@ -25,8 +25,14 @@ export class StudentExamsService {
   }
 
   async list(userId: string): Promise<StudentExamListItem[]> {
-    const student = await studentAccount(this.prisma, userId);
-    const exams = (await this.cache.published()).filter((c) => visibleTo(c, student));
+    const published = await this.cache.published();
+    const student = await withRoundEntries(
+      this.prisma,
+      userId,
+      await studentAccount(this.prisma, userId),
+      published,
+    );
+    const exams = published.filter((c) => visibleTo(c, student));
     if (exams.length === 0) return [];
     const attempts = await this.prisma.attempt.findMany({
       where: { userId, examId: { in: exams.map((e) => e.id) } },
@@ -38,8 +44,13 @@ export class StudentExamsService {
   }
 
   async detail(userId: string, examId: string): Promise<StudentExamDetail> {
-    const student = await studentAccount(this.prisma, userId);
     const config = await this.cache.config(examId);
+    const student = await withRoundEntries(
+      this.prisma,
+      userId,
+      await studentAccount(this.prisma, userId),
+      [config],
+    );
     if (!visibleTo(config, student)) throw new NotFoundException('Exam not found');
     const attempt = await this.prisma.attempt.findUnique({
       where: { userId_examId: { userId, examId } },
