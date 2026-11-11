@@ -28,6 +28,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 - **Tests and tools:**
   - The dev fixture students have fixed IDs (`ON99999999012`, `…020`, `…036`; RUNBOOK §0).
   - The load students' IDs derive from the load secret, so k6 computes them (`loadtests/load-id.js`).
+
 ## 2026-11-11 — Discount codes (Rasel's decision of 10 Nov; payments D1, the lead's approval and defaults)
 
 1. **What:** an admin makes a code that takes an amount (whole taka) or a percentage (1-99) off the registration fee, with optional limits: total uses, start, end, active. The admin types a code or presses Generate (`DC-` + 8 characters, 40 bits). The lead's defaults, which Rasel may still override:
