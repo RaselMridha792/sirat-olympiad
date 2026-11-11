@@ -3,10 +3,12 @@ import {
   EXAM_VIOLATION_WARNINGS,
   type StudentExamDetail,
   type StudentExamListItem,
+  type StudentNextExam,
 } from '@sirat/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { attemptPhase, studentExamState } from '../attempts/exam-time';
 import { type ExamConfig, ExamCache } from './exam-cache';
+import { nextExamFor } from './next-exam';
 import { studentAccount, visibleTo } from './student-access';
 
 /** GET /exams and GET /exams/:id (EXAM-PLAN 1.1, 3.11): window state from the server clock, never questions. */
@@ -16,6 +18,11 @@ export class StudentExamsService {
     private readonly prisma: PrismaService,
     private readonly cache: ExamCache,
   ) {}
+
+  /** GET /exams/next: nextExamFor (next-exam.ts), wrapped so "none" is a plain JSON null. */
+  async next(userId: string): Promise<{ exam: StudentNextExam | null }> {
+    return { exam: await nextExamFor(this.prisma, userId) };
+  }
 
   async list(userId: string): Promise<StudentExamListItem[]> {
     const student = await studentAccount(this.prisma, userId);

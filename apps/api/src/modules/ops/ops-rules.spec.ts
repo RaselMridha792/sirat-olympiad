@@ -57,7 +57,7 @@ describe('ops thresholds (one run)', () => {
   it('a healthy server is ok on every check', () => {
     const { results } = once(host());
     expect(summarize(results)).toEqual({ critical: [], warn: [] });
-    expect(results).toHaveLength(17);
+    expect(results).toHaveLength(18);
   });
 
   it.each<[string, Partial<HostFacts>, OpsCheck, CheckLevel]>([
@@ -106,6 +106,25 @@ describe('ops thresholds (one run)', () => {
   });
 
   it.each<[string, Partial<AppFacts>, OpsCheck, CheckLevel]>([
+    ['failed logins not measured', {}, 'login_failures', 'ok'],
+    [
+      'failed logins below both thresholds',
+      { login: { maxFailuresPerMinute: 1_999, failedAccounts10Min: 999 } },
+      'login_failures',
+      'ok',
+    ],
+    [
+      'a burst: 2,000 failed logins in one minute',
+      { login: { maxFailuresPerMinute: 2_000, failedAccounts10Min: 10 } },
+      'login_failures',
+      'warn',
+    ],
+    [
+      'a spray: 1,000 different emails failing within 10 minutes',
+      { login: { maxFailuresPerMinute: 150, failedAccounts10Min: 1_000 } },
+      'login_failures',
+      'warn',
+    ],
     ['queue Redis 300 MB', { queueRedisMemoryMb: 300 }, 'queue_redis_memory', 'warn'],
     ['queue Redis 400 MB', { queueRedisMemoryMb: 400 }, 'queue_redis_memory', 'critical'],
     ['501 waiting jobs', { queues: [queue('exam', { waiting: 501 })] }, 'queue_backlog', 'warn'],

@@ -61,6 +61,21 @@ export interface SubmissionReceipt {
 /** GET /exams. Assignable to StudentExamCard (the existing exam list page). */
 export type StudentExamListItem = StudentExamCard & { resultsPublished: boolean };
 
+/**
+ * GET /exams/next (`{ exam }`), and nextExamFor() for the admit card's PDF: the next olympiad exam the student may take
+ * (a round's published exam whose window has not ended; never a practice exam). windowStart is the printed date and the
+ * countdown's target; windowEnd is the "until". Nothing about attempts or scores.
+ */
+export interface StudentNextExam {
+  examId: string;
+  title: string;
+  windowStart: string;
+  windowEnd: string;
+  durationMinutes: number;
+  /** The round's name, e.g. "Round 1"; null only if the round was not loaded. */
+  roundName: string | null;
+}
+
 /** GET /exams/:id: the waiting room. Never questions. */
 export type StudentExamDetail = StudentExamListItem & {
   graceSeconds: number;
