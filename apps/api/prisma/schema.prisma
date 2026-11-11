@@ -322,14 +322,17 @@ model PendingRegistration {
 /// One paid payment <-> one registration. Replaying a callback can never create a second one.
 /// Raw SQL adds a trigger: the payment must be `paid` and belong to the same user.
 model Registration {
-  id        String     @id @default(uuid(7)) @db.Uuid
-  userId    String     @unique @map("user_id") @db.Uuid
-  paymentId String     @unique @map("payment_id") @db.Uuid
-  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-  user      User       @relation(fields: [userId], references: [id])
-  payment   Payment    @relation(fields: [paymentId], references: [id])
-  bookOrder BookOrder?
+  id            String     @id @default(uuid(7)) @db.Uuid
+  userId        String     @unique @map("user_id") @db.Uuid
+  paymentId     String     @unique @map("payment_id") @db.Uuid
+  /// The participant ID (admit card; with the email, the student's login): drawn by the database (strong random,
+  /// never sequential), ON + 10 digits + a Damm check digit; CHECK participant_id_check. Never logged.
+  participantId String     @unique @default(dbgenerated("gen_participant_id()")) @map("participant_id")
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  user          User       @relation(fields: [userId], references: [id])
+  payment       Payment    @relation(fields: [paymentId], references: [id])
+  bookOrder     BookOrder?
 
   @@unique([id, userId]) // for book_orders' composite foreign key: an order only for the student's own registration
   @@map("registrations")

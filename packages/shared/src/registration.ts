@@ -219,7 +219,15 @@ export interface CurrentRegistration {
   expiresAt: string | null;
   canResume: boolean;
   canRetry: boolean;
+  /**
+   * The new participant ID (canonical), only while `completed` and for PARTICIPANT_ID_SHOWN_HOURS after it: the
+   * cookie can outlive the visit on a shared computer, and the email and the dashboard keep it. Otherwise null.
+   */
+  participantId: string | null;
 }
+
+/** How long the result page may show a new participant ID after the registration completes. */
+export const PARTICIPANT_ID_SHOWN_HOURS = 24;
 
 /** GET /registrations/me: the logged-in student's registration and its payment. */
 export type MyRegistration =
@@ -227,6 +235,8 @@ export type MyRegistration =
   | {
       registered: true;
       registeredAt: string;
+      /** Canonical (e.g. ON48210937552); show it with formatParticipantId. */
+      participantId: string;
       category: Category | null;
       gradeLevel: string | null;
       payment: {
