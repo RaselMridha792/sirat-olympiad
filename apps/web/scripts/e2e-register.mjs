@@ -186,6 +186,14 @@ try {
         !stored.includes(student.password) && !stored.includes(student.email),
         'form data in storage',
       );
+      // The participant ID on the result page is the student's login (A2's participant-ID login): read it there.
+      const shownId = await page.evaluate(
+        `document.querySelector('[aria-labelledby=participant-id-title] p.font-mono')?.textContent ?? ''`,
+      );
+      check(
+        /^(ON|OF) \d{4} \d{4} \d{3}$/.test(shownId),
+        `no participant ID on the result page (${shownId})`,
+      );
       // No session after paying (D2): the result page sends the student to log in, then to the free book (plan §16.4).
       check(
         await click(
@@ -198,10 +206,10 @@ try {
         `location.pathname === '/login' && !!document.querySelector('button[type=submit]:not([disabled])')`,
       );
       await typeInto(page, 'email', student.email);
-      await typeInto(page, 'password', student.password);
+      await typeInto(page, 'participantId', shownId); // as printed: the login normalizes the spaces
       await click(
         page,
-        `document.querySelector('input[name=password]').form.querySelector('button[type=submit]')`,
+        `document.querySelector('input[name=participantId]').form.querySelector('button[type=submit]')`,
       );
       await page.waitFor(
         // Hydrated: the form's button is enabled only once React runs (typing earlier would be lost).

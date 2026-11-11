@@ -147,6 +147,8 @@ check "the auth zone: another client is not touched by that 429" \
   is "$(req trusted 198.51.100.22 /api/auth/login post)" "200 real=198.51.100.22"
 check "the login's code step shares the auth bucket: that client's 2fa/verify gets 429 too" \
   is "$(req trusted 198.51.100.21 /api/auth/2fa/verify post | cut -c1-3)" 429
+check "forgot-ID (participant-ID login) shares the auth bucket too: that client's forgot-id gets 429" \
+  is "$(req trusted 198.51.100.21 /api/auth/forgot-id post | cut -c1-3)" 429
 check "... while its other API calls (the api zone) still pass" \
   is "$(req trusted 198.51.100.21 /api/bucket)" "200 real=198.51.100.21"
 check "a client that sends too much gets 429" is "$(burst trusted 198.51.100.1)" 429

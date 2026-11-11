@@ -51,6 +51,8 @@ dk() { MSYS_NO_PATHCONV=1 docker "$@"; }
 hostpath() { if command -v cygpath > /dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
 hex() { head -c "$1" /dev/urandom | od -An -tx1 | tr -d ' \n'; }
 say() { echo "exam-load: $*"; }
+# A failed step: its log's last 40 lines go to stderr too, so CI shows the cause (the logs stay in $OUT).
+failed() { say "$1 (see $2)" >&2; tail -n 40 "$2" >&2 2> /dev/null || true; exit 1; }
 [ "$P" != sirat ] || exit 2
 [ -z "$(dk ps -aq --filter "label=com.docker.compose.project=$P")" ] ||
   { say "project $P exists; remove it first (docker compose -p $P down -v)" >&2; exit 2; }
@@ -106,7 +108,7 @@ if [ "$NO_BUILD" = 1 ]; then
   say "the existing sirat-{migrate,api,worker}:$TAG images, no build"
 else
   say "build sirat-{migrate,api,worker}:$TAG"
-  dc build migrate api worker > "$OUT/build.log" 2>&1 || { say "the build failed (see $OUT/build.log)" >&2; exit 1; }
+  dc build migrate api worker > "$OUT/build.log" 2>&1 || failed "the build failed" "$OUT/build.log"
   say "built in $((SECONDS - t0)) s"
 fi
 say "project $P: $API_REPLICAS API replicas$([ "$SMOKE" = 1 ] && echo ', smoke: counted outcomes only')"
@@ -140,8 +142,8 @@ peaks() { # peaks <file>: "api 130% postgres 54% ..."
 
 if [ "$SCENARIO" = login ]; then
   say "$USERS students"
-  fixtures --users "$USERS" > "$OUT/fixtures.log" 2>&1 || { say "the fixtures failed (see $OUT/fixtures.log)" >&2; exit 1; }
-  dc up -d --wait --no-deps api worker >> "$OUT/setup.log" 2>&1 || { say "api or worker did not start (see $OUT/setup.log)" >&2; exit 1; }
+  fixtures --users "$USERS" > "$OUT/fixtures.log" 2>&1 || failed "the fixtures failed" "$OUT/fixtures.log"
+  dc up -d --wait --no-deps api worker >> "$OUT/setup.log" 2>&1 || failed "api or worker did not start" "$OUT/setup.log"
   say "ready after $((SECONDS - t0)) s; logins at ${LOGIN_RATES:-10 20 40 60}/s, ${LOGIN_HOLD:-60s} each"
   # One k6 run per rate, so each has its own summary; the students are logged in again and again in turn.
   # 429s get their own column: a throttle must never read as CPU.
@@ -180,10 +182,10 @@ fi
 
 say "$USERS students and the exam"
 fixtures --users "$USERS" --exam --questions "$QUESTIONS" --duration "$DURATION" --window-end-in "$window_in" \
-  > "$OUT/fixtures.log" 2>&1 || { say "the fixtures failed (see $OUT/fixtures.log)" >&2; exit 1; }
+  > "$OUT/fixtures.log" 2>&1 || failed "the fixtures failed" "$OUT/fixtures.log"
 EXAM_ID=$(sed -n 's/.*"examId":"\([0-9a-f-]*\)".*/\1/p' "$OUT/fixtures.log")
-[ -n "$EXAM_ID" ] || { say "no exam id (see $OUT/fixtures.log)" >&2; exit 1; }
-dc up -d --wait --no-deps api worker >> "$OUT/setup.log" 2>&1 || { say "api or worker did not start (see $OUT/setup.log)" >&2; exit 1; }
+[ -n "$EXAM_ID" ] || failed "no exam id" "$OUT/fixtures.log"
+dc up -d --wait --no-deps api worker >> "$OUT/setup.log" 2>&1 || failed "api or worker did not start" "$OUT/setup.log"
 say "exam $EXAM_ID: $QUESTIONS questions, $DURATION min; ready after $((SECONDS - t0)) s"
 
 # Rows inserted, updated and deleted so far, per table ("<table> <rows>").

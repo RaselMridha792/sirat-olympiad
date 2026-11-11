@@ -121,28 +121,40 @@ describe('per-user API limits', () => {
     const passwordHash = await app.get(PasswordService).hash(PASSWORD);
     const run = randomUUID().slice(0, 8);
     const emails = Array.from({ length: 500 }, (_, i) => `crowd-${run}-${i}@test.invalid`);
+    // Staff accounts with a password: the route and its limits are the same for the participant-ID login, and the
+    // crowd needs no registrations this way.
     await prisma.user.createMany({
-      data: emails.map((email) => ({ email, passwordHash, name: 'Crowd Student' })),
+      data: emails.map((email) => ({
+        email,
+        passwordHash,
+        name: 'Crowd Judge',
+        role: 'jury' as const,
+      })),
     });
-    const started = Date.now();
-    const answers = await many(
-      emails.length,
-      (i) =>
-        fetch(`${base}/api/auth/login`, {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'x-requested-with': 'XMLHttpRequest',
-            'x-forwarded-for': ip,
-          },
-          body: JSON.stringify({ email: emails[i], password: PASSWORD }),
-        }).then((r) => ({ status: r.status, limit: r.headers.get('x-ratelimit-limit') })),
-      25,
-    );
-    expect(Date.now() - started).toBeLessThan(60_000);
-    expect(answers.filter((a) => a.status !== 204)).toEqual([]);
-    // Not counted at all (no limiter header), so not even a bigger crowd would meet the per-IP 600.
-    expect(answers.filter((a) => a.limit !== null)).toEqual([]);
+    // The crowd goes again afterwards: 500 jury accounts would crowd other suites' lists (jury candidates: 200).
+    try {
+      const started = Date.now();
+      const answers = await many(
+        emails.length,
+        (i) =>
+          fetch(`${base}/api/auth/login`, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              'x-requested-with': 'XMLHttpRequest',
+              'x-forwarded-for': ip,
+            },
+            body: JSON.stringify({ email: emails[i], password: PASSWORD }),
+          }).then((r) => ({ status: r.status, limit: r.headers.get('x-ratelimit-limit') })),
+        25,
+      );
+      expect(Date.now() - started).toBeLessThan(60_000);
+      expect(answers.filter((a) => a.status !== 204)).toEqual([]);
+      // Not counted at all (no limiter header), so not even a bigger crowd would meet the per-IP 600.
+      expect(answers.filter((a) => a.limit !== null)).toEqual([]);
+    } finally {
+      await prisma.user.deleteMany({ where: { email: { in: emails } } });
+    }
   }, 120_000);
 
   it("answers every anonymous auth route with its own per-IP tier, and /auth/me with the asker's", async () => {

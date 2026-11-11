@@ -69,6 +69,11 @@ async function passwordStep(page, expectPath) {
   await page.goto(`${BASE}/login`);
   await page.waitFor(`!!document.querySelector('button[type=submit]:not([disabled])')`);
   await typeInto(page, 'input[name=email]', ADMIN.email);
+  // Staff sign in with a password: the form opens on the participant ID (students and ambassadors).
+  await page.evaluate(
+    `[...document.querySelectorAll('button[type=button]')].find((b) => b.textContent.includes('Sign in with a password')).click(), true`,
+  );
+  await page.waitFor(`!!document.querySelector('input[name=password]')`);
   await typeInto(page, 'input[name=password]', ADMIN.password);
   await page.evaluate(`document.querySelector('button[type=submit]').click(), true`);
   await page.waitFor(`!!document.querySelector('input[name=code]') || (${shows(expectPath)})`, {

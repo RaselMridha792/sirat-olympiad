@@ -11,7 +11,8 @@ import { DEMO_EMAIL_DOMAIN, EDUCATION_TYPES, REGISTRATION_MESSAGES } from '@sira
 import Redis from 'ioredis';
 import { seedConfig } from '../prisma/seed';
 import { RedisThrottlerStorage } from '../src/common/throttler/redis-throttler.storage';
-import { PasswordService } from '../src/modules/auth/password.service';
+import { ACCESS_COOKIE } from '../src/modules/auth/access-token.service';
+import { SessionService } from '../src/modules/auth/session.service';
 import { startFakePaystation, type FakePaystation } from './fake-paystation/fake-paystation';
 import {
   applyReferenceData,
@@ -623,14 +624,10 @@ describe('shared IPs: a school lab or a mobile operator NAT starting together (l
 });
 
 describe('logged-in student: registration and own payments', () => {
-  let passwords: PasswordService;
-  beforeAll(() => {
-    passwords = app.get(PasswordService);
-  });
-
-  async function loginAs(userEmail: string) {
+  /** A real login, with email + participant ID as every student logs in (A2's participant-ID login). */
+  async function loginAs(userEmail: string, participantId: string) {
     const res = await call('POST', '/auth/login', {
-      body: { email: userEmail, password: PASSWORD },
+      body: { email: userEmail, participantId },
     });
     expect(res.status).toBe(204);
     return res.headers
@@ -642,7 +639,6 @@ describe('logged-in student: registration and own payments', () => {
   it('shows my registration and payment, lists only my payments, and hides others (404)', async () => {
     const me = await makeUser(prisma, {
       email: email(),
-      passwordHash: await passwords.hash(PASSWORD),
       gradeLevelId,
     });
     const paid = await makePaidPayment(prisma, me.id);
@@ -652,7 +648,7 @@ describe('logged-in student: registration and own payments', () => {
     const other = await makeUser(prisma);
     const othersPayment = await makePaidPayment(prisma, other.id);
 
-    const cookie = await loginAs(me.email);
+    const cookie = await loginAs(me.email, myRegistration.participantId);
     const reg = await json(await call('GET', '/registrations/me', { cookie }));
     expect(reg).toMatchObject({
       registered: true,
@@ -675,11 +671,12 @@ describe('logged-in student: registration and own payments', () => {
   });
 
   it('a student without a registration sees registered: false; without a session: 401', async () => {
-    const plain = await makeUser(prisma, {
-      email: email(),
-      passwordHash: await passwords.hash(PASSWORD),
-    });
-    const cookie = await loginAs(plain.email);
+    // Without a registration a student has no participant ID, so no login: a session is started directly.
+    const plain = await makeUser(prisma, { email: email() });
+    const issued = await app
+      .get(SessionService)
+      .start({ id: plain.id, role: plain.role }, { ip: '203.0.113.9', userAgent: 'jest' });
+    const cookie = `${ACCESS_COOKIE}=${issued.accessToken}`;
     expect(await json(await call('GET', '/registrations/me', { cookie }))).toEqual({
       registered: false,
     });

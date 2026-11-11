@@ -19,7 +19,8 @@ import { EmailQueue } from '../src/modules/notifications/email-queue.service';
 import { EmailWorker } from '../src/modules/notifications/email.worker';
 import { MailpitProvider } from '../src/modules/notifications/mailpit.provider';
 import { REDIS_QUEUE } from '../src/redis/redis.module';
-import { makeUser, testPrisma } from './helpers';
+import { formatParticipantId } from '@sirat/shared';
+import { makePaidPayment, makeUser, testPrisma } from './helpers';
 
 const MAILPIT = process.env.MAILPIT_URL ?? 'http://127.0.0.1:18025';
 const QUEUE = `email-test-${randomUUID()}`;
@@ -115,9 +116,11 @@ const tokenIn = (text: string) => /#token=([A-Za-z0-9_-]{43})/.exec(text)?.[1] ?
 describe('POST /api/auth/forgot-password', () => {
   it('answers 204 with an empty body, and the emailed link resets the password', async () => {
     const email = address('f');
+    // Staff: only they have a password to reset (students get their participant ID, below).
     await makeUser(prisma, {
       email,
       name: 'Ayesha',
+      role: 'jury',
       passwordHash: await app.get(PasswordService).hash('Old-river-moon-42'),
     });
     const res = await post('/api/auth/forgot-password', { email: email.toUpperCase() });
@@ -154,12 +157,79 @@ describe('POST /api/auth/forgot-password', () => {
 
   it('sends one email per address per minute, however often it is asked', async () => {
     const email = address('f');
-    await makeUser(prisma, { email });
+    await makeUser(prisma, { email, role: 'jury' });
     for (let i = 0; i < 3; i += 1)
       expect((await post('/api/auth/forgot-password', { email })).status).toBe(204);
     await waitForMail(email);
     await settle();
     expect(await mailsTo(email)).toHaveLength(1);
+  });
+});
+
+describe('POST /api/auth/forgot-id (students and ambassadors)', () => {
+  /** A student with a paid registration, so a participant ID, and no password. */
+  async function registered(email: string, data: Parameters<typeof makeUser>[1] = {}) {
+    const user = await makeUser(prisma, { email, name: 'Rahim', role: 'student', ...data });
+    const payment = await makePaidPayment(prisma, user.id);
+    const reg = await prisma.registration.create({
+      data: { userId: user.id, paymentId: payment.id },
+    });
+    return { user, participantId: reg.participantId };
+  }
+
+  it("emails the participant ID to the account's own address only, and the answer says nothing", async () => {
+    const email = address('id');
+    const { user, participantId } = await registered(email);
+    const res = await post('/api/auth/forgot-id', { email: email.toUpperCase() });
+    expect(res.status).toBe(204);
+    expect(await res.text()).toBe('');
+    expect(res.headers.getSetCookie()).toEqual([]);
+    const mail = await waitForMail(email);
+    expect(mail.Subject).toContain('Your participant ID');
+    expect(mail.Text).toContain('প্রিয় Rahim');
+    expect(mail.Text).toContain(formatParticipantId(participantId));
+    expect(mail.Text).toContain('http://sirat.test/login');
+    await settle();
+    const rows = await prisma.auditLog.findMany({
+      where: { action: 'auth.participant_id_sent', actorId: user.id },
+    });
+    expect(rows).toHaveLength(1);
+    expect(JSON.stringify(rows)).not.toContain(participantId.slice(2)); // never the ID in the trail
+  });
+
+  it('sends nothing to an unknown address, a staff account, a blocked student or one without a registration', async () => {
+    const [unknown, judge, blocked, plain] = [
+      address('id'),
+      address('id'),
+      address('id'),
+      address('id'),
+    ];
+    await makeUser(prisma, { email: judge, role: 'jury' });
+    await registered(blocked, { isBlocked: true });
+    await makeUser(prisma, { email: plain, role: 'student' });
+    for (const email of [unknown, judge, blocked, plain]) {
+      const res = await post('/api/auth/forgot-id', { email });
+      expect(res.status).toBe(204);
+      expect(await res.text()).toBe('');
+    }
+    await settle();
+    for (const email of [unknown, judge, blocked, plain]) expect(await mailsTo(email)).toEqual([]);
+  });
+
+  it('answers forgot-password for a student with the ID, never a reset link, under the same per-address cap', async () => {
+    const email = address('id');
+    const { participantId } = await registered(email);
+    expect((await post('/api/auth/forgot-password', { email })).status).toBe(204);
+    const mail = await waitForMail(email);
+    expect(mail.Subject).toContain('Your participant ID');
+    expect(mail.Text).toContain(formatParticipantId(participantId));
+    expect(mail.Text).not.toContain('reset-password#token=');
+    expect((await post('/api/auth/forgot-id', { email })).status).toBe(204); // the same minute: capped
+    await settle();
+    expect(await mailsTo(email)).toHaveLength(1);
+    expect(
+      await prisma.authToken.count({ where: { user: { email }, type: 'password_reset' } }),
+    ).toBe(0);
   });
 });
 

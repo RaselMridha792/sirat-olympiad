@@ -48,7 +48,7 @@ Scenarios (`SCENARIO`):
 - `surge`: the window-open surge. Starts ramp to `RATE` per second within 60 s and stay there until every student has started.
 - `timeup`: the time-up burst. Every student starts less than the exam time before the window ends, so every timer ends at `window_end` and all submits land within about 20 s.
 
-Data: `apps/api/prisma/fixtures/loadtest-fixtures.ts` (the dev fixtures' four guards). `--users N` makes `load1..loadN@loadtest.invalid`, verified, each with a paid registration. `--exam` makes a new published exam per run (one attempt per student per exam). `--report <examId>` counts attempts, submissions and the database's writes. The password is `FIXTURE_PASSWORD`, hashed with the API's own argon2 parameters.
+Data: `apps/api/prisma/fixtures/loadtest-fixtures.ts` (the dev fixtures' four guards). `--users N` makes `load1..loadN@loadtest.invalid`, verified, each with a paid registration. `--exam` makes a new published exam per run (one attempt per student per exam). `--report <examId>` counts attempts, submissions and the database's writes. The load students have no password (participant-ID login): their IDs derive from the load secret `FIXTURE_PASSWORD` (k6's `PASSWORD`), so k6 computes the same ones (`loadtests/load-id.js`, kept in step with `loadParticipantId()`).
 
 Pass:
 - the k6 thresholds: p95 < 500 ms and errors < 0.5 % on the API, per endpoint too; checks > 99.5 %; every submit got a receipt and the waiting room shows it;
@@ -113,7 +113,8 @@ The exam simulation:
 scripts/load-staging.sh up --users 8000                        # on the VPS, as deploy
 scripts/load-staging.sh exam --duration 30 --window-end-in 60  # writes EXAM_ID into k6.env
 scripts/load-staging.sh window --ips <gen1>,<gen2> --minutes 90   # as root, in the provider's console; Ctrl-C closes it
-# on each generator machine, with k6.env copied over (it holds the throwaway load password), each with its own range:
+# on each generator machine, with k6.env copied over (it holds the throwaway load secret: the load students' participant
+# IDs derive from it, loadtests/load-id.js), each with its own range:
 set -a; . ./k6.env; set +a
 k6 run -e IP_HEADER=cf-connecting-ip -e SCENARIO=surge -e RATE=10 -e FIRST=1 -e USERS=4000 loadtests/exam-simulation.js
 k6 run -e IP_HEADER=cf-connecting-ip -e SCENARIO=surge -e RATE=10 -e FIRST=4001 -e USERS=4000 loadtests/exam-simulation.js

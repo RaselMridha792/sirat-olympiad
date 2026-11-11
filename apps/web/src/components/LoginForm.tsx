@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { KeyRound, Lock, Mail } from 'lucide-react';
+import { isParticipantId, normalizeParticipantId } from '@sirat/shared';
 import { Button, Field } from '@sirat/ui';
 import { useHydrated } from '@/components/auth/useHydrated';
 import type { Locale } from '@/i18n';
@@ -21,12 +22,18 @@ import {
 /** The old login gave up after 15 s on slow networks and offered "try again". */
 const LOGIN_TIMEOUT_MS = 15_000;
 
-function problemText(m: AuthMessages, problem: LoginProblem): string {
+/** Students and ambassadors sign in with their participant ID; staff (admin, manager, jury) with a password. */
+type LoginMode = 'participant' | 'staff';
+
+function problemText(m: AuthMessages, problem: LoginProblem, mode: LoginMode): string {
   switch (problem.kind) {
     case 'wrong':
-      return m.login.wrong;
+      return mode === 'participant' ? m.login.wrongId : m.login.wrong;
     case 'locked':
-      return m.login.locked(problem.minutes);
+      // The participant ID has no password to reset: the lock just runs out.
+      return mode === 'participant'
+        ? m.login.lockedId(problem.minutes)
+        : m.login.locked(problem.minutes);
     case 'blocked':
       return m.login.blocked;
     case 'invalidEmail':
@@ -60,14 +67,18 @@ function goNext(): void {
 }
 
 /**
- * POST /api/auth/login; the server sets the httpOnly cookies, nothing is stored here. An admin or manager with
- * two-factor login gets 200 { twoFactorRequired } and an httpOnly challenge cookie instead of a session: the form
- * then asks for the code (POST /api/auth/2fa/verify), which starts the session. No /me call either way.
+ * POST /api/auth/login; the server sets the httpOnly cookies, nothing is stored here. Students and ambassadors send
+ * { email, participantId }, the ID on their admit card (owner, 2026-11-10); a typo (a wrong check digit) is caught
+ * here before any request. Staff switch to { email, password }. An admin or manager with two-factor login gets 200
+ * { twoFactorRequired } and an httpOnly challenge cookie instead of a session: the form then asks for the code
+ * (POST /api/auth/2fa/verify), which starts the session. No /me call either way.
  */
 export function LoginForm({ locale }: { locale: Locale }) {
   const m = pick(authMessages, locale);
   const hydrated = useHydrated();
+  const [mode, setMode] = useState<LoginMode>('participant');
   const [email, setEmail] = useState('');
+  const [participantId, setParticipantId] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -76,12 +87,18 @@ export function LoginForm({ locale }: { locale: Locale }) {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (loading) return;
+    const id = normalizeParticipantId(participantId);
+    if (mode === 'participant' && !isParticipantId(id)) {
+      setError(m.login.badId); // a typo: no request, and nothing counted against the account
+      return;
+    }
     setLoading(true);
     setError('');
     try {
+      const credential = mode === 'participant' ? { participantId: id } : { password };
       const answer = await api<{ twoFactorRequired?: boolean } | undefined>('/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, ...credential }),
         signal: timeoutSignal(LOGIN_TIMEOUT_MS),
       });
       if (answer?.twoFactorRequired) {
@@ -93,7 +110,7 @@ export function LoginForm({ locale }: { locale: Locale }) {
       goNext();
       return; // keep the button busy while the next page loads
     } catch (err) {
-      setError(problemText(m, loginProblem(err instanceof ApiRequestError ? err : null)));
+      setError(problemText(m, loginProblem(err instanceof ApiRequestError ? err : null), mode));
     }
     setLoading(false);
   }
@@ -127,23 +144,50 @@ export function LoginForm({ locale }: { locale: Locale }) {
         onChange={(e) => setEmail(e.target.value)}
         icon={<Mail size={18} />}
       />
-      <Field
-        label={m.password}
-        name="password"
-        type="password"
-        autoComplete="current-password"
-        required
-        maxLength={256}
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        icon={<Lock size={18} />}
-      />
-      <Link
-        href="/forgot-password"
-        className="block text-sm font-semibold text-secondary hover:underline"
-      >
-        {m.login.forgot}
-      </Link>
+      {mode === 'participant' ? (
+        <>
+          <Field
+            label={m.login.participantId}
+            name="participantId"
+            type="text"
+            autoComplete="off"
+            autoCapitalize="characters"
+            spellCheck={false}
+            required
+            maxLength={32}
+            hint={m.login.participantIdHint}
+            value={participantId}
+            onChange={(e) => setParticipantId(e.target.value)}
+            icon={<KeyRound size={18} />}
+          />
+          <Link
+            href="/forgot-id"
+            className="block text-sm font-semibold text-secondary hover:underline"
+          >
+            {m.login.forgotId}
+          </Link>
+        </>
+      ) : (
+        <>
+          <Field
+            label={m.password}
+            name="password"
+            type="password"
+            autoComplete="current-password"
+            required
+            maxLength={256}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            icon={<Lock size={18} />}
+          />
+          <Link
+            href="/forgot-password"
+            className="block text-sm font-semibold text-secondary hover:underline"
+          >
+            {m.login.forgot}
+          </Link>
+        </>
+      )}
       {error ? (
         <p role="alert" className="text-center text-sm font-medium text-danger-strong">
           {error}
@@ -159,6 +203,19 @@ export function LoginForm({ locale }: { locale: Locale }) {
       >
         {m.login.submit}
       </Button>
+      <button
+        type="button"
+        className="block w-full text-center text-sm font-semibold text-secondary hover:underline"
+        onClick={() => {
+          // The other credential is dropped, never sent along.
+          setMode(mode === 'participant' ? 'staff' : 'participant');
+          setParticipantId('');
+          setPassword('');
+          setError('');
+        }}
+      >
+        {mode === 'participant' ? m.login.staffSwitch : m.login.participantSwitch}
+      </button>
       <p className="text-center text-sm text-ink-muted">
         {m.login.noAccount}{' '}
         <Link href="/register" className="font-bold text-secondary hover:underline">

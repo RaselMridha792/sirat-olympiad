@@ -51,8 +51,8 @@ export function isParticipantId(value: string): boolean {
 /**
  * The participant ID is the login secret together with the email (owner decision 10 Nov), so anything shown where
  * others may see it (the ambassador ID card, a shared image) carries only this: the prefix and the last 2 characters,
- * "ON •••• •••• •52" (one random digit and the Damm check digit, so a card leaves 10^9 candidates: exam's review of
- * core #35, the lead). The full ID appears only on the admit card page, behind its copy button. A value that is not a
+ * "ON •••• •••• •52" (one random digit and the Damm check digit: of the 10^9 completions the shown check digit rules out about
+ * 9 in 10, so a card leaves about 10^8 candidates; exam's review of core #35, the lead). The full ID appears only on the admit card page, behind its copy button. A value that is not a
  * canonical ID masks to bullets only.
  */
 export function maskParticipantId(canonical: string): string {
