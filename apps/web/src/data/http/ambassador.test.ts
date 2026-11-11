@@ -11,7 +11,7 @@ function fakeApi(answers: Record<string, ApiResult>): ApiGet {
 
 const overview = {
   promoCode: 'SR-7K3QXD',
-  participantIdMasked: 'ON •••• •••• 558',
+  participantIdMasked: 'ON •••• •••• •58',
   approvedAt: '2026-11-01T04:00:00.000Z',
   referralCount: 2,
   points: 120,
@@ -42,7 +42,9 @@ test('student.getAmbassador reads GET /ambassador/me and refuses a wrong shape o
     // any other shape.
     [200, { ...overview, participantIdMasked: 'ON48210937558' }],
     [200, { ...overview, participantIdMasked: 'ON 4821 0937 558' }],
-    [200, { ...overview, participantIdMasked: 'XX •••• •••• 558' }],
+    [200, { ...overview, participantIdMasked: 'XX •••• •••• •58' }],
+    // The older 3-character shape is refused too.
+    [200, { ...overview, participantIdMasked: 'ON •••• •••• 558' }],
     [403, null],
   ] as const) {
     const source = createHttpSource(fakeApi({ '/ambassador/me': { status, body } }));
