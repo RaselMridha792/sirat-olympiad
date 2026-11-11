@@ -28,6 +28,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 - **Tests and tools:**
   - The dev fixture students have fixed IDs (`ON99999999012`, `…020`, `…036`; RUNBOOK §0).
   - The load students' IDs derive from the load secret, so k6 computes them (`loadtests/load-id.js`).
+
 ## 2026-11-11 — The ambassador ID card (core; the lead's approval of 10 Nov)
 
 - **On the panel**, for an approved ambassador: the client's mark, "International Sirat Olympiad 3.0", the role, the name, the ambassador code and the date they became an ambassador. Text only, no photo; the shared `IdCard` in @sirat/ui, so the admit card can reuse it.
