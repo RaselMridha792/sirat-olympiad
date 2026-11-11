@@ -19,6 +19,7 @@ import { pick } from '@/i18n/messages';
 import { registrationMessages } from '@/i18n/messages/registration';
 import { ApiRequestError } from '@/lib/api';
 import { BOOK_LOGIN_HREF } from './links';
+import { ParticipantIdBox } from './ParticipantIdBox';
 import { isMoving, nextPollDelay } from './poll';
 import { goToCheckout, registrationApi, type Checkout } from './registration-api';
 import { problemText, registrationProblem } from './registration-problem';
@@ -207,6 +208,17 @@ export function PaymentResult({ locale }: { locale: Locale }) {
             {r.startOver}
           </Button>
         </>
+      ) : null}
+
+      {state === 'completed' && current.participantId ? (
+        <ParticipantIdBox
+          participantId={current.participantId}
+          title={r.participantIdTitle}
+          note={r.participantIdNote}
+          copyLabel={r.participantIdCopy}
+          copiedLabel={r.participantIdCopied}
+          failedLabel={r.participantIdCopyFailed}
+        />
       ) : null}
 
       {state === 'completed' ? (
