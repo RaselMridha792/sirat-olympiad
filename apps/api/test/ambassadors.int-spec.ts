@@ -175,8 +175,8 @@ describe('lists and the panel', () => {
     ]);
   });
 
-  it('shows the ambassador their own panel: code, referrals without contact details, points and rank', async () => {
-    const { user } = await registeredStudent(prisma, { name: 'Panel Amb' });
+  it('shows the ambassador their own panel: code, participant ID, referrals without contact details, points and rank', async () => {
+    const { user, registration } = await registeredStudent(prisma, { name: 'Panel Amb' });
     const { promoCode } = (await approve(user.id)).json;
     const referred = await registeredStudent(prisma, {
       name: 'Referred One',
@@ -197,6 +197,8 @@ describe('lists and the panel', () => {
     expect(res.status).toBe(200);
     expect(res.json).toMatchObject({
       promoCode,
+      // The ambassador card's ID: their own registration's, never another student's.
+      participantId: registration.participantId,
       referralCount: 1,
       points: 0,
       rank: { current: { name: 'Bronze', minPoints: 0 }, next: { name: 'Silver', minPoints: 100 } },
@@ -206,6 +208,7 @@ describe('lists and the panel', () => {
     });
     expect(res.text).not.toContain(referred.user.email);
     expect(res.text).not.toContain(referred.user.phone!);
+    expect(res.text).not.toContain(referred.registration.participantId);
   });
 
   it('is for ambassadors only, and a revoked one is refused even with an ambassador token', async () => {

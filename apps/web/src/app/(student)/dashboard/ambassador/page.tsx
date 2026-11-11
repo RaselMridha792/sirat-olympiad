@@ -3,6 +3,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ClipboardList, Medal, Star, Trophy, UserPlus, Users, UsersRound } from 'lucide-react';
+import { formatParticipantId } from '@sirat/shared';
 import { Badge, Card, DataTable, EmptyState, IdCard, StatCard } from '@sirat/ui';
 import { CopyCode } from '@/components/ambassador/CopyCode';
 import { PrintCardButton } from '@/components/ambassador/PrintCardButton';
@@ -260,8 +261,16 @@ export default async function AmbassadorPage({
               org={site.name[locale]}
               role={m.card.role}
               name={user.name}
-              // The participant ID joins these fields when payments' registrations.participant_id lands.
               fields={[
+                ...(amb.participantId
+                  ? [
+                      {
+                        label: m.card.participantId,
+                        value: formatParticipantId(amb.participantId),
+                        mono: true,
+                      },
+                    ]
+                  : []),
                 { label: m.card.code, value: amb.promoCode, mono: true },
                 ...(amb.approvedAt
                   ? [{ label: m.card.since, value: formatDate(locale, amb.approvedAt) }]

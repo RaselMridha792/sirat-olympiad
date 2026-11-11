@@ -228,41 +228,50 @@ export class AmbassadorsService {
     if (!user || user.isBlocked) throw new ForbiddenException(['account_blocked']);
     if (user.role !== 'ambassador') throw new ForbiddenException('Forbidden resource'); // revoked since login
     const profile = user.ambassador;
-    const [referralCount, sum, thresholds, recent, assignments, membership] = await Promise.all([
-      this.prisma.user.count({ where: { referredById: userId } }),
-      this.prisma.pointLedger.aggregate({ where: { userId }, _sum: { amount: true } }),
-      this.thresholds(),
-      this.prisma.user.findMany({
-        where: { referredById: userId },
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        take: RECENT_REFERRALS,
-        select: { name: true, institution: true, createdAt: true },
-      }),
-      // Own assignments of tasks that are not archived (C5b-2); the proof itself is not sent back.
-      this.prisma.taskAssignment.findMany({
-        where: { userId, task: { archivedAt: null } },
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        take: TASKS_ON_PANEL,
-        select: {
-          id: true,
-          status: true,
-          reviewNote: true,
-          submittedAt: true,
-          task: { select: { title: true, description: true, points: true } },
-        },
-      }),
-      this.prisma.teamMember.findUnique({
-        where: { userId },
-        select: {
-          team: {
-            select: { id: true, name: true, ownerId: true, _count: { select: { members: true } } },
+    const [referralCount, sum, thresholds, recent, assignments, membership, registration] =
+      await Promise.all([
+        this.prisma.user.count({ where: { referredById: userId } }),
+        this.prisma.pointLedger.aggregate({ where: { userId }, _sum: { amount: true } }),
+        this.thresholds(),
+        this.prisma.user.findMany({
+          where: { referredById: userId },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: RECENT_REFERRALS,
+          select: { name: true, institution: true, createdAt: true },
+        }),
+        // Own assignments of tasks that are not archived (C5b-2); the proof itself is not sent back.
+        this.prisma.taskAssignment.findMany({
+          where: { userId, task: { archivedAt: null } },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: TASKS_ON_PANEL,
+          select: {
+            id: true,
+            status: true,
+            reviewNote: true,
+            submittedAt: true,
+            task: { select: { title: true, description: true, points: true } },
           },
-        },
-      }),
-    ]);
+        }),
+        this.prisma.teamMember.findUnique({
+          where: { userId },
+          select: {
+            team: {
+              select: {
+                id: true,
+                name: true,
+                ownerId: true,
+                _count: { select: { members: true } },
+              },
+            },
+          },
+        }),
+        // payments' registration, read only: the participant ID on the ambassador card.
+        this.prisma.registration.findUnique({ where: { userId }, select: { participantId: true } }),
+      ]);
     const points = sum._sum.amount ?? 0;
     return {
       promoCode: profile?.approvedAt ? profile.promoCode : null,
+      participantId: registration?.participantId ?? null,
       approvedAt: profile?.approvedAt?.toISOString() ?? null,
       referralCount,
       points,

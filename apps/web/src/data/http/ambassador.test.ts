@@ -11,6 +11,7 @@ function fakeApi(answers: Record<string, ApiResult>): ApiGet {
 
 const overview = {
   promoCode: 'SR-7K3QXD',
+  participantId: 'ON48210937558',
   approvedAt: '2026-11-01T04:00:00.000Z',
   referralCount: 2,
   points: 120,

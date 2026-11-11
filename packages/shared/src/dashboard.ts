@@ -128,6 +128,8 @@ export interface ProfileOptions {
 export interface AmbassadorOverview {
   /** null until an admin approves the ambassador and a code is assigned. */
   promoCode: AmbassadorProfileRecord['promoCode'] | null;
+  /** The ambassador's own participant ID (payments' registration; canonical, shown with formatParticipantId). */
+  participantId: string | null;
   approvedAt: AmbassadorProfileRecord['approvedAt'];
   /** Counted from users.referred_by_id rows, never a stored counter. */
   referralCount: number;
