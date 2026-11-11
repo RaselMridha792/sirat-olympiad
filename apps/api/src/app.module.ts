@@ -27,6 +27,7 @@ import { AmbassadorsModule } from './modules/ambassadors/ambassadors.module';
 import { RoundsModule } from './modules/rounds/rounds.module';
 import { LeaderboardModule } from './modules/leaderboard/leaderboard.module';
 import { CertificatesModule } from './modules/certificates/certificates.module';
+import { CertificateTemplatesModule } from './modules/certificates/templates/certificate-templates.module';
 import { AnnouncementsModule } from './modules/announcements/announcements.module';
 import { DemoModule } from './modules/demo/demo.module';
 
@@ -61,6 +62,7 @@ import { DemoModule } from './modules/demo/demo.module';
     RoundsModule,
     LeaderboardModule,
     CertificatesModule,
+    CertificateTemplatesModule,
     AdmitCardModule,
     AnnouncementsModule,
     DemoModule,

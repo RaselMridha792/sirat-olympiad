@@ -918,6 +918,35 @@ describe('demo_clear v4: demo discount codes (payments D1)', () => {
     }
   });
 
+  it('v5: refuses while a demo form used a real code (no payment needed), deletes nothing, and clears once that form goes', async () => {
+    const g = await codeGraph();
+    const real = await realCode();
+    const priced = { listAmountMinor: 45000, discountMinor: 4500, amountMinor: 40500 };
+    const form = await makeRegistrationAttempt(prisma, {
+      email: `s-${code12()}${DOMAIN}`,
+      ...priced,
+      discountCodeId: real.id,
+    });
+    await register(g.batch.id, 'pending_registrations', [form.id]);
+    try {
+      await blockedWith(g.batch.id, 'demo_forms_on_real_codes');
+      // Nothing was deleted: the demo code, its form and payment, and the user are all still there.
+      expect(await prisma.discountCode.count({ where: { id: g.code.id } })).toBe(1);
+      expect(await prisma.payment.count({ where: { id: g.payment.id } })).toBe(1);
+      expect(await prisma.user.count({ where: { id: g.ambassador.id } })).toBe(1);
+      // The mixed row goes; then the batch clears, and the real code stays.
+      await prisma.pendingRegistration.delete({ where: { id: form.id } });
+      expect(await clear(g.batch.id)).toMatchObject({
+        discount_codes: 1,
+        pending_registrations: 1,
+      });
+      expect(await prisma.discountCode.count({ where: { id: real.id } })).toBe(1);
+    } finally {
+      await prisma.pendingRegistration.deleteMany({ where: { id: form.id } });
+      await prisma.discountCode.delete({ where: { id: real.id } });
+    }
+  });
+
   it('refuses while a demo code is linked to a real ambassador', async () => {
     const g = await codeGraph();
     const realAmbassador = await makeUser(prisma, { role: 'ambassador' });
