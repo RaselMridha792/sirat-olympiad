@@ -142,6 +142,44 @@ describe('the draw', () => {
   });
 });
 
+describe('a demo exam', () => {
+  it('previews like any exam (admins see demo data too) and writes nothing', async () => {
+    if ((await prisma.demoBatch.count()) > 0)
+      throw new Error('a demo batch is left from another suite');
+    const batch = await prisma.demoBatch.create({
+      data: { status: 'loaded', reason: 'preview test' },
+    });
+    try {
+      const { exam, questions } = await seedExam(env, prisma, {
+        count: 3,
+        data: { title: 'DEMO · Preview', demoBatchId: batch.id },
+      });
+      await prisma.demoRecord.createMany({
+        data: [
+          { batchId: batch.id, tableName: 'exams', rowId: exam.id },
+          ...questions.map((q) => ({ batchId: batch.id, tableName: 'questions', rowId: q.id })),
+        ],
+      });
+      const before = await traces(exam.id);
+      const res = await preview(exam.id);
+      expect(res.status).toBe(200);
+      expect(res.json).toMatchObject({
+        examId: exam.id,
+        title: 'DEMO · Preview',
+        questionsPerAttempt: 3,
+      });
+      expect(res.json.questions).toHaveLength(3);
+      for (const [i, shown] of res.json.questions.entries()) {
+        const q = questions.find((x) => x.text === shown.text)!;
+        expect(shown.options[res.json.correct[i]!]).toBe(correctText(q));
+      }
+      expect(await traces(exam.id)).toEqual(before);
+    } finally {
+      await prisma.$queryRaw`SELECT demo_clear(${batch.id}::uuid)`;
+    }
+  });
+});
+
 describe('a short pool', () => {
   it('shows what a draft has, and refuses a published exam whose pool is short (question_count)', async () => {
     const draft = await seedExam(env, prisma, {
