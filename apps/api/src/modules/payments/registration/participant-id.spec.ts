@@ -5,7 +5,10 @@ import {
   normalizeParticipantId,
   PARTICIPANT_ID_LENGTH,
 } from '@sirat/shared';
-import { registrationConfirmedMessage } from '../verify/registration-emails';
+import {
+  participantIdReissuedMessage,
+  registrationConfirmedMessage,
+} from '../verify/registration-emails';
 
 /** @sirat/shared's participant ID helpers (the database's rule is checked against them in participant-id.int-spec). */
 const valid = (body: string, prefix = 'ON') => `${prefix}${body}${dammDigit(body)}`;
@@ -62,5 +65,15 @@ describe('the registration confirmation email', () => {
     expect(m.html).not.toContain('<b>Rahim</b>');
     expect(m.html).toContain('&lt;b&gt;Rahim&lt;/b&gt;');
     expect(m.text).toMatch(/private/);
+  });
+
+  it('the new-ID email (P1b) carries the new ID in both languages, says the old one stopped working, escapes the name', () => {
+    const id = valid('0937552482', 'OF');
+    const m = participantIdReissuedMessage('<i>Karim</i>', id, 'https://sirat.test/login');
+    expect(m.subject).toContain('new participant ID');
+    expect(m.text.split(formatParticipantId(id))).toHaveLength(3);
+    expect(m.html.split(formatParticipantId(id))).toHaveLength(3);
+    expect(m.text).toContain('The old ID no longer works');
+    expect(m.html).not.toContain('<i>Karim</i>');
   });
 });
