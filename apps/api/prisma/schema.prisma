@@ -148,6 +148,8 @@ model User {
   juryAssignments        JuryAssignment[]        @relation("JuryAssignmentJudge")
   juryAssignmentsMade    JuryAssignment[]        @relation("JuryAssignmentCreatedBy")
   certificatesRevoked    Certificate[]           @relation("CertificateRevokedBy")
+  certificateTemplates   CertificateTemplate[]   @relation("CertificateTemplateCreator")
+  certificateImages      CertificateImage[]      @relation("CertificateImageUploader")
   keyCorrections         AnswerKeyCorrection[]
   /// Demo data only (DECISIONS 2026-11-08): written by the demo loader, never changed (a trigger), never set by the API.
   demoBatchId            String?                 @map("demo_batch_id") @db.Uuid
@@ -622,29 +624,95 @@ model JuryScore {
 /// A certificate (core C6c): issued by the worker from database state, one per (user, type, round); revoked, never
 /// deleted. The name is copied at issue time, so a later profile edit does not change a certificate.
 model Certificate {
-  id                String    @id @default(uuid(7)) @db.Uuid
-  userId            String    @map("user_id") @db.Uuid
+  id                String               @id @default(uuid(7)) @db.Uuid
+  userId            String               @map("user_id") @db.Uuid
   type              String // participation | promotion | winner (CHECK in raw SQL)
-  roundId           String    @map("round_id") @db.Uuid
-  serial            String    @unique
+  roundId           String               @map("round_id") @db.Uuid
+  serial            String               @unique
   /// Random, for the public check; the only way to look a certificate up without a session.
-  verificationCode  String    @unique @map("verification_code")
-  nameOnCertificate String    @map("name_on_certificate")
-  issuedAt          DateTime  @default(now()) @map("issued_at") @db.Timestamptz
-  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz
-  revokedById       String?   @map("revoked_by_id") @db.Uuid
-  revokeReason      String?   @map("revoke_reason")
-  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-  user              User      @relation(fields: [userId], references: [id])
-  round             Round     @relation(fields: [roundId], references: [id], onDelete: Restrict)
-  revokedBy         User?     @relation("CertificateRevokedBy", fields: [revokedById], references: [id], onDelete: Restrict)
+  verificationCode  String               @unique @map("verification_code")
+  nameOnCertificate String               @map("name_on_certificate")
+  issuedAt          DateTime             @default(now()) @map("issued_at") @db.Timestamptz
+  revokedAt         DateTime?            @map("revoked_at") @db.Timestamptz
+  revokedById       String?              @map("revoked_by_id") @db.Uuid
+  revokeReason      String?              @map("revoke_reason")
+  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  user              User                 @relation(fields: [userId], references: [id])
+  round             Round                @relation(fields: [roundId], references: [id], onDelete: Restrict)
+  revokedBy         User?                @relation("CertificateRevokedBy", fields: [revokedById], references: [id], onDelete: Restrict)
+  /// The template VERSION it was issued with (C1): a later edit makes a new version and never changes this one.
+  /// NULL for certificates issued before any template of the type was active.
+  templateId        String?              @map("template_id") @db.Uuid
+  template          CertificateTemplate? @relation(fields: [templateId], references: [id], onDelete: Restrict)
 
   @@unique([userId, type, roundId])
   @@index([userId])
   @@index([roundId, type])
   @@index([revokedById])
+  @@index([templateId])
   @@map("certificates")
+}
+
+/// C1: a certificate template, one row per VERSION (an edit makes the next version). Plain text in English and
+/// Bangla with {name}, {round} and {date}, never HTML (CHECKs). Immutable once made: only `active` changes, and one
+/// version per type is active (partial unique index). Certificates keep the version they were issued with.
+model CertificateTemplate {
+  id           String                         @id @default(uuid(7)) @db.Uuid
+  lineageId    String                         @map("lineage_id") @db.Uuid
+  version      Int
+  /// participation | promotion | winner (CHECK)
+  type         String
+  titleEn      String                         @map("title_en")
+  titleBn      String                         @map("title_bn")
+  bodyEn       String                         @map("body_en")
+  bodyBn       String                         @map("body_bn")
+  active       Boolean                        @default(false)
+  createdById  String                         @map("created_by_id") @db.Uuid
+  createdAt    DateTime                       @default(now()) @map("created_at") @db.Timestamptz
+  createdBy    User                           @relation("CertificateTemplateCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  signatories  CertificateTemplateSignatory[]
+  certificates Certificate[]
+
+  @@unique([lineageId, version])
+  @@index([createdById])
+  @@map("certificate_templates")
+}
+
+/// C1: a version's signatories, 1 to 3 left to right, immutable with their version.
+model CertificateTemplateSignatory {
+  templateId String              @map("template_id") @db.Uuid
+  position   Int
+  nameEn     String              @map("name_en")
+  nameBn     String              @map("name_bn")
+  titleEn    String              @map("title_en")
+  titleBn    String              @map("title_bn")
+  imageId    String?             @map("image_id") @db.Uuid
+  template   CertificateTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  image      CertificateImage?   @relation(fields: [imageId], references: [id], onDelete: Restrict)
+
+  @@id([templateId, position])
+  @@index([imageId])
+  @@map("certificate_template_signatories")
+}
+
+/// C1: a signature image, PNG or JPEG by magic bytes, at most 200 KB and 2000×1000 px, metadata stripped
+/// (common/image-upload.ts). Never changed; deleted only while no signatory uses it.
+model CertificateImage {
+  id           String                         @id @default(uuid(7)) @db.Uuid
+  contentType  String                         @map("content_type")
+  data         Bytes
+  width        Int
+  height       Int
+  byteSize     Int                            @map("byte_size")
+  sha256       String
+  uploadedById String                         @map("uploaded_by_id") @db.Uuid
+  createdAt    DateTime                       @default(now()) @map("created_at") @db.Timestamptz
+  uploadedBy   User                           @relation("CertificateImageUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
+  signatories  CertificateTemplateSignatory[]
+
+  @@index([uploadedById])
+  @@map("certificate_images")
 }
 
 // ───────────── Ambassadors, points, teams, tasks ─────────────
