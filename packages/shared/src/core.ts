@@ -1,5 +1,6 @@
 import type { Category, Role } from './index';
 import type { AdminUserQuery, AnnouncementItem, PageQuery } from './dashboard';
+import type { StudentNextExam } from './exam';
 import type { AnnouncementRecord, EntryStatus, RoundRecord, RoundType } from './records';
 
 /*
@@ -828,4 +829,32 @@ export interface CertificateCheck {
    * works and nobody reads it as genuine (lead, 2026-11-09).
    */
   demo: boolean;
+}
+
+// ───────────── Admit card (core A1; 06-API "Admit card"; the lead's approval of 2026-11-11) ─────────────
+
+/** Refusal codes in ApiError.details for the admit card. */
+export const ADMIT_CARD_REFUSALS = ['not_registered'] as const;
+export type AdmitCardRefusal = (typeof ADMIT_CARD_REFUSALS)[number];
+
+/**
+ * GET /admit-card: the caller's own admit card (প্রবেশপত্র), for a paid registration. The ONE page where the full
+ * participant ID shows (it is the login secret, with the email): behind a copy button, with a keep-private note.
+ * Anything made to be shown to others (the share image) uses `participantIdMasked`.
+ */
+export interface AdmitCard {
+  /** Canonical, e.g. ON48210937552; shown with formatParticipantId, copied as is. */
+  participantId: string;
+  /** maskParticipantId(participantId), masked on the server: the share image's only form of the ID. */
+  participantIdMasked: string;
+  /** From the ID's prefix: ON online, OF offline. */
+  mode: 'online' | 'offline';
+  name: string;
+  category: Category | null;
+  /** The class (grade level) label, as registered. */
+  gradeLevel: string | null;
+  fee: { amountMinor: number; currency: string; paidAt: string | null };
+  registeredAt: string;
+  /** exam's nextExamFor: the next round exam the student may sit; null while none is published ("to be announced"). */
+  exam: StudentNextExam | null;
 }
