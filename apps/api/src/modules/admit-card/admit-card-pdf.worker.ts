@@ -33,7 +33,9 @@ export type AdmitCardPdfOutcome = 'stored' | 'skipped';
  * Worker side of the admit card PDF (the `worker` service, never an API replica), one render at a time (CPU work,
  * ~0.1 s). Idempotent: it reads the card as it is now, renders it (the same card gives the same bytes) and writes
  * the version and the file to one key in a single MULTI, so a re-run or a retry overwrites safely. A user who is no
- * longer registered, blocked or not a student is skipped, not retried. Logs the job id and the size only.
+ * longer registered, blocked or not a student is skipped, not retried. Logs the job id and the size only. Any
+ * other error is logged here (errorLogFields) and rethrown with its NAME only, so BullMQ never keeps a library's
+ * message or stack as failedReason for the 7 days a failed job is kept (exam's review of #45).
  */
 @Injectable()
 export class AdmitCardPdfWorker implements OnModuleInit, OnApplicationShutdown {
@@ -78,31 +80,36 @@ export class AdmitCardPdfWorker implements OnModuleInit, OnApplicationShutdown {
     const { userId, locale } = job.data;
     if (!(ADMIT_CARD_PDF_LOCALES as readonly string[]).includes(locale))
       throw new UnrecoverableError('admit card pdf job: unknown locale');
-    let card: AdmitCard;
     try {
-      card = await this.admitCard.forUser(userId);
-    } catch (e) {
-      if (e instanceof NotFoundException || e instanceof ForbiddenException) {
-        this.logger.log({
-          msg: 'admit card pdf skipped: no admit card for this user now',
-          jobId: job.id,
-        });
-        return 'skipped';
+      let card: AdmitCard;
+      try {
+        card = await this.admitCard.forUser(userId);
+      } catch (e) {
+        if (e instanceof NotFoundException || e instanceof ForbiddenException) {
+          this.logger.log({
+            msg: 'admit card pdf skipped: no admit card for this user now',
+            jobId: job.id,
+          });
+          return 'skipped';
+        }
+        throw e;
       }
-      throw e;
+      const pdf = await renderAdmitCardPdf(card, locale);
+      const key = admitCardPdfKey(userId, locale);
+      const results = await this.cache
+        .multi()
+        .hset(key, 'v', admitCardPdfVersion(card, locale), 'pdf', Buffer.from(pdf))
+        .expire(key, ADMIT_CARD_PDF_TTL_SECONDS)
+        .exec();
+      const failed = results?.find(([err]) => err)?.[0];
+      if (!results || failed) throw failed ?? new Error('the cache write was discarded');
+      this.logger.log({ msg: 'admit card pdf stored', jobId: job.id, bytes: pdf.length });
+      return 'stored';
+    } catch (e) {
+      // The details go to this log only (errorLogFields); BullMQ keeps the name alone as failedReason.
+      this.logger.error({ msg: 'admit card pdf job error', jobId: job.id, ...errorLogFields(e) });
+      throw new Error(`admit card render failed: ${e instanceof Error ? e.name : typeof e}`);
     }
-    const pdf = await renderAdmitCardPdf(card, locale);
-    const key = admitCardPdfKey(userId, locale);
-    const results = await this.cache
-      .multi()
-      .hset(key, 'v', admitCardPdfVersion(card, locale), 'pdf', Buffer.from(pdf))
-      .expire(key, ADMIT_CARD_PDF_TTL_SECONDS)
-      .exec();
-    const failed = results?.find(([err]) => err)?.[0];
-    if (!results || failed)
-      throw failed ?? new Error('admit card pdf: the cache write was discarded');
-    this.logger.log({ msg: 'admit card pdf stored', jobId: job.id, bytes: pdf.length });
-    return 'stored';
   }
 
   async onApplicationShutdown(): Promise<void> {

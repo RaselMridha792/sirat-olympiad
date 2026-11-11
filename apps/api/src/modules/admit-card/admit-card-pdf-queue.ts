@@ -35,8 +35,21 @@ export const ADMIT_CARD_PDF_JOB_OPTIONS: JobsOptions = {
   removeOnFail: { age: 7 * 86_400 },
 };
 
-/** How long a rendered file stays in the cache Redis: long enough to download, short for a file with the full ID. */
-export const ADMIT_CARD_PDF_TTL_SECONDS = 600;
+/**
+ * How long a rendered file stays in the cache Redis: the page polls for at most ~45 s and downloads at once. Short,
+ * because the file holds the full ID, and because the cache Redis (allkeys-lru) also holds the sessions and the login
+ * limits: a burst of PDFs must never push those out (the lead, review of #45: 180 s, not 600).
+ */
+export const ADMIT_CARD_PDF_TTL_SECONDS = 180;
+
+/** A job in one of these states will still render: a later request waits for it instead of queueing another. */
+export const ADMIT_CARD_PDF_PENDING_STATES: ReadonlySet<string> = new Set([
+  'waiting',
+  'active',
+  'delayed',
+  'prioritized',
+  'waiting-children',
+]);
 
 /**
  * One cache-Redis hash per user and language, so a student holds at most one file per language: field `v` is the
@@ -59,8 +72,10 @@ export function admitCardPdfVersion(card: AdmitCard, locale: AdmitCardPdfLocale)
 }
 
 /**
- * The job's id: one job per user, language and minute, so a double click or a polling page queues one render. A
- * failed job keeps its id for 7 days (ops-check); asking again the next minute queues a fresh one.
+ * The job's id: one job per user, language and minute, so a double click queues one render. A request also skips
+ * the add while the previous minute's job is still pending (AdmitCardPdfQueue.render), so a re-click during a backlog
+ * never queues a second render. A failed job keeps its id for 7 days (ops-check); asking again later queues a fresh
+ * one.
  */
 export const admitCardPdfJobId = (data: AdmitCardPdfJobData, now: Date): string =>
   `admit-card-pdf.${data.userId}.${data.locale}.${Math.floor(now.getTime() / 60_000)}`;

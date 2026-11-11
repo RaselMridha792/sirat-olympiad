@@ -868,7 +868,7 @@ export type AdmitCardPdfLocale = (typeof ADMIT_CARD_PDF_LOCALES)[number];
 
 /**
  * POST /admit-card/pdf {locale}: the worker renders the caller's admit card PDF (a print copy: the full ID with the
- * keep-private line, never the email) and keeps it 10 minutes. `ready`: GET /admit-card/pdf?locale= returns the file
+ * keep-private line, never the email) and keeps it 3 minutes. `ready`: GET /admit-card/pdf?locale= returns the file
  * now; `pending`: ask GET again shortly (404 pdf_not_ready until it is made).
  */
 export interface AdmitCardPdfStatus {

@@ -25,10 +25,12 @@ One short entry per non-obvious technical or product decision. Newest first. For
   - the card holds one half of the login only (the lead, 11 Nov, correcting that day's "masked only");
   - the share image, the ambassador card, the dashboard home and everything public stay masked.
 - **Delivery through the queue** (DO 8):
-  - `POST /admit-card/pdf` queues a render. The worker (concurrency 1, ~0.1 s a card) writes the file to the cache Redis for 10 minutes: one hash per user and language, with the version it was made from.
+  - `POST /admit-card/pdf` queues a render. The worker (concurrency 1, ~0.1 s a card) writes the file to the cache Redis for 3 minutes (180 s, the lead's review: the cache Redis also holds the sessions and login limits, and a PDF burst must never evict them): one hash per user and language, with the version it was made from.
   - `GET` serves the file only while the card still matches that version, so no stale print is served after an edit or a re-issued ID.
   - Owner only, `no-store`, `admit-card.pdf` (no ID or name in the file name).
   - Idempotent: deterministic bytes (no dates; pdf-lib's names come from its seeded RNG), version and file written in one MULTI, 3 tries, listed in ops-check.
+  - Bounded under load (exam's review): a request skips the add while the previous minute's job is still pending, and a GET with no file answers from the cache Redis without a database read.
+  - A failed job keeps the error's name only; the worker logs the details through errorLogFields.
   - The version hash is kept only beside the file (which holds the ID itself), never in a job id or a log.
 - **The programme's name** moves to `@sirat/shared` `SITE_NAME`, read by the web's site facts and by the PDFs, so a print never differs from the site.
 
@@ -103,7 +105,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - `GET /registrations/me` (the dashboard, core's admit card);
    - the result page (`GET /registrations/current`), only for 24 hours after completion, because the reg cookie can outlive the visit on a shared computer;
    - a confirmation email at settlement (`registration-confirmed.<registrationId>`).
-   The email carries a credential on the owner's choice, and says to keep it private. The ID is never logged or written to the audit.
+     The email carries a credential on the owner's choice, and says to keep it private. The ID is never logged or written to the audit.
 5. **Next:**
    - P1b (built): the admin "issue a new ID", `POST /admin/users/:id/participant-id` with a reason. One transaction draws the new ID (same prefix), ends every session (A2's `endSessionsOf`), and audits the reason and the session count. The new ID goes only to the student's email; the admin never sees it, and nothing logs it. Access tokens already issued live out their TTL, as with "log out everywhere";
    - P2: the registration form without a password, shipped with A2's login;
@@ -212,7 +214,7 @@ Phase 2 of the demo data (exam's #22) adds demo tasks and demo rounds (101–110
     - secondary = green-800;
     - accent = gold-500 (new; `accent-strong` gold-800 for gold text);
     - shell = green-950.
-    The neutrals stay slate.
+      The neutrals stay slate.
   - On the deep-green shell, text and small icons are gold: green on it reads 3.3:1, gold 8.1:1.
   - A test fails on any raw colour or palette class outside tokens.css (`apps/web/src/design/no-raw-colours.test.ts`). The contrast test checks every brand pair.
 - **Why:** Rasel asked for the client's colours, controlled globally. The components already used only semantic tokens, so the dashboards follow without code changes.
@@ -258,6 +260,7 @@ Phase 2 of the demo data (exam's #22) adds demo tasks and demo rounds (101–110
   - workflows from fork PRs need approval.
 
   This supersedes A1 #18, "CI is advisory on main".
+
 - **Never push an old-history commit.** Before every push: `git merge-base --is-ancestor 7587f2f HEAD` must fail (an old-history commit is the ancestor).
 - **Commit emails are public now.**
 - **The VPS clone** fetches `origin` over https; no deploy key is needed. `bootstrap.sh` clones over https by default; an SSH `BOOTSTRAP_REPO_URL` still makes a read-only deploy key.
@@ -490,6 +493,7 @@ Phase 2 of the demo data (exam's #22) adds demo tasks and demo rounds (101–110
    - receipts not equal to the students' own submissions, or sweep submissions not equal to the students who left.
 
    No latency limit and no timed write window: a shared CI runner's timing proves nothing, and a wall-time assert would only add flakes.
+
 3. **The runner's fixtures now run in a container** that shares Postgres's network (the migrate image, with the clone's fixtures and `src` mounted read-only), as in the VPS kit. The docker job has no pnpm, and the local runner no longer publishes Postgres on 127.0.0.1.
 4. **Validated locally before the PR:** a build run, and then CI's path with no build (220 s). Each had 20 attempts submitted and scored, receipts equal to the own submissions, and the sweep taking exactly the leavers.
 
@@ -598,6 +602,7 @@ Phase 2 of the demo data (exam's #22) adds demo tasks and demo rounds (101–110
    - the submit with the room's backoff (2, 4, 8, 16, 30 s, the same request id), then the room must show the receipt.
 
    2 % close the tab instead, so the sweep is part of every run. Three shapes: `steady` (every start within 30 s), `surge` (starts ramp to a rate within 60 s) and `timeup` (every timer ends at `window_end`).
+
 2. **What passes:**
    - the k6 thresholds: API p95 < 500 ms and errors < 0.5 %, per endpoint too; every submit gets a receipt, and the room shows it;
    - zero lost submissions: every attempt submitted and scored; the students' own submissions equal the receipts k6 received; the sweep submitted exactly the students who left;
@@ -609,12 +614,12 @@ Phase 2 of the demo data (exam's #22) adds demo tasks and demo rounds (101–110
    - **k6 keeps the session cookies itself.** They carry `Secure` in production, and k6's cookie jar does not send them over plain http.
 4. **Results** (a 3-minute exam, 30 questions; p95 in ms; PC CPU over the run; peak CPU of one container, in % of one core):
 
-   | Run | API p95 | login | start | checkpoint | submit | Errors | Lost | Checkpoint writes | PC CPU (median / p90) | Peak api / postgres |
-   |---|---|---|---|---|---|---|---|---|---|---|
-   | steady 300 | 83 | 189 | 116 | 5 | 21 | 0 of 2,149 | 0 (293 receipts, 7 by the sweep) | 0 | 10 / 18 % | 28 / 10 % |
-   | surge 300 at 5/s | 39 | 59 | 39 | 8 | 33 | 0 of 2,127 | 0 (293, 6) | — | 20 / 41 % | 24 / 13 % |
-   | surge 500 at 10/s | **2,070** | **3,650** | **3,250** | 19 | 31 | 0 of 3,585 | 0 (486, 13) | — | 41 / **100 %** | 130 / 54 % |
-   | timeup 300 | 51 | 74 | 60 | 7 | 45 | 0 of 2,031 | 0 (296, 4) | — | 22 / 38 % | 26 / 20 % |
+   | Run               | API p95   | login     | start     | checkpoint | submit | Errors     | Lost                             | Checkpoint writes | PC CPU (median / p90) | Peak api / postgres |
+   | ----------------- | --------- | --------- | --------- | ---------- | ------ | ---------- | -------------------------------- | ----------------- | --------------------- | ------------------- |
+   | steady 300        | 83        | 189       | 116       | 5          | 21     | 0 of 2,149 | 0 (293 receipts, 7 by the sweep) | 0                 | 10 / 18 %             | 28 / 10 %           |
+   | surge 300 at 5/s  | 39        | 59        | 39        | 8          | 33     | 0 of 2,127 | 0 (293, 6)                       | —                 | 20 / 41 %             | 24 / 13 %           |
+   | surge 500 at 10/s | **2,070** | **3,650** | **3,250** | 19         | 31     | 0 of 3,585 | 0 (486, 13)                      | —                 | 41 / **100 %**        | 130 / 54 %          |
+   | timeup 300        | 51        | 74        | 60        | 7          | 45     | 0 of 2,031 | 0 (296, 4)                       | —                 | 22 / 38 %             | 26 / 20 %           |
 
 5. **Reading the numbers:**
    - **Correctness held in every run:** no lost submission, no error, and every student who left was submitted by the sweep. Checkpoints wrote nothing to Postgres.
@@ -826,6 +831,7 @@ Phase 2 of the demo data (exam's #22) adds demo tasks and demo rounds (101–110
    - `prisma migrate status` with nothing pending or failed. "Missing from the local migrations directory" is accepted, since after a rollback the database keeps newer migrations.
 
    A failure goes back to the live release with no build and says loudly that migrations stay applied. A failed first release turns maintenance on instead.
+
 7. **A rollback by hand warns about an exam window but does not refuse;** a deploy refuses within 30 minutes of one. A rollback is the incident fix.
 8. **Image pruning keeps the last 3 releases** (the live and the previous one always). It removes only `<sha>` tags this script recorded, never `latest` and never a volume.
 9. **The rehearsal runs on this machine's Docker** (the Q4 default without a VM).
@@ -854,7 +860,7 @@ Phase 2 of the demo data (exam's #22) adds demo tasks and demo rounds (101–110
 5. **Verified** under the same CPU hog and burst:
    - before: 180 × 500, 13 × 503 (the 25 s request timeout), 193 students without a checkout;
    - after: 0 × 500, 77 × 503 `SERVICE_BUSY`, all retried once and then 201, 0 students without a checkout; start p95 21 s → 14.6 s.
-   The k6 script retries a busy start as the wizard does.
+     The k6 script retries a busy start as the wizard does.
 6. **The shared-IP test** (300 starts from one IP, then the 301st refused) no longer depends on wall time. The first start goes alone, its throttler window gets a long TTL, and all 301 count in that one window. It passed with a 61 s pause added.
 7. **Not changed:** the transaction limits (answering 503 fast is better than waiting longer), and `connection_limit` (A2's L14 VPS tuning).
 8. **The shared-IP budget (lead; for the VPS k6 run and A2's L14):** a busy 503 still counts against the IP's start limit (300 a minute), and the wizard's one retry counts again. So a school behind one IP could reach 429 sooner during a database-busy burst.
@@ -908,7 +914,7 @@ Phase 2 of the demo data (exam's #22) adds demo tasks and demo rounds (101–110
    - a live page that shows the error state fails (until now such pages were only counted);
    - a soon page must show `ComingSoon` with HTTP 200;
    - a page without a row fails.
-   `api-down` adds the first soon page, when there is one.
+     `api-down` adds the first soon page, when there is one.
 6. **The proof while every page is live:**
    - **A fixture table in `launch.test.ts`:** a soon row, a live row and a missing row; the mock with and without the preview; the order check on a guarded page, a late guard and a missing one.
    - **A local run** with one page temporarily marked soon (in the PR).
@@ -938,7 +944,7 @@ Phase 2 of the demo data (exam's #22) adds demo tasks and demo rounds (101–110
    - the other tables and the append-only logs unchanged, apart from the one audit row;
    - the HTTP replay → 401 while the live session still refreshes;
    - two worker inits → one scheduler, and its job runs the cleanup.
-   Mutation checks (cutoff 30 → 28 days, OR → AND, no batch cap) each fail the unit and the integration tests.
+     Mutation checks (cutoff 30 → 28 days, OR → AND, no batch cap) each fail the unit and the integration tests.
 8. **Next:** payments' D6 payload scrub (abandoned attempts after 30 days) joins this job as a follow-up after L1 (lead).
 
 ## 2026-11-01 — Admin statistics on the admin home (core; lead's task and review)
@@ -976,6 +982,7 @@ Phase 2 of the demo data (exam's #22) adds demo tasks and demo rounds (101–110
    - **an archive:** nothing.
 
    The server still decides, and a refusal lists every reason it gave (publish can fail several checks at once).
+
 5. **No round field** until rounds have an API (core C6): a new exam has none.
 6. **A browser e2e, `e2e:exam-admin`,** run on the exam session's own throwaway database. Like `e2e:exam`, it is a by-hand stack test, not a CI step.
 
@@ -985,18 +992,18 @@ Phase 2 of the demo data (exam's #22) adds demo tasks and demo rounds (101–110
    - the register page, then `start`;
    - 80 % open the checkout and pay, then come back through the callback twice;
    - the result page polls on its own schedule until "completed".
-   It runs only against the fake PayStation, and stops if the checkout is anything else. No admin is needed; registration must already be open.
+     It runs only against the fake PayStation, and stops if the checkout is anything else. No admin is needed; registration must already be open.
 2. **Where:** throwaway containers (`sirat-pay-load-*`, `--rm`) with this worktree's API and worker. Nothing touched `sirat` or `sirat_pay`.
    - The PC (12 logical threads) is shared with the other sessions. These numbers are provisional regressions only.
    - DoD #17 closes only on the VPS (plan 8.1).
 3. **The rate:** 4 starts/s is 14,400 an hour, more than half of all 25k students in one hour. No registration peak is written down anywhere: if the owner expects a different launch burst, the VPS run uses that.
 4. **Results** (p95 in ms; errors are our API's, 4xx/5xx; "completed" = paid students who saw "completed" while the page polled):
 
-   | Run | API p95 | start | info | callback | current | Errors | Completed | Settle p95 | PC CPU (median / p90) |
-   |---|---|---|---|---|---|---|---|---|---|
-   | 2/s, 3 min | 132 | 240 | 14 | 48 | 37 | 0 of 2,088 | 325 of 325 | 2.3 s | 56 % average |
-   | 4/s, 5 min | 261 | **819** | 70 | 177 | 132 | 0 of 6,749 | 1,053 of 1,053 | 2.5 s | 78 / 98 % |
-   | 4/s, 3 min (repeat) | 231 | **756** | 63 | 159 | 82 | 0 of 4,008 | 620 of 620 | 2.5 s | 61 / 99.5 % |
+   | Run                 | API p95 | start   | info | callback | current | Errors     | Completed      | Settle p95 | PC CPU (median / p90) |
+   | ------------------- | ------- | ------- | ---- | -------- | ------- | ---------- | -------------- | ---------- | --------------------- |
+   | 2/s, 3 min          | 132     | 240     | 14   | 48       | 37      | 0 of 2,088 | 325 of 325     | 2.3 s      | 56 % average          |
+   | 4/s, 5 min          | 261     | **819** | 70   | 177      | 132     | 0 of 6,749 | 1,053 of 1,053 | 2.5 s      | 78 / 98 %             |
+   | 4/s, 3 min (repeat) | 231     | **756** | 63   | 159      | 82      | 0 of 4,008 | 620 of 620     | 2.5 s      | 61 / 99.5 %           |
 
 5. **Reading the numbers:**
    - The API as a whole passes in every run (p95 < 500 ms, errors 0 %).
@@ -1091,6 +1098,7 @@ Phase 2 of the demo data (exam's #22) adds demo tasks and demo rounds (101–110
    - the queue Redis memory.
 
    It touches no payments file.
+
 5. **Host facts in bash** (`scripts/monitor.sh`):
    - plain awk only (Ubuntu's mawk has no capture groups); nginx's access line is split on double quotes, so retried upstreams (`"0.002, 0.004"`) and nginx's own answers (`"-"`) parse;
    - memory from MemAvailable, so the page cache does not count;
@@ -1257,7 +1265,7 @@ Phase 2 of the demo data (exam's #22) adds demo tasks and demo rounds (101–110
    - another account has the number → 409;
    - an `open` registration attempt holds it (payments' table, read only) → 409;
    - the UNIQUE index decides when two claims meet; the loser gets the same 409.
-   All three answer `PHONE_REGISTERED` with the owner's text (`REGISTRATION_MESSAGES`), never a 500. The race is tested deterministically: another transaction takes the number and holds its commit for a second, so the PATCH passes its check, waits on the index and gets the violation. That test failed with the mapping removed; the earlier two-PATCH race did not.
+     All three answer `PHONE_REGISTERED` with the owner's text (`REGISTRATION_MESSAGES`), never a 500. The race is tested deterministically: another transaction takes the number and holds its commit for a second, so the PATCH passes its check, waits on the index and gets the violation. That test failed with the mapping removed; the earlier two-PATCH race did not.
 3. **Audit:** `user.profile_updated` with the changed field names only, never the values (core plan D8). Sending the same values changes nothing and writes no row.
 4. **Grade correction** (`POST /admin/users/:id/grade-level`, admin only, reason 3–200):
    - **One transaction:** re-read the admin, lock the student's row, refuse staff (`not_a_student`) and a student with any exam attempt (`has_attempt`; exam's table, read only), set the grade and the category from `grade_levels`, and write `user.grade_corrected` (both labels, the category, the reason).
@@ -1328,7 +1336,7 @@ Phase 2 of the demo data (exam's #22) adds demo tasks and demo rounds (101–110
    - which payments: active ones older than 2 minutes, and failed/expired ones that reached a checkout, until 48 h after their expiry;
    - back-off by `check_count`: 2, 2, 5, 10, then 30 minutes;
    - the claim (`last_checked_at`) is a short transaction with `SKIP LOCKED`.
-   These timings are constants in `verify/payment-timing.ts`, not env: tests pass their own clock.
+     These timings are constants in `verify/payment-timing.ts`, not env: tests pass their own clock.
 7. **A payment started on another PayStation account** (`gateway_account` differs from `PAYSTATION_ACCOUNT_LABEL`) is not asked about: the new account would answer 2001 and could expire a real payment. It is recorded (`account_mismatch`) for an admin.
 8. **Manual reconcile** (lead, 23:32; a technical safety valve, not a money-policy change: it only confirms what PayStation already reported). `POST /admin/payments/:id/reconcile { trxId, reason }`, admin only.
    - Allowed only when, under the row lock:
@@ -1442,7 +1450,7 @@ Phase 2 of the demo data (exam's #22) adds demo tasks and demo rounds (101–110
    - CI 4/4 green on the head commit;
    - the lead's own review;
    - the PR description lists every local check and ends with one line `Ready to merge: <sha>`.
-   A push after that means a new review.
+     A push after that means a new review.
 3. **Never during a live exam window.** The owner is told after each merge.
 4. **The owner can hold any PR, or merge one themselves.**
 
@@ -1457,7 +1465,7 @@ Phase 2 of the demo data (exam's #22) adds demo tasks and demo rounds (101–110
    - the exam checkpoint (every 60–120 s);
    - a signed-in payment status poll (every 2–10 s);
    - the web's `/auth/me` (cached 30 s).
-   A route's own `@Throttle()` tier still wins.
+     A route's own `@Throttle()` tier still wins.
 3. **Per client IP, for routes used without a session.** Thousands of students can share one IP: a school, or a Bangladeshi mobile operator's carrier-grade NAT.
    - **login:** no request limit at the API (unchanged). The login limiter counts only failures (10 per account+IP pair, 50 per account per hour, 100 per IP per minute), and nginx's auth zone caps the rate. Tested: 500 different accounts log in from one IP within a minute, none refused.
    - **refresh:** 15,000 per minute since L4 (was 3,000), above what nginx's api zone lets through in a minute (about 14,000), so behind nginx the API never refuses a renewal first. The refresh token is 256-bit, and reuse is detected.
@@ -1577,6 +1585,7 @@ Phase 2 of the demo data (exam's #22) adds demo tasks and demo rounds (101–110
    - the merchant id works only exactly as issued, with its "-".
 
    So the host allow-list in `payment.config.ts` stays as it is. The docs' curl example (no "-") and the Postman URL text (`api.…`) are wrong for the sandbox (`SANDBOX-CHECKLIST.md`).
+
 2. **`PAYSTATION_ENV` blank = payments disabled.** Other environments and sessions without these variables (A2's and the exam session's `.env` files, CI) still boot. Once it is set, every rule applies at boot: `PaymentsModule` builds the settings and a wrong value stops the app.
 3. **Boot log without any part of a credential.** It shows env, host, account label, invoice prefix, callback and IPN. The account label identifies the account, so the plan's "last 4 characters of the merchant id" is dropped.
 4. **Callback:** `http://localhost` is allowed outside production (a browser redirect on the same machine); https otherwise. **IPN URL:** required only in production; blank locally until a tunnel exists.
@@ -1796,15 +1805,15 @@ The client accepted the old dashboard UI, so student and admin screens were port
 Built against a requirements checklist (seven read-only agents over the docs, DECISIONS and `reference/`). Each protection has a test that fails without it (mutation-checked).
 
 1. **Limits** (all from env, `LOGIN_*`): 100 failed logins per minute per IP; 10 failures within 15 min lock an account+IP pair for 15 min, doubling on each repeat within 24 h up to 240 min; 50 failures per hour per account. Atomic Lua scripts in the cache Redis; emails appear in keys only as truncated SHA-256 hashes; IPv6 is keyed by its /64; fixed windows; a completed password reset bumps the account's key generation; 300 ms Redis timeout, fail-open (logged) like the global limiter.
-2. **Account limit refuses only IPs that failed on the account within the hour** (implementer choice, *approved by the owner on 2026-10-31 with two alert conditions; see "Account limit: only IPs that failed are refused, with alerts"*): refusing every IP let anyone lock a student out on purpose (two IPs reach 50 an hour through the pair locks; five re-lock right after a reset). An IP without failures (usually the student's own) still logs in; an attacker gets one guess per fresh IP.
+2. **Account limit refuses only IPs that failed on the account within the hour** (implementer choice, _approved by the owner on 2026-10-31 with two alert conditions; see "Account limit: only IPs that failed are refused, with alerts"_): refusing every IP let anyone lock a student out on purpose (two IPs reach 50 an hour through the pair locks; five re-lock right after a reset). An IP without failures (usually the student's own) still logs in; an attacker gets one guess per fresh IP.
 3. **Login:** limits are checked before the password, so a lock refuses even the right one (owner). An unknown email pays a dummy argon2 verify and is counted like a real one; every failure answers one 401 message; a refusal answers 429 with `Retry-After` and "…or reset your password". A blocked account learns it is blocked only after the right password (403). 204 with an empty body: no token and no personal data; the web reads `/auth/me`. The global request limiter skips login (only failures count).
 4. **Audit:** failed logins (reason only) and the start of a pair lock or of the account limit; never an email or an email hash. A successful login is not audited: the sessions row records it, and login stays at one read and one write (02-SYSTEM-DESIGN §3).
 5. **nginx:** the strict zone now covers only the credential endpoints (login, forgot/reset password, verify/resend email) as a flood guard sized for a school behind one IP (20 r/s, burst 200). `/me`, refresh and logout run on every page and moved to the general API zone.
 6. **change-password:** under the login limits (a stolen session must not become a way to guess the password); 400 for a wrong current password, not 401, which the web treats as logged out; the new password must pass the policy and differ. One transaction writes the hash, ends every session and retires outstanding reset links; then a fresh session for this device.
 7. **Email tokens:** 32 random bytes as base64url (43 characters), SHA-256 stored, lifetimes from env (24 h verify, 30 min reset); a conditional update makes each token single-use, and a new token retires the older ones of its type.
 8. **Emails:** one bilingual message (Bangla first). Links are `APP_URL/<page>#token=…`: the token never reaches a server, a log or a Referer header, and mail scanners that open links cannot use it up. Names are HTML-escaped. `APP_URL` is required in production.
-9. **Known risks (told to the owner):** students behind one school IP share the account+IP pair, so a classmate can lock a student out *at school*; a completed reset unlocks at once. A script on a school network can trip that IP's failure limit every minute. After a reset, a password change or a block, other devices keep a valid access token for up to 15 min (local JWT verification).
-10. **Not yet:** the web pages (reset, verify) and the web refresh flow, the first-admin CLI, and the cleanup job for old sessions and tokens. *(forgot/reset/verify/resend and the per-address caps: done, A2.1e; the first-admin CLI: done, see "First-admin CLI".)*
+9. **Known risks (told to the owner):** students behind one school IP share the account+IP pair, so a classmate can lock a student out _at school_; a completed reset unlocks at once. A script on a school network can trip that IP's failure limit every minute. After a reset, a password change or a block, other devices keep a valid access token for up to 15 min (local JWT verification).
+10. **Not yet:** the web pages (reset, verify) and the web refresh flow, the first-admin CLI, and the cleanup job for old sessions and tokens. _(forgot/reset/verify/resend and the per-address caps: done, A2.1e; the first-admin CLI: done, see "First-admin CLI".)_
 
 ## 2026-10-31 — Login limits and locks (owner)
 
@@ -1877,7 +1886,7 @@ Each gate has its own tests, and each test was checked to fail with its gate rem
 3. **Login limits:**
    - The per-IP limit counts **failed** logins only, about 60–100 per minute: all students of one school can share one IP.
    - Failures are counted per **account + IP pair**, so nobody can lock someone else's account on purpose. The whole account has a separate, higher limit.
-   - A correct password or a password reset unlocks. *(Superseded 2026-10-31: during a lock even the correct password is refused; see "Login limits and locks (owner)".)*
+   - A correct password or a password reset unlocks. _(Superseded 2026-10-31: during a lock even the correct password is refused; see "Login limits and locks (owner)".)_
 4. **A2.0 first:** the four logging/secret gates, each with its own test, before any auth code.
 
 ## 2026-10-30 — A1.1 deploy fixes (Claude; owner-scoped to four confirmed findings)
@@ -1889,10 +1898,11 @@ Each gate has its own tests, and each test was checked to fail with its gate rem
 5. In the same RUNBOOK deploy block: wait until every API replica is healthy before `healthcheck.sh`, recreate nginx when `infra/nginx` changed (single-file bind mounts never see files git replaced), and no `set -e` pasted into a login shell. RUNBOOK §7 now warns that the LOG_LEVEL step restarts every API replica at once (never during an exam).
 
 **Confirmed by the second review but outside the A1.1 scope (owner, 2026-10-30), with their likely home:**
-- *Hardening / `scripts/deploy.sh` (build step 9):* nginx never routes around a stalled replica (`max_fails=0` + `proxy_next_upstream error`, medium); ~5–10 s of 504s to a stopped replica's stale IP; sporadic POST 502 on reused idle upstream connections (align keep-alive timeouts); exported shell variables override `.env` for `migrate` only; the full-dependency audit can block hotfix deploys; `backup.sh` keeps every dump (retention); the green-CI deploy rule is not enforced by a script; RSC payloads (`text/x-component`) are not gzipped.
-- *A2 (rate limiter and tests):* the breaker also trips on event-loop stalls (*fixed: A2.0 #6*); a hung-but-connected cache Redis still costs some requests 300 ms and grows the ioredis queue; the AppModule wiring tests run against `DATABASE_URL` and the shared cache Redis instead of the `*_test` database (*database half fixed: A2.1b #8*).
-- *Next DB work:* the enum-literal catalog test misses unquoted type names and partial-index predicates; RESTRICT is asserted for only two foreign keys (Prisma's default for new optional relations is SET NULL).
-- *Fixtures (low):* the server marker can also be satisfied per session (URL `options`, or a SET left on a PgBouncer connection); the per-run confirmation is documented, not enforced.
+
+- _Hardening / `scripts/deploy.sh` (build step 9):_ nginx never routes around a stalled replica (`max_fails=0` + `proxy_next_upstream error`, medium); ~5–10 s of 504s to a stopped replica's stale IP; sporadic POST 502 on reused idle upstream connections (align keep-alive timeouts); exported shell variables override `.env` for `migrate` only; the full-dependency audit can block hotfix deploys; `backup.sh` keeps every dump (retention); the green-CI deploy rule is not enforced by a script; RSC payloads (`text/x-component`) are not gzipped.
+- _A2 (rate limiter and tests):_ the breaker also trips on event-loop stalls (_fixed: A2.0 #6_); a hung-but-connected cache Redis still costs some requests 300 ms and grows the ioredis queue; the AppModule wiring tests run against `DATABASE_URL` and the shared cache Redis instead of the `*_test` database (_database half fixed: A2.1b #8_).
+- _Next DB work:_ the enum-literal catalog test misses unquoted type names and partial-index predicates; RESTRICT is asserted for only two foreign keys (Prisma's default for new optional relations is SET NULL).
+- _Fixtures (low):_ the server marker can also be satisfied per session (URL `options`, or a SET left on a PgBouncer connection); the per-run confirmation is documented, not enforced.
 
 ## 2026-10-30 — A1 approval and PayStation official docs (owner)
 
@@ -1909,7 +1919,7 @@ Each gate has its own tests, and each test was checked to fail with its gate rem
    - The PDF and the Postman export stay local and git-ignored (shared sandbox credentials inside); `PAYSTATION-NOTES.md` is the committed, credential-free summary.
    - PayStation has **no refund API**: refunds are reconciled by an admin (RUNBOOK §11); what a refund does to a student's access is OPEN-QUESTIONS P8.
 
-## 2026-10-30 — Email provider (owner) *(superseded 2026-10-31: Amazon SES)*
+## 2026-10-30 — Email provider (owner) _(superseded 2026-10-31: Amazon SES)_
 
 1. **Resend** is the transactional email provider (OPEN-QUESTIONS #16 closed).
 2. The notification module keeps a **provider abstraction**: Resend in production, **Mailpit** in development. Until the sending domain is verified (SPF/DKIM/DMARC), all email code is tested against Mailpit only.
@@ -1925,7 +1935,7 @@ An independent review plus a verification workflow (experiments in throwaway con
 2. **Raw-SQL CHECKs on enum columns compare `col::text`.** An enum-literal CHECK made every Prisma enum-recreate migration fail and recorded it as failed (P3009, reproduced). A catalog test fails on any new offender.
 3. **`updated_at` has a DB default** (raw inserts work). Raw-SQL UPDATEs must set `updated_at = now()` themselves; raw inserts supply ids (`gen_random_uuid()` is acceptable). No DB-side uuidv7 default until Postgres 18.
 4. **`promo_code` is CITEXT** (unique case-insensitively, like email).
-5. **Seed semantics:** `settings` per key (new keys reach existing DBs, values never touched); `grade_levels`, `rank_thresholds`, `rounds` seeded once, only while empty. Later changes to those tables ship as SQL data migrations. If an admin deletes every row of one of them, the next deploy re-seeds it. *(Superseded by A1.1 #4: these tables ship as a data migration; the seed keeps settings only.)*
+5. **Seed semantics:** `settings` per key (new keys reach existing DBs, values never touched); `grade_levels`, `rank_thresholds`, `rounds` seeded once, only while empty. Later changes to those tables ship as SQL data migrations. If an admin deletes every row of one of them, the next deploy re-seeds it. _(Superseded by A1.1 #4: these tables ship as a data migration; the seed keeps settings only.)_
 6. **Grace period:** `exams.grace_seconds` is the only source. The `submit_grace_seconds` setting was removed; `SUBMIT_GRACE_SECONDS_DEFAULT` only pre-fills the admin exam form. (The dev DB still holds the old key from the first seed; harmless, never deployed.)
 7. **Dev fixtures guard:** the deciding layer is a server marker: Postgres started by `infra/docker-compose.dev.yml` carries `sirat.environment=development`, and fixtures refuse any server without it (an SSH tunnel to production has no marker). URLs with a `host`/`hostaddr` query key are refused (Prisma lets `?host=` replace the host). The confirmation is set per run, never pre-filled. Root `.env.example` defaults `NODE_ENV=production` and the api container pins it.
 8. **Rate limiter:** 600 requests/min per route and client IP, no penalty block (`blockDuration: 0`), `/api/health` never limited. Fails open at once while the cache Redis is not ready, plus a 2 s breaker after a timeout. The Lua script restarts counting when a block starts and only gets integer ttl/block values.
@@ -1943,11 +1953,12 @@ An independent review plus a verification workflow (experiments in throwaway con
 20. **Scripts:** backups are owner-only and verified by a full read before they get their final name; restore reads the whole dump before touching the DB and runs in one transaction; `healthcheck.sh` exits non-zero on failure; scripts are executable in git.
 
 **Deferred, with owners:**
-- *Start of A2 (gate before the first auth/users handler):* the exception filter must not log Prisma error messages (they contain query arguments); request logs without query strings and headers; reject placeholder or low-entropy JWT secrets; map body-parser errors (413/400/415) to 4xx instead of 500 (*these four: done, A2.0 #1–#4*); DB `statement_timeout`/`lock_timeout` for the app and a request timeout below nginx's 30 s; append-only trigger for `audit_logs` (*these: done, A2.1a #1–#3*).
-- *Exam engine / ambassador / jury modules:* append-only triggers for `submissions`, `point_ledger`, `jury_scores` with their modules.
-- *Leaderboard (A4):* query must be `WHERE exam_id = $1 AND score IS NOT NULL ORDER BY score DESC, time_taken_seconds ASC` (uses the index without a sort; do not add `NULLS LAST`).
-- *Phase C:* a trigger so a registration can only reference a `paid` payment.
-- *Hardening (build step 9):* non-superuser runtime DB role (OPEN-QUESTIONS #27); restore into a fresh database instead of `--clean`; `scripts/deploy.sh` with release tags.
+
+- _Start of A2 (gate before the first auth/users handler):_ the exception filter must not log Prisma error messages (they contain query arguments); request logs without query strings and headers; reject placeholder or low-entropy JWT secrets; map body-parser errors (413/400/415) to 4xx instead of 500 (_these four: done, A2.0 #1–#4_); DB `statement_timeout`/`lock_timeout` for the app and a request timeout below nginx's 30 s; append-only trigger for `audit_logs` (_these: done, A2.1a #1–#3_).
+- _Exam engine / ambassador / jury modules:_ append-only triggers for `submissions`, `point_ledger`, `jury_scores` with their modules.
+- _Leaderboard (A4):_ query must be `WHERE exam_id = $1 AND score IS NOT NULL ORDER BY score DESC, time_taken_seconds ASC` (uses the index without a sort; do not add `NULLS LAST`).
+- _Phase C:_ a trigger so a registration can only reference a `paid` payment.
+- _Hardening (build step 9):_ non-superuser runtime DB role (OPEN-QUESTIONS #27); restore into a fresh database instead of `--clean`; `scripts/deploy.sh` with release tags.
 
 ## 2026-10-30 — PayStation sources and rules (owner)
 
@@ -1955,12 +1966,12 @@ An independent review plus a verification workflow (experiments in throwaway con
 2. **RULEBOOK §8 endpoint names stay** (`/initiate-payment`, `/transaction-status`): the Postman collection confirms them. §8 is checked against the PDF when it arrives; no change before that.
 3. **`PAYSTATION_ENV=sandbox|live`**; the API refuses to run with live credentials unless `NODE_ENV=production`. Implemented with the PayStation client (after A1 and after the PDF).
 4. **`invoice_number` ≤ 20 characters and unique** (never reused). What the sandbox does with longer values is test S2 in `docs/paystation/SANDBOX-CHECKLIST.md`.
-5. **Callback parameters, IPN and transaction-status v2 stay open** (OPEN-QUESTIONS P1–P3) until the PDF confirms them. *(Superseded 2026-10-30: the official docs confirm the IPN and v2; callback parameters stay open as P1.)* Paid is decided only from the transaction-status response (status success + amount + invoice match), never from the callback.
+5. **Callback parameters, IPN and transaction-status v2 stay open** (OPEN-QUESTIONS P1–P3) until the PDF confirms them. _(Superseded 2026-10-30: the official docs confirm the IPN and v2; callback parameters stay open as P1.)_ Paid is decided only from the transaction-status response (status success + amount + invoice match), never from the callback.
 6. The Postman export holds credentials, so `docs/paystation/*.json` is git-ignored; only a redacted `*.redacted.json` may be committed.
 
 ## 2026-10-30 — Owner answers before Phase A (owner)
 
-1. **Phase A scope = P0 backend only:** auth, exam engine, leaderboard/results, admin core. Rounds/jury/certificates/ambassador come later; registration + payment is Phase C. Note: the Phase A order line in `10-BUILD-PLAN.md` still lists payments and rounds/ambassador; this answer is newer and takes precedence until the owner updates that doc. *(Superseded 2026-10-30: follow the Phase A order in `10-BUILD-PLAN.md`; payments come right after auth.)*
+1. **Phase A scope = P0 backend only:** auth, exam engine, leaderboard/results, admin core. Rounds/jury/certificates/ambassador come later; registration + payment is Phase C. Note: the Phase A order line in `10-BUILD-PLAN.md` still lists payments and rounds/ambassador; this answer is newer and takes precedence until the owner updates that doc. _(Superseded 2026-10-30: follow the Phase A order in `10-BUILD-PLAN.md`; payments come right after auth.)_
 2. **Test users before Phase C:** dev/test-only seed fixture (option a), guarded so it cannot run in production (see A1 #4).
 3. **Git:** local commits and pushes to `origin main` (github.com/RaselMridha792/sirat-olympiad). Author/committer is the owner only; no AI co-author trailers. Never force-push without asking.
 4. **Dev-only compose override** binding data services to 127.0.0.1 is approved (never used on the VPS).
@@ -1975,7 +1986,7 @@ An independent review plus a verification workflow (experiments in throwaway con
 3. **Timestamps:** every table has `created_at`; every mutable table has `updated_at`. Append-only tables (`audit_logs`, `point_ledger`, `jury_scores`, `submissions`) have `created_at` only. `audit_logs.actor_id` is deliberately not a foreign key so the audit trail outlives the user row. All other links are real FKs, each with an index.
 4. **Dev fixtures guard (4 layers):** `NODE_ENV` must be development/test, `ALLOW_DEV_FIXTURES=yes-this-is-not-production`, the DB host must be local (compose/production hostnames are refused), and `apps/api/prisma/fixtures` is excluded from every Docker image. Fixture users use the reserved `.invalid` TLD.
 5. **Raw-SQL CHECKs** beyond the three in 05-DATABASE: `questions_per_attempt > 0`, `grace_seconds >= 0`, and `status = 'paid'` requires `trx_id` and `paid_at`. Prisma ignores CHECKs when diffing (verified by the drift check), so later migrations do not drop them.
-6. **Config seed is insert-only** (`createMany` + `skipDuplicates`) and runs on every deploy in the `migrate` job; it never overwrites admin-edited values. Registration starts closed (`registration_open=false`) so the placeholder fee (0) can never be charged. To retire a grade level, do not delete it (the seed would re-add it); add an active flag when needed. *(Superseded by A1.1 #4.)* `package.json#prisma.seed` is not used (deprecated in Prisma 7); run `pnpm --filter @sirat/api db:seed`.
+6. **Config seed is insert-only** (`createMany` + `skipDuplicates`) and runs on every deploy in the `migrate` job; it never overwrites admin-edited values. Registration starts closed (`registration_open=false`) so the placeholder fee (0) can never be charged. To retire a grade level, do not delete it (the seed would re-add it); add an active flag when needed. _(Superseded by A1.1 #4.)_ `package.json#prisma.seed` is not used (deprecated in Prisma 7); run `pnpm --filter @sirat/api db:seed`.
 7. **Integration tests are separate** (`pnpm --filter @sirat/api test:int`, needs Postgres + Redis) and run only against a database whose name ends in `_test`. `pnpm test` stays unit-only. CI runs both.
 8. **Rate limiter:** own Redis storage (one atomic Lua script, no extra dependency) behind a global `ThrottlerGuard`; counters are shared by all replicas. **Fails open** if Redis does not answer within 300 ms (warning logged at most every 30 s), because a cache outage must not take the API down on exam day; Nginx `limit_req` still applies. Default 120 req/min per client IP is a placeholder: A2 adds per-route tiers and per-user keys (schools share one NAT IP), and real client IPs need the Cloudflare `set_real_ip_from` list in Nginx (still TODO).
 9. **`/api/ready`** checks Postgres (through PgBouncer), cache Redis and queue Redis in parallel, each with a 2 s timeout; failures are logged by name, clients get a generic 503.

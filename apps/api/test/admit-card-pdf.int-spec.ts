@@ -10,12 +10,17 @@ import type { PrismaClient } from '@prisma/client';
 import { type AdmitCardPdfStatus, formatParticipantId } from '@sirat/shared';
 import type Redis from 'ioredis';
 import type { EnvVars } from '../src/config/env';
-import { admitCardPdfKey } from '../src/modules/admit-card/admit-card-pdf-queue';
+import {
+  admitCardPdfJobId,
+  admitCardPdfKey,
+  ADMIT_CARD_PDF_TTL_SECONDS,
+} from '../src/modules/admit-card/admit-card-pdf-queue';
+import { AdmitCardPdfQueue } from '../src/modules/admit-card/admit-card-pdf.queue';
 import { AdmitCardPdfWorker } from '../src/modules/admit-card/admit-card-pdf.worker';
 import { AdmitCardService } from '../src/modules/admit-card/admit-card.service';
 import { actualTexts } from '../src/modules/pdf/pdf-inspect';
 import type { PrismaService } from '../src/prisma/prisma.service';
-import { REDIS_CACHE } from '../src/redis/redis.module';
+import { REDIS_CACHE, REDIS_QUEUE } from '../src/redis/redis.module';
 import { bootCoreApp, call, registeredStudent, sessionFor, type CoreApp } from './core-helpers';
 import { testPrisma } from './helpers';
 
@@ -143,7 +148,9 @@ describe('the admit card PDF', () => {
     expect(first && second && first.equals(second)).toBe(true);
     const ttl = await cache.ttl(key);
     expect(ttl).toBeGreaterThan(0);
-    expect(ttl).toBeLessThanOrEqual(600);
+    // 3 minutes: the cache Redis also holds the sessions and login limits (the lead's review of #45).
+    expect(ADMIT_CARD_PDF_TTL_SECONDS).toBe(180);
+    expect(ttl).toBeLessThanOrEqual(180);
     expect((await download(me.cookie, 'en')).status).toBe(200);
     // The other language is its own file.
     expect((await download(me.cookie, 'bn')).status).toBe(404);
@@ -168,6 +175,56 @@ describe('the admit card PDF', () => {
     await prisma.$executeRaw`
       UPDATE "registrations" SET "participant_id" = gen_participant_id('ON') WHERE "id" = ${me.registration.id}::uuid`;
     expect((await download(me.cookie, 'en')).status).toBe(404);
+  });
+
+  it('answers a poll with no file from the cache Redis alone: no database read', async () => {
+    const me = await registered('Poll Student');
+    const before = env.appPrisma.statements.length;
+    const res = await download(me.cookie);
+    expect(res.status).toBe(404);
+    expect(details(JSON.parse(Buffer.from(res.bytes).toString('utf8')))).toEqual(['pdf_not_ready']);
+    // Not one statement: the session's own key is read in the cache Redis, and nothing else.
+    expect(env.appPrisma.statements.slice(before)).toEqual([]);
+
+    // With a file there, the card IS re-read (and must still match) before the file is served.
+    await worker.process({
+      id: 'poll',
+      name: 'render',
+      data: { userId: me.user.id, locale: 'bn' },
+    });
+    const reads = env.appPrisma.statements.length;
+    expect((await download(me.cookie)).status).toBe(200);
+    expect(env.appPrisma.statements.length).toBeGreaterThan(reads);
+  });
+
+  it("never queues a second render while the previous minute's job is still pending", async () => {
+    // A queue of its own with no worker on it: its jobs stay waiting.
+    const name = `admit-card-pdf-idle-${randomUUID().slice(0, 8)}`;
+    const config = {
+      get: (key: string) => (key === 'ADMIT_CARD_PDF_QUEUE_NAME' ? name : undefined),
+    } as unknown as ConfigService<EnvVars, true>;
+    const idle = new AdmitCardPdfQueue(env.app.get(REDIS_QUEUE), config);
+    const { Queue } = await import('bullmq');
+    const inspect = new Queue(name, { connection: env.app.get(REDIS_QUEUE) });
+    try {
+      const data = { userId: randomUUID(), locale: 'bn' as const };
+      const t0 = new Date('2026-11-25T10:00:30Z');
+      const t1 = new Date(t0.getTime() + 60_000);
+      expect(await idle.render(data, t0)).toBe(true);
+      expect(await inspect.getJobState(admitCardPdfJobId(data, t0))).toBe('waiting');
+      // A re-click in the next minute: the first job still waits, so nothing new is queued.
+      expect(await idle.render(data, t1)).toBe(true);
+      expect(await inspect.getJob(admitCardPdfJobId(data, t1))).toBeUndefined();
+      expect(await inspect.getWaitingCount()).toBe(1);
+      // Once that job is gone (done or failed), the next request queues a fresh render.
+      await (await inspect.getJob(admitCardPdfJobId(data, t0)))?.remove();
+      expect(await idle.render(data, t1)).toBe(true);
+      expect(await inspect.getJobState(admitCardPdfJobId(data, t1))).toBe('waiting');
+    } finally {
+      await inspect.obliterate({ force: true });
+      await inspect.close();
+      await idle.onApplicationShutdown();
+    }
   });
 
   it('skips a user who has no admit card now, without a retry or a file', async () => {

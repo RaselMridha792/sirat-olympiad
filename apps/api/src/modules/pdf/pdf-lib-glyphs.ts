@@ -5,7 +5,7 @@ import type { PDFFont } from 'pdf-lib';
  * Drawing a glyph BY ID needs pdf-lib internals: its public API draws text by code point through fontkit's own
  * layout, which cannot shape Bangla. HarfBuzz gives glyph ids; this adds each one to the font's subset the way
  * pdf-lib's CustomFontSubsetEmbedder.encodeText does (pdf-lib 1.17.1). The shape is checked before every use and a
- * change fails loudly (PdfLibInternalsChanged), never as a wrong PDF; pdf-lib-glyphs.spec.ts pins the versions.
+ * change fails loudly (PdfLibInternalsChanged), never as a wrong PDF; pdf.spec.ts pins the versions.
  */
 export const PDF_LIB_VERSION = '1.17.1';
 

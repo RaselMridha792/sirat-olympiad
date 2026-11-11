@@ -18,8 +18,9 @@ const CACHE_TIMEOUT_MS = 2_000;
 
 /**
  * The admit card PDF, API side (core A2; 06-API "Admit card"). The caller's own card only (the user comes from the
- * session, re-read by AdmitCardService on every call). The worker renders it; the file waits in the cache Redis for
- * 10 minutes under the card's version, and a file is served only while the card still matches that version.
+ * session, re-read by AdmitCardService before anything is queued or served). The worker renders it; the file waits
+ * in the cache Redis for 3 minutes under the card's version, and a file is served only while the card still matches
+ * that version.
  */
 @Injectable()
 export class AdmitCardPdfService {
@@ -34,26 +35,31 @@ export class AdmitCardPdfService {
   /** `ready` when the file for the card as it is now is waiting; otherwise queues the render (`pending`). */
   async request(userId: string, locale: AdmitCardPdfLocale): Promise<AdmitCardPdfStatus> {
     const card = await this.admitCard.forUser(userId);
-    if (await this.stored(userId, locale, admitCardPdfVersion(card, locale)))
-      return { status: 'ready' };
+    const cached = await this.cached(userId, locale);
+    if (cached?.version === admitCardPdfVersion(card, locale)) return { status: 'ready' };
     if (!(await this.queue.render({ userId, locale })))
       throw new ServiceUnavailableException(['pdf_unavailable']);
     return { status: 'pending' };
   }
 
-  /** The file, or 404 pdf_not_ready (not made yet, expired, or made from details that have changed since). */
+  /**
+   * The file, or 404 pdf_not_ready (not made yet, expired, or made from details that have changed since). The page
+   * polls this: while there is no file (the key is the session user's own), it answers without a database read; a
+   * file is served only after the account and the card are re-read and match its version (exam's review of #45).
+   */
   async file(userId: string, locale: AdmitCardPdfLocale): Promise<Buffer> {
+    const cached = await this.cached(userId, locale);
+    if (!cached) throw new NotFoundException(['pdf_not_ready']);
     const card = await this.admitCard.forUser(userId);
-    const pdf = await this.stored(userId, locale, admitCardPdfVersion(card, locale));
-    if (!pdf) throw new NotFoundException(['pdf_not_ready']);
-    return pdf;
+    if (cached.version !== admitCardPdfVersion(card, locale))
+      throw new NotFoundException(['pdf_not_ready']);
+    return cached.pdf;
   }
 
-  private async stored(
+  private async cached(
     userId: string,
     locale: AdmitCardPdfLocale,
-    version: string,
-  ): Promise<Buffer | null> {
+  ): Promise<{ version: string; pdf: Buffer } | null> {
     let fields: Array<Buffer | null>;
     try {
       fields = await withTimeout(
@@ -64,7 +70,7 @@ export class AdmitCardPdfService {
       this.logger.error({ msg: 'admit card pdf: cache Redis unavailable', ...errorLogFields(e) });
       throw new ServiceUnavailableException(['pdf_unavailable']);
     }
-    const [stored, pdf] = fields;
-    return stored && pdf && stored.toString('latin1') === version ? pdf : null;
+    const [version, pdf] = fields;
+    return version && pdf ? { version: version.toString('latin1'), pdf } : null;
   }
 }
