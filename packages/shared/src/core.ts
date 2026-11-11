@@ -833,8 +833,11 @@ export interface CertificateCheck {
 
 // ───────────── Admit card (core A1; 06-API "Admit card"; the lead's approval of 2026-11-11) ─────────────
 
-/** Refusal codes in ApiError.details for the admit card. */
-export const ADMIT_CARD_REFUSALS = ['not_registered'] as const;
+/**
+ * Refusal codes in ApiError.details for the admit card: no paid registration (404); the PDF not made yet or expired
+ * (404, ask again); the PDF service unreachable (503).
+ */
+export const ADMIT_CARD_REFUSALS = ['not_registered', 'pdf_not_ready', 'pdf_unavailable'] as const;
 export type AdmitCardRefusal = (typeof ADMIT_CARD_REFUSALS)[number];
 
 /**
@@ -857,4 +860,17 @@ export interface AdmitCard {
   registeredAt: string;
   /** exam's nextExamFor: the next round exam the student may sit; null while none is published ("to be announced"). */
   exam: StudentNextExam | null;
+}
+
+/** The admit card PDF's languages (core A2): the page's own locale. */
+export const ADMIT_CARD_PDF_LOCALES = ['bn', 'en'] as const;
+export type AdmitCardPdfLocale = (typeof ADMIT_CARD_PDF_LOCALES)[number];
+
+/**
+ * POST /admit-card/pdf {locale}: the worker renders the caller's admit card PDF (a print copy: the full ID with the
+ * keep-private line, never the email) and keeps it 10 minutes. `ready`: GET /admit-card/pdf?locale= returns the file
+ * now; `pending`: ask GET again shortly (404 pdf_not_ready until it is made).
+ */
+export interface AdmitCardPdfStatus {
+  status: 'ready' | 'pending';
 }

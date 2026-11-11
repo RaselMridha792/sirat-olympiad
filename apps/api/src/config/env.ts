@@ -125,6 +125,8 @@ export class EnvVars {
   @IsOptional() @Matches(/^[A-Za-z0-9_-]{1,64}$/) AMBASSADOR_QUEUE_NAME?: string;
   /** Tests only: a run's own certificates queue (the issue job). Blank: "certificates". */
   @IsOptional() @Matches(/^[A-Za-z0-9_-]{1,64}$/) CERTIFICATES_QUEUE_NAME?: string;
+  /** Tests only: a run's own admit card PDF queue (the render job). Blank: "admit-card-pdf". */
+  @IsOptional() @Matches(/^[A-Za-z0-9_-]{1,64}$/) ADMIT_CARD_PDF_QUEUE_NAME?: string;
   /** Tests only: a run's own demo data queue (load and remove). Blank: "demo". */
   @IsOptional() @Matches(/^[A-Za-z0-9_-]{1,64}$/) DEMO_QUEUE_NAME?: string;
 }

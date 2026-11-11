@@ -26,6 +26,7 @@ import { AuditService } from '../modules/audit/audit.service';
 import { SecurityAlerts } from '../modules/audit/security-alerts.service';
 import { EmailQueue } from '../modules/notifications/email-queue.service';
 import { AMBASSADOR_QUEUE } from '../modules/ambassadors/points-queue';
+import { ADMIT_CARD_PDF_QUEUE } from '../modules/admit-card/admit-card-pdf-queue';
 import { CERTIFICATES_QUEUE } from '../modules/certificates/certificates-queue';
 import { HOUSEKEEPING_QUEUE } from '../modules/housekeeping/housekeeping-queue';
 import { EMAIL_QUEUE } from '../modules/notifications/email.types';
@@ -160,6 +161,7 @@ export function queueSpecs(env: OpsEnv): QueueSpec[] {
     { name: 'housekeeping', queueName: env.HOUSEKEEPING_QUEUE_NAME || HOUSEKEEPING_QUEUE },
     { name: 'ambassador', queueName: env.AMBASSADOR_QUEUE_NAME || AMBASSADOR_QUEUE },
     { name: 'certificates', queueName: env.CERTIFICATES_QUEUE_NAME || CERTIFICATES_QUEUE },
+    { name: 'admit-card-pdf', queueName: env.ADMIT_CARD_PDF_QUEUE_NAME || ADMIT_CARD_PDF_QUEUE },
   ];
 }
 
