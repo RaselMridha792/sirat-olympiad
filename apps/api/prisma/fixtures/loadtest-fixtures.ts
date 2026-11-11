@@ -13,13 +13,14 @@
  *                                                   past their time, and the database's write counter (for the
  *                                                   "no writes while students only checkpoint" check)
  *
- * The password comes from FIXTURE_PASSWORD (never printed) and is hashed with the API's own argon2 parameters, so a
- * login costs what it costs in production and never re-hashes. One hash serves every load student.
+ * Load students log in like every student, with email + participant ID (owner, 2026-11-10), and have no password.
+ * Their IDs derive from the load secret FIXTURE_PASSWORD (never printed), so k6 computes the same ones
+ * (loadtests/load-id.js, PASSWORD there) and nobody without the secret can guess them on a staging stack.
  * A new exam per run: one attempt per student per exam, and submissions cannot be deleted (by design).
  */
-import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { PaymentStatus, Prisma, PrismaClient, RegistrationAttemptStatus } from '@prisma/client';
-import { PasswordService } from '../../src/modules/auth/password.service';
+import { dammDigit } from '@sirat/shared';
 import { assertDevServerMarker, assertFixturesAllowed } from './guard';
 
 export const LOAD_EMAIL_DOMAIN = '@loadtest.invalid';
@@ -36,15 +37,23 @@ export const USERS_MAX = 20_000;
 
 export type UsersResult = { created: number; skipped: number };
 
-/** With the API's own argon2 parameters: a login then costs what it costs in production and never re-hashes. */
-export const hashLoadPassword = (password: string): Promise<string> =>
-  new PasswordService().hash(password);
+/**
+ * A load student's participant ID, from the load secret: the student's number in 5 digits (USERS_MAX is under 100,000,
+ * so two load students never share one), 5 digits of HMAC-SHA256(secret, "load<n>"), then the Damm check digit.
+ * loadtests/load-id.js computes the same in k6; keep both in step. A real ID is drawn at random by the database.
+ */
+export function loadParticipantId(secret: string, n: number): string {
+  const mac = createHmac('sha256', secret).update(`load${n}`).digest('hex');
+  const digits =
+    String(n).padStart(5, '0') + String(parseInt(mac.slice(0, 8), 16) % 100_000).padStart(5, '0');
+  return `ON${digits}${dammDigit(digits)}`;
+}
 
 /** Creates load1..loadN (verified, paid registration); existing ones are skipped. Guards checked by the caller. */
 export async function ensureLoadUsers(
   prisma: PrismaClient,
   count: number,
-  passwordHash: string,
+  secret: string,
 ): Promise<UsersResult> {
   const grades = await prisma.gradeLevel.findMany({
     where: { sortOrder: { in: [...GRADE_SORT_ORDERS] } },
@@ -80,7 +89,6 @@ export async function ensureLoadUsers(
         data: rows.map((r) => ({
           id: r.userId,
           email: loadEmail(r.n),
-          passwordHash,
           name: `Load Student ${r.n}`,
           phone: loadPhone(r.n),
           gradeLevelId: r.grade.id,
@@ -129,7 +137,11 @@ export async function ensureLoadUsers(
             "paid_at" = ${now}
         WHERE "id" = ANY(${ids}::uuid[])`;
       await tx.registration.createMany({
-        data: rows.map((r) => ({ userId: r.userId, paymentId: r.paymentId })),
+        data: rows.map((r) => ({
+          userId: r.userId,
+          paymentId: r.paymentId,
+          participantId: loadParticipantId(secret, r.n),
+        })),
       });
     });
     result.created += todo.length;
@@ -243,7 +255,7 @@ async function main(): Promise<void> {
     assertDevServerMarker(row?.marker);
     if (users) {
       const started = Date.now();
-      const result = await ensureLoadUsers(prisma, users, await hashLoadPassword(password));
+      const result = await ensureLoadUsers(prisma, users, password);
       console.log(
         JSON.stringify({ msg: 'load students', ...result, seconds: (Date.now() - started) / 1000 }),
       );

@@ -54,7 +54,7 @@ describe('create-admin CLI', () => {
     expect(user).toMatchObject({ email: address, name: 'Ops Admin', role: 'admin' });
     expect(user.emailVerifiedAt).not.toBeNull();
     expect(user.passwordHash).toMatch(/^\$argon2id\$/);
-    expect(await new PasswordService().verify(user.passwordHash, PASSWORD)).toBe(true);
+    expect(await new PasswordService().verify(user.passwordHash ?? '', PASSWORD)).toBe(true);
     const audit = await prisma.auditLog.findFirstOrThrow({
       where: { action: 'admin.created', entityId: id },
     });

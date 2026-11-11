@@ -1,6 +1,7 @@
 /**
  * Auth emails: one bilingual message each, Bangla first, then English (no per-user language is stored yet). All
- * copy lives here. User-supplied values are HTML-escaped; no email ever contains a password (RULEBOOK §18).
+ * copy lives here. User-supplied values are HTML-escaped; no email ever contains a password (RULEBOOK §18). The
+ * participant ID is the one credential an email carries, and only to the account's own address (owner, 2026-11-10).
  * Links carry the token after `#`, so it never reaches a server, a log or a Referer header, and the web page
  * POSTs it on a button press (mail scanners that open links cannot use it up).
  */
@@ -93,5 +94,24 @@ export function resetPasswordMessage(name: string, link: string, minutes: number
     ignoreEn: 'If you did not ask for this, do nothing: your password stays as it is.',
     button: 'পাসওয়ার্ড নতুন করুন / Reset password',
     link,
+  });
+}
+
+/**
+ * "Forgot my ID" (and forgot-password for a student or ambassador): the participant ID, to the account's own address
+ * only (owner 2026-11-10; docs/plans/PARTICIPANT-LOGIN-PLAN.md §3). `id` is the display form ("ON 4821 0937 552").
+ * The link is the login page; it carries nothing secret.
+ */
+export function participantIdMessage(name: string, id: string, loginLink: string): AuthEmail {
+  return render({
+    subject: 'Sirat Leadership Olympiad: আপনার পার্টিসিপ্যান্ট আইডি / Your participant ID',
+    greetingBn: `প্রিয় ${name},`,
+    bodyBn: `আপনার পার্টিসিপ্যান্ট আইডি: ${id}। লগইন করতে আপনার ইমেইল আর এই আইডি দিন। আইডিটি কারও সঙ্গে শেয়ার করবেন না।`,
+    ignoreBn: 'আপনি এটা না চেয়ে থাকলে এই ইমেইলটি উপেক্ষা করুন; আপনার আইডি বদলায়নি।',
+    greetingEn: `Dear ${name},`,
+    bodyEn: `Your participant ID is ${id}. To log in, enter your email and this ID. Do not share the ID with anyone.`,
+    ignoreEn: 'If you did not ask for this, you can ignore this email: your ID has not changed.',
+    button: 'লগইন করুন / Log in',
+    link: loginLink,
   });
 }

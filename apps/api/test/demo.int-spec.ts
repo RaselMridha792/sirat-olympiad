@@ -561,14 +561,28 @@ describe('load, use, remove', () => {
     expect(await prisma.demoBatch.count()).toBe(1);
   });
 
-  it('the demo logins work with the one password', async () => {
-    const res = await fetch(`${env.base}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-requested-with': 'XMLHttpRequest' },
-      body: JSON.stringify({ email: 'student-001@demo.sirat.invalid', password }),
+  it('a demo student logs in with email + participant ID; the demo jury with the one password', async () => {
+    const login = (body: object) =>
+      fetch(`${env.base}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-requested-with': 'XMLHttpRequest' },
+        body: JSON.stringify(body),
+      });
+    // Students and ambassadors log in with the ID of their registration (A2's participant-ID login).
+    const registered = await prisma.registration.findFirstOrThrow({
+      where: { user: { demoBatchId: batchId, role: 'student' } },
+      select: { participantId: true, user: { select: { email: true } } },
     });
-    expect(res.status).toBe(204);
-    expect(res.headers.get('set-cookie')).toContain(ACCESS_COOKIE);
+    const student = await login({
+      email: registered.user.email,
+      participantId: registered.participantId,
+    });
+    expect(student.status).toBe(204);
+    expect(student.headers.get('set-cookie')).toContain(ACCESS_COOKIE);
+    expect((await login({ email: registered.user.email, password })).status).toBe(401);
+    // Staff keep the password: the batch's one password logs the demo jury in.
+    const jury = await login({ email: 'jury-001@demo.sirat.invalid', password });
+    expect(jury.status).toBe(204);
   });
 
   it('the demo Round 1 board is published, one row per scored attempt, for demo accounts only', async () => {

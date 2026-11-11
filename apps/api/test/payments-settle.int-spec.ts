@@ -15,7 +15,6 @@ import { PaymentsWorker } from '../src/modules/payments/verify/payments.worker';
 import { makePaidPayment, makeRegistrationAttempt, makeUser, paymentData } from './helpers';
 import {
   APP_ORIGIN,
-  PASSWORD,
   bootPaymentsApp,
   caller,
   checkout,
@@ -107,10 +106,15 @@ describe('verify: a confirmed success', () => {
       statusCode: '200',
     });
 
-    // The student logs in with the password typed in the form, and this browser sees "completed".
+    // The student logs in with email + the participant ID the registration got (A2's participant-ID login), and this
+    // browser sees "completed".
     const call = caller(env.base);
+    const { participantId } = await env.prisma.registration.findFirstOrThrow({
+      where: { user: { email: s.email } },
+      select: { participantId: true },
+    });
     const login = await call('POST', '/auth/login', {
-      body: { email: s.email, password: PASSWORD },
+      body: { email: s.email, participantId },
     });
     expect(login.status).toBe(204);
     const current = await call('GET', '/registrations/current', { cookie: s.cookie });
@@ -489,8 +493,12 @@ describe('the worker, end to end', () => {
         evs.filter((e) => e.source === 'status_v1' && e.outcome === 'applied_paid'),
       ).toHaveLength(1);
       expect(evs.map((e) => e.source)).toEqual(expect.arrayContaining(['ipn', 'callback']));
+      const { participantId } = await env.prisma.registration.findFirstOrThrow({
+        where: { user: { email: s.email } },
+        select: { participantId: true },
+      });
       const login = await caller(env.base)('POST', '/auth/login', {
-        body: { email: s.email, password: PASSWORD },
+        body: { email: s.email, participantId },
       });
       expect(login.status).toBe(204);
     } finally {

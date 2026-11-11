@@ -17,7 +17,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from './access-token.service';
 import { CurrentUser, Public, TwoFactorOptional } from './auth.decorators';
-import { AuthService, TooManyAttemptsException } from './auth.service';
+import { AuthService, type LoginCredential, TooManyAttemptsException } from './auth.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { EmailOnlyDto } from './dto/email-only.dto';
 import { ResetPasswordDto, VerifyEmailDto } from './dto/email-link.dto';
@@ -73,7 +73,12 @@ export class AuthController {
   @Post('login')
   async login(@Body() body: LoginDto, @Req() req: Request, @Res() res: Response): Promise<void> {
     try {
-      const outcome = await this.auth.login(body.email, body.password, clientInfo(req));
+      // Exactly one credential (LoginDto): a staff password, or a student's or ambassador's participant ID.
+      const credential: LoginCredential =
+        body.participantId !== undefined
+          ? { kind: 'participant_id', participantId: body.participantId }
+          : { kind: 'password', password: body.password ?? '' };
+      const outcome = await this.auth.login(body.email, credential, clientInfo(req));
       if (outcome.kind === 'two_factor') {
         this.cookies.setChallenge(res, outcome.challengeId);
         res.status(200).json({ twoFactorRequired: true });
@@ -192,6 +197,18 @@ export class AuthController {
   @HttpCode(204)
   forgotPassword(@Body() body: EmailOnlyDto): void {
     this.auth.requestPasswordReset(body.email);
+  }
+
+  /**
+   * Forgot my participant ID (docs/plans/PARTICIPANT-LOGIN-PLAN.md §3). Always 204 at once, like forgot-password:
+   * only an unblocked student or ambassador with a registration gets the ID, at the account's own address.
+   */
+  @Public()
+  @Throttle(FORGOT_TIER)
+  @Post('forgot-id')
+  @HttpCode(204)
+  forgotParticipantId(@Body() body: EmailOnlyDto): void {
+    this.auth.requestParticipantId(body.email);
   }
 
   /** Asks for a new verification email. Always 204 at once, like forgot-password. */

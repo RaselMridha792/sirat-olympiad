@@ -12,7 +12,6 @@ import { cpSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PrismaClient } from '@prisma/client';
-import argon2 from 'argon2';
 import { seedConfig } from '../prisma/seed';
 import { cleanFixturePayments, loadDevFixtures } from '../prisma/fixtures/dev-fixtures';
 
@@ -155,8 +154,7 @@ it('old dev database: guard stops the migration; clean, migrate and reload work 
     await seedConfig(db);
 
     // 3. Reload: the same three users get phones and paid 400 BDT registrations; the other user is untouched.
-    const hash = await argon2.hash('Fixture-river-moon-42', { type: argon2.argon2id });
-    expect(await loadDevFixtures(db, hash)).toEqual({ created: 0, completed: 3, skipped: 0 });
+    expect(await loadDevFixtures(db)).toEqual({ created: 0, completed: 3, skipped: 0 });
     const regs = await db.registration.findMany({
       include: { payment: { select: { status: true, amountMinor: true } } },
     });

@@ -121,8 +121,15 @@ describe('per-user API limits', () => {
     const passwordHash = await app.get(PasswordService).hash(PASSWORD);
     const run = randomUUID().slice(0, 8);
     const emails = Array.from({ length: 500 }, (_, i) => `crowd-${run}-${i}@test.invalid`);
+    // Staff accounts with a password: the route and its limits are the same for the participant-ID login, and the
+    // crowd needs no registrations this way.
     await prisma.user.createMany({
-      data: emails.map((email) => ({ email, passwordHash, name: 'Crowd Student' })),
+      data: emails.map((email) => ({
+        email,
+        passwordHash,
+        name: 'Crowd Judge',
+        role: 'jury' as const,
+      })),
     });
     const started = Date.now();
     const answers = await many(

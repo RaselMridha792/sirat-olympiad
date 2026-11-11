@@ -111,7 +111,9 @@ describe("the payments tests' start helper (startRegistration) on a loaded dev d
 describe('POST /auth/login meets a busy database', () => {
   it('answers 503 and never counts as a failed login: no lock after more busy tries than the limit', async () => {
     const password = 'Calm-harbour-river-7';
+    // A staff account: only staff log in with a password (students use their participant ID).
     const user = await makeUser(env.prisma, {
+      role: 'jury',
       passwordHash: await env.app.get(PasswordService).hash(password),
       emailVerifiedAt: new Date(),
     });
