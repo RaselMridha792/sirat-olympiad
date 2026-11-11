@@ -2,6 +2,12 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-11 — Admin tables on a phone: secondary columns fold into the first cell (core; the ambassador panel UX pass)
+
+- Below `md` an admin table keeps its first column and its actions; the other columns are hidden (`hidden md:table-cell`) and their facts show as a short line under the first cell (`md:hidden`). Nothing scrolls sideways and the actions stay in reach.
+- Not a stacked "card" mode in the shared DataTable: that would render each row twice, and the dialogs in the action cells (assign, adjust, revoke) twice with them.
+- Applied to /admin/ambassadors, /admin/tasks (both tables) and /admin/teams, and to the ambassador leaderboard. The a11y audit after it: no small targets apart from the skip link (1×1 until focused), and no colour-only focus.
+
 ## 2026-11-11 — The ambassador ID card (core; the lead's approval of 10 Nov)
 
 - **On the panel**, for an approved ambassador: the client's mark, "International Sirat Olympiad 3.0", the role, the name, the ambassador code and the date they became an ambassador. Text only, no photo; the shared `IdCard` in @sirat/ui, so the admit card can reuse it.

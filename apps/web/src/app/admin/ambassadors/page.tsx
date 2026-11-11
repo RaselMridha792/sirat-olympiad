@@ -152,7 +152,10 @@ export default async function AdminAmbassadorsPage({
               header: m.table.ambassador,
               render: (a) => (
                 <div className="flex items-center gap-3">
-                  <Avatar name={a.name} size="sm" />
+                  {/* Decorative: on a phone its width goes to the actions instead. */}
+                  <span className="hidden md:inline-flex">
+                    <Avatar name={a.name} size="sm" />
+                  </span>
                   <div className="min-w-0">
                     <p className="flex flex-wrap items-center gap-2 font-semibold text-ink">
                       {a.name}

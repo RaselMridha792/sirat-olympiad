@@ -19,6 +19,9 @@ const PAGE_SIZE = 20;
 const VIEWS = ['active', 'archived', 'review'] as const;
 type View = (typeof VIEWS)[number];
 
+/** Columns shown from md up; below it their facts sit in the first cell, and the actions stay. */
+const WIDE = 'hidden md:table-cell';
+
 export async function generateMetadata(): Promise<Metadata> {
   const { m } = await getMessages(adminTasksMessages);
   return { title: m.title };
@@ -75,7 +78,7 @@ export default async function AdminTasksPage({
                 {
                   key: 'task',
                   header: m.review.task,
-                  className: 'min-w-56 px-5 py-4 align-top text-sm text-ink',
+                  className: 'px-5 py-4 align-top text-sm text-ink md:min-w-56',
                   render: (r) => (
                     <div>
                       <p className="flex flex-wrap items-center gap-2 font-bold text-ink">
@@ -83,26 +86,39 @@ export default async function AdminTasksPage({
                         <DemoBadge demo={r.demo} locale={locale} />
                       </p>
                       <p className="mt-1 text-xs text-secondary">{m.pointsValue(n(r.points))}</p>
+                      {/* Below md the ambassador, proof and time columns are hidden: they show here instead. */}
+                      <div className="mt-3 md:hidden">
+                        <p className="font-semibold">{r.ambassador.name}</p>
+                        <p className="text-xs text-ink-muted">
+                          <time dateTime={r.submittedAt}>
+                            {formatDateTime(locale, r.submittedAt)}
+                          </time>
+                        </p>
+                        <p className="mt-2 whitespace-pre-line break-words">{r.proof}</p>
+                      </div>
                     </div>
                   ),
                 },
                 {
                   key: 'ambassador',
                   header: m.review.ambassador,
-                  className: 'whitespace-nowrap px-5 py-4 align-top text-sm text-ink',
+                  headerClassName: WIDE,
+                  className: `${WIDE} whitespace-nowrap px-5 py-4 align-top text-sm text-ink`,
                   render: (r) => r.ambassador.name,
                 },
                 {
                   key: 'proof',
                   header: m.review.proof,
-                  className: 'min-w-72 px-5 py-4 align-top text-sm text-ink',
+                  headerClassName: WIDE,
+                  className: `${WIDE} min-w-72 px-5 py-4 align-top text-sm text-ink`,
                   // Text only: React escapes it, and nothing here turns a link into an anchor.
                   render: (r) => <p className="whitespace-pre-line break-words">{r.proof}</p>,
                 },
                 {
                   key: 'submitted',
                   header: m.review.submitted,
-                  className: 'whitespace-nowrap px-5 py-4 align-top text-sm text-ink-muted',
+                  headerClassName: WIDE,
+                  className: `${WIDE} whitespace-nowrap px-5 py-4 align-top text-sm text-ink-muted`,
                   render: (r) => (
                     <time dateTime={r.submittedAt}>{formatDateTime(locale, r.submittedAt)}</time>
                   ),
@@ -153,7 +169,7 @@ export default async function AdminTasksPage({
             {
               key: 'task',
               header: m.table.task,
-              className: 'min-w-72 px-5 py-4 align-top text-sm text-ink',
+              className: 'px-5 py-4 align-top text-sm text-ink md:min-w-72',
               render: (t) => (
                 <div>
                   <p className="flex flex-wrap items-center gap-2 text-base font-bold text-ink">
@@ -163,20 +179,33 @@ export default async function AdminTasksPage({
                   <p className="mt-1 whitespace-pre-line break-words text-sm text-ink-muted">
                     {t.description}
                   </p>
+                  {/* Below md the points and progress columns are hidden: they show here instead. */}
+                  <p className="mt-2 text-xs font-semibold text-secondary md:hidden">
+                    {m.pointsValue(n(t.points))}
+                  </p>
+                  <p className="mt-1 text-xs text-ink-muted md:hidden">
+                    {m.counts(
+                      n(t.counts.assigned),
+                      n(t.counts.submitted),
+                      n(t.counts.approved),
+                      n(t.counts.rejected),
+                    )}
+                  </p>
                 </div>
               ),
             },
             {
               key: 'points',
               header: m.table.points,
-              className:
-                'whitespace-nowrap px-5 py-4 align-top text-sm font-semibold tabular-nums text-ink',
+              headerClassName: WIDE,
+              className: `${WIDE} whitespace-nowrap px-5 py-4 align-top text-sm font-semibold tabular-nums text-ink`,
               render: (t) => n(t.points),
             },
             {
               key: 'progress',
               header: m.table.progress,
-              className: 'px-5 py-4 align-top text-sm text-ink-muted',
+              headerClassName: WIDE,
+              className: `${WIDE} px-5 py-4 align-top text-sm text-ink-muted`,
               render: (t) =>
                 m.counts(
                   n(t.counts.assigned),
