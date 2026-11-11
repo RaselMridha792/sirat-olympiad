@@ -100,7 +100,9 @@ enum EndReason {
 model User {
   id              String    @id @default(uuid(7)) @db.Uuid
   email           String    @unique @db.Citext // case-insensitive: A@x.com and a@x.com are the same account
-  passwordHash    String    @map("password_hash")
+  /// NULL for students and ambassadors: they log in with email + participant ID (owner, 2026-11-10). Staff always
+  /// have one (CHECK users_password_for_staff).
+  passwordHash    String?   @map("password_hash")
   name            String
   phone           String?   @unique // one number, one student; stored as 01XXXXXXXXX (CHECK in raw SQL); NULL for admins
   district        String?
