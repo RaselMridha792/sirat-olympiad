@@ -1,4 +1,10 @@
-import { DEMO_BATCH_STATUSES, type AdminDemoStatus, type DemoOutcome } from '@sirat/shared';
+import {
+  DEMO_BATCH_STATUSES,
+  isParticipantId,
+  type AdminDemoStatus,
+  type DemoLogin,
+  type DemoOutcome,
+} from '@sirat/shared';
 import type { DataSource } from '../source.ts';
 import { getJson, isRecord, type ApiGet } from './request.ts';
 
@@ -23,6 +29,17 @@ function isOutcome(v: unknown): v is DemoOutcome {
   );
 }
 
+/** A demo login: a student or an ambassador with a valid participant ID, or the jury without one. */
+function isLogin(v: unknown): v is DemoLogin {
+  if (!isRecord(v) || typeof v.email !== 'string' || typeof v.name !== 'string') return false;
+  if (v.role === 'jury') return v.participantId === null;
+  return (
+    (v.role === 'student' || v.role === 'ambassador') &&
+    typeof v.participantId === 'string' &&
+    isParticipantId(v.participantId)
+  );
+}
+
 function isDemoStatus(v: unknown): v is AdminDemoStatus {
   if (!isRecord(v) || typeof v.allowed !== 'boolean') return false;
   const b = v.batch;
@@ -34,7 +51,9 @@ function isDemoStatus(v: unknown): v is AdminDemoStatus {
       typeof b.createdAt === 'string' &&
       typeof b.createdByName === 'string' &&
       counts(b.counts) &&
-      typeof b.stale === 'boolean');
+      typeof b.stale === 'boolean' &&
+      Array.isArray(b.logins) &&
+      b.logins.every(isLogin));
   const p = v.progress;
   const progressOk = p === null || (isRecord(p) && action(p.action) && typeof p.step === 'string');
   return batchOk && progressOk && (v.lastOutcome === null || isOutcome(v.lastOutcome));
@@ -52,6 +71,12 @@ export function pickDemoStatus(s: AdminDemoStatus): AdminDemoStatus {
       createdByName: s.batch.createdByName,
       counts: { ...s.batch.counts },
       stale: s.batch.stale,
+      logins: s.batch.logins.map((l) => ({
+        role: l.role,
+        email: l.email,
+        name: l.name,
+        participantId: l.participantId,
+      })),
     },
     progress: s.progress && { action: s.progress.action, step: s.progress.step },
     lastOutcome: o && {

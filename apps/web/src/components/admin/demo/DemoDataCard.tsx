@@ -5,8 +5,10 @@ import { FlaskConical, Trash2, Upload } from 'lucide-react';
 import {
   DEMO_EMAIL_DOMAIN,
   DEMO_REASON_LIMITS,
+  formatParticipantId,
   type AdminDemoStatus,
   type DemoLoadAccepted,
+  type DemoLogin,
 } from '@sirat/shared';
 import { Badge, Button, Card, DetailList, Dialog, Field } from '@sirat/ui';
 import type { Locale } from '@/i18n';
@@ -180,11 +182,60 @@ export function DemoDataCard({
               }))}
             />
           ) : null}
+          {batch.logins.length > 0 ? <DemoLogins locale={locale} logins={batch.logins} /> : null}
         </>
       ) : (
         <p className="text-sm text-ink-muted">{m.none}</p>
       )}
     </Card>
+  );
+}
+
+/**
+ * A few demo accounts to sign in with in front of a client (the lead, 2026-11-11): students and ambassadors with their
+ * participant ID (demo data, admin only), the jury with the load's password. Selectable text, for copying.
+ */
+function DemoLogins({ locale, logins }: { locale: Locale; logins: DemoLogin[] }) {
+  const m = pick(adminDemoMessages, locale).demoLogins;
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="text-sm font-bold text-ink">{m.title}</h3>
+      <p className="text-xs text-ink-muted">{m.hint}</p>
+      <table className="w-full text-left text-sm">
+        <caption className="sr-only">{m.caption}</caption>
+        <thead>
+          <tr className="border-b border-line text-xs text-ink-muted">
+            <th scope="col" className="py-1 pr-3 font-semibold">
+              {m.account}
+            </th>
+            <th scope="col" className="py-1 font-semibold">
+              {m.signIn}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {logins.map((l) => (
+            <tr key={l.email} className="border-b border-line last:border-0">
+              <td className="py-1 pr-3 align-top">
+                <span className="block font-mono text-xs text-ink" translate="no">
+                  {l.email}
+                </span>
+                <span className="block text-xs text-ink-muted">{m.roles[l.role]}</span>
+              </td>
+              <td className="py-1 align-top">
+                {l.participantId ? (
+                  <span className="font-mono text-xs text-ink" translate="no">
+                    {formatParticipantId(l.participantId)}
+                  </span>
+                ) : (
+                  <span className="text-xs text-ink-muted">{m.juryPassword}</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { AdminDemoStatus } from '@sirat/shared';
+import { dammDigit, type AdminDemoStatus } from '@sirat/shared';
 import { createHttpSource } from './index.ts';
 import { DataRequestError, type ApiGet, type ApiResult } from './request.ts';
 
@@ -8,6 +8,7 @@ function fakeApi(answers: Record<string, ApiResult>): ApiGet {
   return (async (path: string) => answers[path] ?? { status: 404, body: null }) as ApiGet;
 }
 
+const ID = `ON0123456789${dammDigit('0123456789')}`;
 const loaded: AdminDemoStatus = {
   allowed: true,
   batch: {
@@ -17,6 +18,15 @@ const loaded: AdminDemoStatus = {
     createdByName: 'Ops Admin',
     counts: { students: 300, ambassadors: 15, jury: 2, attempts: 271 },
     stale: false,
+    logins: [
+      {
+        role: 'student',
+        email: 'student-001@demo.sirat.invalid',
+        name: 'Demo A',
+        participantId: ID,
+      },
+      { role: 'jury', email: 'jury-001@demo.sirat.invalid', name: 'Demo J', participantId: null },
+    ],
   },
   progress: null,
   lastOutcome: {
@@ -31,7 +41,12 @@ test('admin.getDemoStatus reads GET /admin/demo and passes on only the named fie
   const extra = {
     ...loaded,
     passwordHash: '$argon2id$v=19$secret',
-    batch: { ...loaded.batch, reason: 'client demo', createdById: 'u1' },
+    batch: {
+      ...loaded.batch,
+      reason: 'client demo',
+      createdById: 'u1',
+      logins: loaded.batch!.logins.map((l) => ({ ...l, passwordHash: '$argon2id$v=19$login' })),
+    },
     lastOutcome: { ...loaded.lastOutcome, stack: 'Error: at x' },
   };
   const got = await createHttpSource(
@@ -52,7 +67,7 @@ test('admin.getDemoStatus: no batch, and a running job', async () => {
   );
   const running: AdminDemoStatus = {
     ...loaded,
-    batch: { ...loaded.batch!, status: 'loading', counts: {} },
+    batch: { ...loaded.batch!, status: 'loading', counts: {}, logins: [] },
     progress: { action: 'load', step: 'attempts' },
     lastOutcome: null,
   };
@@ -70,6 +85,27 @@ test('admin.getDemoStatus refuses a wrong shape or a refusal (the card shows its
     { ...loaded, batch: { ...loaded.batch, status: 'deleted' } },
     { ...loaded, batch: { ...loaded.batch, counts: { students: '300' } } },
     { ...loaded, batch: { ...loaded.batch, stale: 'no' } },
+    { ...loaded, batch: { ...loaded.batch, logins: undefined } },
+    // A student without a valid participant ID, or a jury account with one, is not a demo login.
+    {
+      ...loaded,
+      batch: { ...loaded.batch, logins: [{ ...loaded.batch!.logins[0], participantId: null }] },
+    },
+    {
+      ...loaded,
+      batch: {
+        ...loaded.batch,
+        logins: [{ ...loaded.batch!.logins[0], participantId: 'ON0123456789' }],
+      },
+    },
+    {
+      ...loaded,
+      batch: { ...loaded.batch, logins: [{ ...loaded.batch!.logins[1], participantId: ID }] },
+    },
+    {
+      ...loaded,
+      batch: { ...loaded.batch, logins: [{ ...loaded.batch!.logins[0], role: 'admin' }] },
+    },
     { ...loaded, progress: { action: 'wipe', step: 'x' } },
     { ...loaded, lastOutcome: { ...loaded.lastOutcome, result: 'maybe' } },
     { ...loaded, lastOutcome: { ...loaded.lastOutcome, blockers: { x: -1 } } },

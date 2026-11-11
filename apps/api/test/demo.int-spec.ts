@@ -1,7 +1,7 @@
 /**
  * Demo data over HTTP and the worker (DECISIONS 2026-11-08 "Demo data, loaded and removed with one click"): admin
  * only; a load is one queued job that fills users, exams with scored attempts, a published leaderboard and
- * announcements, with one password shown once; demo and real rows never mix (exam visibility both ways, team joins
+ * announcements, the jury's one password shown once (students and ambassadors sign in with their participant ID); demo and real rows never mix (exam visibility both ways, team joins
  * both ways); a removal the database refuses names its blockers and removes nothing; a removal takes every demo row
  * and no real one. Runs on this run's own demo queue with a worker in this process.
  */
@@ -405,12 +405,26 @@ describe('load, use, remove', () => {
       'ops.demo_loaded',
       expect.objectContaining({ actorId: admin.id }),
     );
-    // The password is nowhere in the database in clear.
-    const row = await prisma.user.findFirstOrThrow({
-      where: { demoBatchId: batchId },
+    // Students and ambassadors have no password (they sign in with their participant ID: users_password_for_staff);
+    // the jury has the batch's one password, never in clear.
+    expect(
+      await prisma.user.count({
+        where: {
+          demoBatchId: batchId,
+          role: { in: ['student', 'ambassador'] },
+          passwordHash: { not: null },
+        },
+      }),
+    ).toBe(0);
+    const jury = await prisma.user.findMany({
+      where: { demoBatchId: batchId, role: 'jury' },
       select: { passwordHash: true },
     });
-    expect(row.passwordHash).not.toContain(password);
+    expect(jury).toHaveLength(2);
+    for (const row of jury) {
+      expect(row.passwordHash).toMatch(/^\$argon2id\$/);
+      expect(row.passwordHash).not.toContain(password);
+    }
   }, 90_000);
 
   it('fills rounds, ambassadors, tasks, teams, promotions, the jury and certificates the way the services would, and no demo row touches a real round', async () => {
@@ -574,28 +588,58 @@ describe('load, use, remove', () => {
     expect(await prisma.demoBatch.count()).toBe(1);
   });
 
-  it('a demo student logs in with email + participant ID; the demo jury with the one password', async () => {
+  it('the card lists demo logins (one student per category, two ambassadors, the jury), each of which signs in; never cached', async () => {
     const login = (body: object) =>
       fetch(`${env.base}/api/auth/login`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-requested-with': 'XMLHttpRequest' },
         body: JSON.stringify(body),
       });
-    // Students and ambassadors log in with the ID of their registration (A2's participant-ID login).
-    const registered = await prisma.registration.findFirstOrThrow({
-      where: { user: { demoBatchId: batchId, role: 'student' } },
-      select: { participantId: true, user: { select: { email: true } } },
+    const res = await call<AdminDemoStatus>(env, 'GET', '/admin/demo', admin.cookie);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    const logins = res.json.batch!.logins;
+    expect(logins.map((l) => l.role)).toEqual([
+      'student',
+      'student',
+      'student',
+      'ambassador',
+      'ambassador',
+      'jury',
+      'jury',
+    ]);
+    // Demo rows of this batch only; each student or ambassador with the ID of their own registration.
+    const users = await prisma.user.findMany({
+      where: { email: { in: logins.map((l) => l.email) } },
+      select: {
+        email: true,
+        demoBatchId: true,
+        category: true,
+        registration: { select: { participantId: true } },
+      },
     });
-    const student = await login({
-      email: registered.user.email,
-      participantId: registered.participantId,
-    });
-    expect(student.status).toBe(204);
-    expect(student.headers.get('set-cookie')).toContain(ACCESS_COOKIE);
-    expect((await login({ email: registered.user.email, password })).status).toBe(401);
-    // Staff keep the password: the batch's one password logs the demo jury in.
-    const jury = await login({ email: 'jury-001@demo.sirat.invalid', password });
-    expect(jury.status).toBe(204);
+    expect(users).toHaveLength(logins.length);
+    for (const u of users) expect(u.demoBatchId).toBe(batchId);
+    const byEmail = new Map(users.map((u) => [u.email, u]));
+    expect(
+      new Set(logins.filter((l) => l.role === 'student').map((l) => byEmail.get(l.email)!.category))
+        .size,
+    ).toBe(3);
+    for (const l of logins) {
+      expect(l.email.endsWith('@demo.sirat.invalid')).toBe(true);
+      if (l.role === 'jury') {
+        expect(l.participantId).toBeNull();
+        // Staff keep the password: the batch's one password logs the demo jury in.
+        expect((await login({ email: l.email, password })).status).toBe(204);
+      } else {
+        expect(l.participantId).toBe(byEmail.get(l.email)!.registration!.participantId);
+        // Students and ambassadors log in with the ID of their registration (A2's participant-ID login).
+        const ok = await login({ email: l.email, participantId: l.participantId });
+        expect([l.email, ok.status]).toEqual([l.email, 204]);
+        expect(ok.headers.get('set-cookie')).toContain(ACCESS_COOKIE);
+      }
+    }
+    // The batch password never logs a demo student in (they have none).
+    expect((await login({ email: logins[0]!.email, password })).status).toBe(401);
   });
 
   it('the demo Round 1 board is published, one row per scored attempt, for demo accounts only', async () => {
