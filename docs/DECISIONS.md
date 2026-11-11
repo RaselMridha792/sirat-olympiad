@@ -11,6 +11,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 5. **"Final round" means `rounds.type = 'final'`** (lead). Issue-one fits the type to the round: participation only in the side's first round (no lower `sort_order` on its side), promotion only in a later round, winner only in a final round.
 6. **Issue-one skips the batch's eligibility on purpose:** it is for a student the batch run missed (a late school list, a corrected result). So it is admin only, needs a reason (3–200) and is audited with it (`certificates.issued_one`). The student must be registered and not blocked, and one certificate per (student, type, round) still holds (409 `already_issued`).
 7. **Demo:** demo and real never mix. A demo account gets one only in a demo round, a real account only in a real round (409 `demo_side`). A demo certificate takes the next demo-range serial (`SLO-YYYY-9NNNNN`, under a transaction lock), never the real sequence, and `demo_clear` removes it with the account. Core's batch issue still refuses demo rounds (their certificates come with the demo data). Templates are not demo data: a demo certificate may point at a real template, which nothing deletes.
+
 ## 2026-11-11 — Admin tables on a phone: secondary columns fold into the first cell (core; the ambassador panel UX pass)
 
 - Below `md` an admin table keeps its first column and its actions; the other columns are hidden (`hidden md:table-cell`) and their facts show as a short line under the first cell (`md:hidden`). Nothing scrolls sideways and the actions stay in reach.
