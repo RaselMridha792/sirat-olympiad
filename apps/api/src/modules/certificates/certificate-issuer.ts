@@ -43,12 +43,15 @@ export class CertificateIssuer {
     return this.prisma.$transaction(async (tx) => {
       const issued = await tx.$executeRaw`
         INSERT INTO "certificates"
-          ("id", "user_id", "type", "round_id", "serial", "verification_code", "name_on_certificate")
+          ("id", "user_id", "type", "round_id", "serial", "verification_code", "name_on_certificate",
+           "template_id")
         SELECT gen_random_uuid(), c."id", ${data.type}, ${data.roundId}::uuid,
                'SLO-' || to_char(now() AT TIME ZONE 'Asia/Dhaka', 'YYYY') || '-'
                  || lpad(nextval('certificate_serial_seq')::text, 6, '0'),
                upper(left(replace(gen_random_uuid()::text, '-', ''), 12)),
-               left(c."name", 200)
+               left(c."name", 200),
+               -- The type's active template VERSION at issue (C1), pinned: a later edit makes a new version.
+               (SELECT t."id" FROM "certificate_templates" t WHERE t."type" = ${data.type} AND t."active")
         FROM (${eligible(data)}) c
         ON CONFLICT ("user_id", "type", "round_id") DO NOTHING`;
       await tx.auditLog.create({

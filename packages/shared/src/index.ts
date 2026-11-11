@@ -83,3 +83,4 @@ export * from './book';
 export * from './exam';
 export * from './core';
 export * from './demo';
+export * from './certificate-templates';
