@@ -1,5 +1,6 @@
 import {
   EMPTY_STATE,
+  OPS_CHECKS,
   REMINDER_MS,
   decideAlerts,
   evaluate,
@@ -57,7 +58,8 @@ describe('ops thresholds (one run)', () => {
   it('a healthy server is ok on every check', () => {
     const { results } = once(host());
     expect(summarize(results)).toEqual({ critical: [], warn: [] });
-    expect(results).toHaveLength(18);
+    expect(results).toHaveLength(19);
+    expect(results.map((r) => r.check)).toEqual([...OPS_CHECKS]);
   });
 
   it.each<[string, Partial<HostFacts>, OpsCheck, CheckLevel]>([
@@ -125,6 +127,9 @@ describe('ops thresholds (one run)', () => {
       'login_failures',
       'warn',
     ],
+    ['quote misses not measured', {}, 'quote_misses', 'ok'],
+    ['49 quote misses from one IP', { quote: { maxMissesPerIp: 49 } }, 'quote_misses', 'ok'],
+    ['50 quote misses from one IP', { quote: { maxMissesPerIp: 50 } }, 'quote_misses', 'warn'],
     ['queue Redis 300 MB', { queueRedisMemoryMb: 300 }, 'queue_redis_memory', 'warn'],
     ['queue Redis 400 MB', { queueRedisMemoryMb: 400 }, 'queue_redis_memory', 'critical'],
     ['501 waiting jobs', { queues: [queue('exam', { waiting: 501 })] }, 'queue_backlog', 'warn'],

@@ -31,6 +31,7 @@ import { CERTIFICATES_QUEUE } from '../modules/certificates/certificates-queue';
 import { HOUSEKEEPING_QUEUE } from '../modules/housekeeping/housekeeping-queue';
 import { EMAIL_QUEUE } from '../modules/notifications/email.types';
 import { readLoginGlobalFacts } from '../modules/auth/login-spray';
+import { readQuoteMissFacts } from '../modules/payments/discount/quote-misses';
 import { collectAppFacts, type QueueSpec } from '../modules/ops/app-facts';
 import { sendDailyDigest } from '../modules/ops/digest';
 import {
@@ -232,6 +233,8 @@ async function main(): Promise<number> {
     });
     // Failed logins across all accounts: the login limiter counts them in the cache Redis.
     app.login = await readLoginGlobalFacts(cache, now.getTime());
+    // Discount-code quote misses per IP: the registration quote counts them in the cache Redis.
+    app.quote = await readQuoteMissFacts(cache, now.getTime());
     const run = runChecks(input, app, now.getTime());
     let raised = 0;
     if (!dryRun) {

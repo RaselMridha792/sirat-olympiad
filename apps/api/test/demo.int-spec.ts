@@ -11,6 +11,7 @@ import type { PrismaClient } from '@prisma/client';
 import {
   DEFAULT_VIDEO_CRITERIA,
   isAllowedVideoUrl,
+  isParticipantId,
   TEAM_LIMITS,
   type AdminDemoStatus,
   type DemoLoadAccepted,
@@ -470,6 +471,18 @@ describe('load, use, remove', () => {
         .map((l) => l.eventKey)
         .sort(),
     ).toEqual(approved.sort());
+
+    // Participant IDs (payments' #31): every demo registration has a valid, unique one from the database default,
+    // the same generator as real ones.
+    const ids = (
+      await prisma.registration.findMany({
+        where: { user: { demoBatchId: batchId } },
+        select: { participantId: true },
+      })
+    ).map((r) => r.participantId);
+    expect(ids.length).toBeGreaterThan(0);
+    for (const id of ids) expect(isParticipantId(id)).toBe(true);
+    expect(new Set(ids).size).toBe(ids.length);
 
     // Teams: 3 to 10 members, owner included, all demo accounts.
     const teams = await prisma.team.findMany({

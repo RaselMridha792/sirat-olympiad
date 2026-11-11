@@ -9,7 +9,7 @@
 import { randomUUID } from 'node:crypto';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { makeAttempt, makePublishedExam, questionData, submissionData } from './exam-helpers';
-import { makeUser, testPrisma } from './helpers';
+import { makeRegistrationAttempt, makeUser, paymentData, testPrisma } from './helpers';
 
 const prisma = testPrisma();
 const appUrl = process.env.TEST_APP_DATABASE_URL ?? '';
@@ -56,6 +56,10 @@ afterEach(async () => {
         await prisma.adminTask.findMany({ where: { demoBatchId: id }, select: { id: true } }),
       ],
       ['rounds', await prisma.round.findMany({ where: { demoBatchId: id }, select: { id: true } })],
+      [
+        'discount_codes',
+        await prisma.discountCode.findMany({ where: { demoBatchId: id }, select: { id: true } }),
+      ],
     ] as const;
     for (const [table, rows] of roots)
       await prisma.demoRecord.createMany({
@@ -787,5 +791,172 @@ describe('who may call demo_clear', () => {
       expect(row!.counts).toMatchObject({ users: 1, exams: 1 });
       await stillThere(real);
     });
+  });
+});
+
+/**
+ * v4, discount codes (payments D1; migration *_discount_codes): a demo code is a root like a demo task. It goes after
+ * the demo forms and payments that used it; any mix with real rows refuses the whole clear.
+ */
+describe('demo_clear v4: demo discount codes (payments D1)', () => {
+  const PRICED = { listAmountMinor: 45000, discountMinor: 5000, amountMinor: 40000 };
+
+  /** A batch with a demo ambassador, a demo code linked to them, and a demo form and payment that used the code. */
+  async function codeGraph() {
+    const batch = await prisma.demoBatch.create({
+      data: { status: 'loaded', reason: 'Test batch' },
+    });
+    const ambassador = await makeUser(prisma, {
+      email: `a-${code12()}${DOMAIN}`,
+      role: 'ambassador',
+      demoBatchId: batch.id,
+    });
+    await prisma.ambassadorProfile.create({
+      data: {
+        userId: ambassador.id,
+        promoCode: `SR-${code12().slice(0, 6)}`,
+        approvedAt: new Date(),
+      },
+    });
+    const code = await prisma.discountCode.create({
+      data: {
+        code: `DEMO-${code12()}`,
+        kind: 'amount',
+        value: 5000,
+        ambassadorUserId: ambassador.id,
+        createdById: (await anAdmin()).id,
+        demoBatchId: batch.id,
+      },
+    });
+    const form = await makeRegistrationAttempt(prisma, {
+      email: `s-${code12()}${DOMAIN}`,
+      ...PRICED,
+      discountCodeId: code.id,
+    });
+    const payment = await prisma.payment.create({
+      data: paymentData(form.id, { ...PRICED, discountCodeId: code.id }),
+    });
+    await register(batch.id, 'users', [ambassador.id]);
+    await register(batch.id, 'discount_codes', [code.id]);
+    await register(batch.id, 'pending_registrations', [form.id]);
+    return { batch, ambassador, code, form, payment };
+  }
+
+  /** A real code, made by the admin, optionally linked. */
+  const realCode = async (ambassadorUserId: string | null = null) =>
+    prisma.discountCode.create({
+      data: {
+        code: `REAL-${code12()}`,
+        kind: 'percent',
+        value: 10,
+        ambassadorUserId,
+        createdById: (await anAdmin()).id,
+      },
+    });
+
+  it('removes a demo code after the demo form and payment that used it; nothing real; the counts say so', async () => {
+    const g = await codeGraph();
+    const real = await realCode();
+    const counts = await clear(g.batch.id);
+    expect(counts).toMatchObject({
+      discount_codes: 1,
+      payments: 1,
+      pending_registrations: 1,
+      ambassador_profiles: 1,
+      users: 1,
+    });
+    expect(await prisma.discountCode.count({ where: { id: g.code.id } })).toBe(0);
+    expect(await prisma.discountCode.count({ where: { id: real.id } })).toBe(1);
+    await prisma.discountCode.delete({ where: { id: real.id } });
+  });
+
+  it('refuses while a real form and payment use a demo code', async () => {
+    const g = await codeGraph();
+    const form = await makeRegistrationAttempt(prisma, { ...PRICED, discountCodeId: g.code.id });
+    const payment = await prisma.payment.create({
+      data: paymentData(form.id, { ...PRICED, discountCodeId: g.code.id }),
+    });
+    try {
+      await blockedWith(g.batch.id, 'real_forms_on_demo_codes');
+      await blockedWith(g.batch.id, 'real_payments_on_demo_codes');
+      expect(await prisma.discountCode.count({ where: { id: g.code.id } })).toBe(1);
+    } finally {
+      await prisma.payment.delete({ where: { id: payment.id } });
+      await prisma.pendingRegistration.delete({ where: { id: form.id } });
+    }
+  });
+
+  it('refuses while a real code is linked to a demo ambassador', async () => {
+    const g = await codeGraph();
+    const real = await realCode(g.ambassador.id);
+    try {
+      await blockedWith(g.batch.id, 'real_codes_linked_to_demo');
+    } finally {
+      await prisma.discountCode.delete({ where: { id: real.id } });
+    }
+  });
+
+  it('refuses while a demo payment used a real code', async () => {
+    const g = await codeGraph();
+    const real = await realCode();
+    const priced = { listAmountMinor: 45000, discountMinor: 4500, amountMinor: 40500 };
+    const form = await makeRegistrationAttempt(prisma, {
+      email: `s-${code12()}${DOMAIN}`,
+      ...priced,
+      discountCodeId: real.id,
+    });
+    await register(g.batch.id, 'pending_registrations', [form.id]);
+    const payment = await prisma.payment.create({
+      data: paymentData(form.id, { ...priced, discountCodeId: real.id }),
+    });
+    try {
+      await blockedWith(g.batch.id, 'demo_payments_on_real_codes');
+    } finally {
+      await prisma.payment.delete({ where: { id: payment.id } });
+      await prisma.pendingRegistration.delete({ where: { id: form.id } });
+      await prisma.discountCode.delete({ where: { id: real.id } });
+    }
+  });
+
+  it('refuses while a demo code is linked to a real ambassador', async () => {
+    const g = await codeGraph();
+    const realAmbassador = await makeUser(prisma, { role: 'ambassador' });
+    await prisma.discountCode.update({
+      where: { id: g.code.id },
+      data: { ambassadorUserId: realAmbassador.id },
+    });
+    try {
+      await blockedWith(g.batch.id, 'demo_codes_linked_to_real');
+    } finally {
+      await prisma.discountCode.update({
+        where: { id: g.code.id },
+        data: { ambassadorUserId: g.ambassador.id },
+      });
+    }
+  });
+
+  it('needs the registry AND the marker: a forged registry row never deletes a real code', async () => {
+    const g = await codeGraph();
+    const real = await realCode();
+    await register(g.batch.id, 'discount_codes', [real.id]);
+    const counts = await clear(g.batch.id);
+    expect(counts).toMatchObject({ discount_codes: 1 });
+    expect(await prisma.discountCode.count({ where: { id: real.id } })).toBe(1);
+    await prisma.discountCode.delete({ where: { id: real.id } });
+  });
+
+  it('never changes the marker of a code: a real code cannot become demo, a demo code cannot stop being one', async () => {
+    const g = await codeGraph();
+    const real = await realCode();
+    try {
+      await expect(
+        prisma.discountCode.update({ where: { id: real.id }, data: { demoBatchId: g.batch.id } }),
+      ).rejects.toThrow(/demo_batch_id/);
+      await expect(
+        prisma.discountCode.update({ where: { id: g.code.id }, data: { demoBatchId: null } }),
+      ).rejects.toThrow(/demo_batch_id/);
+    } finally {
+      await prisma.discountCode.delete({ where: { id: real.id } });
+    }
   });
 });
