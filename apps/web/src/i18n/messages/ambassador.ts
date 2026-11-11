@@ -8,6 +8,15 @@ export const ambassadorMessages = defineMessages({
   en: {
     title: 'Ambassador Panel',
     intro: 'Grow your network and track your progress.',
+    card: {
+      title: 'Your ambassador card',
+      label: 'Ambassador ID card',
+      role: 'Ambassador',
+      code: 'Ambassador code',
+      since: 'Ambassador since',
+      hint: 'Show this card when you speak for the olympiad at your school or in your community.',
+      print: 'Print card',
+    },
     board: {
       title: 'Ambassador leaderboard',
       subtitle: (time: string) => `Ambassadors by points. Updated ${time}.`,
@@ -101,6 +110,15 @@ export const ambassadorMessages = defineMessages({
   bn: {
     title: 'অ্যাম্বাসেডর প্যানেল',
     intro: 'নেটওয়ার্ক বাড়ান, নিজের অগ্রগতি দেখুন।',
+    card: {
+      title: 'আপনার অ্যাম্বাসেডর কার্ড',
+      label: 'অ্যাম্বাসেডর আইডি কার্ড',
+      role: 'অ্যাম্বাসেডর',
+      code: 'অ্যাম্বাসেডর কোড',
+      since: 'অ্যাম্বাসেডর হয়েছেন',
+      hint: 'স্কুলে বা আপনার এলাকায় অলিম্পিয়াডের প্রতিনিধিত্ব করার সময় এই কার্ডটি দেখান।',
+      print: 'কার্ড প্রিন্ট করুন',
+    },
     board: {
       title: 'অ্যাম্বাসেডর লিডারবোর্ড',
       subtitle: (time: string) => `পয়েন্ট অনুযায়ী অ্যাম্বাসেডরদের তালিকা। হালনাগাদ: ${time}।`,

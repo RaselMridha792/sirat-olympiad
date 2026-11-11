@@ -2,6 +2,12 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-11 — The ambassador ID card (core; the lead's approval of 10 Nov)
+
+- **On the panel**, for an approved ambassador: the client's mark, "International Sirat Olympiad 3.0", the role, the name, the ambassador code and the date they became an ambassador. Text only, no photo; the shared `IdCard` in @sirat/ui, so the admit card can reuse it.
+- **The participant ID** joins the card when payments' `registrations.participant_id` lands; until then the card ships without it (lead).
+- **Print:** "Print card" opens the browser's print dialog, and a print rule in globals.css prints only the card (`body:has(.print-card)`), in its colours. The PDF comes with the shared PDF renderer, which also serves the admit card and the certificates.
+
 ## 2026-11-10 — The ambassador leaderboard (core; the lead's approval of 10 Nov, the client's priority on the ambassador panel)
 
 - **Who sees it:** ambassadors (their own side: demo data never ranks with real) and admins (the admin ambassadors list's "most points first"). Not students, not the public.

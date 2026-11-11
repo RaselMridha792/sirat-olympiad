@@ -1,12 +1,16 @@
 import type { Metadata } from 'next';
+import Image from 'next/image';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ClipboardList, Medal, Star, Trophy, UserPlus, Users, UsersRound } from 'lucide-react';
-import { Badge, Card, DataTable, EmptyState, StatCard } from '@sirat/ui';
+import { Badge, Card, DataTable, EmptyState, IdCard, StatCard } from '@sirat/ui';
 import { CopyCode } from '@/components/ambassador/CopyCode';
+import { PrintCardButton } from '@/components/ambassador/PrintCardButton';
 import { SubmitProofButton } from '@/components/ambassador/SubmitProofButton';
 import { rankStanding } from '@/components/ambassador/rank';
 import { rankTone, taskStatusTone } from '@/components/status';
+import siratMark from '@/components/public/sirat-mark.png';
+import { site } from '@/content/site';
 import { getData } from '@/data';
 import { isRoleBehind } from '@/data/http/ambassador';
 import type { SearchParams } from '@/data/query';
@@ -31,7 +35,7 @@ export default async function AmbassadorPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  await requireAccess('/dashboard/ambassador');
+  const user = await requireAccess('/dashboard/ambassador');
   const params = await searchParams;
   const [{ locale, m }, { m: c }, data] = await Promise.all([
     getMessages(ambassadorMessages),
@@ -243,6 +247,36 @@ export default async function AmbassadorPage({
           </Link>
         </Card>
       </div>
+
+      {amb.promoCode ? (
+        <section aria-labelledby="ambassador-card" className="mt-8">
+          <h2 id="ambassador-card" className="mb-4 text-lg font-black text-ink">
+            {m.card.title}
+          </h2>
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:gap-8">
+            <IdCard
+              label={m.card.label}
+              mark={<Image src={siratMark} alt="" width={36} height={36} unoptimized />}
+              org={site.name[locale]}
+              role={m.card.role}
+              name={user.name}
+              // The participant ID joins these fields when payments' registrations.participant_id lands.
+              fields={[
+                { label: m.card.code, value: amb.promoCode, mono: true },
+                ...(amb.approvedAt
+                  ? [{ label: m.card.since, value: formatDate(locale, amb.approvedAt) }]
+                  : []),
+              ]}
+            />
+            <div className="max-w-sm print:hidden">
+              <p className="text-sm text-ink-muted">{m.card.hint}</p>
+              <div className="mt-4">
+                <PrintCardButton label={m.card.print} />
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section aria-labelledby="ambassador-tasks" className="mt-8">
         <h2 id="ambassador-tasks" className="mb-4 text-lg font-black text-ink">
