@@ -25,6 +25,9 @@ import { requireAccess } from '@/lib/session';
 const PATH = '/admin/teams';
 const PAGE_SIZE = 20;
 
+/** Columns shown from md up; below it their facts sit in the first cell, and the details link stays. */
+const WIDE = 'hidden md:table-cell';
+
 export async function generateMetadata(): Promise<Metadata> {
   const { m } = await getMessages(adminTeamsMessages);
   return { title: m.title };
@@ -90,22 +93,42 @@ export default async function AdminTeamsPage({
               key: 'team',
               header: m.table.team,
               render: (t) => (
-                <span className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold text-ink">{t.name}</span>
-                  <DemoBadge demo={t.demo} locale={locale} />
-                </span>
+                <>
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-ink">{t.name}</span>
+                    <DemoBadge demo={t.demo} locale={locale} />
+                  </span>
+                  {/* Below md the lead, members, state and date columns are hidden: they show here instead. */}
+                  <span className="mt-2 block text-xs text-ink-muted md:hidden">
+                    {m.table.owner}: {t.owner.name} · {m.table.members}: {n(t.memberCount)}
+                  </span>
+                  <span className="mt-2 block md:hidden">
+                    <Badge tone={t.open ? 'success' : 'neutral'}>
+                      {t.open ? m.open : m.closed}
+                    </Badge>
+                  </span>
+                </>
               ),
             },
-            { key: 'owner', header: m.table.owner, render: (t) => t.owner.name },
+            {
+              key: 'owner',
+              header: m.table.owner,
+              headerClassName: WIDE,
+              className: `${WIDE} px-5 py-4 text-sm text-ink`,
+              render: (t) => t.owner.name,
+            },
             {
               key: 'members',
               header: m.table.members,
-              className: 'px-5 py-4 text-sm tabular-nums text-ink',
+              headerClassName: WIDE,
+              className: `${WIDE} px-5 py-4 text-sm tabular-nums text-ink`,
               render: (t) => n(t.memberCount),
             },
             {
               key: 'state',
               header: m.table.state,
+              headerClassName: WIDE,
+              className: `${WIDE} px-5 py-4 text-sm`,
               render: (t) => (
                 <Badge tone={t.open ? 'success' : 'neutral'}>{t.open ? m.open : m.closed}</Badge>
               ),
@@ -113,7 +136,8 @@ export default async function AdminTeamsPage({
             {
               key: 'created',
               header: m.table.created,
-              className: 'whitespace-nowrap px-5 py-4 text-sm text-ink-muted',
+              headerClassName: WIDE,
+              className: `${WIDE} whitespace-nowrap px-5 py-4 text-sm text-ink-muted`,
               render: (t) => formatDate(locale, t.createdAt),
             },
             {
