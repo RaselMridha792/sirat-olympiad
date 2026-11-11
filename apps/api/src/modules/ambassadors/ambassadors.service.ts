@@ -12,6 +12,7 @@ import type {
   AmbassadorState,
   Paginated,
 } from '@sirat/shared';
+import { maskParticipantId } from '@sirat/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AmbassadorLeaderboardService } from './ambassador-leaderboard.service';
 import type { AdminAmbassadorQueryDto } from './dto/ambassador.dto';
@@ -271,7 +272,8 @@ export class AmbassadorsService {
     const points = sum._sum.amount ?? 0;
     return {
       promoCode: profile?.approvedAt ? profile.promoCode : null,
-      participantId: registration?.participantId ?? null,
+      // Masked here, so the full ID (the login secret) never leaves the server for the card.
+      participantIdMasked: registration ? maskParticipantId(registration.participantId) : null,
       approvedAt: profile?.approvedAt?.toISOString() ?? null,
       referralCount,
       points,

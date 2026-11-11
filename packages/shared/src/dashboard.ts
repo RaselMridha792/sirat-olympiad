@@ -128,8 +128,11 @@ export interface ProfileOptions {
 export interface AmbassadorOverview {
   /** null until an admin approves the ambassador and a code is assigned. */
   promoCode: AmbassadorProfileRecord['promoCode'] | null;
-  /** The ambassador's own participant ID (payments' registration; canonical, shown with formatParticipantId). */
-  participantId: string | null;
+  /**
+   * The ambassador's own participant ID, MASKED (maskParticipantId: "ON •••• •••• 552"). The ID is the login secret,
+   * and the ambassador card is made to be shown around, so the full ID never comes here (lead, 2026-11-11).
+   */
+  participantIdMasked: string | null;
   approvedAt: AmbassadorProfileRecord['approvedAt'];
   /** Counted from users.referred_by_id rows, never a stored counter. */
   referralCount: number;
