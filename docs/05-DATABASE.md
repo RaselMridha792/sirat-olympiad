@@ -31,6 +31,7 @@ Source of truth: `apps/api/prisma/schema.prisma` (validated; see note at bottom)
 | `submissions UNIQUE(attempt_id)`, `UNIQUE(request_id)` | Idempotent final submit |
 | `payments UNIQUE(invoice_number)`, `UNIQUE(trx_id)` | No reused invoice; no double-applied transaction |
 | `registrations UNIQUE(user_id)`, `UNIQUE(payment_id)` | One payment ↔ one registration |
+| `registrations.participant_id` NOT NULL, UNIQUE, DEFAULT `gen_participant_id()`, CHECK `participant_id_check` | The participant ID (admit card; with the email, the student's login; DECISIONS "The participant ID"): `ON` + 10 random digits + a Damm check digit, drawn by the database from `gen_random_uuid()` bits (strong random, never sequential), re-drawn while taken. Every insert path gets one without naming the column; existing rows were backfilled. `participant_damm` and `participant_id_check` mirror `@sirat/shared` (cross-checked in `participant-id.int-spec.ts`). Never logged or audited. Migration `*_registrations_participant_id` |
 | `payments` one active (`initiated`/`pending`) payment per attempt (partial unique index) | "Try again" never runs two checkouts at once |
 | `pending_registrations` one `open` attempt per email and per phone (partial unique indexes) | No double charge from two browsers (owner, DECISIONS "No refund handling") |
 | `users UNIQUE(phone)` (NULL allowed) and `phone ~ '^01[3-9][0-9]{8}$'` on `users` and `pending_registrations` | One phone number, one student, in one stored form (owner) |

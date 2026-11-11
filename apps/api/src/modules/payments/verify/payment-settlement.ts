@@ -41,7 +41,14 @@ export type SettleResult = {
   userId: string | null;
 };
 
-type NewAccount = { id: string; email: string; name: string };
+/** The account settlement just made, and its registration's participant ID (for the confirmation email only). */
+type NewAccount = {
+  id: string;
+  email: string;
+  name: string;
+  registrationId: string;
+  participantId: string;
+};
 type Clash = 'email' | 'phone' | 'trx_id';
 
 /** The form stored on the attempt at start (registration.service.ts createAttempt). */
@@ -197,7 +204,11 @@ export class PaymentSettlement {
       },
     });
     await tx.payment.update({ where: { id: locked.id }, data: { ...paid, userId: user.id } });
-    await tx.registration.create({ data: { userId: user.id, paymentId: locked.id } });
+    // The participant ID is drawn by the database (DEFAULT gen_participant_id()); never logged or audited.
+    const registration = await tx.registration.create({
+      data: { userId: user.id, paymentId: locked.id },
+      select: { id: true, participantId: true },
+    });
     await tx.auditLog.create({
       data: {
         action: 'registration.completed',
@@ -215,7 +226,11 @@ export class PaymentSettlement {
       reviewReason: decision.reviewReason ?? null,
       alert: decision.alert,
       userId: user.id,
-      account: user,
+      account: {
+        ...user,
+        registrationId: registration.id,
+        participantId: registration.participantId,
+      },
     };
   }
 

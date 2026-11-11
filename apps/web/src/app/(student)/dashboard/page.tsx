@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import {
   EXAM_MAX_DURATION_MINUTES,
+  formatParticipantId,
   REGISTRATION_STATE_LABELS,
   type AnnouncementItem,
   type StudentHome,
@@ -169,6 +170,14 @@ function RegistrationCard({
       </div>
       <DetailList
         items={[
+          {
+            label: r.participantId,
+            value: (
+              <span className="font-mono" translate="no">
+                {formatParticipantId(registration.participantId)}
+              </span>
+            ),
+          },
           { label: r.registeredOn, value: formatDate(locale, registration.registeredAt) },
           { label: r.payment, value: c.paymentStatus[payment.status] },
           { label: r.invoice, value: <span className="font-mono">{payment.invoiceNumber}</span> },
