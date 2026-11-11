@@ -1,5 +1,7 @@
 import type {
   AdminAmbassadorRow,
+  AmbassadorLeaderboard,
+  AmbassadorLeaderboardRow,
   AmbassadorOverview,
   AmbassadorPointsConfig,
   Paginated,
@@ -119,11 +121,55 @@ export function isRoleBehind(error: unknown): boolean {
   return error instanceof DataRequestError && error.status === 403;
 }
 
-export function studentAmbassador(get: ApiGet): Pick<DataSource['student'], 'getAmbassador'> {
+const isBoardRow = (v: unknown): v is AmbassadorLeaderboardRow =>
+  isRecord(v) &&
+  count(v.rank) &&
+  text(v.name) &&
+  textOrNull(v.institution) &&
+  count(v.points) &&
+  textOrNull(v.tier) &&
+  typeof v.isMe === 'boolean';
+
+const isBoard = (v: unknown): v is AmbassadorLeaderboard =>
+  isRecord(v) &&
+  Array.isArray(v.items) &&
+  v.items.every(isBoardRow) &&
+  count(v.page) &&
+  count(v.pageSize) &&
+  count(v.total) &&
+  (v.me === null || (isRecord(v.me) && count(v.me.rank) && count(v.me.points))) &&
+  text(v.asOf);
+
+export function studentAmbassador(
+  get: ApiGet,
+): Pick<DataSource['student'], 'getAmbassador' | 'getAmbassadorLeaderboard'> {
   return {
     /** GET /ambassador/me (role ambassador). */
     async getAmbassador() {
       return pickOverview(await getJson(get, '/ambassador/me', isOverview));
+    },
+    /** GET /ambassador/leaderboard (role ambassador): no id or contact ever reaches the page. */
+    async getAmbassadorLeaderboard(query) {
+      const board = await getJson(
+        get,
+        withQuery('/ambassador/leaderboard', { page: query.page, pageSize: query.pageSize }),
+        isBoard,
+      );
+      return {
+        items: board.items.map((r) => ({
+          rank: r.rank,
+          name: r.name,
+          institution: r.institution,
+          points: r.points,
+          tier: r.tier,
+          isMe: r.isMe,
+        })),
+        page: board.page,
+        pageSize: board.pageSize,
+        total: board.total,
+        me: board.me && { rank: board.me.rank, points: board.me.points },
+        asOf: board.asOf,
+      };
     },
   };
 }
@@ -150,7 +196,12 @@ export function adminAmbassadors(
     async listAmbassadors(query) {
       const page = await getJson(
         get,
-        withQuery('/admin/ambassadors', { page: query.page, pageSize: query.pageSize, q: query.q }),
+        withQuery('/admin/ambassadors', {
+          page: query.page,
+          pageSize: query.pageSize,
+          q: query.q,
+          sort: query.sort === 'points' ? 'points' : undefined,
+        }),
         isRowPage,
       );
       return {

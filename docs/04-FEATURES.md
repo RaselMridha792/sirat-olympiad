@@ -41,7 +41,7 @@ Old-system source is in `reference/` (see `07-UI-MIGRATION.md`). SDG is removed 
 | A1 | Ambassador dashboard (code, referrals, points, rank) | P1 | Derived from ledger/rows; cached |
 | A2 | Team create/view | P1 | Visible only to members + admin |
 | A3 | Tasks (view assigned, submit proof) | P1 | Points only after admin approval |
-| A4 | Ambassador leaderboard | P2 | Cached, paged |
+| A4 | Ambassador leaderboard | P2 | Cached (60 s, per side), paged; ambassadors and admins only (built 2026-11-10) |
 
 ## Admin / staff
 
