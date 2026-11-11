@@ -29,6 +29,8 @@ import { requireAccess } from '@/lib/session';
 
 const PATH = '/admin/ambassadors';
 const PAGE_SIZE = 20;
+/** Columns shown from md up; below it their facts sit in the first cell, and the actions stay. */
+const WIDE = 'hidden md:table-cell';
 
 export async function generateMetadata(): Promise<Metadata> {
   const { m } = await getMessages(adminAmbassadorsMessages);
@@ -156,7 +158,21 @@ export default async function AdminAmbassadorsPage({
                       {a.name}
                       <DemoBadge demo={a.demo} locale={locale} />
                     </p>
-                    <p className="text-xs text-ink-muted">{a.email}</p>
+                    <p className="break-words text-xs text-ink-muted">{a.email}</p>
+                    {/* Below md the code, numbers and status columns are hidden: they show here instead. */}
+                    <p className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink md:hidden">
+                      <span className="rounded-control border border-line bg-page px-2 py-0.5 font-mono font-bold">
+                        {a.promoCode}
+                      </span>
+                      <span>
+                        {m.mobileFacts(
+                          formatNumber(locale, a.referralCount),
+                          formatNumber(locale, a.points),
+                        )}
+                      </span>
+                      {a.rankName ? <Badge tone={rankTone(a.rankName)}>{a.rankName}</Badge> : null}
+                      {a.approvedAt ? null : <Badge tone="neutral">{m.revoked}</Badge>}
+                    </p>
                   </div>
                 </div>
               ),
@@ -164,6 +180,8 @@ export default async function AdminAmbassadorsPage({
             {
               key: 'code',
               header: m.table.promoCode,
+              headerClassName: WIDE,
+              className: `${WIDE} px-5 py-4 text-sm`,
               render: (a) => (
                 <span className="whitespace-nowrap rounded-control border border-line bg-page px-2 py-1 font-mono text-xs font-bold text-ink">
                   {a.promoCode}
@@ -173,8 +191,8 @@ export default async function AdminAmbassadorsPage({
             {
               key: 'referrals',
               header: m.table.referrals,
-              headerClassName: 'text-center',
-              className: 'px-5 py-4 text-center',
+              headerClassName: `${WIDE} text-center`,
+              className: `${WIDE} px-5 py-4 text-center`,
               render: (a) => (
                 <Badge tone="success">
                   <span className="inline-flex items-center gap-1">
@@ -187,12 +205,15 @@ export default async function AdminAmbassadorsPage({
             {
               key: 'points',
               header: m.table.points,
-              className: 'px-5 py-4 text-sm font-semibold tabular-nums text-ink',
+              headerClassName: WIDE,
+              className: `${WIDE} px-5 py-4 text-sm font-semibold tabular-nums text-ink`,
               render: (a) => formatNumber(locale, a.points),
             },
             {
               key: 'rank',
               header: m.table.rank,
+              headerClassName: WIDE,
+              className: `${WIDE} px-5 py-4 text-sm`,
               render: (a) =>
                 a.rankName ? (
                   <Badge tone={rankTone(a.rankName)}>{a.rankName}</Badge>
@@ -203,7 +224,8 @@ export default async function AdminAmbassadorsPage({
             {
               key: 'approved',
               header: m.table.approved,
-              className: 'whitespace-nowrap px-5 py-4 text-sm text-ink',
+              headerClassName: WIDE,
+              className: `${WIDE} whitespace-nowrap px-5 py-4 text-sm text-ink`,
               render: (a) =>
                 a.approvedAt ? (
                   formatDate(locale, a.approvedAt)
@@ -214,7 +236,8 @@ export default async function AdminAmbassadorsPage({
             {
               key: 'joined',
               header: m.table.joined,
-              className: 'whitespace-nowrap px-5 py-4 text-sm text-ink-muted',
+              headerClassName: WIDE,
+              className: `${WIDE} whitespace-nowrap px-5 py-4 text-sm text-ink-muted`,
               render: (a) => formatDate(locale, a.createdAt),
             },
             {
