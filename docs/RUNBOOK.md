@@ -953,3 +953,9 @@ With the participant-ID login (DECISIONS "The participant ID"), a student's ID t
 5. The audit log has `payments.participant_id_reissued` with your reason and the number of sessions ended. It never holds the ID.
 
 Do not read an ID out over the phone or a chat. If the student cannot reach their email, correct the email first, then issue the new ID.
+
+## 27. The admit card's official group links
+
+The admit card (`/dashboard/admit-card`) lists the official WhatsApp, Telegram, Facebook and YouTube groups. Each link stays hidden until it has a URL.
+- **To add one:** set its URL in `apps/web/src/content/groups.ts` (https only; anything else is dropped) and deploy the web. No API or database change.
+- **The participant ID on that page is the login secret.** If a student posts it, follow §26 (a leaked participant ID).
