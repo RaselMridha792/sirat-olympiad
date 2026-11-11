@@ -196,7 +196,7 @@ Every student who paid gets one free book: they confirm a Bangladeshi delivery a
 
 ## Exam engine (E2; plan: `docs/plans/EXAM-PLAN.md` §1.1, §3, §3.15)
 
-`@Roles('student', 'ambassador')`; each request re-reads the student (a blocked account gets 403 `account_blocked` with a valid token). A student sees published exams for everyone or for their own category; any other exam is 404. Another user's attempt is 404, never 403. Shapes in `@sirat/shared` (`exam.ts`). Refusals carry reason codes in `details`. **No student response contains a question id, an option key, a correct key, an explanation or a score** (`exam-leak.int-spec.ts`).
+`@Roles('student', 'ambassador')`; each request re-reads the student (a blocked account gets 403 `account_blocked` with a valid token). A student sees published exams for everyone or for their own category; any other exam is 404. **The round rule** (lead, 10 Nov): an exam in a round that is not its side's first round (the real Round 1, the demo's own Round 1) is visible and startable only to students with a non-eliminated `round_entries` row in that round; others get the same 404. One predicate (`visibleTo` / `roundOpenTo`, `student-access.ts`) serves the list, the waiting room, the start and `nextExamFor`. Another user's attempt is 404, never 403. Shapes in `@sirat/shared` (`exam.ts`). Refusals carry reason codes in `details`. **No student response contains a question id, an option key, a correct key, an explanation or a score** (`exam-leak.int-spec.ts`).
 
 | Method + path | Body | Answers |
 |---|---|---|
