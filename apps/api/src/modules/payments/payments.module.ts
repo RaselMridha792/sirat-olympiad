@@ -9,6 +9,9 @@ import {
   AdminPaymentsController,
   AdminSettingsController,
 } from './admin/admin-payments.controller';
+import { AdminParticipantIdController } from './admin/admin-participant-id.controller';
+import { AdminDiscountCodesController } from './discount/admin-discount-codes.controller';
+import { AdminDiscountCodesService } from './discount/admin-discount-codes.service';
 import { AdminPaymentsService } from './admin/admin-payments.service';
 import { AdminSettingsService } from './admin/admin-settings.service';
 import { PaymentsCoreModule } from './payments-core.module';
@@ -19,6 +22,7 @@ import {
   MyPaymentsController,
   RegistrationController,
 } from './registration/registration.controller';
+import { ParticipantIdReissueService } from './registration/participant-id-reissue.service';
 import { RegistrationGuards } from './registration/registration-guards';
 import { RegistrationService } from './registration/registration.service';
 import { PaymentReconciler } from './verify/payment-reconciler';
@@ -43,6 +47,8 @@ const ATTEMPTS_PER_HOUR = 10;
     PayStationController,
     AdminPaymentsController,
     AdminSettingsController,
+    AdminParticipantIdController,
+    AdminDiscountCodesController,
   ],
   providers: [
     {
@@ -55,6 +61,8 @@ const ATTEMPTS_PER_HOUR = 10;
     PayStationHooks,
     AdminPaymentsService,
     AdminSettingsService,
+    ParticipantIdReissueService,
+    AdminDiscountCodesService,
   ],
   exports: [PaymentsCoreModule, RegistrationService],
 })

@@ -46,6 +46,8 @@ const PUBLIC_ROUTES = new Set([
   // the password before it; under the login limits.
   'POST /api/auth/2fa/verify',
   'POST /api/registrations/start',
+  // payments D1: the price for a promo code, 60/min per IP, one answer for every miss (DECISIONS "Discount codes")
+  'POST /api/registrations/quote',
   // Payments plan 6.7: before an account exists, the sirat_reg cookie is the only proof of "my attempt"; no route
   // takes an id, and none returns personal data.
   'GET /api/registrations/info',

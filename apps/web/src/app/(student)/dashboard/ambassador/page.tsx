@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ClipboardList, Medal, Star, UserPlus, Users, UsersRound } from 'lucide-react';
+import { ClipboardList, Medal, Star, Trophy, UserPlus, Users, UsersRound } from 'lucide-react';
 import { Badge, Card, DataTable, EmptyState, StatCard } from '@sirat/ui';
 import { CopyCode } from '@/components/ambassador/CopyCode';
 import { SubmitProofButton } from '@/components/ambassador/SubmitProofButton';
@@ -143,6 +143,15 @@ export default async function AmbassadorPage({
           />
         </div>
       </div>
+      <p className="mt-3 text-right">
+        <Link
+          href="/dashboard/ambassador/leaderboard"
+          className="inline-flex min-h-6 items-center gap-2 text-sm font-semibold text-secondary hover:underline"
+        >
+          <Trophy aria-hidden="true" size={16} />
+          {m.board.link}
+        </Link>
+      </p>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
         {standing.kind !== 'unranked' ? (

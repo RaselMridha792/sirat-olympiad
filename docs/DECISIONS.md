@@ -28,6 +28,36 @@ One short entry per non-obvious technical or product decision. Newest first. For
 - **Tests and tools:**
   - The dev fixture students have fixed IDs (`ON99999999012`, `…020`, `…036`; RUNBOOK §0).
   - The load students' IDs derive from the load secret, so k6 computes them (`loadtests/load-id.js`).
+## 2026-11-11 — Discount codes (Rasel's decision of 10 Nov; payments D1, the lead's approval and defaults)
+
+1. **What:** an admin makes a code that takes an amount (whole taka) or a percentage (1-99) off the registration fee, with optional limits: total uses, start, end, active. The admin types a code or presses Generate (`DC-` + 8 characters, 40 bits). The lead's defaults, which Rasel may still override:
+   - one promo field takes an ambassador's referral code or a discount code, and one code per registration;
+   - a discount code can be linked to an approved ambassador, and a use then also counts as that ambassador's referral;
+   - the amount to pay never goes below 10 BDT (`MIN_PAYABLE_MINOR`), so there are no free registrations;
+   - a percentage is rounded DOWN to whole taka;
+   - admin only (it changes what registration costs).
+2. **The server prices, once:** `priceWithDiscount` in `@sirat/shared` is the one rule for the start, the retry and the public quote. The start prices the registration itself; the browser never sends a price. The attempt keeps the snapshot (list, discount, amount, code), and so does each payment (`amount_minor` is what PayStation charges).
+   - Retry and resume reuse the snapshot: a fee or code change mid-attempt never moves the price.
+   - At retry only the limit is checked again (the expired checkout lost its reserved use). A code used up meanwhile answers `PROMO_USED_UP` with a plain message: start again without it or with another code.
+   - An attempt made before discount codes has no snapshot and retries at the current fee, as before.
+3. **A use** is a paid payment with the code, or a checkout with it still in progress (initiated or pending, before its expiry): a reserved use. The start counts uses under the code's row lock, so two starts at once never both take the last use. A late payment on an expired checkout (failed or expired → paid) is honoured even past the limit, and shows on the tracking page.
+4. **Kind, value and the linked ambassador lock after the first paid use**; limits, dates, active and the note stay editable. A used code is never deleted, only switched off. The tracking page lists every paid use with the student's name and participant ID, what they paid and what the code took off, with totals.
+5. **Guessing:** the public quote is throttled to 60/min per IP and gives one answer for every miss. Each miss is counted per hashed IP per hour, and ops-check warns (`quote_misses`, a security alert) at 50 misses from one IP in an hour. Admin-typed codes like `SIRAT20` are guessable by design, so RUNBOOK §27 asks admins to prefer Generate for codes that matter.
+6. **Demo data:** `discount_codes` is a demo root (`demo_batch_id`, written only by the loader, immutable). `demo_clear` v4 removes demo codes after the demo forms and payments that used them, and refuses on any mix: `real_forms_on_demo_codes`, `real_payments_on_demo_codes`, `demo_payments_on_real_codes`, `real_codes_linked_to_demo`, `demo_codes_linked_to_real`. A real code never links a demo ambassador, and demo codes are read only in the admin API.
+7. **The refund policy** never names a fixed fee ("the fee is shown on the registration form"), so nothing in the legal texts changes now that the amount paid can be lower.
+
+## 2026-11-10 — The round rule: a later round's exam is only for students promoted into it (exam; lead)
+
+- **Decision:** an exam whose round is not its side's first round is visible and startable only to students with a non-eliminated entry in that round. The first round of each side (the real Round 1, the demo's own Round 1 at 101) and exams without a round stay open to every registered student of the category. The rule applies to the list, the waiting room, the start and `nextExamFor` (the admit card), through one predicate (`visibleTo` / `roundOpenTo`).
+- **Why:** the admin may attach an exam to any round, and the knockout method is still open (a later-round quiz is possible). Before this, such an exam was open to every student, eliminated ones included. Found while reviewing `nextExamFor` (#29).
+- **How:** `ExamConfig.roundGated` (cached) is true when a round with a lower sort_order exists on the same side. The student's non-eliminated round entries are read only when a gated exam is in question, so the Round 1 start surge pays no extra query. A config cached before the deploy counts as open for at most 60 s.
+
+## 2026-11-10 — The ambassador leaderboard (core; the lead's approval of 10 Nov, the client's priority on the ambassador panel)
+
+- **Who sees it:** ambassadors (their own side: demo data never ranks with real) and admins (the admin ambassadors list's "most points first"). Not students, not the public.
+- **What it shows:** place, name, institution, points and rank tier, as the exam board shows names (OPEN-QUESTIONS #10). The caller's own row is marked, and their place shows even off the page. No id, contact, code or referral list.
+- **How it ranks:** the point ledger's sum; equal points share a place (1, 2, 2, 4), then by name. Approved, unblocked ambassadors only.
+- **Freshness:** cached for 60 s per side with a single-flight lock, dropped at once by core's own point and membership writes; the referral sweep's new points show within the minute.
 
 ## 2026-11-10 — The participant ID (Rasel's decision of 10 Nov, the client's request; payments P1, the lead's review)
 
@@ -52,7 +82,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - a confirmation email at settlement (`registration-confirmed.<registrationId>`).
    The email carries a credential on the owner's choice, and says to keep it private. The ID is never logged or written to the audit.
 5. **Next:**
-   - P1b: the admin "issue a new ID" (reason, audit, email, ends the sessions);
+   - P1b (built): the admin "issue a new ID", `POST /admin/users/:id/participant-id` with a reason. One transaction draws the new ID (same prefix), ends every session (A2's `endSessionsOf`), and audits the reason and the session count. The new ID goes only to the student's email; the admin never sees it, and nothing logs it. Access tokens already issued live out their TTL, as with "log out everywhere";
    - P2: the registration form without a password, shipped with A2's login;
    - the RULEBOOK line comes in A2's login PR.
 

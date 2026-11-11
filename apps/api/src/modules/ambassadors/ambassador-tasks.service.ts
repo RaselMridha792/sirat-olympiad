@@ -16,6 +16,7 @@ import type {
   TaskReviewResult,
 } from '@sirat/shared';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AmbassadorLeaderboardService } from './ambassador-leaderboard.service';
 import type { Actor } from './ambassadors.service';
 
 type Tx = Prisma.TransactionClient;
@@ -34,7 +35,10 @@ type PageParams = { page?: number; pageSize?: number };
  */
 @Injectable()
 export class AmbassadorTasksService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly leaderboard: AmbassadorLeaderboardService,
+  ) {}
 
   // ───────────── Admin: tasks ─────────────
 
@@ -216,7 +220,7 @@ export class AmbassadorTasksService {
   /** Final. The ledger row's event key makes a second approval of the same assignment award nothing. */
   async approve(assignmentId: string, actor: Actor): Promise<TaskReviewResult> {
     await assertAdmin(this.prisma, actor.id);
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const a = await lockAssignment(tx, assignmentId);
       if (a.status !== 'submitted') throw conflict('not_submitted');
       await tx.pointLedger.createMany({
@@ -243,6 +247,8 @@ export class AmbassadorTasksService {
       });
       return { assignmentId: a.id, status: 'approved' as const, points: sum._sum.amount ?? 0 };
     });
+    await this.leaderboard.invalidate();
+    return result;
   }
 
   async reject(assignmentId: string, note: string, actor: Actor): Promise<TaskReviewResult> {

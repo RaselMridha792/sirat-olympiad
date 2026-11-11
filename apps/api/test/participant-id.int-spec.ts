@@ -18,7 +18,7 @@ import {
 } from '@sirat/shared';
 import { ACCESS_COOKIE } from '../src/modules/auth/access-token.service';
 import { EmailQueue } from '../src/modules/notifications/email-queue.service';
-import { makePaidPayment, makeUser } from './helpers';
+import { makePaidPayment, makeUser, testInvoice, testPhone } from './helpers';
 import { bootPaymentsApp, caller, startRegistration, type PaymentsApp } from './payments-app';
 
 const PRISMA_DIR = join(__dirname, '..', 'prisma');
@@ -242,13 +242,31 @@ describe('the backfill', () => {
     try {
       await admin.$executeRawUnsafe(`CREATE DATABASE "${name}"`); // generated name: safe identifier
       prismaCli(['migrate', 'deploy', '--schema', join(before, 'schema.prisma')], url.toString());
-      // Registrations made before the column existed (createMany names no participant_id).
+      // Registrations made before the column existed. The attempts and payments go in by raw SQL: the client's model
+      // is the newest schema (later migrations add columns), and this database stops before this migration.
       const old: Prisma.RegistrationCreateManyInput[] = [];
       for (let i = 0; i < 5; i++) {
         // A placeholder hash: before A2's participant-ID login, password_hash is still NOT NULL.
         const user = await makeUser(db, { role: 'student', passwordHash: 'not-a-real-hash' });
-        const payment = await makePaidPayment(db, user.id);
-        old.push({ userId: user.id, paymentId: payment.id });
+        const attemptId = randomUUID();
+        const paymentId = randomUUID();
+        await db.$executeRaw`
+          INSERT INTO "pending_registrations" ("id", "email", "phone", "name", "start_request_id",
+                                               "resume_token_hash", "updated_at")
+          VALUES (${attemptId}::uuid, ${`b${i}-${randomUUID().slice(0, 8)}@test.invalid`}, ${testPhone()},
+                  'Backfill Student', ${randomUUID()}::uuid, ${randomUUID()}, now())`;
+        await db.$executeRaw`
+          INSERT INTO "payments" ("id", "pending_registration_id", "user_id", "invoice_number", "amount_minor",
+                                  "currency", "pay_with_charge", "gateway_account", "gateway_env", "expires_at",
+                                  "updated_at")
+          VALUES (${paymentId}::uuid, ${attemptId}::uuid, ${user.id}::uuid, ${testInvoice()}, 40000, 'BDT', false,
+                  'test-account', 'fake', now() + interval '1 hour', now())`;
+        await db.$executeRaw`UPDATE "payments" SET "status" = 'pending' WHERE "id" = ${paymentId}::uuid`;
+        await db.$executeRaw`
+          UPDATE "payments" SET "status" = 'paid', "trx_id" = ${`TRX${randomUUID().slice(0, 12)}`},
+                                "paid_at" = now(), "paid_amount_minor" = 40000
+          WHERE "id" = ${paymentId}::uuid`;
+        old.push({ userId: user.id, paymentId });
       }
       await db.registration.createMany({ data: old });
 

@@ -97,6 +97,40 @@ export const AMBASSADOR_REFUSALS = [
 ] as const;
 export type AmbassadorRefusal = (typeof AMBASSADOR_REFUSALS)[number];
 
+/** GET /admin/ambassadors `sort`: the newest profile first (default), or the most points first. */
+export const AMBASSADOR_LIST_SORTS = ['newest', 'points'] as const;
+export type AmbassadorListSort = (typeof AMBASSADOR_LIST_SORTS)[number];
+
+// ───────────── Ambassador leaderboard (core A4; 06-API "Ambassadors") ─────────────
+
+/**
+ * One ambassador on the leaderboard: the name and institution as the exam board shows them (OPEN-QUESTIONS #10), the
+ * points and the tier. No id, contact, code or referral list.
+ */
+export interface AmbassadorLeaderboardRow {
+  /** Equal points share a rank (1, 2, 2, 4). */
+  rank: number;
+  name: string;
+  institution: string | null;
+  points: number;
+  /** The highest rank threshold the points reach; null below the lowest. */
+  tier: string | null;
+  /** The caller's own row. */
+  isMe: boolean;
+}
+
+/** GET /ambassador/leaderboard: one page of the ranking, and the caller's own place on it. */
+export interface AmbassadorLeaderboard {
+  items: AmbassadorLeaderboardRow[];
+  page: number;
+  pageSize: number;
+  total: number;
+  /** The caller's rank and points even when they are not on this page; null while not ranked. */
+  me: { rank: number; points: number } | null;
+  /** When the ranking was computed: it is cached for up to a minute. */
+  asOf: string;
+}
+
 // ───────────── Admin statistics (06-API "Admin statistics"; the shape is AdminStats in dashboard.ts) ─────────────
 
 /** payments' RegistrationAttemptStatus (schema.prisma), in the order the admin home lists them. */

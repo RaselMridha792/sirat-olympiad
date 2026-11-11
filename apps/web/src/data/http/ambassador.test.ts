@@ -112,3 +112,76 @@ test('admin.getAmbassadorPoints reads GET /admin/ambassador-points and passes on
     await assert.rejects(source.admin.getAmbassadorPoints(), DataRequestError);
   }
 });
+
+const board = {
+  items: [
+    {
+      rank: 1,
+      name: 'Amb One',
+      institution: 'Dhaka School',
+      points: 130,
+      tier: 'Silver',
+      isMe: false,
+    },
+    { rank: 2, name: 'Amb Two', institution: null, points: 90, tier: 'Bronze', isMe: true },
+  ],
+  page: 1,
+  pageSize: 20,
+  total: 2,
+  me: { rank: 2, points: 90 },
+  asOf: '2026-11-10T06:00:00.000Z',
+};
+
+test('student.getAmbassadorLeaderboard sends the page and passes on only the named fields', async () => {
+  const extra = {
+    ...board,
+    items: board.items.map((r) => ({ ...r, userId: 'u1', email: 'amb@test.invalid' })),
+    me: { ...board.me, userId: 'u2' },
+  };
+  const source = createHttpSource(
+    fakeApi({ '/ambassador/leaderboard?page=1&pageSize=20': { status: 200, body: extra } }),
+  );
+  const got = await source.student.getAmbassadorLeaderboard({ page: 1, pageSize: 20 });
+  assert.deepEqual(got, board);
+  assert.ok(!JSON.stringify(got).includes('@') && !JSON.stringify(got).includes('userId'));
+});
+
+test('student.getAmbassadorLeaderboard refuses a wrong shape or a refusal', async () => {
+  for (const body of [
+    { ...board, items: [{ ...board.items[0], isMe: 'no' }] },
+    { ...board, items: [{ ...board.items[0], rank: '1' }] },
+    { ...board, me: { rank: 2 } },
+    { ...board, asOf: undefined },
+  ]) {
+    const source = createHttpSource(
+      fakeApi({ '/ambassador/leaderboard?page=1&pageSize=20': { status: 200, body } }),
+    );
+    await assert.rejects(
+      source.student.getAmbassadorLeaderboard({ page: 1, pageSize: 20 }),
+      DataRequestError,
+    );
+  }
+  const refused = createHttpSource(
+    fakeApi({ '/ambassador/leaderboard?page=1&pageSize=20': { status: 403, body: null } }),
+  );
+  await assert.rejects(
+    refused.student.getAmbassadorLeaderboard({ page: 1, pageSize: 20 }),
+    DataRequestError,
+  );
+});
+
+test('admin.listAmbassadors sends sort=points only for the points order', async () => {
+  const empty = { items: [], page: 1, pageSize: 20, total: 0 };
+  const asked: string[] = [];
+  const get = (async (path: string) => {
+    asked.push(path);
+    return { status: 200, body: empty };
+  }) as ApiGet;
+  const source = createHttpSource(get);
+  await source.admin.listAmbassadors({ page: 1, pageSize: 20, sort: 'points' });
+  await source.admin.listAmbassadors({ page: 1, pageSize: 20 });
+  assert.deepEqual(asked, [
+    '/admin/ambassadors?page=1&pageSize=20&sort=points',
+    '/admin/ambassadors?page=1&pageSize=20',
+  ]);
+});

@@ -25,6 +25,7 @@ import {
   type MyBookOrderView,
   type AdminUserDetail,
   type AdminUserRow,
+  type AmbassadorLeaderboard,
   type AmbassadorOverview,
   type AnnouncementItem,
   type AdminAttemptDetail,
@@ -621,6 +622,42 @@ export function createMockSource(state: MockState | null): DataSource {
             team: null,
             tasks: [],
             recentReferrals: [],
+          }),
+        ),
+
+      // The mock ambassadors by points (equal points share a place), as the API ranks them.
+      getAmbassadorLeaderboard: (query) =>
+        run(
+          (): AmbassadorLeaderboard => {
+            const w = getWorld();
+            const sorted = [...w.ambassadors]
+              .filter((a) => a.approvedAt !== null)
+              .sort((a, b) => b.points - a.points || a.user.name.localeCompare(b.user.name));
+            const ranked = sorted.map((a) => ({
+              rank: sorted.findIndex((o) => o.points === a.points) + 1,
+              name: a.user.name,
+              institution: a.user.institution,
+              points: a.points,
+              tier: RANKS.filter((r) => r.minPoints <= a.points).at(-1)?.name ?? null,
+              isMe: a.user.id === w.me.id,
+            }));
+            const mine = ranked.find((r) => r.isMe);
+            return {
+              items: ranked.slice((query.page - 1) * query.pageSize, query.page * query.pageSize),
+              page: query.page,
+              pageSize: query.pageSize,
+              total: ranked.length,
+              me: mine ? { rank: mine.rank, points: mine.points } : null,
+              asOf: new Date(w.now).toISOString(),
+            };
+          },
+          (): AmbassadorLeaderboard => ({
+            items: [],
+            page: query.page,
+            pageSize: query.pageSize,
+            total: 0,
+            me: null,
+            asOf: new Date().toISOString(),
           }),
         ),
 
@@ -1241,6 +1278,8 @@ export function createMockSource(state: MockState | null): DataSource {
                     matches(a.user.email, query.q) ||
                     matches(a.promoCode, query.q),
                 )
+                // `sort=points`: the most points first (a stable sort keeps the world's order otherwise).
+                .sort((a, b) => (query.sort === 'points' ? b.points - a.points : 0))
                 .map((a) => ({
                   userId: a.user.id,
                   name: a.user.name,

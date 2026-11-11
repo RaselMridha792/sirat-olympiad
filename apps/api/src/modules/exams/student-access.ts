@@ -8,6 +8,11 @@ export interface StudentAccount {
   emailVerifiedAt: Date | null;
   /** A demo account (DECISIONS 2026-11-08 "Demo data"): it sees and starts demo exams only. */
   demo: boolean;
+  /**
+   * The rounds where the student has a non-eliminated entry, loaded only when a round-gated exam is in question
+   * (withRoundEntries). Not loaded: every gated exam stays hidden.
+   */
+  entryRoundIds?: ReadonlySet<string>;
 }
 
 /**
@@ -50,9 +55,40 @@ export async function hasPaidRegistration(prisma: PrismaService, userId: string)
  */
 export const visibleTo = (
   config: ExamConfig | null,
-  student: Pick<StudentAccount, 'category' | 'demo'>,
+  student: Pick<StudentAccount, 'category' | 'demo' | 'entryRoundIds'>,
 ): config is ExamConfig =>
   config !== null &&
   config.status === 'published' &&
   (config.demo ?? false) === student.demo &&
-  (config.category === null || config.category === student.category);
+  (config.category === null || config.category === student.category) &&
+  roundOpenTo(config, student);
+
+/**
+ * The round rule (lead, 10 Nov): an exam in a round that is not its side's first round (config.roundGated) is only
+ * for students a promotion put in that round, i.e. with a non-eliminated round entry there. The first round (real
+ * Round 1, the demo's own Round 1) and exams without a round are open to all.
+ */
+export const roundOpenTo = (
+  config: Pick<ExamConfig, 'roundId' | 'roundGated'>,
+  student: Pick<StudentAccount, 'entryRoundIds'>,
+): boolean =>
+  !config.roundGated ||
+  (config.roundId !== null && (student.entryRoundIds?.has(config.roundId) ?? false));
+
+/**
+ * The student's non-eliminated round entries, loaded only when one of `configs` is round-gated, so the start path of
+ * a Round 1 exam (the surge) costs no extra query.
+ */
+export async function withRoundEntries<S extends StudentAccount>(
+  prisma: Pick<PrismaService, 'roundEntry'>,
+  userId: string,
+  student: S,
+  configs: readonly (ExamConfig | null)[],
+): Promise<S> {
+  if (!configs.some((c) => c?.roundGated)) return student;
+  const rows = await prisma.roundEntry.findMany({
+    where: { userId, status: { not: 'eliminated' } },
+    select: { roundId: true },
+  });
+  return { ...student, entryRoundIds: new Set(rows.map((r) => r.roundId)) };
+}
