@@ -28,6 +28,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - P1b: the admin "issue a new ID" (reason, audit, email, ends the sessions);
    - P2: the registration form without a password, shipped with A2's login;
    - the RULEBOOK line comes in A2's login PR.
+
 ## 2026-11-10 — A global failed-login alert, the defence against spraying (lead; A2, part of the participant-ID login)
 
 - **Why:** students and ambassadors are to log in with email + participant ID (owner, 2026-11-10; docs/plans/PARTICIPANT-LOGIN-PLAN.md). The per-account limits stop guessing on one account, but not a spray: one guess on each of many accounts.
