@@ -68,6 +68,8 @@ export const registrationMessages = defineMessages({
         'A payment for this email is already in progress. Continue in the browser where you started, or try again a little later, once it has expired.',
       PHONE_REGISTERED: owner('PHONE_REGISTERED').en,
       PROMO_INVALID: 'This promo code is not valid. Check it, or leave the field empty.',
+      PROMO_USED_UP:
+        'This code has reached its limit. Start again without it or with another code.',
       GRADE_LEVEL_UNKNOWN: 'Choose your class again.',
       START_IN_PROGRESS: 'Your payment is being prepared. Try again in a moment.',
       START_REQUEST_REUSED: 'Please press the button again.',
@@ -206,6 +208,8 @@ export const registrationMessages = defineMessages({
         'এই email-এর একটি পেমেন্ট এখন চলছে। যে ব্রাউজারে শুরু করেছিলেন সেখানে চালিয়ে যান, অথবা কিছুক্ষণ পরে, সময় শেষ হলে আবার চেষ্টা করুন।',
       PHONE_REGISTERED: owner('PHONE_REGISTERED').bn,
       PROMO_INVALID: 'এই প্রোমো কোডটি সঠিক নয়। মিলিয়ে দেখুন, অথবা ঘরটি খালি রাখুন।',
+      PROMO_USED_UP:
+        'এই কোডটির ব্যবহারের সীমা শেষ হয়ে গেছে। কোড ছাড়া বা অন্য কোড দিয়ে আবার শুরু করুন।',
       GRADE_LEVEL_UNKNOWN: 'আপনার শ্রেণি আবার বেছে নিন।',
       START_IN_PROGRESS: 'আপনার পেমেন্ট প্রস্তুত হচ্ছে। একটু পরে আবার চেষ্টা করুন।',
       START_REQUEST_REUSED: 'অনুগ্রহ করে বোতামটি আবার চাপুন।',

@@ -90,6 +90,11 @@ export const adminDemoMessages = defineMessages({
       real_exams_on_demo_rounds: 'real exams in a demo round',
       real_jury_on_demo_rounds: 'real judges assigned to a demo round',
       real_certificates_on_demo_rounds: 'real certificates for a demo round',
+      real_forms_on_demo_codes: 'real registration forms with a demo discount code',
+      real_payments_on_demo_codes: 'real payments with a demo discount code',
+      demo_payments_on_real_codes: 'demo payments with a real discount code',
+      real_codes_linked_to_demo: 'real discount codes linked to a demo ambassador',
+      demo_codes_linked_to_real: 'demo discount codes linked to a real ambassador',
     } as Record<string, string>,
     load: {
       button: 'Load demo data',
@@ -220,6 +225,11 @@ export const adminDemoMessages = defineMessages({
       real_exams_on_demo_rounds: 'ডেমো রাউন্ডে আসল পরীক্ষা',
       real_jury_on_demo_rounds: 'ডেমো রাউন্ডে আসল জুরি',
       real_certificates_on_demo_rounds: 'ডেমো রাউন্ডের আসল সার্টিফিকেট',
+      real_forms_on_demo_codes: 'ডেমো ডিসকাউন্ট কোড দেওয়া আসল রেজিস্ট্রেশন ফর্ম',
+      real_payments_on_demo_codes: 'ডেমো ডিসকাউন্ট কোডে আসল পেমেন্ট',
+      demo_payments_on_real_codes: 'আসল ডিসকাউন্ট কোডে ডেমো পেমেন্ট',
+      real_codes_linked_to_demo: 'ডেমো অ্যাম্বাসেডরের সঙ্গে যুক্ত আসল ডিসকাউন্ট কোড',
+      demo_codes_linked_to_real: 'আসল অ্যাম্বাসেডরের সঙ্গে যুক্ত ডেমো ডিসকাউন্ট কোড',
     } as Record<string, string>,
     load: {
       button: 'ডেমো ডেটা লোড করুন',
