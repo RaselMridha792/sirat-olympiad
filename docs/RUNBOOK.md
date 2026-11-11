@@ -36,19 +36,16 @@ $DCD up -d --build --no-deps migrate api worker web nginx   # the shared stack (
 ```
 
 **The pre-push hook (every clone, once):** `git config core.hooksPath scripts/git-hooks`.
-
 - `scripts/git-hooks/pre-push` refuses a push whose commits descend from the old history's first commit (`7587f2f`) or touch `reference/`. The repository is public, and both must never reach it (DECISIONS 2026-11-08). A push to the private archive (its exact URLs) passes, since it holds both by design.
 - CI runs the same check on every pull request.
 - To check by hand before a push: `git merge-base --is-ancestor 7587f2f HEAD && echo STOP-old-history || echo ok`.
 
 **nginx after pulling the TLS change once (L3):**
-
 - An nginx container created before the folder mount (single-file mounts, the image's default command) keeps running, but it cannot start again. At the next Docker Desktop or PC restart, or after `$DCD restart nginx`, it crash-loops with `open() "/etc/nginx/sirat/cloudflare-realip.conf" failed`.
 - With the lead's or Rasel's go-ahead (the stack is shared), recreate it once from a checkout that has the change: `$DCD up -d --no-deps nginx`. The same applies if a smoke turn recreated nginx from a worktree without the change and that worktree merges main later.
 - The e2e's CSP step needs nginx's site (http://127.0.0.1:8080). Against a bare Next, or an nginx without the change, it fails on purpose.
 
 **The runtime role sirat_app (L2):**
-
 - `POSTGRES_APP_PASSWORD` in the root `.env` (`openssl rand -hex 32`) is the same value in every worktree that takes stack turns: one Postgres cluster has one role. The first stack turn after L2 gives the role its login (the migrate log says `runtime role ready: sirat_app (login and password set)`); later turns keep it.
 - `TEST_APP_DATABASE_URL` in `apps/api/.env` (`postgresql://sirat_app:<the same value>@127.0.0.1:15432/<the session's *_test database>`, the same host and database as `TEST_DATABASE_URL`) makes the integration tests run the app as `sirat_app`, as CI does. Without it the tests run the app as the owner and skip the `sirat_app` checks; with it but no login yet, `test:int` stops with a message.
 - Rasel types both values. Sessions never read or print them.
@@ -57,7 +54,6 @@ $DCD up -d --build --no-deps migrate api worker web nginx   # the shared stack (
 Signing secret: the API refuses to start (in every `NODE_ENV`) when `JWT_ACCESS_SECRET` is blank, shorter than 32 characters, too repetitive, or contains a placeholder word such as `fake`, `example` or `change me`. The error names the rule, never the value. Use a separate value per environment and never reuse the dev value on the VPS.
 
 **The two-factor key (admin 2FA, DECISIONS "Admin two-factor login"):**
-
 - **The stack:** every worktree's root `.env` needs `TOTP_ENCRYPTION_KEY`, since the stack's api runs with `NODE_ENV=production` and refuses to start without it. Add it once without printing it: `printf 'TOTP_ENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)" >> .env`.
 - **Host-side `pnpm dev:api`:** the same line in `apps/api/.env` turns 2FA on for that API. Without it 2FA is off there: nothing is enforced, and the 2FA routes answer 503 (development only).
 - **Enrolments follow the key:** it decrypts the stored secrets. An admin who enrolled under one key gets no code accepted under another (a recovery code or `admin:2fa-reset` still works, §22). So dev enrolments must be redone after a stack turn from a worktree with a different key, unless every worktree uses the same value.
@@ -88,7 +84,6 @@ pnpm --filter @sirat/api db:fixtures:dev                   # 4. the same three s
 Web session: the dashboards read the real session (`GET /api/auth/me` from the web server; `API_INTERNAL_URL`, default `http://localhost:4000`, compose sets `http://api:4000`), so `pnpm dev:web` needs `pnpm dev:api` running (the stack's API is not published on :4000; with the full stack, use its own web through nginx at http://127.0.0.1:8080). Log in at `/login` as a fixture student; the admin pages need an admin from the create-admin CLI. Without a session a dashboard page goes to `/refresh`, then `/login`; with the API down it shows the error page, never `/login`. Dashboard data comes from the mock in development; `DATA_SOURCE=http pnpm dev:web` reads the local API instead (methods not connected yet show the error state, as in production).
 
 Page checks and e2e (`apps/web/scripts`; Node and a local Chrome or Edge, no other tool):
-
 - **The launch table** (`apps/web/src/data/launch.ts`) decides which dashboard pages are live:
   - `check:prod` fails a `live` page that shows the error state, a `soon` page without "coming soon", and any page without a row. Every new page needs a row.
   - In development, `?mock=launch` shows the `soon` pages as production would.
@@ -99,7 +94,6 @@ Page checks and e2e (`apps/web/scripts`; Node and a local Chrome or Edge, no oth
 - `pnpm --filter @sirat/web e2e:register <baseUrl>` (registration and payment, payments PR 4): needs an admin (`E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD`, who opens registration for the run and closes it again) and an API with `PAYSTATION_ENV=fake`, never the sandbox or live gateway. Locally without the stack: the fake (`pnpm --filter @sirat/api exec tsx test/fake-paystation/run.ts` with `FAKE_PAYSTATION_IPN_URL=<baseUrl>/api/payments/paystation/ipn`), the API and its worker with `PAYSTATION_ENV=fake`, `PAYSTATION_BASE_URL=http://127.0.0.1:18090`, `PAYSTATION_CALLBACK_URL=<baseUrl>/api/payments/paystation/callback` and `APP_URL=<baseUrl>` set in the environment (they win over `apps/api/.env`, which stays untouched), and `next dev` with `API_INTERNAL_URL` pointing at that API and `DATA_SOURCE=http` (the dev `/api` rewrite follows `API_INTERNAL_URL`, so a session on its own API port can use its own web; the free-book step reads real data). It leaves two `e2e-…@test.invalid` students behind.
 
 Load test of registration and payment (`loadtests/registration-surge.js`, payments PR 5; k6 is a separate binary, not a dependency). Locally it runs on throwaway containers, never on the shared stack, `sirat` or `sirat_pay`:
-
 - Containers (`--rm`, so nothing stays): `docker run -d --rm --name sirat-pay-load-pg -e POSTGRES_USER=load -e POSTGRES_PASSWORD=<any> -e POSTGRES_DB=sirat_load -p 127.0.0.1:54433:5432 postgres:17-alpine`, the same for `redis:7-alpine` (`-p 127.0.0.1:54380:6379`) and `axllent/mailpit:v1.32.0` (`-p 127.0.0.1:54025:8025`). On Windows, pick ports outside `netsh interface ipv4 show excludedportrange protocol=tcp`.
 - Environment for the API and the worker (it wins over `apps/api/.env`, which stays untouched): `DATABASE_URL` and `DIRECT_URL` to that database, `REDIS_CACHE_URL=redis://127.0.0.1:54380/0`, `REDIS_QUEUE_URL=redis://127.0.0.1:54380/1`, `PAYSTATION_ENV=fake`, `PAYSTATION_BASE_URL=http://127.0.0.1:18090`, `PAYSTATION_CALLBACK_URL`/`PAYSTATION_IPN_URL` on the API's own port, `EMAIL_PROVIDER=mailpit`, `MAILPIT_URL=http://127.0.0.1:54025`.
 - Then `prisma migrate deploy` and `pnpm --filter @sirat/api db:seed` with that environment, open registration in that database only (`update settings set value = 'true'::jsonb where key = 'registration_open'`), start the fake with `FAKE_PAYSTATION_IPN_URL=http://127.0.0.1:<api port>/api/payments/paystation/ipn`, then `node --env-file=.env dist/main.js` and `dist/worker.js`, and run `k6 run -e BASE_URL=http://127.0.0.1:<api port> loadtests/registration-surge.js` (options: `loadtests/README.md`).
@@ -123,7 +117,6 @@ cat /var/lib/sirat/monitor-state.json   # the checks' state kept between runs (l
 ```
 
 **Server checks (L11):**
-
 - **Schedule** (cron, set up by L12): `scripts/monitor.sh` every 5 minutes, and `scripts/monitor.sh --digest` at 08:00 Asia/Dhaka.
 - **Configuration:** `.env.monitor` in the clone (git-ignored, `chmod 600`; names in `infra/monitor/monitor.env.example`): the compose project, the env files (the VPS adds `/var/lib/sirat/release.env`) and the heartbeat URL.
 - **What a run does:**
@@ -173,7 +166,6 @@ scripts/deploy.sh --first         # once, on a fresh host, with the clone at the
 Every DB session (migrations and psql included) starts with `statement_timeout 10s`, `lock_timeout 5s` and `idle_in_transaction_session_timeout 60s`. A migration that needs longer (backfill, index build) starts with `SET statement_timeout = '15min';`; in psql, run `SET statement_timeout = 0;` before a long manual query. A migration that fails on `lock_timeout` was waiting behind a long transaction: follow "Migration failed" below, then deploy again when traffic is low.
 
 **Migration failed** (the deploy output names it, e.g. P3018). The deploy already stopped before the switch, so the live API keeps serving:
-
 1. Do not run `$DC up`.
 2. Confirm the failed migration left no changes. Prisma runs each migration file as one transaction on Postgres, unless the file has its own `BEGIN`/`COMMIT` or statements that cannot run in a transaction; check those by hand.
 3. Mark it rolled back, with the failed release's image (the live one does not have the migration): `SIRAT_TAG=<failed sha> $DC run --rm --no-deps migrate node_modules/.bin/prisma migrate resolve --rolled-back <migration_name>`.
@@ -190,7 +182,6 @@ $DC up -d --no-deps --no-build --no-recreate --scale api=<n> api   # VERIFIED (1
 ## 4. Maintenance mode
 
 **The switch (L5):** while the flag file `infra/nginx/maintenance/on` exists (in the clone, git-ignored), nginx answers the public site with a 503:
-
 - pages, whatever the method: the bilingual page `infra/nginx/pages/maintenance.html` ("we'll be right back", and "if you just paid, your payment is safe; we confirm it automatically");
 - other `/api` calls: JSON `{"statusCode":503,"code":"MAINTENANCE",...}`;
 - both with `Cache-Control: no-store` (Cloudflare keeps neither), `Retry-After: 120` and the security headers.
@@ -214,7 +205,6 @@ curl -s -o /dev/null -w '%{http_code}\n' https://<domain>/    # 503 while on, 20
   - a critical fix during an incident.
 
   Not during a live exam window without the owner: students keep answering in the browser, but their final submit would get the MAINTENANCE answer.
-
 - **Tests:** `infra/nginx/test/check-maintenance.sh` (its own containers and fake upstreams; CI's docker job), and a CI step on the stack.
 
 ## 5. Backup and restore
@@ -248,7 +238,6 @@ bash scripts/test/run-backup-test.sh               # the tests (own compose proj
   - before the store step it leaves no new copy;
   - a failed upload keeps the local encrypted copy, which was stored first;
   - a run killed mid-dump leaves its partial plain dump in an owner-only `.work.*` directory under `/var/backups/sirat` until the next run removes it.
-
 - **Setup on the VPS (root, once):**
   1. `apt install age rclone`.
   2. `/etc/sirat/backup.env` from `infra/backup/backup.env.example`, `chmod 600` (refused otherwise); `BACKUP_PROJECT=sirat`.
@@ -267,7 +256,6 @@ bash scripts/test/run-backup-test.sh               # the tests (own compose proj
   - on all three, delete noncurrent versions after 1 day.
 
   That keeps 7 daily and 4 weekly copies (RULEBOOK §6) plus 2 days of hourly ones.
-
 - **"The dump is much smaller than the last one":** the run stops when a dump is under half the size of the last one, because a sudden drop usually means lost data. After a deliberate big delete (the first run of the session and token cleanup job, a test-data wipe), check that the drop is expected, then run `sudo /srv/sirat/scripts/backup.sh --accept-smaller` once by hand. It logs that it was used; the timer never passes it, and the next timed runs compare with that copy.
 
 **Restore (L7):** `scripts/restore.sh`, as the deploy user from the clone. It never overwrites a database: a rebuilt server restores into the empty database of a fresh volume, and a server still up restores beside the live database, then swaps the names.
@@ -295,14 +283,12 @@ scripts/maintenance.sh off && scripts/healthcheck.sh https://<domain>
      picks up within 10 s; the same settle as `deploy.sh`).
 
   Maintenance stays on for a person to check.
-
 - **By hand, after a restore:**
   - rotate `JWT_ACCESS_SECRET` in `.env` and recreate api and worker;
   - compare the payments since the dump time minus 1 h with a PayStation export (section 11);
   - with `--mode beside`, drop `<db>_old_<stamp>` once nothing more is needed from it.
 
   While the API is stopped, PayStation's IPN gets nginx's JSON 502 and is retried; reconciliation catches anything missed once the worker is back. After a restore, also check the free book's cover: `GET /api/book/cover/<id>` (the id is `settings.book_cover_image_id`). Covers live in Postgres (`book_images`), so the dump carries them.
-
 - **The drill** (`scripts/restore-drill.sh`), on another machine than the server, before every exam and before registration opens:
 
   ```bash
@@ -320,7 +306,6 @@ scripts/maintenance.sh off && scripts/healthcheck.sh https://<domain>
     - one login as `sirat_app`.
   - **The wipe:** `down -v`, only after checking each container's project label; it never touches project `sirat`. It prints the measured time.
   - The images must be of the dump's release (`--tag`); the drill never builds.
-
 - **The drill never reads the clone's `.env`:** the drill's api and worker take their settings only from the drill's own throwaway file (`infra/backup/drill.compose.yml` replaces compose's `env_file: ../.env` with it). The script refuses to start unless both resolve the drill's own secret, compared and never printed. On a server, the clone's `.env` holds the production secrets.
 - **Tests:** `bash scripts/test/run-restore-roundtrip.sh` (CI's docker job runs it):
   - a source in its own project gets admin A, then a dump is taken, then admin B is created;
@@ -370,30 +355,29 @@ scripts/prelaunch-check.sh
 
 **Ops alert → what to do** (`[Sirat] Ops alert:`; `level: 2` critical, `1` warning, `0` resolved; the same kinds are in the heartbeat's `/fail` body):
 
-| Check                           | Means                                                                                                                                                                                                                                                     | First steps                                                                                                                                                                                                                                                                                                       |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `disk`                          | 80% used (warning), 90% (critical)                                                                                                                                                                                                                        | `df -h`; `docker system df`; prune old images (`docker image prune -a` after a deploy); old local backups are only 3                                                                                                                                                                                              |
-| `swap`, `memory`, `cpu`         | swap in use; memory or CPU above 85% on two checks (memory over 95%: critical)                                                                                                                                                                            | `docker stats --no-stream`; find the service; scale or restart it (section 3); before an exam, L14's sizing                                                                                                                                                                                                       |
-| `containers`                    | a service not running or unhealthy on two checks                                                                                                                                                                                                          | `$DC ps -a`; `$DC logs --tail=100 <service>`; `$DC up -d --no-deps --no-build <service>`                                                                                                                                                                                                                          |
-| `workers`                       | a job queue (email, payments, exam) has no worker on two checks                                                                                                                                                                                           | `$DC ps worker`; `$DC logs --tail=100 worker`; `$DC up -d --no-deps --no-build worker`. Payments are confirmed only by the worker: critical                                                                                                                                                                       |
-| `queue_backlog`                 | over 500 waiting, or the oldest over 5 min (warning); a payments or email job waiting 15 min while workers are connected (critical: a stuck worker)                                                                                                       | worker logs; restart the worker; the queue Redis memory                                                                                                                                                                                                                                                           |
-| `failed_jobs`                   | jobs failed for good since the last check (a payment verify job: critical)                                                                                                                                                                                | worker logs by job name; payments: the review list (section 11). An exam `sweep` job fails when one of its items failed: `$DC logs worker \| grep 'exam sweep item failed'` names the step (finalize, score, build) and the attempt or exam id; every other item went on, and the next minute's sweep tries again |
-| `reconciliation`                | the payments reconciliation is more than 3 intervals late                                                                                                                                                                                                 | worker running? `$DC logs worker \| grep reconcile`                                                                                                                                                                                                                                                               |
-| `queue_redis_memory`            | the queue Redis over 300 MB (warning), 400 MB of 512 (critical)                                                                                                                                                                                           | failed jobs piling up; `redis-cli INFO memory` in `redis-queue`                                                                                                                                                                                                                                                   |
-| `http_5xx`                      | over 2% (warning) or 10% (critical) of at least 50 requests in 5 min                                                                                                                                                                                      | `$DC logs --since 10m nginx api`; `/api/ready`; recent deploy?                                                                                                                                                                                                                                                    |
-| `database busy` (api log, warn) | the database refused for a passing reason (Prisma P2028/P2034/P2024 or a lock or statement timeout): the request answered **503 `SERVICE_BUSY`** with `Retry-After: 2`, nothing was applied, and the registration wizard retried once by itself           | a few under a surge are expected. Many, or for minutes: the API is CPU-bound or the pool is too small (`docker stats`; `connection_limit` in `DATABASE_URL`; scale API replicas, section 3). A plain `unhandled error` (500) is a different thing: read its class                                                 |
-| `app_errors`                    | API 5xx or web render errors in the logs                                                                                                                                                                                                                  | `$DC logs --since 10m api web`                                                                                                                                                                                                                                                                                    |
-| `api_p95`                       | the API's p95 over 1 s                                                                                                                                                                                                                                    | "Site slow" below                                                                                                                                                                                                                                                                                                 |
-| `certificate`                   | the origin certificate ends within 14 days                                                                                                                                                                                                                | section 3 of LAUNCH-PLAN / the TLS steps in this runbook                                                                                                                                                                                                                                                          |
-| `backup_age`                    | no off-server backup in 26 h (critical)                                                                                                                                                                                                                   | `journalctl -u sirat-backup.service -n 50` (section 5)                                                                                                                                                                                                                                                            |
-| `time_sync`                     | the clock is not synchronised                                                                                                                                                                                                                             | `timedatectl`; `systemctl restart systemd-timesyncd`                                                                                                                                                                                                                                                              |
-| `trusted_generators`            | load-test generators may set any client address: an `infra/nginx/loadtest-realip*.conf` exists (a warning); past the earliest `# expires` line, or without a readable one, it is critical (`scripts/loadtest-generators-left.sh` prints the minutes left) | no load test running: `scripts/loadtest-generators.sh off` (after a staging window: `sudo scripts/load-staging.sh close`); `scripts/loadtest-generators.sh status` shows it                                                                                                                                       |
-| `quote_misses`                  | one IP asked the registration quote about 50 or more codes that do not work within an hour: someone guessing discount codes (the value is the misses)                                                                                                     | §27                                                                                                                                                                                                                                                                                                               |
-| `login_failures`                | failed logins across all accounts: 2,000 or more in one minute, or 1,000 or more different emails failing within 10 minutes (a guessing spray; the value is the emails)                                                                                   | the paragraph on `login.spray` below                                                                                                                                                                                                                                                                              |
-| `monitor` (heartbeat only)      | ops-check could not run                                                                                                                                                                                                                                   | the api container: `$DC ps api`, `$DC logs --tail=50 api`                                                                                                                                                                                                                                                         |
+| Check | Means | First steps |
+|---|---|---|
+| `disk` | 80% used (warning), 90% (critical) | `df -h`; `docker system df`; prune old images (`docker image prune -a` after a deploy); old local backups are only 3 |
+| `swap`, `memory`, `cpu` | swap in use; memory or CPU above 85% on two checks (memory over 95%: critical) | `docker stats --no-stream`; find the service; scale or restart it (section 3); before an exam, L14's sizing |
+| `containers` | a service not running or unhealthy on two checks | `$DC ps -a`; `$DC logs --tail=100 <service>`; `$DC up -d --no-deps --no-build <service>` |
+| `workers` | a job queue (email, payments, exam) has no worker on two checks | `$DC ps worker`; `$DC logs --tail=100 worker`; `$DC up -d --no-deps --no-build worker`. Payments are confirmed only by the worker: critical |
+| `queue_backlog` | over 500 waiting, or the oldest over 5 min (warning); a payments or email job waiting 15 min while workers are connected (critical: a stuck worker) | worker logs; restart the worker; the queue Redis memory |
+| `failed_jobs` | jobs failed for good since the last check (a payment verify job: critical) | worker logs by job name; payments: the review list (section 11). An exam `sweep` job fails when one of its items failed: `$DC logs worker \| grep 'exam sweep item failed'` names the step (finalize, score, build) and the attempt or exam id; every other item went on, and the next minute's sweep tries again |
+| `reconciliation` | the payments reconciliation is more than 3 intervals late | worker running? `$DC logs worker \| grep reconcile` |
+| `queue_redis_memory` | the queue Redis over 300 MB (warning), 400 MB of 512 (critical) | failed jobs piling up; `redis-cli INFO memory` in `redis-queue` |
+| `http_5xx` | over 2% (warning) or 10% (critical) of at least 50 requests in 5 min | `$DC logs --since 10m nginx api`; `/api/ready`; recent deploy? |
+| `database busy` (api log, warn) | the database refused for a passing reason (Prisma P2028/P2034/P2024 or a lock or statement timeout): the request answered **503 `SERVICE_BUSY`** with `Retry-After: 2`, nothing was applied, and the registration wizard retried once by itself | a few under a surge are expected. Many, or for minutes: the API is CPU-bound or the pool is too small (`docker stats`; `connection_limit` in `DATABASE_URL`; scale API replicas, section 3). A plain `unhandled error` (500) is a different thing: read its class |
+| `app_errors` | API 5xx or web render errors in the logs | `$DC logs --since 10m api web` |
+| `api_p95` | the API's p95 over 1 s | "Site slow" below |
+| `certificate` | the origin certificate ends within 14 days | section 3 of LAUNCH-PLAN / the TLS steps in this runbook |
+| `backup_age` | no off-server backup in 26 h (critical) | `journalctl -u sirat-backup.service -n 50` (section 5) |
+| `time_sync` | the clock is not synchronised | `timedatectl`; `systemctl restart systemd-timesyncd` |
+| `trusted_generators` | load-test generators may set any client address: an `infra/nginx/loadtest-realip*.conf` exists (a warning); past the earliest `# expires` line, or without a readable one, it is critical (`scripts/loadtest-generators-left.sh` prints the minutes left) | no load test running: `scripts/loadtest-generators.sh off` (after a staging window: `sudo scripts/load-staging.sh close`); `scripts/loadtest-generators.sh status` shows it |
+| `quote_misses` | one IP asked the registration quote about 50 or more codes that do not work within an hour: someone guessing discount codes (the value is the misses) | §27 |
+| `login_failures` | failed logins across all accounts: 2,000 or more in one minute, or 1,000 or more different emails failing within 10 minutes (a guessing spray; the value is the emails) | the paragraph on `login.spray` below |
+| `monitor` (heartbeat only) | ops-check could not run | the api container: `$DC ps api`, `$DC logs --tail=50 api` |
 
 **The exam window, step by step** (E6; the load test behind it: `loadtests/README.md`):
-
 - **The day before:** `/admin/exams/<id>` shows the exam published, with the right window, duration and question count, and `scripts/monitor.sh --dry-run` shows no critical check. From then on no deploy, no `.env` change and no restart of api or worker until the window plus its grace is over (CLAUDE.md DON'T 12).
 - **During the window:** the ops alerts (`workers`, `queue_backlog`, `failed_jobs`, `api_p95`, `http_5xx`) are the watch list. Checkpoints go to the cache Redis only, so Postgres stays quiet while students write; a busy Postgres in the middle of an exam means something else is writing. Two numbers should stay at 0 (the sweep finalizes the first every minute, and the worker scores the second within seconds):
 
@@ -408,7 +392,6 @@ scripts/prelaunch-check.sh
   ```
 
   Either above 0: `$DC ps worker`, `$DC logs --since 10m worker | grep -E 'exam sweep|score'`, then `$DC up -d --no-deps --no-build worker` (the worker only; students keep writing, since the API holds the checkpoints and takes the submits). The sweep and the scoring are idempotent: once the worker is back, it catches up by itself.
-
 - **An outage during the window** (students could not reach the site): extend the window, while it is still open, on the exam's edit page (`windowEnd` later, with a reason; audited). Attempts already started keep their end time; only students who have not started yet gain the time. Tell the owner.
 - **After the window:** within a minute of `window_end` plus the grace the sweep has submitted every open attempt from its last checkpoint (`server_checkpoint`), or as empty when there was none (`server_empty`). Then `/admin/exams/<id>` → Results: every attempt scored → Build → check the leaderboard → Publish. The database refuses results before the window and grace are over for everyone. Unpublish takes them back down if something is wrong.
 - **A student says "my answers are gone":** the attempt's own submission is the record (`/admin/exams/<id>` → attempts: the end reason, submit time, violation count, events and, once scored, the score). The browser keeps its copy and retries a failed submit with the same request id until a receipt arrives, so a lost submit shows as `server_checkpoint` with the last checkpoint's answers, never as nothing.
@@ -426,7 +409,6 @@ scripts/prelaunch-check.sh
 **"Security alert" email or `security.login.*` audit rows:** `login.account_limit` means one account failed 50 times within an hour (only IPs that failed are refused; the student can still log in from another network or reset the password); `login.distributed` means failures on one account from more than 20 IPs within an hour (nothing is blocked). `login.failure_burst` (2,000 or more failed logins in one minute, all accounts) and `login.spray` (1,000 or more different emails failing within 10 minutes) are about all accounts at once: someone may be guessing participant IDs across many emails. Nothing is blocked by them. Check `audit_logs` for `security.login.*` rows and their IPs. If a few IPs carry it, block them at the firewall or Cloudflare. If it is spread wide, consider Cloudflare Turnstile on login (DECISIONS); on an exam morning, first make sure it is not just the crowd (the thresholds leave about five times the normal failures). Look the account id up in `audit_logs`; if it repeats across many accounts, consider Cloudflare Turnstile on login (DECISIONS). Alert emails pause 10 minutes per kind and stop at the hourly cap of their category; the audit log has every event.
 
 **Alert emails (L10):**
-
 - **Categories:** every alert has one category, and its subject names it: `[Sirat] Security alert:` (logins), `[Sirat] Payments alert:` (`payments.*`), `[Sirat] Ops alert:` (`ops.*`: backups, server checks, the drill).
 - **Caps:** each category has its own hourly cap (`SECURITY_ALERT_EMAILS_PER_HOUR`, 6 each by default, owner Q2), so a flood of failed logins never silences a payment or backup alert. Within a category, each kind pauses 10 minutes after an email.
 - **The record:** the audit log (`security.<kind>`) has every event, mailed or held back.
@@ -438,10 +420,10 @@ scripts/prelaunch-check.sh
   ```
 
   `backup.sh` raises `ops.backup_failed --meta step=<n>` (with the step names in `scripts/backup.sh`) on any failure, after pinging the heartbeat's `/fail`. When the API cannot raise it, the backup still fails, and the heartbeat is the alert.
-  **A student cannot log in ("Too many attempts"):** the account is locked for their IP (10 failures in 15 min; 15 min, doubling on repeats up to 4 h) or reached 50 failures in an hour. The fastest fix is a password reset: completing it unlocks the account at once, on every IP. Logging in from another network (mobile data) also works, since other IPs are not locked. A whole school refused at once usually means its IP reached `LOGIN_IP_FAILURES_PER_MINUTE` (100 failures per minute); it clears within a minute. Limits are set in `.env` (`LOGIN_*`) and need `$DC up -d api` (never during an exam). Audit rows `auth.login_locked` show when locks started.
-  **More log detail:** set `LOG_LEVEL=debug` in `.env` and `$DC up -d --no-deps --no-build api` (default `info` in production). **Never during an exam:** this recreates every API replica at once (and re-runs migrate first), a full API outage of about 10–20 s. Container logs rotate at 50 MB × 5 per container.
-  **Payments stuck:** admin → Payments → lookup by invoice/trx/phone → manual reconcile (audit-logged). Money taken but DB says unpaid is the worst case: alert on any `pending` beyond expiry.
-  **Submissions failing:** check `/api/ready`, Redis queue instance, API logs for 5xx; clients retry with backoff and keep local copies, so fix fast rather than patch hastily.
+**A student cannot log in ("Too many attempts"):** the account is locked for their IP (10 failures in 15 min; 15 min, doubling on repeats up to 4 h) or reached 50 failures in an hour. The fastest fix is a password reset: completing it unlocks the account at once, on every IP. Logging in from another network (mobile data) also works, since other IPs are not locked. A whole school refused at once usually means its IP reached `LOGIN_IP_FAILURES_PER_MINUTE` (100 failures per minute); it clears within a minute. Limits are set in `.env` (`LOGIN_*`) and need `$DC up -d api` (never during an exam). Audit rows `auth.login_locked` show when locks started.
+**More log detail:** set `LOG_LEVEL=debug` in `.env` and `$DC up -d --no-deps --no-build api` (default `info` in production). **Never during an exam:** this recreates every API replica at once (and re-runs migrate first), a full API outage of about 10–20 s. Container logs rotate at 50 MB × 5 per container.
+**Payments stuck:** admin → Payments → lookup by invoice/trx/phone → manual reconcile (audit-logged). Money taken but DB says unpaid is the worst case: alert on any `pending` beyond expiry.
+**Submissions failing:** check `/api/ready`, Redis queue instance, API logs for 5xx; clients retry with backoff and keep local copies, so fix fast rather than patch hastily.
 
 ## 8. Contacts (fill in)
 
@@ -450,7 +432,6 @@ Client: — · PayStation support: — · Email provider: Amazon SES (AWS accoun
 ## 9. Pre-launch checklist (T-7 → T-0)
 
 **This launch (registration and payment, 15 Nov; LAUNCH-PLAN section 12):**
-
 - **Sat 7 Nov:** on the VPS, in the order of section 6: bootstrap, the origin certificate, `deploy.sh --first`, Cloudflare and the firewall, the first release, the first admins, an outside port scan.
 - **Sun 8 – Mon 9:** on the VPS:
   - the rehearsals: deploy, a second deploy, a forced rollback, a reboot, maintenance on and off;
@@ -468,18 +449,15 @@ Client: — · PayStation support: — · Email provider: Amazon SES (AWS accoun
   3. `deploy.sh --rollback` (section 2).
 
   After maintenance off, the public smoke must pass.
-
 - **Sat 14:** Rasel's go/no-go. A fresh backup minutes before opening; then registration opens through the audited admin setting, and someone watches the alerts.
 
 **The checks:**
-
 - [ ] `scripts/prelaunch-check.sh` on the VPS (`--registration closed` until opening, `open` after): every line PASS, never a value printed. It checks:
   - only nginx publishes ports;
   - `.env` mode 600, `APP_URL` https, `COOKIE_SECURE` not false;
   - the runtime role (not the database owner), and each API and worker's boot line `database role=sirat_app superuser=false` (it FAILs until L8); no development marker; no Mailpit;
 
     If that boot-line check FAILs after L8, the line may simply be gone: Docker rotates a container's log by size (`max-size 50m`, 5 files), so a long-running replica can lose its boot line. Check with `$DC logs api worker 2>&1 | grep -c 'database role='`. If a replica has no line, restart one replica at a time (`docker restart <container>`, one only while the others serve) and run the check again. A line that says another role or `superuser=true` is a real failure: the app is not on `sirat_app`.
-
   - every app container on the recorded release; migrations up to date; the worker healthy;
   - each API's PayStation boot line (live, the client's account and prefix, https callback and IPN);
   - no fixture users, no test invoices, no published exam, the fee 40000, `registration_open` as intended;
@@ -488,7 +466,6 @@ Client: — · PayStation support: — · Email provider: Amazon SES (AWS accoun
   - disk, swap and the clock.
 
   Its MANUAL lines are the items below.
-
 - [ ] Cloudflare settings and TLS (section 15); the page CSP; an outside port scan shows only 22, 80 and 443.
 - [ ] Deploy, rollback and maintenance rehearsed on the VPS (sections 2 and 4).
 - [ ] An off-server backup and a passed restore drill (section 5); the runtime role (below).
@@ -498,7 +475,6 @@ Client: — · PayStation support: — · Email provider: Amazon SES (AWS accoun
 See `RULEBOOK.md` section 13: load test at 1.5–2× peak, backup + restore drill, 48 h code freeze, patches before freeze, monitoring + fake alert, Cloudflare verified, email deliverability, real small PayStation payment, rollback rehearsed, owner watching dashboards.
 
 Also before launch:
-
 - [ ] The API connects to Postgres with a **non-superuser runtime role** (OPEN-QUESTIONS #27); the bootstrap superuser is used only for migrations, backup and restore. `prelaunch-check.sh` reads it from every API and worker's newest boot line.
 - [ ] PayStation sandbox checklist done (`docs/paystation/SANDBOX-CHECKLIST.md`) and the accepted `trx_status` values confirmed.
 - [ ] The sandbox test rows of 2026-11-01 are gone from the VPS (`docs/paystation/SANDBOX-E2E.md`: account label `rasel-sandbox-vps`, `TV…` invoices, `TEST SBX` users). The production database was started again from an empty volume at the launch deploy, which the owner confirmed then. `SELECT gateway_account, count(*) FROM payments GROUP BY 1` must list the live account only.
@@ -519,24 +495,19 @@ Also before launch:
 scripts/refresh-cloudflare-ips.sh     # VERIFIED: validates both lists, nginx -t on the pinned image, then rewrites the file in place
 $DC exec nginx nginx -c /etc/nginx/sirat/nginx.conf -t && $DC exec nginx nginx -c /etc/nginx/sirat/nginx.conf -s reload
 ```
-
 The container mounts the whole `infra/nginx` folder, so it sees the new file at once, with no recreate. To confirm:
-
 ```bash
 [ "$($DC exec -T nginx grep -c '^set_real_ip_from' /etc/nginx/sirat/cloudflare-realip.conf)" = "$(grep -c '^set_real_ip_from' infra/nginx/cloudflare-realip.conf)" ] && echo same-list
 ```
-
 The script refuses (exit non-zero, live file untouched) when a download fails, returns anything that is not a CIDR, or has fewer than 10 IPv4 / 5 IPv6 ranges. Never edit `infra/nginx/cloudflare-realip.conf` by hand and never paste the old one-liner: it wrote an empty list when the download failed, which made every student behind a Cloudflare edge share one rate-limit bucket.
 After go-live, confirm in the nginx access log that client addresses are real users, not Cloudflare edges. If Cloudflare reaches the origin over IPv6 while the compose network has none, Docker replaces the source address and real-IP restore cannot work: keep the origin A-record-only.
 
 **Load-test generators (k6 on the VPS, L4).** nginx takes `CF-Connecting-IP` from Cloudflare only. For a k6 run it can also take it from up to four generator machines, for a few hours:
-
 ```bash
 scripts/loadtest-generators.sh on 198.51.100.7,198.51.100.8 --hours 3  # IPv4 addresses the generators connect from, at most 4, 1 to 12 hours (default 2)
 scripts/loadtest-generators.sh status                                  # on/off, the addresses, the expiry (EXPIRED: turn it off)
 scripts/loadtest-generators.sh off                                     # right after the run; idempotent
 ```
-
 - Each generator connects straight to the server on 443, with SNI and Host set to the public host (k6 `hosts` maps the domain to the server's address), and sends `CF-Connecting-IP: <simulated client address>`.
 - Each change runs `nginx -t` before the reload, and a failure puts the previous state back (exit 1).
 - Each change returns once nginx's new workers run (`applied`). Old workers keep their open keep-alive connections, and with them the old trust, until those close: stop k6 before `off`.
@@ -550,27 +521,25 @@ scripts/loadtest-generators.sh off                                     # right a
 
 **By review reason** (no refund handling in the app, owner 2026-10-31: refunds are done outside it):
 
-| Reason                                       | What it means                                                                                          | What to do                                                                                                                                                                                                            |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `success_without_trx_id`                     | PayStation said success with our invoice and amount, but no `trx_id`                                   | Find the transaction in PayStation's merchant panel. If it is there and paid, `POST /admin/payments/:id/reconcile { trxId, reason }` (the only manual "paid"; it refuses anything else). The account is made as usual |
-| `email_taken`, `phone_taken`                 | Paid, but an account got that email or phone meanwhile; no account was made, the attempt is `conflict` | Contact the student (the attempt's email/phone in the payment view). If the existing account is theirs, the money is a duplicate: refund it outside the app (below). Otherwise ask the owner                          |
-| `duplicate_payment`                          | A second paid payment for an attempt that already has an account (same user)                           | Refund the second payment outside the app (below)                                                                                                                                                                     |
-| `abandoned_attempt_paid`                     | A late success on an attempt the student gave up (they may have started again)                         | Look up the student's other attempts by email/phone. If they have an account now, refund this payment; if not, ask the owner before anything else                                                                     |
-| `amount_mismatch`, `invoice_mismatch`        | PayStation reported another amount or another invoice                                                  | Never mark it paid. Contact PayStation support with the invoice number and `trx_id`; record the case                                                                                                                  |
-| `trx_id_reused`                              | The `trx_id` already belongs to another payment                                                        | A fraud or mix-up signal. Do not reconcile. Compare both payments in PayStation's panel; contact PayStation support                                                                                                   |
-| `refund_reported`                            | PayStation reports `refund` for a paid payment                                                         | The payment stays `paid` (the app has no refund state). Confirm in the panel; what happens to the student's access follows the owner's policy (OPEN-QUESTIONS P8): ask the owner                                      |
-| `late_success`                               | Paid after its checkout expired; the account was made normally                                         | Nothing, unless the student also paid again (then `duplicate_payment` appears)                                                                                                                                        |
-| `account_mismatch` (event, no review reason) | The payment was started on another PayStation account (after a switch, PAYMENTS-PLAN §13)              | Check it in that account's panel; handle by hand                                                                                                                                                                      |
+| Reason | What it means | What to do |
+|---|---|---|
+| `success_without_trx_id` | PayStation said success with our invoice and amount, but no `trx_id` | Find the transaction in PayStation's merchant panel. If it is there and paid, `POST /admin/payments/:id/reconcile { trxId, reason }` (the only manual "paid"; it refuses anything else). The account is made as usual |
+| `email_taken`, `phone_taken` | Paid, but an account got that email or phone meanwhile; no account was made, the attempt is `conflict` | Contact the student (the attempt's email/phone in the payment view). If the existing account is theirs, the money is a duplicate: refund it outside the app (below). Otherwise ask the owner |
+| `duplicate_payment` | A second paid payment for an attempt that already has an account (same user) | Refund the second payment outside the app (below) |
+| `abandoned_attempt_paid` | A late success on an attempt the student gave up (they may have started again) | Look up the student's other attempts by email/phone. If they have an account now, refund this payment; if not, ask the owner before anything else |
+| `amount_mismatch`, `invoice_mismatch` | PayStation reported another amount or another invoice | Never mark it paid. Contact PayStation support with the invoice number and `trx_id`; record the case |
+| `trx_id_reused` | The `trx_id` already belongs to another payment | A fraud or mix-up signal. Do not reconcile. Compare both payments in PayStation's panel; contact PayStation support |
+| `refund_reported` | PayStation reports `refund` for a paid payment | The payment stays `paid` (the app has no refund state). Confirm in the panel; what happens to the student's access follows the owner's policy (OPEN-QUESTIONS P8): ask the owner |
+| `late_success` | Paid after its checkout expired; the account was made normally | Nothing, unless the student also paid again (then `duplicate_payment` appears) |
+| `account_mismatch` (event, no review reason) | The payment was started on another PayStation account (after a switch, PAYMENTS-PLAN §13) | Check it in that account's panel; handle by hand |
 
 **Refund a payment (outside the app)**
-
 1. Find the payment by invoice number, `trx_id` or phone; its status is `paid`.
 2. Refund it in the PayStation merchant panel, or ask PayStation support. Keep their refund reference.
 3. Re-check: the event shows `refund_reported`; the payment stays `paid`. Never delete the payment, its events or the registration row.
 4. Record the refund reference and the reason with the case (audit log / support notes).
 
 **Money taken but the payment still shows unpaid**
-
 1. Re-check. If PayStation now reports success with our invoice and exactly our amount, the re-check marks it paid and makes the account; nothing else to do.
 2. If it reports success without a `trx_id`: the reconcile row above.
 3. If the amount or the invoice does not match, or `2001` keeps coming back: do **not** mark it paid. Contact PayStation support with the invoice number and `trx_id`.
@@ -578,13 +547,11 @@ scripts/loadtest-generators.sh off                                     # right a
 **The free book's courier list:** `GET /api/admin/book-orders/export.csv?status=confirmed` (admin only; audited with the filter and the row count). It holds minors' addresses and phone numbers: hand it to the courier, then delete the downloaded file. Nothing is stored on the server. After the pickup, mark those orders shipped (`POST /api/admin/book-orders/ship`); from then on the student cannot change the address. **Marked shipped by mistake:** it cannot be undone (the trigger `book_orders_locked_after_shipping` locks the order, by design). Do not edit the database: record the case in the courier sheet (the order code, what was wrong, the right address from the student) and handle it by hand with the courier.
 
 **The checkout time limit** (`payment_expiry_minutes`, default 10) equals PayStation's checkout-link lifetime. In the sandbox the link dies after about 10 minutes (S12), and v1 then still says `processing`. A longer limit would offer "Continue payment" on a dead link.
-
 - **Re-measure it on the client's live account** in the account-switch check (PAYMENTS-PLAN §13): make one unpaid checkout, and open its link every minute until it says "Invalid or Expired Token".
 - If the lifetime differs, set the setting to it in `/admin/settings` (it is audited). Never set it shorter than the lifetime (D3).
 - A payment finished just before the limit is not lost: the IPN, the callback or reconciliation within the 48 h late watch still marks it paid (`late_success`).
 
 **What the sandbox showed** (`docs/paystation/SANDBOX-E2E.md`, 2026-11-01):
-
 - A cancel on the checkout sends the student back with `status=Canceled`, but v1 keeps saying `processing`. The payment stays pending: the page shows "Waiting for your payment" with Continue the payment. It becomes `expired` at the first reconciliation after the time limit, then stays in the 48 h late watch.
 - A replayed callback changes nothing.
 - On an account without an IPN (Rasel's pre-KYC sandbox panel has no IPN field), a payment whose browser never comes back is settled only by reconciliation (every few minutes) or an admin re-check.
@@ -596,7 +563,6 @@ scripts/loadtest-generators.sh off                                     # right a
 The `worker` service sends; the API only queues. Locally every email goes to Mailpit (http://127.0.0.1:18025), whatever `.env` says.
 
 **One-time setup** (AWS console, one region close to the users, e.g. `ap-south-1`):
-
 1. SES → Identities → create a **domain** identity for the sending domain with **Easy DKIM**; add the DKIM CNAMEs in Cloudflare (DNS only, not proxied) and wait for "Verified".
 2. Set a **custom MAIL FROM** subdomain (e.g. `mail.<domain>`) and add its MX and SPF TXT records. Add a **DMARC** TXT record on `_dmarc.<domain>` (start with `p=none; rua=mailto:...`, tighten later).
 3. Request **production access** (new accounts are in the sandbox: verified recipients only, low quota).
@@ -616,7 +582,8 @@ The `worker` service sends; the API only queues. Locally every email goes to Mai
 }
 ```
 
-While the account is still in the sandbox, SES may also check the verified recipient's identity: if sends fail with an access error, add that identity's ARN to `Resource` until production access is granted. 5. In the VPS `.env`: `EMAIL_PROVIDER=ses`, `EMAIL_FROM=Sirat Olympiad <no-reply@<sending-domain>>`, `SES_REGION`, `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY`. Then `$DC up -d --no-deps --no-build worker`. The worker refuses to start with a missing or malformed setting; `$DC logs worker` names the variable, never its value.
+   While the account is still in the sandbox, SES may also check the verified recipient's identity: if sends fail with an access error, add that identity's ARN to `Resource` until production access is granted.
+5. In the VPS `.env`: `EMAIL_PROVIDER=ses`, `EMAIL_FROM=Sirat Olympiad <no-reply@<sending-domain>>`, `SES_REGION`, `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY`. Then `$DC up -d --no-deps --no-build worker`. The worker refuses to start with a missing or malformed setting; `$DC logs worker` names the variable, never its value.
 
 **Key rotation:** create a second access key for the IAM user → put it in `.env` → `$DC up -d --no-deps --no-build worker` → check `$DC logs worker` for `email sent` → deactivate, then delete the old key.
 
@@ -662,13 +629,11 @@ The students' personal data (many are minors) leaves the system only through thi
 ## 15. TLS behind Cloudflare (origin certificate)
 
 Cloudflare's SSL mode is **Full (strict)**, with a free **Cloudflare Origin CA** certificate (DECISIONS "TLS behind Cloudflare").
-
 - The production site is `infra/nginx/sites/tls`, rendered at start. It takes the host name from `APP_URL`, which must be `https://<host>` with no port or path (`infra/nginx/entrypoint/15-public-host.envsh`).
 - The dev override serves `sites/plain` on http://127.0.0.1:8080 instead.
 - The full Cloudflare checklist comes with LAUNCH-PLAN L4.
 
 Once, on the VPS (the private key never leaves it):
-
 1. Make the key and a CSR on the VPS, then `chmod 600 infra/nginx/certs/origin.key` (the folder is git-ignored):
    ```bash
    openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -subj "/CN=<host>" -keyout infra/nginx/certs/origin.key -out origin.csr
@@ -696,7 +661,6 @@ Once, on the VPS (the private key never leaves it):
 HSTS comes from nginx only: 300 s for launch, without `includeSubDomains`. The ramp to 1 day, then 180 days, is a one-line change in `infra/nginx/nginx.conf` (owner question Q3). Apply it with a reload, outside exam windows.
 
 **Fallback: a public certificate, only if Cloudflare's proxy has to be turned off (DNS only).** The Origin CA certificate is trusted only by Cloudflare, so without the proxy, browsers refuse it.
-
 - **Issue one with DNS-01:** run certbot in a throwaway container (`certbot/dns-cloudflare`) with a Cloudflare API token limited to Zone → DNS → Edit on this one zone. Keep the token in a mode-600 credentials file outside the repo, for that run only. Then delete the file and revoke the token, so no API token stays on the server.
 - **Install it:** copy `fullchain.pem` to `infra/nginx/certs/origin.pem` and `privkey.pem` to `infra/nginx/certs/origin.key`, then `chmod 600` the key.
 - **Load it**, outside an exam window: `$DC exec nginx nginx -c /etc/nginx/sirat/nginx.conf -t && $DC exec nginx nginx -c /etc/nginx/sirat/nginx.conf -s reload`. The certs folder is inside the folder mount, so a reload sees the new files.
@@ -728,7 +692,6 @@ SQL
 - **After a purge,** a refresh token replayed more than 30 days after its rotation gets 401, like any unknown token. It no longer ends its family or writes `auth.refresh_reuse` (DECISIONS A2.1b #9).
 
 **The registration form's retention (D6, the same queue).** Every night at 04:00 Asia/Dhaka, `attempt-scrub` clears `pending_registrations.payload`: the stored form, with its argon2id password hash.
-
 - **Which attempts:**
   - **abandoned** ones (cancelled, or replaced by a new start), 30 days after their last change;
   - **open but dead** ones: last changed over 30 days ago, no payment initiated, pending, paid or refunded, and every checkout expired over 30 days ago.
@@ -789,7 +752,6 @@ The steps and the k6 commands: `loadtests/README.md`, "On the VPS". The rules ar
   - emails to nowhere.
 
   It never reads the clone's `.env` and never touches project `sirat`.
-
 - **The firewall:** nginx's staging port (8088) is dropped from outside by the DOCKER-USER guard. `scripts/load-staging.sh window --ips <ip>,<ip> --minutes N`, as root, lets at most 4 single public addresses in. It runs in the foreground, and the allow-list closes:
   - on Ctrl-C;
   - when the session is lost;
@@ -798,7 +760,6 @@ The steps and the k6 commands: `loadtests/README.md`, "On the VPS". The rules ar
   - and by a systemd timer if the script itself is killed.
 
   It also switches A2's trusted generators on, and off again when it closes. `scripts/load-staging.sh status` (as root) must say `allow-list: closed` afterwards. When in doubt, `scripts/load-staging.sh close` (as root; it is safe to repeat).
-
 - **Root, from the provider's console:** `window`, `close` and the firewall part of `status` run as root in Hostinger's browser console. Root has no SSH login (bootstrap, #70), and deploy's only sudo rule is the backup unit. **Never add a sudo rule for `load-staging.sh`:** the clone is deploy-writable, so deploy could edit the script and run anything as root. Everything else runs as deploy.
 - **Every k6 run ends with the trusted generators off.** The window does it when it closes; a run without the window ends with `scripts/loadtest-generators.sh off`, and `scripts/loadtest-generators.sh status` must say off. Nothing removes their file at its expiry: the monitor alerts (`trusted_generators`, section 7) and `prelaunch-check.sh` fails while one is left.
 - **After the run:**
@@ -859,7 +820,6 @@ Admins and managers sign in with a password and a 6-digit code from an authentic
   3. 10 recovery codes are shown once: store them offline (print or write them down).
 
   The same page makes new recovery codes and turns 2FA off (for a new phone). Through the API: `POST /api/auth/2fa/setup {password}`, then `POST /api/auth/2fa/enable {code}`.
-
 - **Rotating the key:** set `TOTP_ENCRYPTION_KEY_PREVIOUS` to the old value and `TOTP_ENCRYPTION_KEY` to a new one, then recreate api. Each secret is re-sealed with the new key at its owner's next right code. Remove the previous key only once every enrolled admin has signed in since.
 
 **Lost authenticator, recovery codes at hand:** sign in with a recovery code at the code step. Each code works once, and an alert email goes to the operator. Then turn 2FA off (`POST /api/auth/2fa/disable {password, recoveryCode}`) and enrol the new phone, or ask for new codes.
@@ -937,18 +897,18 @@ SQL
 
 The homepage (`/`, `/en`) and About (`/about`, `/en/about`) are static pages built from files, so a change needs a release (they are not admin settings). The fee and whether registration is open are the exception: they come from the admin's registration settings, and the pages pick them up within 60 s.
 
-| To change                                                    | Where                                                               | Note                                                            |
-| ------------------------------------------------------------ | ------------------------------------------------------------------- | --------------------------------------------------------------- |
-| The name or the season line                                  | `apps/web/src/content/site.ts` (`name.bn`, `name.en`, `season`)     | Every public page, the page titles and the legal texts read it  |
-| The honorific                                                | `apps/web/src/i18n/messages/home.ts` (`brand.honorific`, bn and en) | ﷺ now; the plain forms are "(সা.)" and "(pbuh)"                 |
-| Dates, the knockout method, the qualifiers, the social links | `apps/web/src/content/home.ts`                                      | Dates are Dhaka calendar days; `null` means "to be announced"   |
-| The prize counts per group and the total value               | `content/home.ts` `prizes` (`poolTaka: null` hides the total)       | The old site's figures, to confirm                              |
-| The pages in the header menu and the footer                  | `apps/web/src/content/site.ts` (`MENU_PAGES`)                       | A page there needs its route under `app/(marketing)/` and `en/` |
-| The album link                                               | `content/home.ts` `albumUrl`                                        | Empty hides the button; only an `https://` link is shown        |
-| Offline centres                                              | `content/home.ts` `offline: true`                                   | Only once the client confirms them; the text is in `home.ts`    |
-| The advisory board and the convenor team                     | `apps/web/src/content/about.ts` (`team.show`, the names and roles)  | Both stay hidden while `show` is false or a list is empty       |
-| The contact email                                            | `content/site.ts` `email`                                           | Also shown in the footer of every public page                   |
-| Removing the draft note and `noindex`                        | `content/site.ts` `placeholder: false`                              | Only with the client's final texts and facts in place           |
+| To change | Where | Note |
+|---|---|---|
+| The name or the season line | `apps/web/src/content/site.ts` (`name.bn`, `name.en`, `season`) | Every public page, the page titles and the legal texts read it |
+| The honorific | `apps/web/src/i18n/messages/home.ts` (`brand.honorific`, bn and en) | ﷺ now; the plain forms are "(সা.)" and "(pbuh)" |
+| Dates, the knockout method, the qualifiers, the social links | `apps/web/src/content/home.ts` | Dates are Dhaka calendar days; `null` means "to be announced" |
+| The prize counts per group and the total value | `content/home.ts` `prizes` (`poolTaka: null` hides the total) | The old site's figures, to confirm |
+| The pages in the header menu and the footer | `apps/web/src/content/site.ts` (`MENU_PAGES`) | A page there needs its route under `app/(marketing)/` and `en/` |
+| The album link | `content/home.ts` `albumUrl` | Empty hides the button; only an `https://` link is shown |
+| Offline centres | `content/home.ts` `offline: true` | Only once the client confirms them; the text is in `home.ts` |
+| The advisory board and the convenor team | `apps/web/src/content/about.ts` (`team.show`, the names and roles) | Both stay hidden while `show` is false or a list is empty |
+| The contact email | `content/site.ts` `email` | Also shown in the footer of every public page |
+| Removing the draft note and `noindex` | `content/site.ts` `placeholder: false` | Only with the client's final texts and facts in place |
 
 Check after the release: `/`, `/en`, `/about` and `/en/about` answer 200, and an old `/bn` link redirects to the same page.
 
@@ -1009,12 +969,10 @@ Admin panel → **Discount codes** (`/admin/discount-codes`; the API is `/api/ad
 ## 28. The admit card's official group links
 
 The admit card (`/dashboard/admit-card`) lists the official WhatsApp, Telegram, Facebook and YouTube groups. Each link stays hidden until it has a URL.
-
 - **To add one:** set its URL in `apps/web/src/content/groups.ts` (https only; anything else is dropped) and deploy the web. No API or database change.
 - **The participant ID on that page is the login secret.** If a student posts it, follow §26 (a leaked participant ID).
 
 **The admit card PDF (core A2).** "Download PDF" asks the API. The **worker** renders the file (queue `admit-card-pdf`, ~0.1 s a card) and keeps it 3 minutes in the cache Redis. The PDF carries the full ID and never the email.
-
 - **The page says "taking longer than usual" or "could not be made":**
   - check the worker is up (`$DC ps worker`);
   - run ops-check: a backlog or failed jobs on `admit-card-pdf` show there;
