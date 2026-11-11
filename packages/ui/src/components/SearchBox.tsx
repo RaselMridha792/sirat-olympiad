@@ -43,7 +43,7 @@ export function SearchBox({
       <label htmlFor={id} className="sr-only">
         {label}
       </label>
-      <div className="flex min-w-0 flex-1 items-center gap-2 rounded-control border border-line bg-surface px-3 py-2 focus-within:border-primary sm:w-72 sm:flex-none">
+      <div className="flex min-w-0 flex-1 items-center gap-2 rounded-control border border-line bg-surface px-3 py-1.5 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary sm:w-72 sm:flex-none">
         {icon ? (
           <span aria-hidden="true" className="text-ink-faint">
             {icon}
@@ -56,7 +56,7 @@ export function SearchBox({
           defaultValue={defaultValue}
           placeholder={placeholder}
           maxLength={100}
-          className="w-full min-w-0 bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint"
+          className="min-h-7 w-full min-w-0 bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint"
         />
       </div>
       <button type="submit" className={buttonClasses({ variant: 'secondary', size: 'sm' })}>

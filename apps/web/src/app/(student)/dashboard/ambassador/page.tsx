@@ -3,7 +3,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ClipboardList, Medal, Star, Trophy, UserPlus, Users, UsersRound } from 'lucide-react';
-import { Badge, Card, DataTable, EmptyState, IdCard, StatCard } from '@sirat/ui';
+import { Badge, buttonClasses, Card, DataTable, EmptyState, IdCard, StatCard } from '@sirat/ui';
 import { CopyCode } from '@/components/ambassador/CopyCode';
 import { PrintCardButton } from '@/components/ambassador/PrintCardButton';
 import { SubmitProofButton } from '@/components/ambassador/SubmitProofButton';
@@ -237,14 +237,28 @@ export default async function AmbassadorPage({
               </div>
             </div>
           ) : (
-            <p className="mt-4 text-sm text-ink-muted">{m.team.none}</p>
+            <>
+              <p className="mt-4 text-sm font-semibold text-ink">{m.team.none}</p>
+              <p className="mt-1 text-sm text-ink-muted">{m.team.noneHint}</p>
+            </>
           )}
-          <Link
-            href="/dashboard/team"
-            className="mt-4 inline-flex text-sm font-semibold text-secondary hover:underline"
-          >
-            {m.team.manage}
-          </Link>
+          {amb.team ? (
+            <Link
+              href="/dashboard/team"
+              className="mt-4 inline-flex min-h-6 items-center text-sm font-semibold text-secondary hover:underline"
+            >
+              {m.team.manage}
+            </Link>
+          ) : (
+            // No team yet: starting one is the ambassador's next step, so it is a button, not a quiet link.
+            <Link
+              href="/dashboard/team"
+              className={buttonClasses({ size: 'sm', className: 'mt-4' })}
+            >
+              <UsersRound aria-hidden="true" size={16} />
+              {m.team.create}
+            </Link>
+          )}
         </Card>
       </div>
 
