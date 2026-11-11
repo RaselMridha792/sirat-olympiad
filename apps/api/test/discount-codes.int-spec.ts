@@ -155,7 +155,12 @@ describe('admin: discount codes', () => {
     expect(audits.every((x) => x.actorId === admin.id)).toBe(true);
 
     const one = await (await asAdmin('GET', `/admin/discount-codes/${a.id}`)).json().then(asBody);
-    expect(one).toMatchObject({ id: a.id, uses: { paid: 0, live: 0 }, demo: false });
+    expect(one).toMatchObject({
+      id: a.id,
+      uses: { paid: 0, live: 0 },
+      demo: false,
+      status: 'active',
+    });
     const list = await (
       await asAdmin('GET', `/admin/discount-codes?q=${typed.slice(0, 6)}`)
     )
@@ -240,6 +245,15 @@ describe('admin: discount codes', () => {
     expect(active).not.toContain(expired.id);
     expect(active).not.toContain(later.id);
     expect(await ids('status=inactive')).toContain(off.id);
+    const byId = async (id: string) =>
+      ((await (await asAdmin('GET', `/admin/discount-codes/${id}`)).json().then(asBody)) as Body)
+        .status;
+    expect([
+      await byId(off.id),
+      await byId(expired.id),
+      await byId(later.id),
+      await byId(live.id),
+    ]).toEqual(['inactive', 'expired', 'scheduled', 'active']);
     expect(await ids('status=expired')).toContain(expired.id);
     expect(await ids('status=scheduled')).toContain(later.id);
     const withLink = await ids('linked=1');

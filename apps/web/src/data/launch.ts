@@ -40,6 +40,7 @@ export const LAUNCH = {
   '/admin/exams/[id]/preview': 'live',
   '/admin/exams/new': 'live',
   '/admin/leaderboard': 'live',
+  '/admin/discount-codes': 'live',
   '/admin/payments': 'live',
   '/admin/security': 'live',
   '/admin/settings': 'live',

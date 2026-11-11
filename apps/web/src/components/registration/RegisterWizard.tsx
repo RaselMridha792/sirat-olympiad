@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { GraduationCap, Info, Lock, Mail, Phone, School, Tag, User } from 'lucide-react';
-import type { CurrentRegistration, RegistrationInfo } from '@sirat/shared';
+import type { CurrentRegistration, RegistrationInfo, RegistrationQuote } from '@sirat/shared';
 import { Button, cn, Field, SelectField } from '@sirat/ui';
 import { useHydrated } from '@/components/auth/useHydrated';
 import type { Locale } from '@/i18n';
@@ -60,6 +60,9 @@ export function RegisterWizard({ locale, info }: { locale: Locale; info: WizardI
   const [formError, setFormError] = useState('');
   const [pending, setPending] = useState(false);
   const [retryMode, setRetryMode] = useState(false);
+  // The server's price for the promo code as typed (POST /registrations/quote); the start prices again itself.
+  const [quote, setQuote] = useState<{ code: string; result: RegistrationQuote } | null>(null);
+  const [applying, setApplying] = useState(false);
   const requestId = useRef<string | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const moved = useRef(false);
@@ -73,6 +76,10 @@ export function RegisterWizard({ locale, info }: { locale: Locale; info: WizardI
     [info],
   );
   const amount = formatNumber(locale, info.fee.amountMinor / 100);
+  const code = values.promoCode.trim();
+  const priced = quote && quote.code === code ? quote.result : null;
+  const taka = (minor: number) => formatNumber(locale, minor / 100);
+  const payAmount = taka(priced?.amountMinor ?? info.fee.amountMinor);
   const index = STEPS.indexOf(step);
 
   useEffect(() => {
@@ -107,11 +114,46 @@ export function RegisterWizard({ locale, info }: { locale: Locale; info: WizardI
       void pay();
       return;
     }
+    void next();
+  }
+
+  async function next() {
     const errors = validateStep(step, values, choices);
     if (Object.keys(errors).length > 0) return show(errors);
     setFieldText({});
     setFormError('');
+    // A promo code is priced before the review, so the review and the button show what the start will charge.
+    if (step === 'school' && !(await checkCode())) return;
     goTo(STEPS[index + 1] ?? 'review');
+  }
+
+  /** Asks the server what this code does to the price; a miss is the field's PROMO_INVALID. True when usable. */
+  async function checkCode(): Promise<boolean> {
+    if (!code) {
+      setQuote(null);
+      return true;
+    }
+    if (priced) return true;
+    const format = validateStep('school', values, choices).promoCode;
+    if (format) {
+      show({ promoCode: format });
+      return false;
+    }
+    setApplying(true);
+    setFormError('');
+    try {
+      const result = await registrationApi.quote(code);
+      setQuote({ code, result });
+      setFieldText((t) => ({ ...t, promoCode: undefined }));
+      return true;
+    } catch (err) {
+      const problem = registrationProblem(answerOf(err));
+      if (problem.kind === 'field') setFieldText({ [problem.field]: problemText(m, problem.text) });
+      else if (problem.kind === 'form') setFormError(problemText(m, problem.text));
+      return false;
+    } finally {
+      setApplying(false);
+    }
   }
 
   async function pay() {
@@ -325,6 +367,28 @@ export function RegisterWizard({ locale, info }: { locale: Locale; info: WizardI
               error={fieldText.promoCode}
               icon={<Tag size={18} />}
             />
+            {code ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  loading={applying}
+                  loadingLabel={m.applyCode}
+                  disabled={!hydrated || Boolean(priced)}
+                  onClick={() => void checkCode()}
+                >
+                  {m.applyCode}
+                </Button>
+                {priced ? (
+                  <p role="status" className="text-sm font-medium text-success-strong">
+                    {priced.discountMinor > 0
+                      ? m.codeApplied(taka(priced.discountMinor), taka(priced.amountMinor))
+                      : m.codeAccepted}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </>
         ) : null}
 
@@ -357,6 +421,16 @@ export function RegisterWizard({ locale, info }: { locale: Locale; info: WizardI
                   : []),
               ]}
             />
+            {priced && priced.discountMinor > 0 ? (
+              <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 rounded-card border border-line p-4 text-sm">
+                <dt className="text-ink-muted">{m.price.fee}</dt>
+                <dd className="text-right">৳{taka(priced.listAmountMinor)}</dd>
+                <dt className="text-ink-muted">{m.price.discount}</dt>
+                <dd className="text-right text-success-strong">−৳{taka(priced.discountMinor)}</dd>
+                <dt className="font-semibold text-ink">{m.price.total}</dt>
+                <dd className="text-right font-semibold text-ink">৳{taka(priced.amountMinor)}</dd>
+              </dl>
+            ) : null}
           </div>
         ) : null}
 
@@ -386,7 +460,7 @@ export function RegisterWizard({ locale, info }: { locale: Locale; info: WizardI
             disabled={!hydrated}
             className="flex-1"
           >
-            {step === 'review' ? (retryMode ? m.previous.tryAgain : m.pay(amount)) : m.next}
+            {step === 'review' ? (retryMode ? m.previous.tryAgain : m.pay(payAmount)) : m.next}
           </Button>
         </div>
       </form>

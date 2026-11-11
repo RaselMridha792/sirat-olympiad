@@ -3,6 +3,7 @@ import {
   CATEGORIES,
   dammDigit,
   DEFAULT_VIDEO_CRITERIA,
+  type AdminDiscountCode,
   type AdminRound,
   type AdminCertificateRow,
   type JuryEntryRow,
@@ -45,6 +46,7 @@ import {
   type StudentExamState,
   type StudentProfile,
 } from '@sirat/shared';
+import { mockDiscountCode, mockDiscountCodes, mockDiscountCodeUses } from './discount-codes.ts';
 import type { MockState } from '../mode';
 import type { DataSource } from '../source';
 import {
@@ -1388,6 +1390,24 @@ export function createMockSource(state: MockState | null): DataSource {
         run(
           () => MOCK_SETTINGS.map((s) => ({ ...s })),
           () => MOCK_SETTINGS.map((s) => ({ ...s })),
+        ),
+
+      listDiscountCodes: (query) =>
+        run(
+          () => mockDiscountCodes(query),
+          () => emptyPage<AdminDiscountCode>(query),
+        ),
+
+      getDiscountCode: (id) =>
+        run(
+          () => mockDiscountCode(id),
+          () => null,
+        ),
+
+      listDiscountCodeUses: (id, query) =>
+        run(
+          () => mockDiscountCodeUses(id, query),
+          () => null,
         ),
 
       getDemoStatus: () =>

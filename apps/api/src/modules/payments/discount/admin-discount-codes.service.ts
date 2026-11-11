@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { PaymentStatus, Prisma, type DiscountCode } from '@prisma/client';
 import {
+  discountCodeStatus,
   isDiscountCodeFormat,
   type AdminDiscountCode,
   type AdminDiscountCodeUses,
@@ -88,7 +89,7 @@ export class AdminDiscountCodesService {
       now,
     );
     return {
-      items: rows.map((r) => view(r, uses.get(r.id) ?? { paid: 0, live: 0 })),
+      items: rows.map((r) => view(r, uses.get(r.id) ?? { paid: 0, live: 0 }, now)),
       page,
       pageSize,
       total,
@@ -101,7 +102,7 @@ export class AdminDiscountCodesService {
       include: WITH_AMBASSADOR,
     });
     if (!row) throw new NotFoundException('Discount code not found');
-    return view(row, await usesOf(this.prisma, id, now));
+    return view(row, await usesOf(this.prisma, id, now), now);
   }
 
   async create(actor: DiscountActor, dto: CreateDiscountCodeDto): Promise<AdminDiscountCode> {
@@ -147,7 +148,7 @@ export class AdminDiscountCodesService {
           });
           return created;
         });
-        return view(row, { paid: 0, live: 0 });
+        return view(row, { paid: 0, live: 0 }, new Date());
       } catch (e) {
         const clash = e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002';
         if (!clash) throw e;
@@ -217,7 +218,7 @@ export class AdminDiscountCodesService {
         });
       return after;
     });
-    return view(row, await usesOf(this.prisma, id, now));
+    return view(row, await usesOf(this.prisma, id, now), now);
   }
 
   /** Only a code nobody has started a registration with; a used one is switched off instead. */
@@ -368,7 +369,9 @@ function changes<T extends Record<string, unknown>>(before: T, after: T) {
   return out;
 }
 
-function view(r: CodeRow, uses: { paid: number; live: number }): AdminDiscountCode {
+function view(r: CodeRow, uses: { paid: number; live: number }, now: Date): AdminDiscountCode {
+  const startsAt = r.startsAt?.toISOString() ?? null;
+  const endsAt = r.endsAt?.toISOString() ?? null;
   return {
     id: r.id,
     code: r.code,
@@ -388,6 +391,7 @@ function view(r: CodeRow, uses: { paid: number; live: number }): AdminDiscountCo
       : null,
     uses,
     locked: uses.paid > 0,
+    status: discountCodeStatus({ active: r.active, startsAt, endsAt }, now.getTime()),
     demo: r.demoBatchId !== null,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
