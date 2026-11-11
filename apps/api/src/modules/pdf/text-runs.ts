@@ -7,7 +7,11 @@ export interface TextRun {
 
 /** Bengali letters, signs and digits (U+0980–U+09FF), the dandas (U+0964/5) and the joiners ZWNJ/ZWJ. */
 export const isBengaliCodePoint = (cp: number): boolean =>
-  (cp >= 0x0980 && cp <= 0x09ff) || cp === 0x0964 || cp === 0x0965 || cp === 0x200c || cp === 0x200d;
+  (cp >= 0x0980 && cp <= 0x09ff) ||
+  cp === 0x0964 ||
+  cp === 0x0965 ||
+  cp === 0x200c ||
+  cp === 0x200d;
 
 /**
  * Splits text into runs by the font that draws them: Bengali code points go to the Bengali font, everything else to

@@ -26,7 +26,9 @@ export class AdmitCardPdfQueue implements OnApplicationShutdown {
     @Inject(REDIS_QUEUE) private readonly redis: Redis,
     config: ConfigService<EnvVars, true>,
   ) {
-    this.queue = new Queue<AdmitCardPdfJobData>(admitCardPdfQueueName(config), { connection: redis });
+    this.queue = new Queue<AdmitCardPdfJobData>(admitCardPdfQueueName(config), {
+      connection: redis,
+    });
   }
 
   /** False when the queue Redis is unreachable: the caller answers 503 and the page offers to try again. */

@@ -5,7 +5,10 @@ export interface AdmitCardPdfTexts {
   mode: Record<'online' | 'offline', string>;
   idLabel: string;
   keepPrivate: string;
-  fields: Record<'name' | 'category' | 'gradeLevel' | 'fee' | 'exam' | 'examTime' | 'registeredAt' | 'mode', string>;
+  fields: Record<
+    'name' | 'category' | 'gradeLevel' | 'fee' | 'exam' | 'examTime' | 'registeredAt' | 'mode',
+    string
+  >;
   categories: Record<Category, string>;
   notProvided: string;
   examSoon: string;

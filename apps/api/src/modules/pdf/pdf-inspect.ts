@@ -23,7 +23,8 @@ export function actualTexts(pdf: Uint8Array): string[] {
   }
   const texts: string[] = [];
   for (const chunk of chunks)
-    for (const m of chunk.matchAll(/\/ActualText\s*<([0-9A-Fa-f\s]*)>/g)) texts.push(fromUtf16Hex(m[1] ?? ''));
+    for (const m of chunk.matchAll(/\/ActualText\s*<([0-9A-Fa-f\s]*)>/g))
+      texts.push(fromUtf16Hex(m[1] ?? ''));
   return texts;
 }
 
@@ -32,6 +33,7 @@ function fromUtf16Hex(hex: string): string {
   const bytes = Buffer.from(hex.replace(/\s/g, ''), 'hex');
   const body = bytes[0] === 0xfe && bytes[1] === 0xff ? bytes.subarray(2) : bytes;
   let text = '';
-  for (let i = 0; i + 1 < body.length; i += 2) text += String.fromCharCode(((body[i] as number) << 8) | (body[i + 1] as number));
+  for (let i = 0; i + 1 < body.length; i += 2)
+    text += String.fromCharCode(((body[i] as number) << 8) | (body[i + 1] as number));
   return text;
 }

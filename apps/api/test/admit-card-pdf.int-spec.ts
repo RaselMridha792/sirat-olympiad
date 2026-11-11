@@ -37,7 +37,11 @@ beforeAll(async () => {
     ADMIT_CARD_PDF_QUEUE_NAME: QUEUE,
   };
   const config = { get: (key: string) => values[key] } as unknown as ConfigService<EnvVars, true>;
-  worker = new AdmitCardPdfWorker(new AdmitCardService(prisma as unknown as PrismaService), cache, config);
+  worker = new AdmitCardPdfWorker(
+    new AdmitCardService(prisma as unknown as PrismaService),
+    cache,
+    config,
+  );
   worker.onModuleInit();
 }, 60_000);
 
@@ -52,8 +56,14 @@ const details = (json: unknown) => (json as { details?: string[] }).details;
 
 /** GET /admit-card/pdf as bytes (call() decodes text, which would break a PDF). */
 async function download(cookie: string, locale = 'bn') {
-  const res = await fetch(`${env.base}/api/admit-card/pdf?locale=${locale}`, { headers: { cookie } });
-  return { status: res.status, headers: res.headers, bytes: new Uint8Array(await res.arrayBuffer()) };
+  const res = await fetch(`${env.base}/api/admit-card/pdf?locale=${locale}`, {
+    headers: { cookie },
+  });
+  return {
+    status: res.status,
+    headers: res.headers,
+    bytes: new Uint8Array(await res.arrayBuffer()),
+  };
 }
 
 async function until<T>(read: () => Promise<T>, done: (v: T) => boolean, ms = 20_000): Promise<T> {
@@ -80,7 +90,9 @@ describe('the admit card PDF', () => {
   it('is rendered through the queue: the full ID once, never the email; owner only, no-store, a file download', async () => {
     const me = await registered('PDF Admit Student');
     const other = await registered('PDF Other Student');
-    const asked = await call<AdmitCardPdfStatus>(env, 'POST', '/admit-card/pdf', me.cookie, { locale: 'bn' });
+    const asked = await call<AdmitCardPdfStatus>(env, 'POST', '/admit-card/pdf', me.cookie, {
+      locale: 'bn',
+    });
     expect(asked.status).toBe(200);
     expect(asked.headers.get('cache-control')).toBe('no-store');
     expect(asked.json).toEqual({ status: 'pending' });
@@ -111,12 +123,18 @@ describe('the admit card PDF', () => {
     // Another student never gets it: their own card is not made, and they have no way to name another's.
     const theirs = await download(other.cookie);
     expect(theirs.status).toBe(404);
-    expect(details(JSON.parse(Buffer.from(theirs.bytes).toString('utf8')))).toEqual(['pdf_not_ready']);
+    expect(details(JSON.parse(Buffer.from(theirs.bytes).toString('utf8')))).toEqual([
+      'pdf_not_ready',
+    ]);
   });
 
   it('gives the same bytes on a re-run and never serves a file made from details that have changed', async () => {
     const me = await registered('Rerun Student');
-    const job = { id: 'rerun', name: 'render', data: { userId: me.user.id, locale: 'en' as const } };
+    const job = {
+      id: 'rerun',
+      name: 'render',
+      data: { userId: me.user.id, locale: 'en' as const },
+    };
     expect(await worker.process(job)).toBe('stored');
     const key = admitCardPdfKey(me.user.id, 'en');
     const [, first] = await cache.hmgetBuffer(key, 'v', 'pdf');
@@ -131,7 +149,10 @@ describe('the admit card PDF', () => {
     expect((await download(me.cookie, 'bn')).status).toBe(404);
 
     // A corrected name: the old print is never served; asking again queues a new one.
-    await prisma.user.update({ where: { id: me.user.id }, data: { name: 'Rerun Student Corrected' } });
+    await prisma.user.update({
+      where: { id: me.user.id },
+      data: { name: 'Rerun Student Corrected' },
+    });
     const stale = await download(me.cookie, 'en');
     expect(stale.status).toBe(404);
     expect((await call(env, 'POST', '/admit-card/pdf', me.cookie, { locale: 'en' })).json).toEqual({
@@ -154,10 +175,12 @@ describe('the admit card PDF', () => {
     const job = { id: 'skip', name: 'render', data: { userId: unpaid.id, locale: 'bn' as const } };
     expect(await worker.process(job)).toBe('skipped');
     expect(await cache.exists(admitCardPdfKey(unpaid.id, 'bn'))).toBe(0);
-    await expect(worker.process({ ...job, name: 'other' })).rejects.toThrow(/unknown admit card pdf job/);
-    await expect(worker.process({ ...job, data: { ...job.data, locale: 'fr' as never } })).rejects.toThrow(
-      /unknown locale/,
+    await expect(worker.process({ ...job, name: 'other' })).rejects.toThrow(
+      /unknown admit card pdf job/,
     );
+    await expect(
+      worker.process({ ...job, data: { ...job.data, locale: 'fr' as never } }),
+    ).rejects.toThrow(/unknown locale/);
   });
 
   it('is refused without a paid registration, to staff, without a session, and for an unknown language', async () => {
@@ -170,7 +193,9 @@ describe('the admit card PDF', () => {
     expect((await download('')).status).toBe(401);
     for (const role of ['admin', 'manager', 'jury'] as const) {
       const staff = await sessionFor(env, prisma, { role });
-      expect((await call(env, 'POST', '/admit-card/pdf', staff.cookie, { locale: 'bn' })).status).toBe(403);
+      expect(
+        (await call(env, 'POST', '/admit-card/pdf', staff.cookie, { locale: 'bn' })).status,
+      ).toBe(403);
       expect((await download(staff.cookie)).status).toBe(403);
     }
     const me = await registered('Locale Student');

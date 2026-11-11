@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Header, HttpCode, Post, Query, StreamableFile } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  Post,
+  Query,
+  StreamableFile,
+} from '@nestjs/common';
 import type { AdmitCard, AdmitCardPdfStatus } from '@sirat/shared';
 import type { AuthUser } from '../auth/access-token.service';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
@@ -26,14 +35,20 @@ export class AdmitCardController {
   @Post('pdf')
   @HttpCode(200)
   @Header('Cache-Control', 'no-store')
-  requestPdf(@CurrentUser() user: AuthUser, @Body() body: AdmitCardPdfDto): Promise<AdmitCardPdfStatus> {
+  requestPdf(
+    @CurrentUser() user: AuthUser,
+    @Body() body: AdmitCardPdfDto,
+  ): Promise<AdmitCardPdfStatus> {
     return this.pdf.request(user.id, body.locale);
   }
 
   /** The PDF holds the full participant ID: the owner's only, never cached, saved as a file. */
   @Get('pdf')
   @Header('Cache-Control', 'no-store')
-  async downloadPdf(@CurrentUser() user: AuthUser, @Query() query: AdmitCardPdfDto): Promise<StreamableFile> {
+  async downloadPdf(
+    @CurrentUser() user: AuthUser,
+    @Query() query: AdmitCardPdfDto,
+  ): Promise<StreamableFile> {
     const file = await this.pdf.file(user.id, query.locale);
     return new StreamableFile(file, {
       type: 'application/pdf',

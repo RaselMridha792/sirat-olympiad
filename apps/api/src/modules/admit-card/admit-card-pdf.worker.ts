@@ -48,12 +48,18 @@ export class AdmitCardPdfWorker implements OnModuleInit, OnApplicationShutdown {
   ) {}
 
   onModuleInit(): void {
-    this.connection = new Redis(this.config.get('REDIS_QUEUE_URL', { infer: true }), { ...QUEUE_REDIS_OPTIONS });
-    this.connection.on('error', () => undefined); // BullMQ reconnects; job failures are logged below
-    this.worker = new Worker<AdmitCardPdfJobData>(admitCardPdfQueueName(this.config), (job) => this.process(job), {
-      connection: this.connection,
-      concurrency: 1,
+    this.connection = new Redis(this.config.get('REDIS_QUEUE_URL', { infer: true }), {
+      ...QUEUE_REDIS_OPTIONS,
     });
+    this.connection.on('error', () => undefined); // BullMQ reconnects; job failures are logged below
+    this.worker = new Worker<AdmitCardPdfJobData>(
+      admitCardPdfQueueName(this.config),
+      (job) => this.process(job),
+      {
+        connection: this.connection,
+        concurrency: 1,
+      },
+    );
     this.worker.on('failed', (job, err) =>
       this.logger.warn({
         msg: 'admit card pdf job failed',
@@ -64,8 +70,11 @@ export class AdmitCardPdfWorker implements OnModuleInit, OnApplicationShutdown {
     );
   }
 
-  async process(job: Pick<Job<AdmitCardPdfJobData>, 'id' | 'name' | 'data'>): Promise<AdmitCardPdfOutcome> {
-    if (job.name !== ADMIT_CARD_PDF_JOB) throw new UnrecoverableError(`unknown admit card pdf job ${job.name}`);
+  async process(
+    job: Pick<Job<AdmitCardPdfJobData>, 'id' | 'name' | 'data'>,
+  ): Promise<AdmitCardPdfOutcome> {
+    if (job.name !== ADMIT_CARD_PDF_JOB)
+      throw new UnrecoverableError(`unknown admit card pdf job ${job.name}`);
     const { userId, locale } = job.data;
     if (!(ADMIT_CARD_PDF_LOCALES as readonly string[]).includes(locale))
       throw new UnrecoverableError('admit card pdf job: unknown locale');
@@ -74,7 +83,10 @@ export class AdmitCardPdfWorker implements OnModuleInit, OnApplicationShutdown {
       card = await this.admitCard.forUser(userId);
     } catch (e) {
       if (e instanceof NotFoundException || e instanceof ForbiddenException) {
-        this.logger.log({ msg: 'admit card pdf skipped: no admit card for this user now', jobId: job.id });
+        this.logger.log({
+          msg: 'admit card pdf skipped: no admit card for this user now',
+          jobId: job.id,
+        });
         return 'skipped';
       }
       throw e;
@@ -87,7 +99,8 @@ export class AdmitCardPdfWorker implements OnModuleInit, OnApplicationShutdown {
       .expire(key, ADMIT_CARD_PDF_TTL_SECONDS)
       .exec();
     const failed = results?.find(([err]) => err)?.[0];
-    if (!results || failed) throw failed ?? new Error('admit card pdf: the cache write was discarded');
+    if (!results || failed)
+      throw failed ?? new Error('admit card pdf: the cache write was discarded');
     this.logger.log({ msg: 'admit card pdf stored', jobId: job.id, bytes: pdf.length });
     return 'stored';
   }

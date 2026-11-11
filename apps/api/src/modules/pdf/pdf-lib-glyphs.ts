@@ -11,7 +11,9 @@ export const PDF_LIB_VERSION = '1.17.1';
 
 export class PdfLibInternalsChanged extends Error {
   constructor(what: string) {
-    super(`pdf-lib internals changed (${what}): the glyph-by-id path is written for pdf-lib ${PDF_LIB_VERSION}`);
+    super(
+      `pdf-lib internals changed (${what}): the glyph-by-id path is written for pdf-lib ${PDF_LIB_VERSION}`,
+    );
     this.name = 'PdfLibInternalsChanged';
   }
 }
@@ -29,17 +31,28 @@ const isFunction = (value: unknown): boolean => typeof value === 'function';
 
 /** The subset embedder behind a font embedded with `{ subset: true }`, after checking its shape. */
 export function subsetEmbedder(font: PDFFont): SubsetEmbedder {
-  const embedder = (font as unknown as { embedder?: Partial<Record<keyof SubsetEmbedder, unknown>> }).embedder;
-  if (!embedder || typeof embedder !== 'object') throw new PdfLibInternalsChanged('PDFFont.embedder');
-  const fontkitFont = embedder.font as Partial<Record<'getGlyph' | 'hasGlyphForCodePoint', unknown>> | undefined;
-  if (!fontkitFont || !isFunction(fontkitFont.getGlyph) || !isFunction(fontkitFont.hasGlyphForCodePoint))
+  const embedder = (
+    font as unknown as { embedder?: Partial<Record<keyof SubsetEmbedder, unknown>> }
+  ).embedder;
+  if (!embedder || typeof embedder !== 'object')
+    throw new PdfLibInternalsChanged('PDFFont.embedder');
+  const fontkitFont = embedder.font as
+    Partial<Record<'getGlyph' | 'hasGlyphForCodePoint', unknown>> | undefined;
+  if (
+    !fontkitFont ||
+    !isFunction(fontkitFont.getGlyph) ||
+    !isFunction(fontkitFont.hasGlyphForCodePoint)
+  )
     throw new PdfLibInternalsChanged('embedder.font');
   const subset = embedder.subset as { includeGlyph?: unknown } | undefined;
-  if (!subset || !isFunction(subset.includeGlyph)) throw new PdfLibInternalsChanged('embedder.subset');
+  if (!subset || !isFunction(subset.includeGlyph))
+    throw new PdfLibInternalsChanged('embedder.subset');
   if (!Array.isArray(embedder.glyphs)) throw new PdfLibInternalsChanged('embedder.glyphs');
-  if (!(embedder.glyphIdMap instanceof Map)) throw new PdfLibInternalsChanged('embedder.glyphIdMap');
+  if (!(embedder.glyphIdMap instanceof Map))
+    throw new PdfLibInternalsChanged('embedder.glyphIdMap');
   const cache = embedder.glyphCache as { invalidate?: unknown } | undefined;
-  if (!cache || !isFunction(cache.invalidate)) throw new PdfLibInternalsChanged('embedder.glyphCache');
+  if (!cache || !isFunction(cache.invalidate))
+    throw new PdfLibInternalsChanged('embedder.glyphCache');
   return embedder as unknown as SubsetEmbedder;
 }
 

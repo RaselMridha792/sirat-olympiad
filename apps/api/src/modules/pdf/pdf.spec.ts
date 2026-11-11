@@ -11,7 +11,8 @@ import { ShapedPdf } from './shaped-pdf';
 import { isBengaliCodePoint, splitRuns } from './text-runs';
 
 const packageVersion = (name: string): string =>
-  (JSON.parse(readFileSync(require.resolve(`${name}/package.json`), 'utf8')) as { version: string }).version;
+  (JSON.parse(readFileSync(require.resolve(`${name}/package.json`), 'utf8')) as { version: string })
+    .version;
 
 /**
  * The spike's strings (core A2): conjuncts, reph, ya-phala, khanda ta, chandrabindu and mixed Bangla/Latin lines.
@@ -20,13 +21,40 @@ const packageVersion = (name: string): string =>
  * reviewed change of the printed output.
  */
 const PARITY_STRINGS = [
-  'মুহাম্মদ আব্দুল্লাহ', 'তাসনিম জান্নাত', 'সাক্কির আলম', 'ঋতুপর্ণা সেনগুপ্ত', 'অ্যাক্টিভিস্ট',
-  'আমি অংশ নিচ্ছি!', 'প্রবেশপত্র ও পরীক্ষার আইডি', 'শ্রেণি ও ফি', 'স্বাক্ষর', 'ক্ষমা ও জ্ঞান',
-  'রুদ্র হৃদয়', 'ত্রিপুরা স্ত্রী', 'যন্ত্র ভক্ত', 'অঙ্ক কৃষ্ণ', 'ব্রাহ্মণ', 'বুদ্ধ শুদ্ধ',
-  'কার্য সূর্য', 'রেজিস্ট্রেশন সম্পন্ন', 'শ্রীমঙ্গল', 'ফাহিম মুনতাসির', 'মাহমুদুল্লাহ রিয়াদ',
-  'রাফসান জামান', 'ইফতেখার উদ্দিন', 'সৌম্য দ্যুতি', 'উজ্জ্বল ঔজ্জ্বল্য', 'আত্মবিশ্বাস',
-  'চন্দ্রবিন্দু ঁ', 'খৎনা ৎ', 'য়', 'ইন্টারন্যাশনাল সিরাত অলিম্পিয়াড ৩.০',
-  'Fixture Student 1', 'ON •••• •••• •52', 'Class 5 / PYP 5 / Taisir', 'ফি: ৳৪০০ (Paid)',
+  'মুহাম্মদ আব্দুল্লাহ',
+  'তাসনিম জান্নাত',
+  'সাক্কির আলম',
+  'ঋতুপর্ণা সেনগুপ্ত',
+  'অ্যাক্টিভিস্ট',
+  'আমি অংশ নিচ্ছি!',
+  'প্রবেশপত্র ও পরীক্ষার আইডি',
+  'শ্রেণি ও ফি',
+  'স্বাক্ষর',
+  'ক্ষমা ও জ্ঞান',
+  'রুদ্র হৃদয়',
+  'ত্রিপুরা স্ত্রী',
+  'যন্ত্র ভক্ত',
+  'অঙ্ক কৃষ্ণ',
+  'ব্রাহ্মণ',
+  'বুদ্ধ শুদ্ধ',
+  'কার্য সূর্য',
+  'রেজিস্ট্রেশন সম্পন্ন',
+  'শ্রীমঙ্গল',
+  'ফাহিম মুনতাসির',
+  'মাহমুদুল্লাহ রিয়াদ',
+  'রাফসান জামান',
+  'ইফতেখার উদ্দিন',
+  'সৌম্য দ্যুতি',
+  'উজ্জ্বল ঔজ্জ্বল্য',
+  'আত্মবিশ্বাস',
+  'চন্দ্রবিন্দু ঁ',
+  'খৎনা ৎ',
+  'য়',
+  'ইন্টারন্যাশনাল সিরাত অলিম্পিয়াড ৩.০',
+  'Fixture Student 1',
+  'ON •••• •••• •52',
+  'Class 5 / PYP 5 / Taisir',
+  'ফি: ৳৪০০ (Paid)',
   'শনিবার, ১৪ নভেম্বর ২০২৬, ১০:০০ থেকে ১২:০০',
 ];
 const PARITY_HASHES: Record<string, string> = {
@@ -67,42 +95,62 @@ describe('the pinned PDF stack (a version bump fails here first)', () => {
     const full = await doc.embedFont(fontBytes('latRegular'));
     expect(() => subsetEmbedder(full)).toThrow(PdfLibInternalsChanged);
     expect(() => subsetEmbedder({} as never)).toThrow(PdfLibInternalsChanged);
-    expect(() => subsetEmbedder({ embedder: { ...subsetEmbedder(subset), glyphIdMap: {} } } as never)).toThrow(
-      /glyphIdMap/,
-    );
+    expect(() =>
+      subsetEmbedder({ embedder: { ...subsetEmbedder(subset), glyphIdMap: {} } } as never),
+    ).toThrow(/glyphIdMap/);
   });
 
   it('shapes the parity strings exactly as harfbuzzjs 1.6.4 did (the spike)', () => {
     for (const key of PDF_FONT_KEYS) {
       const bytes = fontBytes(key);
       const font = hb.createFont(
-        hb.createFace(hb.createBlob(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer), 0),
+        hb.createFace(
+          hb.createBlob(
+            bytes.buffer.slice(
+              bytes.byteOffset,
+              bytes.byteOffset + bytes.byteLength,
+            ) as ArrayBuffer,
+          ),
+          0,
+        ),
       );
-      const all = PARITY_STRINGS.map((text) => shape(hb, font, text).map((g) => [g.gid, g.cluster, g.advance, g.dx, g.dy]));
-      expect([key, createHash('sha256').update(JSON.stringify(all)).digest('hex')]).toEqual([key, PARITY_HASHES[key]]);
+      const all = PARITY_STRINGS.map((text) =>
+        shape(hb, font, text).map((g) => [g.gid, g.cluster, g.advance, g.dx, g.dy]),
+      );
+      expect([key, createHash('sha256').update(JSON.stringify(all)).digest('hex')]).toEqual([
+        key,
+        PARITY_HASHES[key],
+      ]);
     }
   });
 
   it('ships the committed fonts with their OFL licences', () => {
     for (const file of Object.values(PDF_FONT_FILES))
-      expect([file, createHash('sha256').update(readFileSync(join(ASSETS_DIR, 'fonts', file))).digest('hex')]).toEqual([
+      expect([
         file,
-        FONT_SHA256[file],
-      ]);
+        createHash('sha256')
+          .update(readFileSync(join(ASSETS_DIR, 'fonts', file)))
+          .digest('hex'),
+      ]).toEqual([file, FONT_SHA256[file]]);
     for (const licence of ['OFL-NotoSansBengali.txt', 'OFL-NotoSans.txt'])
-      expect(readFileSync(join(ASSETS_DIR, 'fonts', licence), 'utf8')).toContain('SIL Open Font License, Version 1.1');
+      expect(readFileSync(join(ASSETS_DIR, 'fonts', licence), 'utf8')).toContain(
+        'SIL Open Font License, Version 1.1',
+      );
   });
 });
 
 describe('splitRuns', () => {
-  const bengaliHas = (cp: number) => isBengaliCodePoint(cp) || '0123456789,.:;-()!?/ '.includes(String.fromCodePoint(cp));
+  const bengaliHas = (cp: number) =>
+    isBengaliCodePoint(cp) || '0123456789,.:;-()!?/ '.includes(String.fromCodePoint(cp));
 
   it('keeps Bangla with its punctuation and spaces in one run, and Latin in its own', () => {
     expect(splitRuns('ফি: ৳৪০০ (Paid)', bengaliHas)).toEqual([
       { script: 'bn', text: 'ফি: ৳৪০০ (' },
       { script: 'lat', text: 'Paid)' },
     ]);
-    expect(splitRuns('ON 4821 0937 52', bengaliHas)).toEqual([{ script: 'lat', text: 'ON 4821 0937 52' }]);
+    expect(splitRuns('ON 4821 0937 52', bengaliHas)).toEqual([
+      { script: 'lat', text: 'ON 4821 0937 52' },
+    ]);
     expect(splitRuns('Class 5 / শ্রেণি ৫', bengaliHas)).toEqual([
       { script: 'lat', text: 'Class 5 / ' },
       { script: 'bn', text: 'শ্রেণি ৫' },
@@ -124,7 +172,12 @@ describe('ShapedPdf', () => {
   }
 
   it('carries every line as its exact text (/ActualText), run by run', async () => {
-    const lines = ['প্রবেশপত্র ও পরীক্ষার আইডি', 'ফি: ৳৪০০ (Paid)', 'Fixture Student 1', 'উজ্জ্বল ঔজ্জ্বল্য'];
+    const lines = [
+      'প্রবেশপত্র ও পরীক্ষার আইডি',
+      'ফি: ৳৪০০ (Paid)',
+      'Fixture Student 1',
+      'উজ্জ্বল ঔজ্জ্বল্য',
+    ];
     const { bytes } = await render(lines);
     expect(Buffer.from(bytes.subarray(0, 5)).toString('latin1')).toBe('%PDF-');
     const texts = actualTexts(bytes);
@@ -146,10 +199,16 @@ describe('ShapedPdf', () => {
     const pdf = await ShapedPdf.create({ title: 'Test', language: 'bn' });
     pdf.addPage();
     pdf.text('ক্ষমা', 40, 780, { size: 14 });
-    const shaped = shape(hb, (pdf as unknown as { faces: { bnRegular: { hb: never } } }).faces.bnRegular.hb, 'ক্ষমা');
+    const shaped = shape(
+      hb,
+      (pdf as unknown as { faces: { bnRegular: { hb: never } } }).faces.bnRegular.hb,
+      'ক্ষমা',
+    );
     // ক ্ ষ ম া: 5 code points; ক্ষ is one conjunct glyph.
     expect(shaped.length).toBeLessThan(5);
-    const embedder = subsetEmbedder((pdf as unknown as { faces: { bnRegular: { pdf: never } } }).faces.bnRegular.pdf);
+    const embedder = subsetEmbedder(
+      (pdf as unknown as { faces: { bnRegular: { pdf: never } } }).faces.bnRegular.pdf,
+    );
     expect([...embedder.glyphIdMap.keys()].sort((a, b) => a - b)).toEqual(
       [...new Set(shaped.map((g) => g.gid))].sort((a, b) => a - b),
     );

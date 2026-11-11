@@ -1,4 +1,9 @@
-import { type AdmitCard, type AdmitCardPdfLocale, formatParticipantId, SITE_NAME } from '@sirat/shared';
+import {
+  type AdmitCard,
+  type AdmitCardPdfLocale,
+  formatParticipantId,
+  SITE_NAME,
+} from '@sirat/shared';
 import { type RGB, rgb } from 'pdf-lib';
 import { MARK_IMAGE, readAsset } from '../pdf/pdf-assets';
 import { A4, ShapedPdf, type TextStyle } from '../pdf/shaped-pdf';
@@ -35,18 +40,26 @@ interface Field {
  * page stays the up-to-date, accessible version; the PDF says so. Deterministic: the same card gives the same bytes.
  * A change here or in the texts bumps ADMIT_CARD_PDF_LAYOUT (admit-card-pdf-queue.ts).
  */
-export async function renderAdmitCardPdf(card: AdmitCard, locale: AdmitCardPdfLocale): Promise<Uint8Array> {
+export async function renderAdmitCardPdf(
+  card: AdmitCard,
+  locale: AdmitCardPdfLocale,
+): Promise<Uint8Array> {
   const t = ADMIT_CARD_PDF_TEXTS[locale];
   const tag = locale === 'bn' ? 'bn-BD' : 'en-GB';
   const format = (iso: string, options: Intl.DateTimeFormatOptions) =>
     new Intl.DateTimeFormat(tag, { timeZone: TIME_ZONE, ...options }).format(new Date(iso));
-  const day = (iso: string) => format(iso, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const day = (iso: string) =>
+    format(iso, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   const date = (iso: string) => format(iso, { day: 'numeric', month: 'long', year: 'numeric' });
-  const time = (iso: string) => format(iso, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const time = (iso: string) =>
+    format(iso, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   const amount = new Intl.NumberFormat(tag).format(card.fee.amountMinor / 100);
   const money = card.fee.currency === 'BDT' ? `৳${amount}` : `${card.fee.currency} ${amount}`;
 
-  const pdf = await ShapedPdf.create({ title: `${t.title} | ${SITE_NAME[locale]}`, language: locale });
+  const pdf = await ShapedPdf.create({
+    title: `${t.title} | ${SITE_NAME[locale]}`,
+    language: locale,
+  });
   const page = pdf.addPage();
   /** Positions are measured from the top edge here; pdf-lib's y runs up from the bottom. */
   const top = (y: number) => A4.height - y;
@@ -69,11 +82,19 @@ export async function renderAdmitCardPdf(card: AdmitCard, locale: AdmitCardPdfLo
   const nameWidth = WIDTH - 68 - badgeWidth - 12;
   const siteStyle: TextStyle = { size: 12, bold: true, color: COLOR.primaryStrong };
   const site = SITE_NAME[locale];
-  pdf.text(site, nameX, top(MARGIN + 18), { ...siteStyle, size: pdf.fitSize(site, nameWidth, siteStyle, 8) });
+  pdf.text(site, nameX, top(MARGIN + 18), {
+    ...siteStyle,
+    size: pdf.fitSize(site, nameWidth, siteStyle, 8),
+  });
   pdf.text(t.title, nameX, top(MARGIN + 46), { size: 22, bold: true, color: COLOR.ink });
 
   let y = MARGIN + 72;
-  page.drawLine({ start: { x: MARGIN, y: top(y) }, end: { x: MARGIN + WIDTH, y: top(y) }, thickness: 1, color: COLOR.line });
+  page.drawLine({
+    start: { x: MARGIN, y: top(y) },
+    end: { x: MARGIN + WIDTH, y: top(y) },
+    thickness: 1,
+    color: COLOR.line,
+  });
   y += 18;
 
   // The participant ID, in full, with the keep-private line.
@@ -106,9 +127,16 @@ export async function renderAdmitCardPdf(card: AdmitCard, locale: AdmitCardPdfLo
   const exam = card.exam;
   const fields: Field[] = [
     { label: t.fields.name, value: card.name },
-    { label: t.fields.category, value: card.category ? t.categories[card.category] : t.notProvided },
+    {
+      label: t.fields.category,
+      value: card.category ? t.categories[card.category] : t.notProvided,
+    },
     { label: t.fields.gradeLevel, value: card.gradeLevel ?? t.notProvided },
-    { label: t.fields.fee, value: money, sub: card.fee.paidAt ? t.paidOn(date(card.fee.paidAt)) : undefined },
+    {
+      label: t.fields.fee,
+      value: money,
+      sub: card.fee.paidAt ? t.paidOn(date(card.fee.paidAt)) : undefined,
+    },
     ...(exam
       ? [
           { label: t.fields.exam, value: exam.title, sub: exam.roundName ?? undefined },
@@ -143,7 +171,10 @@ export async function renderAdmitCardPdf(card: AdmitCard, locale: AdmitCardPdfLo
       }
       if (field.sub) {
         at += 15;
-        pdf.text(field.sub, x, top(at), { ...subStyle, size: pdf.fitSize(field.sub, COLUMN, subStyle, 7) });
+        pdf.text(field.sub, x, top(at), {
+          ...subStyle,
+          size: pdf.fitSize(field.sub, COLUMN, subStyle, 7),
+        });
       }
       rowHeight = Math.max(rowHeight, at - y);
     });
@@ -152,7 +183,9 @@ export async function renderAdmitCardPdf(card: AdmitCard, locale: AdmitCardPdfLo
 
   // Instructions, and the note that this is a print copy.
   const noteStyle: TextStyle = { size: 10.5, color: COLOR.ink };
-  const notes = [t.instructions[card.mode], t.printCopy].map((text) => pdf.wrap(text, WIDTH - 44, noteStyle));
+  const notes = [t.instructions[card.mode], t.printCopy].map((text) =>
+    pdf.wrap(text, WIDTH - 44, noteStyle),
+  );
   const notesHeight = 34 + notes.reduce((sum, lines) => sum + lines.length * 15 + 4, 0) + 8;
   y += 4;
   page.drawRectangle({
@@ -163,7 +196,11 @@ export async function renderAdmitCardPdf(card: AdmitCard, locale: AdmitCardPdfLo
     borderColor: COLOR.line,
     borderWidth: 1,
   });
-  pdf.text(t.instructionsTitle, MARGIN + 16, top(y + 22), { size: 12, bold: true, color: COLOR.ink });
+  pdf.text(t.instructionsTitle, MARGIN + 16, top(y + 22), {
+    size: 12,
+    bold: true,
+    color: COLOR.ink,
+  });
   let noteY = y + 42;
   for (const lines of notes) {
     pdf.text('•', MARGIN + 16, top(noteY), noteStyle);

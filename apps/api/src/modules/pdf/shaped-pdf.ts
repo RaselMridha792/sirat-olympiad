@@ -42,7 +42,9 @@ function hbFontFor(hb: HarfBuzz, key: PdfFontKey): { font: HbFont; upem: number 
   let entry = hbFonts.get(key);
   if (!entry) {
     const bytes = fontBytes(key);
-    const blob = hb.createBlob(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+    const blob = hb.createBlob(
+      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+    );
     const face = hb.createFace(blob, 0);
     entry = { font: hb.createFont(face), upem: face.upem };
     hbFonts.set(key, entry);
@@ -164,7 +166,9 @@ export class ShapedPdf {
       for (const glyph of glyphs) {
         const first = !seen.has(glyph.cluster);
         seen.add(glyph.cluster);
-        const codePoints = first ? [...clusterText(glyph.cluster)].map((c) => c.codePointAt(0) as number) : [];
+        const codePoints = first
+          ? [...clusterText(glyph.cluster)].map((c) => c.codePointAt(0) as number)
+          : [];
         const id = subsetGlyphId(face.embedder, glyph.gid, codePoints);
         ops.push(setTextMatrix(1, 0, 0, 1, pen + glyph.dx * scale, y + glyph.dy * scale));
         ops.push(showText(PDFHexString.of(id.toString(16).padStart(4, '0'))));

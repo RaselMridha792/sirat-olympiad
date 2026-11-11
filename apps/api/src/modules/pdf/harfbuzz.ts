@@ -74,7 +74,8 @@ export function shape(hb: HarfBuzz, font: HbFont, text: string): ShapedGlyph[] {
     hb.shape(font, buffer);
     const infos = buffer.getGlyphInfos();
     const positions = buffer.getGlyphPositions();
-    if (positions.length !== infos.length) throw new Error('HarfBuzz returned positions that do not match glyphs');
+    if (positions.length !== infos.length)
+      throw new Error('HarfBuzz returned positions that do not match glyphs');
     return infos.map((info, i) => {
       const position = positions[i] as HbGlyphPosition;
       return {

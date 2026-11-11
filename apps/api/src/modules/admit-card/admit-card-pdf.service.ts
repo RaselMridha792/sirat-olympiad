@@ -1,4 +1,10 @@
-import { Inject, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import type { AdmitCardPdfLocale, AdmitCardPdfStatus } from '@sirat/shared';
 import type Redis from 'ioredis';
 import { errorLogFields } from '../../common/all-exceptions.filter';
@@ -28,8 +34,10 @@ export class AdmitCardPdfService {
   /** `ready` when the file for the card as it is now is waiting; otherwise queues the render (`pending`). */
   async request(userId: string, locale: AdmitCardPdfLocale): Promise<AdmitCardPdfStatus> {
     const card = await this.admitCard.forUser(userId);
-    if (await this.stored(userId, locale, admitCardPdfVersion(card, locale))) return { status: 'ready' };
-    if (!(await this.queue.render({ userId, locale }))) throw new ServiceUnavailableException(['pdf_unavailable']);
+    if (await this.stored(userId, locale, admitCardPdfVersion(card, locale)))
+      return { status: 'ready' };
+    if (!(await this.queue.render({ userId, locale })))
+      throw new ServiceUnavailableException(['pdf_unavailable']);
     return { status: 'pending' };
   }
 
@@ -41,10 +49,17 @@ export class AdmitCardPdfService {
     return pdf;
   }
 
-  private async stored(userId: string, locale: AdmitCardPdfLocale, version: string): Promise<Buffer | null> {
+  private async stored(
+    userId: string,
+    locale: AdmitCardPdfLocale,
+    version: string,
+  ): Promise<Buffer | null> {
     let fields: Array<Buffer | null>;
     try {
-      fields = await withTimeout(this.cache.hmgetBuffer(admitCardPdfKey(userId, locale), 'v', 'pdf'), CACHE_TIMEOUT_MS);
+      fields = await withTimeout(
+        this.cache.hmgetBuffer(admitCardPdfKey(userId, locale), 'v', 'pdf'),
+        CACHE_TIMEOUT_MS,
+      );
     } catch (e) {
       this.logger.error({ msg: 'admit card pdf: cache Redis unavailable', ...errorLogFields(e) });
       throw new ServiceUnavailableException(['pdf_unavailable']);
