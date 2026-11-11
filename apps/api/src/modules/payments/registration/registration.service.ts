@@ -20,6 +20,7 @@ import {
 import {
   BD_DISTRICTS,
   EDUCATION_TYPES,
+  PARTICIPANT_ID_SHOWN_HOURS,
   REGISTRATION_MESSAGES,
   type CheckoutGateway,
   type Paginated,
@@ -89,6 +90,8 @@ export type CurrentRegistration = {
   expiresAt: string | null;
   canResume: boolean;
   canRetry: boolean;
+  /** Only while completed, for PARTICIPANT_ID_SHOWN_HOURS (shared CurrentRegistration says why). */
+  participantId: string | null;
 };
 
 export type RegistrationInfo = {
@@ -248,7 +251,28 @@ export class RegistrationService {
         !!latest &&
         (latest.status === PaymentStatus.failed || latest.status === PaymentStatus.expired) &&
         isRegistrationOpen(settings, now),
+      participantId: await this.newParticipantId(attempt, now),
     };
+  }
+
+  /**
+   * The participant ID for the result page: only for a completed attempt, and only for PARTICIPANT_ID_SHOWN_HOURS after
+   * it completed (the cookie can outlive the visit on a shared computer; the email and the dashboard keep the ID).
+   */
+  private async newParticipantId(attempt: PendingRegistration, now: Date): Promise<string | null> {
+    if (
+      attempt.status !== RegistrationAttemptStatus.completed ||
+      !attempt.userId ||
+      !attempt.completedAt
+    )
+      return null;
+    if (now.getTime() - attempt.completedAt.getTime() > PARTICIPANT_ID_SHOWN_HOURS * 3_600_000)
+      return null;
+    const registration = await this.prisma.registration.findUnique({
+      where: { userId: attempt.userId },
+      select: { participantId: true },
+    });
+    return registration?.participantId ?? null;
   }
 
   async resume(browserToken: string | null, now = new Date()): Promise<ResumeRegistrationResult> {
@@ -366,6 +390,7 @@ export class RegistrationService {
       where: { userId },
       select: {
         createdAt: true,
+        participantId: true,
         user: { select: { category: true, gradeLevel: { select: { label: true } } } },
         payment: {
           select: {
@@ -382,6 +407,7 @@ export class RegistrationService {
     return {
       registered: true as const,
       registeredAt: registration.createdAt.toISOString(),
+      participantId: registration.participantId,
       category: registration.user.category,
       gradeLevel: registration.user.gradeLevel?.label ?? null,
       payment: {

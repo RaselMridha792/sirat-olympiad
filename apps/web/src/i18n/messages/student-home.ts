@@ -91,6 +91,7 @@ export const studentHomeMessages = defineMessages({
       invoice: 'Invoice',
       amount: 'Fee',
       registeredOn: 'Registered on',
+      participantId: 'Participant ID',
       payment: 'Payment',
       none: 'No registration is linked to this account yet.',
       unavailable:
@@ -183,6 +184,7 @@ export const studentHomeMessages = defineMessages({
       invoice: 'ইনভয়েস',
       amount: 'ফি',
       registeredOn: 'রেজিস্ট্রেশনের তারিখ',
+      participantId: 'পার্টিসিপেন্ট আইডি',
       payment: 'পেমেন্ট',
       none: 'এই অ্যাকাউন্টের সাথে এখনো কোনো রেজিস্ট্রেশন যুক্ত নেই।',
       unavailable:

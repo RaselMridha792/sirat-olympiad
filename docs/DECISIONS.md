@@ -2,6 +2,33 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-10 — The participant ID (Rasel's decision of 10 Nov, the client's request; payments P1, the lead's review)
+
+1. **What it is:** every registration gets a participant ID, printed on the admit card. Together with the email it becomes the student's and ambassador's login (A2 builds the login; admins, managers and jury keep password + 2FA). The owner chose this knowing the risk: the ID is printed on a shareable card, and the students are minors. The lead's conditions are the mitigations:
+   - random, never sequential;
+   - never the email on the card;
+   - the shared image masks the ID (core);
+   - the login limits apply (A2);
+   - "forgot ID" goes only to the registered email (A2);
+   - an admin can issue a new ID (payments P1b, before launch).
+2. **Format:** `ON` + 10 random digits + 1 Damm check digit, 13 characters (e.g. `ON48210937552`).
+   - `ON` is online. `OF` is reserved for an offline mode, which does not exist yet; the prefix is not part of the secret.
+   - The check digit catches every single-digit typo and every adjacent swap without a lookup, so a typo costs nothing (A2's login refuses it before counting an attempt).
+   - Longer than the client's mock-up (`ON002847`) on purpose. With A2's limits (10 failures per account and IP in 15 minutes, 50 per account per hour, 100 per IP per minute, an alert at 20 failing IPs on one account), a targeted guess stays near 10⁻⁶ per hour. A 10,000-IP botnet spraying many accounts at full rate gets about 0.14 accounts a day; with 9 digits it would be ten times more.
+3. **The database draws it:** `registrations.participant_id` has DEFAULT `gen_participant_id()`, with digits from `gen_random_uuid()` bits (`pg_strong_random`; never `random()`, a PRNG). The function draws again while the value is taken, and UNIQUE stays the backstop. It is NOT NULL, with CHECK `participant_id_check` (format plus check digit).
+   - Every insert path gets one without naming the column: settlement, the fixtures, the demo loader and the tests.
+   - Existing rows were backfilled one at a time in the migration.
+   - `@sirat/shared` mirrors the rule (`isParticipantId`, `normalizeParticipantId`, `formatParticipantId` "ON 4821 0937 552"); an int test checks SQL and TS against each other.
+4. **Where it shows:**
+   - `GET /registrations/me` (the dashboard, core's admit card);
+   - the result page (`GET /registrations/current`), only for 24 hours after completion, because the reg cookie can outlive the visit on a shared computer;
+   - a confirmation email at settlement (`registration-confirmed.<registrationId>`).
+   The email carries a credential on the owner's choice, and says to keep it private. The ID is never logged or written to the audit.
+5. **Next:**
+   - P1b: the admin "issue a new ID" (reason, audit, email, ends the sessions);
+   - P2: the registration form without a password, shipped with A2's login;
+   - the RULEBOOK line comes in A2's login PR.
+
 ## 2026-11-10 — The client's logo mark, favicon and gold; the draft banner hidden (Rasel; the lead, sessions not running)
 
 - The client sent its colours and logo files: primary `#007a48` (already ours), secondary `#ec9d19`. `gold-500` changes from the old site's `#ed9d19` to the client's `#ec9d19`; every gold use follows through the tokens.

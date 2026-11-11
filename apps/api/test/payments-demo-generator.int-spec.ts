@@ -7,7 +7,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { PaymentStatus, type PrismaClient } from '@prisma/client';
-import { DEMO_ACCOUNT_LABEL, DEMO_EMAIL_DOMAIN } from '@sirat/shared';
+import { DEMO_ACCOUNT_LABEL, DEMO_EMAIL_DOMAIN, isParticipantId } from '@sirat/shared';
 import { seedConfig } from '../prisma/seed';
 import { demoRandom } from '../src/modules/demo/demo-random';
 import type { DemoContext, DemoUser } from '../src/modules/demo/demo.types';
@@ -152,7 +152,10 @@ describe('paymentsDemoGenerator', () => {
     for (const r of registrations) {
       expect(r.payment.status).toBe(PaymentStatus.paid);
       expect(r.payment.userId).toBe(r.userId);
+      // Drawn by the database's DEFAULT like a real one (the generator never names the column).
+      expect(isParticipantId(r.participantId)).toBe(true);
     }
+    expect(new Set(registrations.map((r) => r.participantId)).size).toBe(registrations.length);
     const registered = new Set(registrations.map((r) => r.userId));
     for (const a of ambassadors) expect(registered.has(a.id)).toBe(true);
 
