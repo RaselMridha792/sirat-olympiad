@@ -92,15 +92,41 @@ Local setup, fixtures and ports: `docs/RUNBOOK.md` section 0. The repo is public
   - Core: plan (#22), public pages with placeholder texts (#25), students list (#26), profile and grade correction (#28), announcements and home (#35), ambassadors (#41), admin stats (#46), audit-log viewer (#51), points (#54), tasks (#61), teams (#63), rounds and promotion (#71), video round and jury (#75), certificates without the PDF (#78).
   - Launch: L1 (#49), L2 (#57), L3 (#37), L4 (#68), L5 (#43), L6 (#34), L7 (#62), L9 (#53), L10 (#38), L11 (#40), L12 (#59, #70), L13 (#47), L14 part 1 (#79), the VPS load-test kit (#72).
   - Web: the dashboards ported on a mock layer (#8, #9), then the HTTP data source (#23); every area is wired.
+- **Merged since the repo went public (public PR numbers, to #44; main 854800e):**
+  - 8–9 Nov:
+    - the public repo (#4, #6) and the pre-push hook (#8, #11);
+    - the admin 2FA requirement as a setting (#5);
+    - PayStation links https-only (#10); Postgres readiness over TCP (#18, #19); hex secrets (#21);
+    - the brand colours and logo (#12, #27); the header menu (#7); the accessibility pass (#9);
+    - the multi-page public site, parts 1–2, with placeholder texts (#14, #15);
+    - demo data with one click and its phase 2 (#13, #17, #20, #22–#26);
+    - the legal-text drafts (#2), the sandbox-run docs (#1), the registration-check design note (#16).
+  - 10–11 Nov:
+    - the participant ID (#31) and its re-issue (#34);
+    - the round rule (#32);
+    - the ambassador leaderboard (#33), ID card (#35) and UX pass (#41);
+    - discount codes (#37, #40);
+    - the admit card (#43) and the next exam it shows (#29);
+    - the participant-ID login (plan #28, spray alert #30, login #39);
+    - C1 certificate templates, API (#42);
+    - demo follow-ups (#36, #38, #44).
+- **Login:**
+  - Students and ambassadors log in with email + participant ID, the ID on the admit card, and have no password (owner, 2026-11-10; DECISIONS 2026-11-11).
+  - Staff (admin, manager, jury) log in with a password, plus 2FA for admin and manager.
+  - The 2FA requirement is a setting on /admin/security; it is off on the VPS for testing, and the prelaunch check FAILs while it is off.
 - Phases: `docs/10-BUILD-PLAN.md`. Every buildable item is built now (owner, 2026-11-01); the public site waits for the design (core's homepage draft is in progress).
-- **VPS:** a Hostinger VPS runs the release at https://72-60-211-71.sslip.io (`deploy.sh`), with payments switched off there for now. The domain, Cloudflare, the off-server backup bucket and the live PayStation merchant come later (LAUNCH-PLAN).
+- **VPS:** a Hostinger VPS runs the release at https://sirat.raselmridha.com (`deploy.sh`), with payments switched off there for now.
+  - The domain is a Hostinger DNS A record; the sslip host is retired.
+  - The Let's Encrypt certificate is renewed by hand before ~2027-01-09.
+  - Still to come (LAUNCH-PLAN): Cloudflare, the off-server backup bucket, SES production access (an AWS review of up to ~24 h: RUNBOOK §12) and the live PayStation merchant.
 - Not built or not merged yet:
-  - L8, the switch to `sirat_app` (A2's draft #64, waiting on Rasel's values), and the prelaunch check of its boot line;
-  - L14 part 2 (k6 on the VPS: exam's login surge, then the numbers to A2);
-  - the certificate PDF (C6c-2) and other queue workers (PDF);
-  - the legal texts (#80, for the client's review);
-  - the public site (Phase D);
-  - owner decisions pending: the two age groups instead of the three categories, and the brand name.
+  - L8, the switch to `sirat_app` (A2's draft #3, waiting on Rasel's values), and the prelaunch check of its boot line;
+  - L14 part 2 (k6 on the VPS: exam's login surge, then the numbers to A2; since #39 the student login has no argon2);
+  - the certificate PDF (C2, in progress), the admit card PDF (#45, open) and the C1 web pages;
+  - payments' P2: the registration form without a password. It brings the reverse CHECK; exam's demo-user change goes in before or with it;
+  - the legal texts: the client's review of #2's drafts;
+  - the public site (Phase D): the pages exist with placeholder texts and wait for the design;
+  - owner decisions pending: the two age groups instead of the three categories, the brand name, and jury 2FA.
 - PayStation: official docs read; summary in `docs/paystation/PAYSTATION-NOTES.md` (the PDF and Postman export stay local, git-ignored).
 - The web reads the real session (`apps/web/src/lib/session.ts`). Production dashboards read the API through `apps/web/src/data/http/` (one file per area, all wired); a method without an area file would show the error state. Development uses the mock unless `DATA_SOURCE=http`.
 - The local docker stack (project `sirat`, same ports) is shared between sessions (Lead, 2026-10-31): use it only after the lead or the owner says so, with `origin/main` merged first; rebuild only the app services (`$DCD up -d --build --no-deps migrate api worker web nginx`, plain `up -d --build` only when infra/compose changed or the data services are down); announce the start and the end in one line, and run nothing on it after releasing it (RUNBOOK §0).

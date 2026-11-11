@@ -1,5 +1,7 @@
 # PayStation sandbox end-to-end on the VPS (2026-11-01)
 
+> The `72-60-211-71.sslip.io` host below is the VPS's address at the time; it was retired on 2026-11-10 for `https://sirat.raselmridha.com`. The rows record what happened then and stay as they are.
+
 **What this is:** the run that needs a real checkout in a browser and a public HTTPS server. It used Rasel's sandbox account on the VPS (`https://72-60-211-71.sslip.io`, release 8c5cea2, 4 API replicas), with Rasel at the browser, the lead running the VPS and payments watching read-only.
 
 **Why on the production server:** a one-time pre-launch exception to PAYMENTS-PLAN D8 and §13.1 (Rasel's go, 2026-11-01). The production database is started again from an empty volume at the launch deploy, which the owner confirms then (RUNBOOK §9, pre-launch checklist). Sandbox account only, never the client's. No credential appears in this file, in a message or in a log.
