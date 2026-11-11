@@ -75,6 +75,8 @@ export const ambassadorMessages = defineMessages({
       owner: 'Team owner',
       none: 'No team yet',
       manage: 'Open my team',
+      noneHint: 'Start a team of up to 10 and share its code with the students you bring in.',
+      create: 'Create your team',
     },
     tasks: {
       title: 'Your tasks',
@@ -177,6 +179,9 @@ export const ambassadorMessages = defineMessages({
       owner: 'টিম লিডার',
       none: 'এখনো কোনো টিমে নেই',
       manage: 'আমার টিম খুলুন',
+      noneHint:
+        'সর্বোচ্চ ১০ জনের একটি টিম শুরু করুন, আর যে শিক্ষার্থীদের আনবেন তাদের সাথে টিমের কোড শেয়ার করুন।',
+      create: 'টিম তৈরি করুন',
     },
     tasks: {
       title: 'আপনার কাজ',
