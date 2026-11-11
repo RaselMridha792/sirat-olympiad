@@ -1,4 +1,7 @@
 import type {
+  AdminDiscountCode,
+  AdminDiscountCodeQuery,
+  AdminDiscountCodeUses,
   AdminCertificateQuery,
   AdminCertificateRow,
   MyCertificate,
@@ -161,6 +164,12 @@ export interface DataSource {
     listPayments(query: AdminPaymentQuery): Promise<Paginated<AdminPaymentRow>>;
     /** GET /admin/payments/:id, with its events (null = not found) */
     getPayment(id: string): Promise<AdminPaymentDetail | null>;
+    /** GET /admin/discount-codes?q=&status=&linked=1&page= (admin only; payments D1) */
+    listDiscountCodes(query: AdminDiscountCodeQuery): Promise<Paginated<AdminDiscountCode>>;
+    /** GET /admin/discount-codes/:id (null = not found) */
+    getDiscountCode(id: string): Promise<AdminDiscountCode | null>;
+    /** GET /admin/discount-codes/:id/uses?page= (the paid uses with totals; null = not found) */
+    listDiscountCodeUses(id: string, query: PageQuery): Promise<AdminDiscountCodeUses | null>;
     /** GET /admin/settings (the keys an admin may change) */
     listSettings(): Promise<AdminSetting[]>;
     /** GET /admin/demo: the demo data card (admin only; DECISIONS 2026-11-08 "Demo data") */

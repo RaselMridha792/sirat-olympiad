@@ -65,6 +65,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - P1b (built): the admin "issue a new ID", `POST /admin/users/:id/participant-id` with a reason. One transaction draws the new ID (same prefix), ends every session (A2's `endSessionsOf`), and audits the reason and the session count. The new ID goes only to the student's email; the admin never sees it, and nothing logs it. Access tokens already issued live out their TTL, as with "log out everywhere";
    - P2: the registration form without a password, shipped with A2's login;
    - the RULEBOOK line comes in A2's login PR.
+6. **Admin views show it masked** (the lead, 11 Nov): since the participant-ID login, the ID is a credential, so an admin page never gets it in full. The server masks it (`maskParticipantId`, core's helper: the prefix and the last 2 characters), and the web accepts only that shape (`MASKED_PARTICIPANT_ID_PATTERN`). The first such view is the discount-code uses table (payments D2). The full ID appears only on the admit card page, the result page at issue and the email. An admin search by ID, if ever needed, matches the typed ID on the server and never displays it.
 
 ## 2026-11-10 — A global failed-login alert, the defence against spraying (lead; A2, part of the participant-ID login)
 
