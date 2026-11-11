@@ -9,6 +9,7 @@ import { PaymentStatus, Prisma, type DiscountCode } from '@prisma/client';
 import {
   discountCodeStatus,
   isDiscountCodeFormat,
+  maskParticipantId,
   type AdminDiscountCode,
   type AdminDiscountCodeUses,
   type Paginated,
@@ -282,7 +283,10 @@ export class AdminDiscountCodesService {
         invoiceNumber: r.invoiceNumber,
         userId: r.userId,
         name: r.user?.name ?? null,
-        participantId: r.registration?.participantId ?? null,
+        // Masked here: the full ID is a login (the lead's rule); it never leaves the server in an admin view.
+        participantIdMasked: r.registration
+          ? maskParticipantId(r.registration.participantId)
+          : null,
         paidAt: r.paidAt?.toISOString() ?? null,
         listAmountMinor: r.listAmountMinor ?? r.amountMinor,
         discountMinor: r.discountMinor,

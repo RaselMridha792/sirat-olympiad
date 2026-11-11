@@ -42,7 +42,7 @@ const use = {
   invoiceNumber: 'T261101ABCDEFGHJK',
   userId: '0190f000-0000-7000-8000-0000000000ff',
   name: 'Rahim',
-  participantId: 'ON48210937552',
+  participantIdMasked: 'ON •••• •••• •52',
   paidAt: '2026-11-03T00:00:00.000Z',
   listAmountMinor: 40000,
   discountMinor: 5000,
@@ -111,4 +111,21 @@ test('one code, and its uses with the totals; a malformed id or a 404 is not fou
   const missing = '0190f000-0000-7000-8000-0000000000aa';
   assert.equal(await source.admin.getDiscountCode(missing), null);
   assert.ok(!api.calls.some((c) => c.includes('not-an-id')));
+});
+
+test('a use with a full participant ID is refused: admin pages only ever get the masked form', async () => {
+  const body = {
+    items: [{ ...use, participantIdMasked: 'ON48210937552' }],
+    page: 1,
+    pageSize: 20,
+    total: 1,
+    totals: { uses: 1, discountMinor: 5000, collectedMinor: 35000 },
+  };
+  const source = createHttpSource(
+    fakeApi({ [`/admin/discount-codes/${ID}/uses?page=1&pageSize=20`]: { status: 200, body } }),
+  );
+  await assert.rejects(
+    source.admin.listDiscountCodeUses(ID, { page: 1, pageSize: 20 }),
+    DataRequestError,
+  );
 });

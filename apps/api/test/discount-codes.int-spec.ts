@@ -5,7 +5,12 @@
  * keeping the snapshot, the linked ambassador's referral, the public quote with one miss answer and its counter).
  */
 import { createHash, randomUUID } from 'node:crypto';
-import { EDUCATION_TYPES, isParticipantId, MIN_PAYABLE_MINOR } from '@sirat/shared';
+import {
+  EDUCATION_TYPES,
+  isParticipantId,
+  MASKED_PARTICIPANT_ID_PATTERN,
+  MIN_PAYABLE_MINOR,
+} from '@sirat/shared';
 import { quoteMissKey, readQuoteMissFacts } from '../src/modules/payments/discount/quote-misses';
 import { makeUser, testPhone } from './helpers';
 import {
@@ -335,7 +340,19 @@ describe('admin: discount codes', () => {
       discountMinor: 8000,
       amountMinor: FEE - 8000,
     });
-    expect(isParticipantId(body.items[0].participantId)).toBe(true);
+    // Masked by the server: no full participant ID (a login) anywhere in the admin payload.
+    expect(body.items[0].participantIdMasked).toMatch(MASKED_PARTICIPANT_ID_PATTERN);
+    const registrations = await env.prisma.registration.findMany({
+      where: { payment: { discountCodeId: c.id } },
+      select: { participantId: true },
+    });
+    expect(registrations.length).toBeGreaterThan(0);
+    const payload = JSON.stringify(body);
+    for (const r of registrations) {
+      expect(isParticipantId(r.participantId)).toBe(true);
+      expect(payload).not.toContain(r.participantId);
+      expect(payload).not.toContain(r.participantId.slice(2, 12));
+    }
     const user = await env.prisma.user.findUniqueOrThrow({ where: { email: a.email } });
     const all = await (
       await asAdmin('GET', `/admin/discount-codes/${c.id}/uses`)

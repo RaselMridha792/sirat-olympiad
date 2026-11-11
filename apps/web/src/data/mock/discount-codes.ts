@@ -5,7 +5,7 @@ import type {
   AdminDiscountCodeUses,
   PageQuery,
 } from '@sirat/shared';
-import { dammDigit, discountCodeStatus } from '@sirat/shared';
+import { dammDigit, discountCodeStatus, maskParticipantId } from '@sirat/shared';
 import { paginate } from './paging.ts';
 
 /*
@@ -117,7 +117,7 @@ export function mockDiscountCodeUses(
       invoiceNumber: `T26111${i}ABCDEFGHJK`,
       userId: `0190f000-0000-7000-8000-0000000b${String(i).padStart(4, '0')}`,
       name: names[i % names.length] ?? null,
-      participantId: `ON${body}${dammDigit(body)}`,
+      participantIdMasked: maskParticipantId(`ON${body}${dammDigit(body)}`),
       paidAt: new Date(now - (i + 1) * DAY).toISOString(),
       listAmountMinor: FEE,
       discountMinor: code.kind === 'amount' ? code.value : 0,

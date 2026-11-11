@@ -93,7 +93,11 @@ export interface AdminDiscountCodeUse {
   invoiceNumber: string;
   userId: string | null;
   name: string | null;
-  participantId: string | null;
+  /**
+   * Masked by the server (maskParticipantId): with the email, the full ID is a login, so admin views never show it
+   * (the lead, 11 Nov). The full ID appears only on the admit card page, the result page at issue and the email.
+   */
+  participantIdMasked: string | null;
   paidAt: string | null;
   listAmountMinor: number;
   discountMinor: number;

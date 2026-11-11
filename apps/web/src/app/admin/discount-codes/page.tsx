@@ -3,7 +3,6 @@ import Link from 'next/link';
 import { Eye, TicketPercent } from 'lucide-react';
 import {
   DISCOUNT_CODE_STATUSES,
-  formatParticipantId,
   type AdminDiscountCode,
   type AdminDiscountCodeQuery,
   type AdminDiscountCodeUses,
@@ -396,7 +395,7 @@ function CodeDetails({
                   key: 'participant',
                   header: d.participantId,
                   className: 'whitespace-nowrap px-3 py-2 font-mono text-xs',
-                  render: (u) => (u.participantId ? formatParticipantId(u.participantId) : m.none),
+                  render: (u) => u.participantIdMasked ?? m.none,
                 },
                 {
                   key: 'paidAt',

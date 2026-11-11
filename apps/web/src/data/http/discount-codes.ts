@@ -1,6 +1,7 @@
 import {
   DISCOUNT_CODE_STATUSES,
   DISCOUNT_KINDS,
+  MASKED_PARTICIPANT_ID_PATTERN,
   type AdminDiscountCode,
   type AdminDiscountCodeQuery,
   type AdminDiscountCodeUse,
@@ -64,7 +65,9 @@ const isUse = shape({
   invoiceNumber: text,
   userId: textOrNull,
   name: textOrNull,
-  participantId: textOrNull,
+  // Only the masked form is accepted: a full ID here would be a login on an admin page.
+  participantIdMasked: (v) =>
+    v === null || (typeof v === 'string' && MASKED_PARTICIPANT_ID_PATTERN.test(v)),
   paidAt: textOrNull,
   listAmountMinor: count,
   discountMinor: count,
@@ -116,7 +119,7 @@ function pickUse(raw: unknown): AdminDiscountCodeUse {
     invoiceNumber: u.invoiceNumber as string,
     userId: u.userId as string | null,
     name: u.name as string | null,
-    participantId: u.participantId as string | null,
+    participantIdMasked: u.participantIdMasked as string | null,
     paidAt: u.paidAt as string | null,
     listAmountMinor: u.listAmountMinor as number,
     discountMinor: u.discountMinor as number,

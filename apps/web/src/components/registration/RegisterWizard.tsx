@@ -27,7 +27,7 @@ import {
   type FormValues,
   type StepKey,
 } from './registration-form';
-import { problemText, registrationProblem } from './registration-problem';
+import { problemText, refusesPromoCode, registrationProblem } from './registration-problem';
 import { withBusyRetry } from './start-retry';
 
 export type WizardInfo = Omit<RegistrationInfo, 'open' | 'opensAt' | 'closesAt' | 'fee'> & {
@@ -204,6 +204,8 @@ export function RegisterWizard({ locale, info }: { locale: Locale; info: WizardI
     }
     if (problem.kind === 'field') {
       requestId.current = null;
+      // A code the start refused is no longer priced: the next step re-quotes it (A2's review of #40).
+      if (refusesPromoCode(problem)) setQuote(null);
       setFieldText({ [problem.field]: problemText(m, problem.text) });
       goTo(stepOf(problem.field));
       return;
