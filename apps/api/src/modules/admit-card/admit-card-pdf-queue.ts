@@ -46,16 +46,14 @@ export const admitCardPdfKey = (userId: string, locale: AdmitCardPdfLocale): str
   `admit-card-pdf:v1:${userId}:${locale}`;
 
 /**
- * The version of the file a card makes: a hash of everything printed (the card, the language and the layout). The
- * API serves a cached file only when its version matches the card as it is now, so an edit (a corrected name, an
- * exam date) is never answered with an old print. The participant ID is left out of the hash, so nothing derived
- * from the login secret is stored or logged (an ID never changes once issued; the registration date is in the hash).
+ * The version of the file a card makes: a hash of everything printed (the card with its participant ID, the language
+ * and the layout). The API serves a cached file only when its version matches the card as it is now, so an edit (a
+ * corrected name, an exam date) or a re-issued ID (payments P1b) is never answered with an old print. The version is
+ * kept only next to the file in the cache Redis (which holds the ID itself); it is never in a job id or a log.
  */
 export function admitCardPdfVersion(card: AdmitCard, locale: AdmitCardPdfLocale): string {
-  // JSON.stringify leaves out undefined values.
-  const printed = { ...card, participantId: undefined, participantIdMasked: undefined };
   return createHash('sha256')
-    .update(JSON.stringify({ layout: ADMIT_CARD_PDF_LAYOUT, locale, card: printed }))
+    .update(JSON.stringify({ layout: ADMIT_CARD_PDF_LAYOUT, locale, card }))
     .digest('hex')
     .slice(0, 32);
 }
