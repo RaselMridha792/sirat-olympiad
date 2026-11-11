@@ -5,7 +5,12 @@
  * keeping the snapshot, the linked ambassador's referral, the public quote with one miss answer and its counter).
  */
 import { createHash, randomUUID } from 'node:crypto';
-import { EDUCATION_TYPES, isParticipantId, MIN_PAYABLE_MINOR } from '@sirat/shared';
+import {
+  EDUCATION_TYPES,
+  isParticipantId,
+  MASKED_PARTICIPANT_ID_PATTERN,
+  MIN_PAYABLE_MINOR,
+} from '@sirat/shared';
 import { quoteMissKey, readQuoteMissFacts } from '../src/modules/payments/discount/quote-misses';
 import { makeUser, testPhone } from './helpers';
 import {
@@ -155,7 +160,12 @@ describe('admin: discount codes', () => {
     expect(audits.every((x) => x.actorId === admin.id)).toBe(true);
 
     const one = await (await asAdmin('GET', `/admin/discount-codes/${a.id}`)).json().then(asBody);
-    expect(one).toMatchObject({ id: a.id, uses: { paid: 0, live: 0 }, demo: false });
+    expect(one).toMatchObject({
+      id: a.id,
+      uses: { paid: 0, live: 0 },
+      demo: false,
+      status: 'active',
+    });
     const list = await (
       await asAdmin('GET', `/admin/discount-codes?q=${typed.slice(0, 6)}`)
     )
@@ -240,6 +250,15 @@ describe('admin: discount codes', () => {
     expect(active).not.toContain(expired.id);
     expect(active).not.toContain(later.id);
     expect(await ids('status=inactive')).toContain(off.id);
+    const byId = async (id: string) =>
+      ((await (await asAdmin('GET', `/admin/discount-codes/${id}`)).json().then(asBody)) as Body)
+        .status;
+    expect([
+      await byId(off.id),
+      await byId(expired.id),
+      await byId(later.id),
+      await byId(live.id),
+    ]).toEqual(['inactive', 'expired', 'scheduled', 'active']);
     expect(await ids('status=expired')).toContain(expired.id);
     expect(await ids('status=scheduled')).toContain(later.id);
     const withLink = await ids('linked=1');
@@ -321,7 +340,19 @@ describe('admin: discount codes', () => {
       discountMinor: 8000,
       amountMinor: FEE - 8000,
     });
-    expect(isParticipantId(body.items[0].participantId)).toBe(true);
+    // Masked by the server: no full participant ID (a login) anywhere in the admin payload.
+    expect(body.items[0].participantIdMasked).toMatch(MASKED_PARTICIPANT_ID_PATTERN);
+    const registrations = await env.prisma.registration.findMany({
+      where: { payment: { discountCodeId: c.id } },
+      select: { participantId: true },
+    });
+    expect(registrations.length).toBeGreaterThan(0);
+    const payload = JSON.stringify(body);
+    for (const r of registrations) {
+      expect(isParticipantId(r.participantId)).toBe(true);
+      expect(payload).not.toContain(r.participantId);
+      expect(payload).not.toContain(r.participantId.slice(2, 12));
+    }
     const user = await env.prisma.user.findUniqueOrThrow({ where: { email: a.email } });
     const all = await (
       await asAdmin('GET', `/admin/discount-codes/${c.id}/uses`)

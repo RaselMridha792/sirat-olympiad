@@ -10,6 +10,7 @@ export const adminAmbassadorsMessages = defineMessages({
       placeholder: 'Search name, email or code',
     },
     sort: { label: 'Order of the list', newest: 'Newest first', points: 'Most points first' },
+    mobileFacts: (referrals: string, points: string) => `${referrals} referrals · ${points} points`,
     table: {
       caption: 'Ambassadors with their promo codes and referrals',
       ambassador: 'Ambassador',
@@ -106,6 +107,8 @@ export const adminAmbassadorsMessages = defineMessages({
       placeholder: 'নাম, ইমেইল বা কোড লিখুন',
     },
     sort: { label: 'তালিকার ক্রম', newest: 'নতুনরা আগে', points: 'বেশি পয়েন্ট আগে' },
+    mobileFacts: (referrals: string, points: string) =>
+      `${referrals}টি রেফারেল · ${points} পয়েন্ট`,
     table: {
       caption: 'অ্যাম্বাসেডরদের প্রোমো কোড ও রেফারেলের তালিকা',
       ambassador: 'অ্যাম্বাসেডর',

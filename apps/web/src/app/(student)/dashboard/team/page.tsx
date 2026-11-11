@@ -80,12 +80,8 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
           </ul>
         </Card>
       ) : (
+        // An ambassador's next step is to start a team, so that card comes first for them; a student only joins.
         <div className="grid gap-6 lg:grid-cols-2">
-          <Card className="flex flex-col gap-3">
-            <h2 className="text-lg font-bold text-ink">{m.join.title}</h2>
-            <p className="text-sm text-ink-muted">{m.join.text}</p>
-            <JoinTeamForm locale={locale} />
-          </Card>
           {user.role === 'ambassador' ? (
             <Card className="flex flex-col items-start gap-3">
               <h2 className="text-lg font-bold text-ink">{m.create.title}</h2>
@@ -93,6 +89,11 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
               <CreateTeamButton locale={locale} />
             </Card>
           ) : null}
+          <Card className="flex flex-col gap-3">
+            <h2 className="text-lg font-bold text-ink">{m.join.title}</h2>
+            <p className="text-sm text-ink-muted">{m.join.text}</p>
+            <JoinTeamForm locale={locale} />
+          </Card>
         </div>
       )}
     </>
