@@ -187,6 +187,12 @@ function RegistrationCard({
           },
         ]}
       />
+      <Link
+        href="/dashboard/admit-card"
+        className={buttonClasses({ size: 'sm', className: 'self-start' })}
+      >
+        {r.admitCard}
+      </Link>
     </Card>
   );
 }
