@@ -6,7 +6,7 @@
 //     Dev server only. ?mock=leak injects canary fields (scores, times, other people's emails,
 //     answer keys) into every student-facing response. Each student page must still render and
 //     its HTML (including the inline RSC payload) must contain none of them. Pages only an ambassador
-//     may open (src/lib/access.ts) are checked the same way with CHECK_AMBASSADOR_EMAIL / _PASSWORD.
+//     may open (src/lib/access.ts) are checked the same way with CHECK_AMBASSADOR_EMAIL / _ID.
 //
 //   node scripts/check-pages.mjs prod [baseUrl]
 //     Production server (the HTTP source). Every dashboard page renders the app shell and a heading in a real
@@ -20,7 +20,8 @@
 //     polite error page and stay on its URL: a busy or broken API must never send a whole hall to /login.
 //
 // Sessions: log in through the API (CHECK_API_URL, default http://localhost:4000) as CHECK_STUDENT_EMAIL /
-// CHECK_STUDENT_PASSWORD (a fixture student) and, for the admin pages, CHECK_ADMIN_EMAIL / CHECK_ADMIN_PASSWORD
+// CHECK_STUDENT_ID (a fixture student's participant ID: students have no password) and, for the admin pages,
+// CHECK_ADMIN_EMAIL / CHECK_ADMIN_PASSWORD
 // (an admin made with the create-admin CLI). Each page is checked with the role that may open it and must end on
 // the URL that was asked for; a page the role may not open must answer as src/lib/access.ts says (the other
 // area: a redirect home; a restricted page: not found). Without any cookie, a page must go to /refresh.
@@ -116,17 +117,20 @@ const withParam = (route, key, value) =>
 const failures = [];
 const fail = (route, why) => failures.push(`${route}: ${why}`);
 
+/** Students and ambassadors log in with their participant ID, staff with a password (owner, 2026-11-10). */
 function credentials(role) {
-  const email = process.env[`CHECK_${role.toUpperCase()}_EMAIL`];
-  const password = process.env[`CHECK_${role.toUpperCase()}_PASSWORD`];
-  if (!email || !password)
-    throw new Error(`check-pages: set CHECK_${role.toUpperCase()}_EMAIL and _PASSWORD`);
-  return { email, password };
+  const name = role.toUpperCase();
+  const email = process.env[`CHECK_${name}_EMAIL`];
+  const byId = role === 'student' || role === 'ambassador';
+  const value = process.env[`CHECK_${name}_${byId ? 'ID' : 'PASSWORD'}`];
+  if (!email || !value)
+    throw new Error(`check-pages: set CHECK_${name}_EMAIL and _${byId ? 'ID' : 'PASSWORD'}`);
+  return { email, secret: byId ? { participantId: value } : value };
 }
 
 async function sessionFor(role) {
-  const { email, password } = credentials(role);
-  return (await apiLogin(API, email, password)).sirat_access;
+  const { email, secret } = credentials(role);
+  return (await apiLogin(API, email, secret)).sirat_access;
 }
 
 /** Without any cookie, a dashboard page answers 307 to /refresh?next=<that page>. */

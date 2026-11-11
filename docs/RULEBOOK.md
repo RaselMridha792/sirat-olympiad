@@ -130,8 +130,9 @@ Suggested monorepo layout:
 
 Goal: secure, simple, and no external dependency in the login path.
 
-**Passwords**
-- Hash with **argon2id**. Never store or log plain passwords.
+**Passwords and the participant ID**
+- **Students and ambassadors log in with email + their participant ID** (the ID on the admit card) and have no password; **only staff (admin, manager, jury) have passwords** (owner, 2026-11-10; DECISIONS 2026-11-11, with the accepted risk). The ID is random (never sequential), compared in constant time, never logged or put in an audit row, and sent by email only to the account's own address ("forgot ID"). Both kinds of login share the same limits and the same answer for every miss.
+- Hash passwords with **argon2id**. Never store or log plain passwords.
 - Enforce a sensible minimum length (≥ 8) and check against a common-passwords list.
 
 **Email verification and reset**

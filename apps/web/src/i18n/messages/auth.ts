@@ -27,6 +27,15 @@ export const authMessages = defineMessages({
         `Too many attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}, or reset your password.`,
       blocked: 'This account is blocked. Please contact support.',
       invalidEmail: 'Enter a valid email address.',
+      participantId: 'Participant ID',
+      participantIdHint: 'The ID on your admit card, e.g. ON 4821 0937 552',
+      wrongId: 'Email or participant ID is incorrect.',
+      lockedId: (minutes: number) =>
+        `Too many attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`,
+      badId: 'This participant ID is not valid. Check it against your admit card.',
+      forgotId: 'Forgot your participant ID?',
+      staffSwitch: 'Staff? Sign in with a password',
+      participantSwitch: 'Student or ambassador? Sign in with your participant ID',
     },
     code: {
       title: 'Enter your code',
@@ -53,6 +62,12 @@ export const authMessages = defineMessages({
       submit: 'Send reset link',
       sent: 'If an account exists for this address, a link to reset the password is on its way. Check your inbox and spam folder.',
       invalidEmail: 'Enter a valid email address.',
+    },
+    forgotId: {
+      title: 'Forgot your participant ID',
+      subtitle: 'Enter the email you registered with, and we will send your participant ID there.',
+      submit: 'Send my ID',
+      sent: 'If a registered student or ambassador uses this address, the participant ID is on its way. Check your inbox and spam folder.',
     },
     reset: {
       title: 'Set a new password',
@@ -116,6 +131,15 @@ export const authMessages = defineMessages({
         `অনেকবার চেষ্টা হয়েছে। ${minutes} মিনিট পরে আবার চেষ্টা করুন, অথবা পাসওয়ার্ড রিসেট করুন।`,
       blocked: 'এই অ্যাকাউন্টটি বন্ধ করা হয়েছে। সাপোর্টে যোগাযোগ করুন।',
       invalidEmail: 'সঠিক ইমেইল ঠিকানা লিখুন।',
+      participantId: 'পার্টিসিপেন্ট আইডি',
+      participantIdHint: 'প্রবেশপত্রে থাকা আইডি, যেমন ON 4821 0937 552',
+      wrongId: 'ইমেইল বা পার্টিসিপেন্ট আইডি ভুল।',
+      lockedId: (minutes: number) =>
+        `অনেকবার চেষ্টা হয়েছে। ${minutes} মিনিট পরে আবার চেষ্টা করুন।`,
+      badId: 'এই পার্টিসিপেন্ট আইডিটি সঠিক নয়। প্রবেশপত্রের সাথে মিলিয়ে দেখুন।',
+      forgotId: 'পার্টিসিপেন্ট আইডি ভুলে গেছেন?',
+      staffSwitch: 'স্টাফ? পাসওয়ার্ড দিয়ে লগইন করুন',
+      participantSwitch: 'শিক্ষার্থী বা অ্যাম্বাসেডর? পার্টিসিপেন্ট আইডি দিয়ে লগইন করুন',
     },
     code: {
       title: 'কোড দিন',
@@ -141,6 +165,13 @@ export const authMessages = defineMessages({
       submit: 'রিসেট লিংক পাঠান',
       sent: 'এই ঠিকানায় কোনো অ্যাকাউন্ট থাকলে পাসওয়ার্ড রিসেটের লিংক পাঠানো হচ্ছে। ইনবক্স আর স্প্যাম ফোল্ডার দেখুন।',
       invalidEmail: 'সঠিক ইমেইল ঠিকানা লিখুন।',
+    },
+    forgotId: {
+      title: 'পার্টিসিপেন্ট আইডি ভুলে গেছেন',
+      subtitle:
+        'যে ইমেইল দিয়ে রেজিস্টার করেছিলেন সেটি লিখুন, আপনার পার্টিসিপেন্ট আইডি সেখানে পাঠিয়ে দেব।',
+      submit: 'আইডি পাঠান',
+      sent: 'এই ঠিকানায় কোনো নিবন্ধিত শিক্ষার্থী বা অ্যাম্বাসেডর থাকলে পার্টিসিপেন্ট আইডি পাঠানো হচ্ছে। ইনবক্স আর স্প্যাম ফোল্ডার দেখুন।',
     },
     reset: {
       title: 'নতুন পাসওয়ার্ড দিন',

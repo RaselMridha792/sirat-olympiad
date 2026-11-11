@@ -1,13 +1,13 @@
 // Browser end-to-end test of the web session against the whole stack behind nginx (docker compose, APP_URL),
 // with the shared CDP driver (scripts/lib/cdp.mjs) and Mailpit's API for the emailed links. No dependencies.
 //
-//   E2E_STUDENT_PASSWORD=... [E2E_STUDENT_EMAIL=student1@fixtures.invalid]
+//   [E2E_STUDENT_EMAIL=student1@fixtures.invalid E2E_STUDENT_ID=ON99999999012]
 //   [E2E_ADMIN_EMAIL=... E2E_ADMIN_PASSWORD=...] [MAILPIT_URL=http://127.0.0.1:18025]
 //   pnpm --filter @sirat/web e2e [baseUrl]
 //
-// The local stack is shared: say so before running this (RUNBOOK §0). The reset case sets the student's password
-// to the same value again (so the next run still works) and, like every reset, ends that student's sessions; the
-// API allows one reset email per address per minute and five per hour. It runs only against this machine: a base
+// Students log in with email + participant ID (owner, 2026-11-10); the defaults are dev-fixtures.ts's student1.
+// The local stack is shared: say so before running this (RUNBOOK §0). The forgot-ID case mails the fixture's ID to
+// Mailpit; the API allows one such email per address per minute and five per hour. It runs only against this machine: a base
 // URL or MAILPIT_URL that is not 127.0.0.1, localhost or ::1 stops it before any request.
 import { randomBytes } from 'node:crypto';
 import { cspReport, launchBrowser } from './lib/cdp.mjs';
@@ -29,16 +29,12 @@ for (const [name, url] of [
 }
 const STUDENT = {
   email: process.env.E2E_STUDENT_EMAIL ?? 'student1@fixtures.invalid',
-  password: process.env.E2E_STUDENT_PASSWORD ?? '',
+  participantId: process.env.E2E_STUDENT_ID ?? 'ON99999999012',
 };
 const ADMIN =
   process.env.E2E_ADMIN_EMAIL && process.env.E2E_ADMIN_PASSWORD
     ? { email: process.env.E2E_ADMIN_EMAIL, password: process.env.E2E_ADMIN_PASSWORD }
     : null;
-if (!STUDENT.password) {
-  console.error('e2e: set E2E_STUDENT_PASSWORD (the fixture password)');
-  process.exit(2);
-}
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const results = [];
@@ -77,14 +73,23 @@ async function typeInto(page, selector, text) {
 }
 
 /**
- * Through the login form, starting at `loginPath`; resolves once the browser shows `expectPath`. An admin with
- * two-factor login gets the code step, passed with the secret `e2e:2fa-enrol` kept (lib/totp.mjs).
+ * Through the login form, starting at `loginPath`; resolves once the browser shows `expectPath`. A student types the
+ * participant ID (the form's default); staff switch to the password first. An admin with two-factor login gets the
+ * code step, passed with the secret `e2e:2fa-enrol` kept (lib/totp.mjs).
  */
 async function uiLogin(page, user, loginPath, expectPath) {
   await page.goto(BASE + loginPath);
   await page.waitFor(`!!document.querySelector('button[type=submit]:not([disabled])')`);
   await typeInto(page, 'input[name=email]', user.email);
-  await typeInto(page, 'input[name=password]', user.password);
+  if (user.participantId) {
+    await typeInto(page, 'input[name=participantId]', user.participantId);
+  } else {
+    await page.evaluate(
+      `[...document.querySelectorAll('button[type=button]')].find((b) => b.textContent.includes('Sign in with a password')).click(), true`,
+    );
+    await page.waitFor(`!!document.querySelector('input[name=password]')`);
+    await typeInto(page, 'input[name=password]', user.password);
+  }
   await page.evaluate(`document.querySelector('button[type=submit]').click(), true`);
   await page.waitFor(`!!document.querySelector('input[name=code]') || (${shows(expectPath)})`, {
     timeout: 20_000,
@@ -147,14 +152,11 @@ async function waitForNewMail(to, previousId, timeout = 30_000) {
 console.log(`e2e against ${BASE}`);
 const browser = await launchBrowser();
 try {
-  await step('login keeps a safe next and never puts the password in a URL', async () => {
+  await step('login keeps a safe next and never puts the participant ID in a URL', async () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await uiLogin(page, STUDENT, '/login?next=%2Fdashboard%2Fprofile', '/dashboard/profile');
-    check(
-      !(await page.url()).includes(encodeURIComponent(STUDENT.password)),
-      'password in the URL',
-    );
+    check(!(await page.url()).includes(STUDENT.participantId.slice(2)), 'the ID in the URL');
     check(await hasCookie(context, 'sirat_access'), 'no access cookie after login');
     await context.close();
   });
@@ -382,38 +384,21 @@ try {
   );
 
   await step(
-    'reset password from the email: one request on a double click, then the password works',
+    'forgot ID from the login page: the ID arrives at the registered address, then it logs in',
     async () => {
       const context = await browser.newContext();
       const page = await context.newPage();
       const before = (await newestMail(STUDENT.email))?.ID ?? null;
-      await page.goto(`${BASE}/forgot-password`);
+      await page.goto(`${BASE}/forgot-id`);
       await page.waitFor(`!!document.querySelector('button[type=submit]:not([disabled])')`);
       await typeInto(page, 'input[name=email]', STUDENT.email);
       await page.evaluate(`document.querySelector('button[type=submit]').click(), true`);
-      await page.waitFor(hasText('If an account exists for this address'));
+      await page.waitFor(hasText('If a registered student or ambassador uses this address'));
       const mail = await waitForNewMail(STUDENT.email, before);
-      const match = `${mail.Text ?? ''} ${mail.HTML ?? ''}`.match(
-        /\/reset-password#token=([A-Za-z0-9_-]{43})/,
-      );
-      check(match, 'no reset link in the email');
-      const posts = [];
-      page.onEvent('Network.requestWillBeSent', ({ request }) => {
-        if (request.method === 'POST' && request.url.endsWith('/api/auth/reset-password'))
-          posts.push(request.url);
-      });
-      await page.goto(`${BASE}/reset-password#token=${match[1]}`);
-      await page.waitFor(`!!document.querySelector('button[type=submit]:not([disabled])')`);
-      check((await page.evaluate('location.hash')) === '', 'the token is still in the address bar');
-      await typeInto(page, 'input[name=password]', STUDENT.password);
-      await typeInto(page, 'input[name=repeat]', STUDENT.password);
-      await page.evaluate(
-        `(() => { const b = document.querySelector('button[type=submit]'); b.click(); b.click(); return true; })()`,
-      );
-      await page.waitFor(hasText('Your password has been changed'));
-      await sleep(500);
-      check(posts.length === 1, `${posts.length} reset requests were sent`);
-      await uiLogin(page, STUDENT, '/login', '/dashboard');
+      const id = STUDENT.participantId;
+      const shown = `${id.slice(0, 2)} ${id.slice(2, 6)} ${id.slice(6, 10)} ${id.slice(10)}`;
+      check(`${mail.Text ?? ''}`.includes(shown), 'the ID is not in the email');
+      await uiLogin(page, { email: STUDENT.email, participantId: shown }, '/login', '/dashboard');
       await context.close();
     },
   );

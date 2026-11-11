@@ -104,9 +104,9 @@ export function resetPasswordMessage(name: string, link: string, minutes: number
  */
 export function participantIdMessage(name: string, id: string, loginLink: string): AuthEmail {
   return render({
-    subject: 'Sirat Leadership Olympiad: আপনার পার্টিসিপ্যান্ট আইডি / Your participant ID',
+    subject: 'Sirat Leadership Olympiad: আপনার পার্টিসিপেন্ট আইডি / Your participant ID',
     greetingBn: `প্রিয় ${name},`,
-    bodyBn: `আপনার পার্টিসিপ্যান্ট আইডি: ${id}। লগইন করতে আপনার ইমেইল আর এই আইডি দিন। আইডিটি কারও সঙ্গে শেয়ার করবেন না।`,
+    bodyBn: `আপনার পার্টিসিপেন্ট আইডি: ${id}। লগইন করতে আপনার ইমেইল আর এই আইডি দিন। আইডিটি কারও সঙ্গে শেয়ার করবেন না।`,
     ignoreBn: 'আপনি এটা না চেয়ে থাকলে এই ইমেইলটি উপেক্ষা করুন; আপনার আইডি বদলায়নি।',
     greetingEn: `Dear ${name},`,
     bodyEn: `Your participant ID is ${id}. To log in, enter your email and this ID. Do not share the ID with anyone.`,
