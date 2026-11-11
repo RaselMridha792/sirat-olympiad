@@ -565,7 +565,18 @@ The `worker` service sends; the API only queues. Locally every email goes to Mai
 **One-time setup** (AWS console, one region close to the users, e.g. `ap-south-1`):
 1. SES → Identities → create a **domain** identity for the sending domain with **Easy DKIM**; add the DKIM CNAMEs in Cloudflare (DNS only, not proxied) and wait for "Verified".
 2. Set a **custom MAIL FROM** subdomain (e.g. `mail.<domain>`) and add its MX and SPF TXT records. Add a **DMARC** TXT record on `_dmarc.<domain>` (start with `p=none; rua=mailto:...`, tighten later).
-3. Request **production access** (new accounts are in the sandbox: verified recipients only, low quota).
+3. Request **production access** (SES → Account dashboard → Request production access). New accounts are in the sandbox: they send only to verified addresses, with a low quota, so students' verification and participant-ID emails do not arrive. **This is an AWS review that can take up to about 24 hours**, and AWS may ask questions first: request it early (days before registration opens), not on launch day.
+
+   **Until Cloudflare: the same records in Hostinger** (the domain's DNS is at Hostinger today: hPanel → Domains → the domain → **DNS / Nameservers → DNS records** → Add record). hPanel takes the **name relative to the zone**: for a sending domain `sirat.raselmridha.com` in the zone `raselmridha.com`, a record SES shows as `x._domainkey.sirat.raselmridha.com` is entered with the name `x._domainkey.sirat`. Leave the TTL at its default.
+
+   | SES asks for | Type | Name in hPanel (zone `raselmridha.com`, sending domain `sirat.raselmridha.com`) | Value |
+   |---|---|---|---|
+   | Easy DKIM (3 records) | CNAME | `<token>._domainkey.sirat` | `<token>.dkim.amazonses.com` (as SES shows it) |
+   | MAIL FROM | MX | `mail.sirat` | `feedback-smtp.<region>.amazonses.com`, priority 10 |
+   | MAIL FROM (SPF) | TXT | `mail.sirat` | `v=spf1 include:amazonses.com ~all` |
+   | DMARC | TXT | `_dmarc.sirat` | `v=DMARC1; p=none; rua=mailto:<a mailbox you read>` |
+
+   Hostinger does not proxy, so nothing is to switch off as with Cloudflare. Check from any machine with `nslookup -type=TXT _dmarc.sirat.raselmridha.com` (and `-type=CNAME` for a DKIM name), then wait for "Verified" in SES. When the domain later moves to Cloudflare, the same records move with it (DNS only).
 4. IAM → create a user with no console access and only this policy, then an access key for it:
 
 ```json
