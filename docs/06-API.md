@@ -44,6 +44,7 @@ Guards: `Public` · `Auth` (valid session) · `Role(...)` · `Owner` (resource b
 | | `GET /certificates/verify/:code` | Public | Name and award only; the same 404 for unknown and revoked; 30/min per IP. Built (core C6c-1) |
 | | `GET /certificates/:id/pdf` | Owner | Core C6c-2 (the PDF library waits for the owner) |
 | | `POST /admin/certificates/issue`, `GET /admin/certificates`, `POST /admin/certificates/:id/revoke` | admin | Certificates (below): issuing in the queue, revoke with a reason, audited. Built (core C6c-1) |
+| | `GET`, `POST /admin/certificate-templates`, `GET /admin/certificate-templates/:id`, `POST /admin/certificate-templates/:id/{versions,activate}`, `POST /admin/certificate-images`, `GET /admin/certificate-images/:id`, `POST /admin/certificates/issue-one` | admin | Certificate templates and the manual issue (below). Built (exam C1) |
 | announcements | `GET /announcements` | Role(student, ambassador) | Announcements (below). Built (core C4) |
 | ambassadors | `GET /ambassador/me` | Role(ambassador) | Ambassadors (below). Built (core C5a) |
 | | `POST /ambassador/tasks/:assignmentId/submit`, `POST /ambassador/teams` | Role(ambassador) | Own data only, the ambassador re-read. Built (core C5b-2, C5b-3) |
@@ -405,6 +406,27 @@ Shapes `CertificateIssueRequest`, `CertificateIssueResult`, `MyCertificate`, `Ad
 Blocked accounts are left out, and so are demo accounts and demo exams (demo data: a real run never gives a demo account a real serial). Each row gets the next serial (`SLO-<year>-<number>` from `certificate_serial_seq`; a number drawn for a skipped row is not used) and a random verification code (12 hex digits, 48 bits). The name is copied as it is at issue time. Audit `certificates.issued` (the type and the count) with the requesting admin.
 
 The database keeps the rules (`*_core_certificates_checks`): the three types, the serial and code formats, the name 1–200, the revoke fields all three or none, a reason 3–200; one certificate per (user, type, round).
+
+## Certificate templates and the manual issue (exam C1; DECISIONS "Certificate templates and the manual issue")
+
+Shapes `CertificateTemplateInput`, `AdminCertificateTemplate`, `AdminCertificateTemplateRow`, `AdminCertificateTemplateQuery`, `CertificateSignatory`, `CertificateImageInfo`, `CertificateIssueOneRequest`, `CertificateIssueOneResult`, `CERT_TEMPLATE_LIMITS`, `CERT_PLACEHOLDERS`, `CERT_IMAGE_TYPES`, `CERT_TEMPLATE_REFUSALS`, `certTextProblem` (`certificate-templates.ts`). Admin only (`@Roles('admin')`; every write re-reads the admin in its transaction), managers, jury, students and ambassadors get 403. Writes 20 per minute per admin. Every write is audited in its transaction.
+
+A template is plain text in English and Bangla, never HTML. The only placeholders are `{name}`, `{round}` and `{date}`; any other `{` or `}`, and any `<` or `>`, is refused. Lengths are counted as printed, worst case: each placeholder counts as its layout budget (name 100, round 60, date 30), not as its own six or seven characters. Title ≤ 120, body ≤ 600, a signatory's name or title ≤ 80 (no placeholder), at most 3 signatories. A refused text is 400 with `template_text: <field>` in `details`.
+
+| Route | Body / query | Result |
+|---|---|---|
+| `GET /admin/certificate-templates` | `type?`, `page`, `pageSize` (≤ 50, default 20) | `Paginated<AdminCertificateTemplateRow>`: one row per template (all its versions grouped), the types in order, the newest template first. The latest version (titles only), the active version if it is one of this template's, and the version count |
+| `GET /admin/certificate-templates/:id` | — | `AdminCertificateTemplate`: one version with its texts, signatories (by position) and `issuedCount`; 404 |
+| `POST /admin/certificate-templates` | `{ type, titleEn, titleBn, bodyEn, bodyBn, signatories: [{ nameEn, nameBn, titleEn, titleBn, imageId? }] }` | 201: version 1, **not active**. 400 `template_text`, `image_unknown` (a signatory names no stored image). Audit `certificate_templates.created` |
+| `POST /admin/certificate-templates/:id/versions` | the same without `type` | 201: the template's next version (any version's id names its template), not active; earlier versions are untouched. 404. Audit `certificate_templates.versioned` (`from`) |
+| `POST /admin/certificate-templates/:id/activate` | — | 200: this version is what its type's certificates get from now on; the type's previous active version stops (one active per type, also a unique index). Already active: 200, nothing written. Audit `certificate_templates.activated` (`previous`) |
+| `POST /admin/certificate-images` | multipart, one field `file` (no other field) | 201 `CertificateImageInfo`. PNG or JPEG **by the file's bytes** (name and Content-Type ignored), ≤ 200 KB (**413** above), 10–2000 × 10–1000 px read from the header before anything decodes it; metadata stripped. 400 `["image_rejected", <empty, unsupported_type, unreadable, bad_dimensions>]`. Audit `certificate_images.uploaded` (size, sides, sha256) |
+| `GET /admin/certificate-images/:id` | — | The stored bytes with their stored type, `X-Content-Type-Options: nosniff`, `Cache-Control: no-store`, `Content-Security-Policy: default-src 'none'; sandbox` (never rendered as a document); 404 |
+| `POST /admin/certificates/issue-one` | `{ email, type, roundId, reason (3–200) }` | 201 `{ certificateId, serial, templateVersion }` (`null` when no version of the type is active). One certificate for one student the batch issue missed, outside the batch's eligibility on purpose. 409: `unknown_user` (no registered, unblocked student or ambassador with that email), `demo_side` (a demo account only in a demo round, a real one only in a real round), `wrong_round` (participation: the side's first round; promotion: a later round; winner: a round of type `final`), `already_issued`; 404 for an unknown round. Audit `certificates.issued_one` (the type, the round, the user id, the serial, the version and the reason; never the email) |
+
+**Version pinning.** A certificate keeps the template version it was issued with: `certificates.template_id` is the type's active version at the INSERT (issue-one and core's batch issuer use the same subquery), and a version never changes after it is made (triggers). A later edit makes a new version; activating it changes only what is issued next. C2's PDF renders from the pinned version.
+
+**Serials.** A real account gets the next `certificate_serial_seq` number, like the batch. A demo account (in a demo round) gets the next number of the demo range `SLO-YYYY-9NNNNN`, under a transaction lock, and never takes a number from the sequence; `demo_clear` removes it with the account.
 
 ## Admin statistics (core; lead 2026-11-01)
 

@@ -16,6 +16,7 @@ import {
   type CertificateType,
   type CertImageType,
   type CertTemplateRefusal,
+  type Paginated,
 } from '@sirat/shared';
 import { ImageRejected, prepareImage, type ImageRules } from '../../../common/image-upload';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -23,6 +24,7 @@ import { type Actor, assertAdmin, type Tx } from '../../exams/admin-exams.servic
 import type {
   CertificateIssueOneDto,
   CertificateTemplateDto,
+  CertificateTemplateQueryDto,
   CertificateTemplateVersionDto,
 } from './certificate-templates.dto';
 
@@ -122,10 +124,26 @@ export class CertificateTemplatesService {
 
   // ───────────── templates ─────────────
 
-  /** One row per template: its latest version, the active one (if it is this template's), and the count. */
-  async list(): Promise<AdminCertificateTemplateRow[]> {
+  /**
+   * One row per template (a page of them, newest template first within each type): its latest version, the active one
+   * (if it is this template's), and how many versions it has.
+   */
+  async list(q: CertificateTemplateQueryDto): Promise<Paginated<AdminCertificateTemplateRow>> {
+    const page = q.page ?? 1;
+    const pageSize = q.pageSize ?? L.pageSize;
+    const where = q.type ? Prisma.sql`WHERE "type" = ${q.type}` : Prisma.empty;
+    const [count] = await this.prisma.$queryRaw<{ total: bigint }[]>`
+      SELECT count(DISTINCT "lineage_id") AS "total" FROM "certificate_templates" ${where}`;
+    const lineages = (
+      await this.prisma.$queryRaw<{ lineage_id: string }[]>`
+        SELECT "lineage_id"::text AS "lineage_id" FROM "certificate_templates" ${where}
+        GROUP BY "lineage_id"
+        ORDER BY min("type"), min("created_at") DESC, "lineage_id"
+        LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`
+    ).map((r) => r.lineage_id);
     const rows = await this.prisma.certificateTemplate.findMany({
-      orderBy: [{ type: 'asc' }, { lineageId: 'asc' }, { version: 'desc' }],
+      where: { lineageId: { in: lineages } },
+      orderBy: { version: 'desc' },
       select: {
         id: true,
         lineageId: true,
@@ -159,7 +177,12 @@ export class CertificateTemplatesService {
         if (r.active) row.active = { id: r.id, version: r.version };
       }
     }
-    return [...out.values()];
+    return {
+      items: lineages.map((id) => out.get(id)).filter((r): r is AdminCertificateTemplateRow => !!r),
+      page,
+      pageSize,
+      total: Number(count?.total ?? 0),
+    };
   }
 
   async get(id: string): Promise<AdminCertificateTemplate> {
@@ -302,6 +325,9 @@ export class CertificateTemplatesService {
         (dto.type === 'winner' && round.type === 'final');
       if (!fits) throw refuse(ConflictException, 'wrong_round');
 
+      // The demo range is max + 1, not a sequence: two demo issues at once take turns (never the same serial).
+      if (user.demoBatchId !== null)
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('exam:certificates.demo_serial'))`;
       const serial =
         user.demoBatchId === null
           ? Prisma.sql`'SLO-' || to_char(now() AT TIME ZONE 'Asia/Dhaka', 'YYYY') || '-'

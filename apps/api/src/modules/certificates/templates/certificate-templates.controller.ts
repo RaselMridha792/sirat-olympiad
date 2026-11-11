@@ -6,6 +6,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
   Res,
   StreamableFile,
@@ -20,6 +21,7 @@ import {
   type AdminCertificateTemplateRow,
   type CertificateImageInfo,
   type CertificateIssueOneResult,
+  type Paginated,
 } from '@sirat/shared';
 import type { Request, Response } from 'express';
 import type { AuthUser } from '../../auth/access-token.service';
@@ -28,6 +30,7 @@ import type { Actor } from '../../exams/admin-exams.service';
 import {
   CertificateIssueOneDto,
   CertificateTemplateDto,
+  CertificateTemplateQueryDto,
   CertificateTemplateVersionDto,
 } from './certificate-templates.dto';
 import { CertificateTemplatesService } from './certificate-templates.service';
@@ -47,8 +50,8 @@ export class AdminCertificateTemplatesController {
   constructor(private readonly templates: CertificateTemplatesService) {}
 
   @Get()
-  list(): Promise<AdminCertificateTemplateRow[]> {
-    return this.templates.list();
+  list(@Query() q: CertificateTemplateQueryDto): Promise<Paginated<AdminCertificateTemplateRow>> {
+    return this.templates.list(q);
   }
 
   @Get(':id')

@@ -2,6 +2,7 @@ import {
   CERT_TEMPLATE_LIMITS,
   CERTIFICATE_TYPES,
   certTextProblem,
+  type AdminCertificateTemplateQuery,
   type CertificateIssueOneRequest,
   type CertificateType,
 } from '@sirat/shared';
@@ -11,11 +12,14 @@ import {
   IsArray,
   IsEmail,
   IsIn,
+  IsInt,
   IsOptional,
   IsString,
   IsUUID,
   Length,
+  Max,
   MaxLength,
+  Min,
   registerDecorator,
   ValidateNested,
   type ValidationOptions,
@@ -124,4 +128,25 @@ export class CertificateIssueOneDto implements CertificateIssueOneRequest {
   @IsString()
   @Length(L.reasonMin, L.reasonMax)
   reason!: string;
+}
+
+/** GET /admin/certificate-templates. */
+export class CertificateTemplateQueryDto implements AdminCertificateTemplateQuery {
+  @IsOptional()
+  @IsIn(CERTIFICATE_TYPES)
+  type?: CertificateType;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(10_000)
+  page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(L.pageSizeMax)
+  pageSize?: number;
 }

@@ -29,6 +29,9 @@ export const CERT_TEMPLATE_LIMITS = {
   imageMinSide: 10,
   reasonMin: 3,
   reasonMax: 200,
+  /** The template list's page size: default and maximum. */
+  pageSize: 20,
+  pageSizeMax: 50,
 } as const;
 
 export const CERT_IMAGE_TYPES = ['image/png', 'image/jpeg'] as const;
@@ -126,7 +129,14 @@ export interface AdminCertificateTemplate {
   issuedCount: number;
 }
 
-/** GET /admin/certificate-templates: one row per template (its versions grouped). */
+/** GET /admin/certificate-templates: an optional type filter and the page (pageSize at most 50, default 20). */
+export interface AdminCertificateTemplateQuery {
+  type?: CertificateType;
+  page?: number;
+  pageSize?: number;
+}
+
+/** GET /admin/certificate-templates: `Paginated` rows, one per template (its versions grouped). */
 export interface AdminCertificateTemplateRow {
   lineageId: string;
   type: CertificateType;
