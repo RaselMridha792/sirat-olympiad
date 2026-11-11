@@ -104,15 +104,26 @@ export default async function AmbassadorLeaderboardPage({
                 key: 'name',
                 header: m.board.columns.name,
                 render: (r) => (
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className="font-bold text-ink">{r.name}</span>
-                    {r.isMe ? <Badge tone="brand">{m.board.you}</Badge> : null}
-                  </span>
+                  <>
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="font-bold text-ink">{r.name}</span>
+                      {r.isMe ? <Badge tone="brand">{m.board.you}</Badge> : null}
+                    </span>
+                    {/* Below sm the institution and rank columns are hidden: they show here instead. */}
+                    <span className="mt-1 block text-xs text-ink-muted sm:hidden">
+                      {r.institution ?? c.notProvided}
+                    </span>
+                    <span className="mt-2 block sm:hidden">
+                      <TierBadge tier={r.tier} none={m.stats.noRank} />
+                    </span>
+                  </>
                 ),
               },
               {
                 key: 'institution',
                 header: m.board.columns.institution,
+                headerClassName: 'hidden sm:table-cell',
+                className: 'hidden px-5 py-4 text-sm sm:table-cell',
                 render: (r) =>
                   r.institution ? (
                     <span className="font-semibold text-ink">{r.institution}</span>
@@ -129,12 +140,9 @@ export default async function AmbassadorLeaderboardPage({
               {
                 key: 'tier',
                 header: m.board.columns.tier,
-                render: (r) =>
-                  r.tier ? (
-                    <Badge tone={rankTone(r.tier)}>{r.tier}</Badge>
-                  ) : (
-                    <span className="text-ink-muted">{m.stats.noRank}</span>
-                  ),
+                headerClassName: 'hidden sm:table-cell',
+                className: 'hidden px-5 py-4 text-sm sm:table-cell',
+                render: (r) => <TierBadge tier={r.tier} none={m.stats.noRank} />,
               },
             ]}
           />
@@ -151,5 +159,13 @@ export default async function AmbassadorLeaderboardPage({
         </>
       )}
     </>
+  );
+}
+
+function TierBadge({ tier, none }: { tier: string | null; none: string }) {
+  return tier ? (
+    <Badge tone={rankTone(tier)}>{tier}</Badge>
+  ) : (
+    <span className="text-ink-muted">{none}</span>
   );
 }
