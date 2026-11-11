@@ -646,7 +646,9 @@ describe('logged-in student: registration and own payments', () => {
       gradeLevelId,
     });
     const paid = await makePaidPayment(prisma, me.id);
-    await prisma.registration.create({ data: { userId: me.id, paymentId: paid.id } });
+    const myRegistration = await prisma.registration.create({
+      data: { userId: me.id, paymentId: paid.id },
+    });
     const other = await makeUser(prisma);
     const othersPayment = await makePaidPayment(prisma, other.id);
 
@@ -654,6 +656,7 @@ describe('logged-in student: registration and own payments', () => {
     const reg = await json(await call('GET', '/registrations/me', { cookie }));
     expect(reg).toMatchObject({
       registered: true,
+      participantId: myRegistration.participantId,
       payment: {
         status: 'paid',
         amountMinor: 40000,
