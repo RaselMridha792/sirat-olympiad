@@ -9,15 +9,16 @@ import {
 describe('maskParticipantId', () => {
   const id = `ON4821093755${dammDigit('4821093755')}`;
 
-  it('keeps the prefix and the last 3 characters only, in the shape the web accepts', () => {
+  it('keeps the prefix and the last 2 characters only (a random digit and the check digit), in the shape the web accepts', () => {
     expect(isParticipantId(id)).toBe(true);
     const masked = maskParticipantId(id);
     expect(masked).toMatch(MASKED_PARTICIPANT_ID_PATTERN);
     expect(masked.startsWith('ON ')).toBe(true);
-    expect(masked.endsWith(` ${id.slice(10)}`)).toBe(true);
-    // Exactly the 3 last characters' digits survive: none of the 8 hidden digits does.
-    expect(masked.replace(/\D/g, '')).toBe(id.slice(10));
-    expect(masked).not.toContain(id.slice(2, 10));
+    expect(masked.endsWith(id.slice(11))).toBe(true);
+    // Exactly the last 2 characters' digits survive: none of the 9 hidden digits does.
+    expect(masked.replace(/\D/g, '')).toBe(id.slice(11));
+    expect(masked).not.toContain(id.slice(2, 11));
+    expect(masked).not.toContain(id.slice(10));
   });
 
   it('never shows the full ID, and a value that is not an ID masks to bullets only', () => {
