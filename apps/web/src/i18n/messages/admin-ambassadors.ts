@@ -9,6 +9,7 @@ export const adminAmbassadorsMessages = defineMessages({
       label: 'Search ambassadors by name, email or promo code',
       placeholder: 'Search name, email or code',
     },
+    sort: { label: 'Order of the list', newest: 'Newest first', points: 'Most points first' },
     table: {
       caption: 'Ambassadors with their promo codes and referrals',
       ambassador: 'Ambassador',
@@ -104,6 +105,7 @@ export const adminAmbassadorsMessages = defineMessages({
       label: 'নাম, ইমেইল বা প্রোমো কোড দিয়ে অ্যাম্বাসেডর খুঁজুন',
       placeholder: 'নাম, ইমেইল বা কোড লিখুন',
     },
+    sort: { label: 'তালিকার ক্রম', newest: 'নতুনরা আগে', points: 'বেশি পয়েন্ট আগে' },
     table: {
       caption: 'অ্যাম্বাসেডরদের প্রোমো কোড ও রেফারেলের তালিকা',
       ambassador: 'অ্যাম্বাসেডর',

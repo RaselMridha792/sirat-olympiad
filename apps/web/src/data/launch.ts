@@ -18,6 +18,7 @@ export type LaunchTable = Readonly<Record<string, LaunchState>>;
 export const LAUNCH = {
   '/dashboard': 'live',
   '/dashboard/ambassador': 'live',
+  '/dashboard/ambassador/leaderboard': 'live',
   '/dashboard/announcements': 'live',
   '/dashboard/book': 'live',
   '/dashboard/exam': 'live',

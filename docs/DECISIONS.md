@@ -2,6 +2,13 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-10 — The ambassador leaderboard (core; the lead's approval of 10 Nov, the client's priority on the ambassador panel)
+
+- **Who sees it:** ambassadors (their own side: demo data never ranks with real) and admins (the admin ambassadors list's "most points first"). Not students, not the public.
+- **What it shows:** place, name, institution, points and rank tier, as the exam board shows names (OPEN-QUESTIONS #10). The caller's own row is marked, and their place shows even off the page. No id, contact, code or referral list.
+- **How it ranks:** the point ledger's sum; equal points share a place (1, 2, 2, 4), then by name. Approved, unblocked ambassadors only.
+- **Freshness:** cached for 60 s per side with a single-flight lock, dropped at once by core's own point and membership writes; the referral sweep's new points show within the minute.
+
 ## 2026-11-10 — The participant ID (Rasel's decision of 10 Nov, the client's request; payments P1, the lead's review)
 
 1. **What it is:** every registration gets a participant ID, printed on the admit card. Together with the email it becomes the student's and ambassador's login (A2 builds the login; admins, managers and jury keep password + 2FA). The owner chose this knowing the risk: the ID is printed on a shareable card, and the students are minors. The lead's conditions are the mitigations:
