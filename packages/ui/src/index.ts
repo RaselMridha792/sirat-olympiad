@@ -28,4 +28,5 @@ export * from './components/Accordion';
 export * from './components/BigStats';
 export * from './components/Pattern';
 export * from './components/Honorific';
+export * from './components/IdCard';
 export { HONORIFIC_TOKEN } from './honorific';

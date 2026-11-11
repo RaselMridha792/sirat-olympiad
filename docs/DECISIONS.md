@@ -28,6 +28,11 @@ One short entry per non-obvious technical or product decision. Newest first. For
 - **Tests and tools:**
   - The dev fixture students have fixed IDs (`ON99999999012`, `…020`, `…036`; RUNBOOK §0).
   - The load students' IDs derive from the load secret, so k6 computes them (`loadtests/load-id.js`).
+## 2026-11-11 — The ambassador ID card (core; the lead's approval of 10 Nov)
+
+- **On the panel**, for an approved ambassador: the client's mark, "International Sirat Olympiad 3.0", the role, the name, the ambassador code and the date they became an ambassador. Text only, no photo; the shared `IdCard` in @sirat/ui, so the admit card can reuse it.
+- **The participant ID, masked** (lead, 2026-11-11): since 10 Nov the ID is the login secret, and an ambassador card is exactly what ambassadors post to promote their code. So `GET /ambassador/me` returns only `maskParticipantId(...)` ("ON •••• •••• •52": the prefix and the last 2, one random digit and the check digit, so a card leaves 10^9 candidates; exam's review), the card shows that next to the public SR- code, and the web refuses anything else in that field. The full ID appears only on the admit card page, behind its copy button, with a "keep it private" note.
+- **Print:** "Print card" opens the browser's print dialog, and a print rule in globals.css prints only the card (`body:has(.print-card)`), in its colours. The PDF comes with the shared PDF renderer, which also serves the admit card and the certificates.
 
 ## 2026-11-11 — Discount codes (Rasel's decision of 10 Nov; payments D1, the lead's approval and defaults)
 
