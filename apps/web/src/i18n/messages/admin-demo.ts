@@ -21,6 +21,17 @@ export const adminDemoMessages = defineMessages({
       clearing: 'Removing',
     },
     loadedBy: (name: string, date: string) => `Loaded by ${name}, ${date}`,
+    demoLogins: {
+      title: 'Demo logins',
+      hint: 'Students and ambassadors sign in with their email and participant ID; the jury with the password shown once at the load. Demo accounts only.',
+      caption: 'Demo accounts to sign in with',
+      account: 'Account',
+      signIn: 'Sign in with',
+      juryPassword: 'the jury password (shown at the load)',
+      roles: { student: 'Student', ambassador: 'Ambassador', jury: 'Jury' },
+      unregistered: (n: string) =>
+        `${n} demo students have no registration: they show the unpaid states, have no participant ID and cannot sign in.`,
+    },
     failedText: 'The load stopped before it finished. Remove what it left, then load again.',
     staleText:
       'Its job has not answered for over 15 minutes and is treated as lost. Remove the batch, then load again if needed.',
@@ -106,11 +117,10 @@ export const adminDemoMessages = defineMessages({
       confirm: 'Load',
       pending: 'Starting…',
       cancel: 'Cancel',
-      passwordTitle: 'The demo password',
+      passwordTitle: 'The demo jury password',
       passwordText:
-        'Every demo account signs in with this password. Write it down now: it is shown only this once.',
-      logins: (domain: string) =>
-        `Logins: student-001@${domain} to student-300, ambassador-001 to ambassador-015, jury-001 and jury-002 (same domain).`,
+        'The demo jury accounts sign in with this password. Write it down now: it is shown only this once. Students and ambassadors have no password: they sign in with their email and participant ID, and the card lists a few once the load ends.',
+      logins: (domain: string) => `Jury: jury-001@${domain} and jury-002@${domain}.`,
       close: 'Done',
     },
     clear: {
@@ -157,6 +167,17 @@ export const adminDemoMessages = defineMessages({
       clearing: 'মোছা হচ্ছে',
     },
     loadedBy: (name: string, date: string) => `লোড করেছেন ${name}, ${date}`,
+    demoLogins: {
+      title: 'ডেমো লগইন',
+      hint: 'শিক্ষার্থী ও অ্যাম্বাসেডর ইমেইল ও পার্টিসিপ্যান্ট আইডি দিয়ে লগইন করে; জুরি লোডের সময় একবার দেখানো পাসওয়ার্ড দিয়ে। শুধু ডেমো অ্যাকাউন্ট।',
+      caption: 'লগইনের জন্য ডেমো অ্যাকাউন্ট',
+      account: 'অ্যাকাউন্ট',
+      signIn: 'লগইন করুন',
+      juryPassword: 'জুরির পাসওয়ার্ড (লোডের সময় দেখানো)',
+      roles: { student: 'শিক্ষার্থী', ambassador: 'অ্যাম্বাসেডর', jury: 'জুরি' },
+      unregistered: (n: string) =>
+        `${n} জন ডেমো শিক্ষার্থীর নিবন্ধন নেই: তারা অপরিশোধিত অবস্থাগুলো দেখায়, তাদের পার্টিসিপ্যান্ট আইডি নেই এবং তারা লগইন করতে পারে না।`,
+    },
     failedText: 'লোড শেষ হওয়ার আগেই থেমে গেছে। যা রয়ে গেছে তা মুছে আবার লোড করুন।',
     staleText:
       'এর কাজটি ১৫ মিনিটের বেশি সাড়া দেয়নি, তাই হারানো ধরা হচ্ছে। ব্যাচটি মুছুন, দরকার হলে আবার লোড করুন।',
@@ -242,11 +263,10 @@ export const adminDemoMessages = defineMessages({
       confirm: 'লোড করুন',
       pending: 'শুরু হচ্ছে…',
       cancel: 'বাতিল',
-      passwordTitle: 'ডেমো পাসওয়ার্ড',
+      passwordTitle: 'ডেমো জুরির পাসওয়ার্ড',
       passwordText:
-        'সব ডেমো অ্যাকাউন্ট এই পাসওয়ার্ড দিয়ে লগইন করে। এখনই লিখে রাখুন: এটি শুধু এই একবার দেখানো হবে।',
-      logins: (domain: string) =>
-        `লগইন: student-001@${domain} থেকে student-300, ambassador-001 থেকে ambassador-015, jury-001 ও jury-002 (একই ডোমেইন)।`,
+        'ডেমো জুরি অ্যাকাউন্ট এই পাসওয়ার্ড দিয়ে লগইন করে। এখনই লিখে রাখুন: এটি শুধু এই একবার দেখানো হবে। শিক্ষার্থী ও অ্যাম্বাসেডরদের কোনো পাসওয়ার্ড নেই: তারা ইমেইল ও পার্টিসিপ্যান্ট আইডি দিয়ে লগইন করে; লোড শেষ হলে কার্ডে কয়েকটি দেখানো হয়।',
+      logins: (domain: string) => `জুরি: jury-001@${domain} ও jury-002@${domain}।`,
       close: 'ঠিক আছে',
     },
     clear: {

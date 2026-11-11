@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, Post, Req } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { DEMO_ACTIONS_PER_HOUR, type AdminDemoStatus, type DemoLoadAccepted } from '@sirat/shared';
 import type { Request } from 'express';
@@ -21,7 +21,9 @@ const ACTION_TIER = { default: { limit: DEMO_ACTIONS_PER_HOUR, ttl: 3_600_000 } 
 export class AdminDemoController {
   constructor(private readonly demo: DemoService) {}
 
+  /** Carries the demo logins (demo participant IDs): never cached by a browser or a proxy. */
   @Get()
+  @Header('Cache-Control', 'no-store')
   status(): Promise<AdminDemoStatus> {
     return this.demo.status();
   }

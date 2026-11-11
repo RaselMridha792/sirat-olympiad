@@ -40,12 +40,35 @@ export interface AdminDemoStatus {
     counts: Record<string, number>;
     /** 'loading' or 'clearing' past DEMO_STALE_MINUTES: the job is gone; the batch may be removed. */
     stale: boolean;
+    /** A few demo accounts to sign in with in front of a client, once the batch is 'loaded' (else empty). */
+    logins: DemoLogin[];
+    /**
+     * Demo students without a registration, once 'loaded' (else 0): they show the unpaid states, have no participant
+     * ID and so cannot sign in (A2's login).
+     */
+    unregisteredStudents: number;
   } | null;
   /** The running job's last step, while a load or a removal runs. */
   progress: { action: DemoAction; step: string } | null;
   /** How the last load or removal ended (kept for a day), e.g. a removal refused because real rows use demo rows. */
   lastOutcome: DemoOutcome | null;
 }
+
+/**
+ * A demo account to sign in with (admin only, demo rows only; the lead, 2026-11-11). Students and ambassadors sign in
+ * with their email and participant ID (A2's login); the jury with the load's one password, shown once at the load.
+ * Demo IDs are demo data, so the admin card may show them in full.
+ */
+export interface DemoLogin {
+  role: 'student' | 'ambassador' | 'jury';
+  email: string;
+  name: string;
+  /** The participant ID for a student or an ambassador; null for the jury (they use the load's password). */
+  participantId: string | null;
+}
+
+/** How many demo logins the card lists: one student per category, two ambassadors, the jury. */
+export const DEMO_LOGINS = { students: 3, ambassadors: 2, jury: 2 } as const;
 
 export type DemoAction = 'load' | 'clear';
 
@@ -65,7 +88,7 @@ export interface DemoActionInput {
   reason: string;
 }
 
-/** POST /admin/demo/load: 202. The demo logins' one password, shown once, never stored in clear. */
+/** POST /admin/demo/load: 202. The demo jury's one password (students and ambassadors use their participant ID), shown once, never stored in clear. */
 export interface DemoLoadAccepted {
   batchId: string;
   password: string;

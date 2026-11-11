@@ -11,8 +11,8 @@ export const DEMO_USER_COUNTS = { students: 300, ambassadors: 15, jury: 2 } as c
 const PHONE_PREFIX = '01999';
 
 /**
- * The demo accounts. Every one: the marker domain, demo_batch_id (the root marker; only the loader writes it), the one
- * load password, a verified email (so a demo student can take the practice exam), never an admin or manager. Grades
+ * The demo accounts. Every one: the marker domain, demo_batch_id (the root marker; only the loader writes it), a
+ * password for the jury only (students and ambassadors sign in with their participant ID), a verified email (so a demo student can take the practice exam), never an admin or manager. Grades
  * cover the whole list, so each category has students; districts, institutions and education types are spread.
  */
 export const usersDemoGenerator: DemoGenerator = {
@@ -64,7 +64,9 @@ export const usersDemoGenerator: DemoGenerator = {
       return {
         id: u.id,
         email: u.email,
-        passwordHash: ctx.passwordHash,
+        // Students and ambassadors sign in with email + participant ID (A2's login): no password (NULL), as the
+        // users_password_for_staff CHECK wants; only the jury gets the load's one password.
+        passwordHash: u.role === 'jury' ? ctx.passwordHash : null,
         name: u.name,
         phone: u.phone,
         district: u.district,

@@ -9,7 +9,8 @@
  *          pnpm --filter @sirat/api demo:clear --reason "done"
  *
  * Load needs DEMO_DATA_ALLOWED=true; removal works whatever it says, so demo data never outlives the switch. Prints
- * the batch, the counts and, after a load, the demo logins' one password (shown once, stored only as a hash). Exit 0
+ * the batch, the counts and, after a load, a few demo logins (email + participant ID) and the jury's one password
+ * (shown once, stored only as a hash). Exit 0
  * when done (also "no demo data" for a removal); 1 when refused or failed; 2 for bad arguments or settings.
  */
 import { randomBytes } from 'node:crypto';
@@ -28,6 +29,7 @@ import {
   type DemoRequest,
   isSecondBatch,
 } from '../modules/demo/demo-batches';
+import { demoLogins } from '../modules/demo/demo-logins';
 import { DemoClearBlocked, DemoClearBusy, DemoRunner } from '../modules/demo/demo-runner';
 import { paymentsAllowDemo } from '../modules/payments/demo/allow-demo';
 import {
@@ -136,8 +138,17 @@ export async function demoLoad(
     meta: { batch: batchId, students: counts.students ?? 0, via: 'cli' },
   });
   deps.out(`demo: loaded ${JSON.stringify(counts)}`);
-  deps.out(`demo: every demo login is <role>-<nnn>@${DEMO_EMAIL_DOMAIN}, e.g. student-001`);
-  deps.out(`demo: the demo password (shown once): ${password}`);
+  // Students and ambassadors sign in with email + participant ID (A2's login); only the jury uses the password.
+  deps.out('demo: students and ambassadors sign in with their email and participant ID, e.g.:');
+  const { logins, unregisteredStudents } = await demoLogins(deps.prisma, batchId);
+  for (const l of logins.filter((x) => x.participantId))
+    deps.out(`demo:   ${l.role.padEnd(10)} ${l.email}  ${l.participantId}`);
+  deps.out(
+    `demo: ${unregisteredStudents} demo students have no registration (they show the unpaid states): no participant ID, no login`,
+  );
+  deps.out(
+    `demo: the jury (jury-<nnn>@${DEMO_EMAIL_DOMAIN}) sign in with this password, shown once: ${password}`,
+  );
   return 0;
 }
 

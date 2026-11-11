@@ -24,6 +24,7 @@ import {
   type DemoRequest,
   isSecondBatch,
 } from './demo-batches';
+import { demoLogins } from './demo-logins';
 import { DemoRunner } from './demo-runner';
 import { DemoQueue } from './demo.queue';
 
@@ -83,6 +84,10 @@ export class DemoService {
         createdByName: batch.createdBy?.name ?? 'Server (CLI)',
         counts: (batch.counts ?? {}) as Record<string, number>,
         stale,
+        // Demo rows only, admin only (the controller): the logins to show a client, once the batch is loaded.
+        ...(batch.status === 'loaded'
+          ? await demoLogins(this.prisma, batch.id)
+          : { logins: [], unregisteredStudents: 0 }),
       },
       progress:
         running && job?.step
