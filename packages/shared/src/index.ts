@@ -5,6 +5,13 @@
 
 export const ROLES = ['student', 'ambassador', 'manager', 'jury', 'admin'] as const;
 export type Role = (typeof ROLES)[number];
+/**
+ * The roles that log in with email + participant ID, the ID on the admit card, and have no password (owner,
+ * 2026-11-10; docs/plans/PARTICIPANT-LOGIN-PLAN.md). Staff (admin, manager, jury) keep the password.
+ */
+export const PARTICIPANT_ID_ROLES = ['student', 'ambassador'] as const satisfies readonly Role[];
+export const logsInWithParticipantId = (role: Role): boolean =>
+  (PARTICIPANT_ID_ROLES as readonly Role[]).includes(role);
 
 export const CATEGORIES = ['activist', 'ambassador', 'achiever'] as const;
 export type Category = (typeof CATEGORIES)[number];

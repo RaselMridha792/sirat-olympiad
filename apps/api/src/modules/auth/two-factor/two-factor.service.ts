@@ -557,13 +557,14 @@ export class TwoFactorService {
 
   /** The password again, under the login limits (like change-password); a wrong one counts there. */
   private async checkPassword(
-    user: { id: string; email: string; passwordHash: string },
+    user: { id: string; email: string; passwordHash: string | null },
     password: string,
     purpose: string,
     client: ClientInfo,
   ): Promise<void> {
     await this.checkLimits(user.email, client);
-    if (await this.passwords.verify(user.passwordHash, password)) return;
+    // Admin and manager always have a password (CHECK users_password_for_staff); a missing one is a wrong one.
+    if (user.passwordHash && (await this.passwords.verify(user.passwordHash, password))) return;
     const failure = await this.limiter.recordFailure(user.email, client.ip);
     await this.audit.record({
       action: 'auth.2fa_password_failed',

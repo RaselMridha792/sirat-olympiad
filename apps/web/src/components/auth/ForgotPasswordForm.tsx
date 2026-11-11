@@ -31,7 +31,7 @@ export function EmailLinkRequest({
   sentText,
 }: {
   locale: Locale;
-  endpoint: '/auth/forgot-password' | '/auth/resend-verification';
+  endpoint: '/auth/forgot-password' | '/auth/forgot-id' | '/auth/resend-verification';
   submitLabel: string;
   sentText: string;
 }) {
@@ -90,6 +90,32 @@ export function EmailLinkRequest({
         {submitLabel}
       </Button>
     </form>
+  );
+}
+
+/**
+ * Forgot my participant ID: the ID goes to the registered email only (owner, 2026-11-10). The same neutral answer for
+ * every address, like forgot-password.
+ */
+export function ForgotIdForm({ locale }: { locale: Locale }) {
+  const m = pick(authMessages, locale);
+  return (
+    <div className="space-y-5">
+      <h2 className="text-center text-3xl font-bold">{m.forgotId.title}</h2>
+      <p className="text-center text-sm text-ink-muted">{m.forgotId.subtitle}</p>
+      <EmailLinkRequest
+        locale={locale}
+        endpoint="/auth/forgot-id"
+        submitLabel={m.forgotId.submit}
+        sentText={m.forgotId.sent}
+      />
+      <Link
+        href="/login"
+        className="block text-center text-sm font-semibold text-secondary hover:underline"
+      >
+        {m.backToLogin}
+      </Link>
+    </div>
   );
 }
 

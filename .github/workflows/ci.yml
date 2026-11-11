@@ -88,8 +88,10 @@ jobs:
       COOKIE_SECURE: 'false' # plain http on localhost
       CHECK_API_URL: http://localhost:4000
       CHECK_STUDENT_EMAIL: student1@fixtures.invalid
+      CHECK_STUDENT_ID: ON99999999012 # the fixture's fixed participant ID (dev-fixtures.ts): students have no password
       CHECK_ADMIN_EMAIL: pages-admin@ci.invalid
       CHECK_AMBASSADOR_EMAIL: student2@fixtures.invalid # approved by the admin through the API (step below)
+      CHECK_AMBASSADOR_ID: ON99999999020
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
@@ -102,15 +104,10 @@ jobs:
       - run: pnpm db:generate
       - name: Throwaway secrets for this run (masked)
         run: |
-          for name in JWT_ACCESS_SECRET FIXTURE_PASSWORD CHECK_ADMIN_PASSWORD; do
+          for name in JWT_ACCESS_SECRET CHECK_ADMIN_PASSWORD; do
             value=$(openssl rand -hex 24)
             echo "::add-mask::$value"
             echo "$name=$value" >> "$GITHUB_ENV"
-            # An if, not `[ ... ] && ...`: that list ends the loop, and so the step, with status 1.
-            if [ "$name" = FIXTURE_PASSWORD ]; then
-              echo "CHECK_STUDENT_PASSWORD=$value" >> "$GITHUB_ENV"
-              echo "CHECK_AMBASSADOR_PASSWORD=$value" >> "$GITHUB_ENV"
-            fi
           done
       - name: Postgres with the dev/test marker (fixtures refuse a server without it; services cannot pass -c)
         run: |

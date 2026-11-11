@@ -183,7 +183,9 @@ describe('login with two-factor on: the password step', () => {
   });
 
   it('keeps the plain 204 login for everyone without 2FA, admins who have not enrolled included', async () => {
-    for (const role of ['student', 'admin'] as const) {
+    // A password login without 2FA: a jury account, and an admin who has not enrolled. (Students and ambassadors log
+    // in with their participant ID: auth-login.int-spec.ts.)
+    for (const role of ['jury', 'admin'] as const) {
       const someone = await person(role, false);
       const { res } = await passwordStep(someone.email);
       expect(res.status).toBe(204);
@@ -438,7 +440,9 @@ describe('enrolment (admins and managers)', () => {
     });
     // Students never meet any of it.
     const student = await person('student', false);
-    const studentCookie = accessOf((await passwordStep(student.email)).res);
+    const studentCookie = access(
+      await sessions.start({ id: student.id, role: student.role }, client),
+    );
     expect((await json(await get('/api/auth/me', studentCookie))).twoFactor).toEqual({
       enabled: false,
       required: false,

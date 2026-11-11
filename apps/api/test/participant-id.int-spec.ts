@@ -246,7 +246,8 @@ describe('the backfill', () => {
       // is the newest schema (later migrations add columns), and this database stops before this migration.
       const old: Prisma.RegistrationCreateManyInput[] = [];
       for (let i = 0; i < 5; i++) {
-        const user = await makeUser(db, { role: 'student' });
+        // A placeholder hash: before A2's participant-ID login, password_hash is still NOT NULL.
+        const user = await makeUser(db, { role: 'student', passwordHash: 'not-a-real-hash' });
         const attemptId = randomUUID();
         const paymentId = randomUUID();
         await db.$executeRaw`
