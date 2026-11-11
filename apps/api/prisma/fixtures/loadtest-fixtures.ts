@@ -20,7 +20,6 @@
  */
 import { createHash, createHmac, randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { PaymentStatus, Prisma, PrismaClient, RegistrationAttemptStatus } from '@prisma/client';
-import { dammDigit } from '@sirat/shared';
 import { assertDevServerMarker, assertFixturesAllowed } from './guard';
 
 export const LOAD_EMAIL_DOMAIN = '@loadtest.invalid';
@@ -42,11 +41,30 @@ export type UsersResult = { created: number; skipped: number };
  * so two load students never share one), 5 digits of HMAC-SHA256(secret, "load<n>"), then the Damm check digit.
  * loadtests/load-id.js computes the same in k6; keep both in step. A real ID is drawn at random by the database.
  */
+/**
+ * Damm's check digit, as @sirat/shared's dammDigit: inlined because these fixtures also run in the migrate image
+ * (loadtests/exam-local.sh), which has no workspace packages. The int-spec checks every ID with isParticipantId.
+ */
+const DAMM = [
+  [0, 3, 1, 7, 5, 9, 8, 6, 4, 2],
+  [7, 0, 9, 2, 1, 5, 4, 8, 6, 3],
+  [4, 2, 0, 6, 8, 7, 1, 3, 5, 9],
+  [1, 7, 5, 0, 9, 8, 3, 4, 2, 6],
+  [6, 1, 2, 3, 0, 4, 5, 9, 7, 8],
+  [3, 6, 7, 4, 2, 0, 9, 5, 8, 1],
+  [5, 8, 6, 9, 7, 2, 0, 1, 3, 4],
+  [8, 9, 4, 5, 3, 6, 2, 0, 1, 7],
+  [9, 4, 3, 8, 6, 1, 7, 2, 0, 5],
+  [2, 5, 8, 1, 4, 3, 6, 7, 9, 0],
+] as const;
+const damm = (digits: string): number =>
+  [...digits].reduce<number>((interim, ch) => DAMM[interim]![Number(ch)]!, 0);
+
 export function loadParticipantId(secret: string, n: number): string {
   const mac = createHmac('sha256', secret).update(`load${n}`).digest('hex');
   const digits =
     String(n).padStart(5, '0') + String(parseInt(mac.slice(0, 8), 16) % 100_000).padStart(5, '0');
-  return `ON${digits}${dammDigit(digits)}`;
+  return `ON${digits}${damm(digits)}`;
 }
 
 /** Creates load1..loadN (verified, paid registration); existing ones are skipped. Guards checked by the caller. */
