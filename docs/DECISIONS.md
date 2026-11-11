@@ -2,6 +2,12 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-10 — The round rule: a later round's exam is only for students promoted into it (exam; lead)
+
+- **Decision:** an exam whose round is not its side's first round is visible and startable only to students with a non-eliminated entry in that round. The first round of each side (the real Round 1, the demo's own Round 1 at 101) and exams without a round stay open to every registered student of the category. The rule applies to the list, the waiting room, the start and `nextExamFor` (the admit card), through one predicate (`visibleTo` / `roundOpenTo`).
+- **Why:** the admin may attach an exam to any round, and the knockout method is still open (a later-round quiz is possible). Before this, such an exam was open to every student, eliminated ones included. Found while reviewing `nextExamFor` (#29).
+- **How:** `ExamConfig.roundGated` (cached) is true when a round with a lower sort_order exists on the same side. The student's non-eliminated round entries are read only when a gated exam is in question, so the Round 1 start surge pays no extra query. A config cached before the deploy counts as open for at most 60 s.
+
 ## 2026-11-10 — A global failed-login alert, the defence against spraying (lead; A2, part of the participant-ID login)
 
 - **Why:** students and ambassadors are to log in with email + participant ID (owner, 2026-11-10; docs/plans/PARTICIPANT-LOGIN-PLAN.md). The per-account limits stop guessing on one account, but not a spray: one guess on each of many accounts.
