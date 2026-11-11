@@ -1,5 +1,6 @@
 import type {
   CurrentRegistration,
+  RegistrationQuote,
   ResumeRegistrationResult,
   StartRegistrationInput,
   StartRegistrationResult,
@@ -27,6 +28,13 @@ export const registrationApi = {
       ...post,
       body: JSON.stringify(input),
       signal: timeoutSignal(START_TIMEOUT_MS),
+    }),
+  /** The price the start would charge for this promo code now (one rule with the start, which prices again). */
+  quote: (promoCode: string) =>
+    api<RegistrationQuote>('/registrations/quote', {
+      ...post,
+      body: JSON.stringify({ promoCode }),
+      signal: timeoutSignal(READ_TIMEOUT_MS),
     }),
   current: () =>
     api<CurrentRegistration>('/registrations/current', {

@@ -965,7 +965,7 @@ Do not read an ID out over the phone or a chat. If the student cannot reach thei
 
 ## 27. Discount codes (payments D1)
 
-Admin panel → **Discount codes** (the pages come with payments D2; the API is `/api/admin/discount-codes`, 06-API).
+Admin panel → **Discount codes** (`/admin/discount-codes`; the API is `/api/admin/discount-codes`, 06-API). The registration form's promo field takes the code; **Apply** shows the price the start will charge.
 
 - **Make a code:** prefer **Generate** (`DC-` + 8 random characters) for any code that matters. A typed code like `SIRAT20` can be guessed through the public price check on the registration page. Keep typed codes for public offers you announce anyway.
 - **Limits:** total uses, a start and an end date, active. A checkout in progress holds a use until it expires (10 minutes), so a code "fills up" a little before the last payments arrive. A payment that arrives late on an expired checkout is honoured even past the limit.
