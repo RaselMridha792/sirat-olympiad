@@ -11,7 +11,7 @@ function fakeApi(answers: Record<string, ApiResult>): ApiGet {
 
 const overview = {
   promoCode: 'SR-7K3QXD',
-  participantId: 'ON48210937558',
+  participantIdMasked: 'ON •••• •••• 558',
   approvedAt: '2026-11-01T04:00:00.000Z',
   referralCount: 2,
   points: 120,
@@ -38,9 +38,11 @@ test('student.getAmbassador reads GET /ambassador/me and refuses a wrong shape o
   for (const [status, body] of [
     [200, { ...overview, points: '120' }],
     [200, { ...overview, recentReferrals: [{ name: 1 }] }],
-    // A malformed participant ID (wrong check digit, wrong prefix) never reaches the card.
-    [200, { ...overview, participantId: 'ON48210937559' }],
-    [200, { ...overview, participantId: 'XX48210937558' }],
+    // The card only ever shows the masked ID: a full ID (the login secret), even a valid one, is refused, and so is
+    // any other shape.
+    [200, { ...overview, participantIdMasked: 'ON48210937558' }],
+    [200, { ...overview, participantIdMasked: 'ON 4821 0937 558' }],
+    [200, { ...overview, participantIdMasked: 'XX •••• •••• 558' }],
     [403, null],
   ] as const) {
     const source = createHttpSource(fakeApi({ '/ambassador/me': { status, body } }));

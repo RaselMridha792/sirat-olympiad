@@ -3,7 +3,6 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ClipboardList, Medal, Star, Trophy, UserPlus, Users, UsersRound } from 'lucide-react';
-import { formatParticipantId } from '@sirat/shared';
 import { Badge, Card, DataTable, EmptyState, IdCard, StatCard } from '@sirat/ui';
 import { CopyCode } from '@/components/ambassador/CopyCode';
 import { PrintCardButton } from '@/components/ambassador/PrintCardButton';
@@ -262,14 +261,9 @@ export default async function AmbassadorPage({
               role={m.card.role}
               name={user.name}
               fields={[
-                ...(amb.participantId
-                  ? [
-                      {
-                        label: m.card.participantId,
-                        value: formatParticipantId(amb.participantId),
-                        mono: true,
-                      },
-                    ]
+                // Masked by the API: the full ID is the login secret, and this card is made to be shown around.
+                ...(amb.participantIdMasked
+                  ? [{ label: m.card.participantId, value: amb.participantIdMasked, mono: true }]
                   : []),
                 { label: m.card.code, value: amb.promoCode, mono: true },
                 ...(amb.approvedAt

@@ -48,6 +48,21 @@ export function isParticipantId(value: string): boolean {
   return PARTICIPANT_ID_PATTERN.test(value) && dammDigit(value.slice(2)) === 0;
 }
 
+/**
+ * The participant ID is the login secret together with the email (owner decision 10 Nov), so anything shown where
+ * others may see it (the ambassador ID card, a shared image) carries only this: the prefix and the last 3 characters,
+ * "ON •••• •••• 552". The full ID appears only on the admit card page, behind its copy button. A value that is not a
+ * canonical ID masks to bullets only.
+ */
+export function maskParticipantId(canonical: string): string {
+  const hidden = '••••';
+  if (!PARTICIPANT_ID_PATTERN.test(canonical)) return `${hidden} ${hidden}`;
+  return `${canonical.slice(0, 2)} ${hidden} ${hidden} ${canonical.slice(10)}`;
+}
+
+/** The shape maskParticipantId gives: what a page may accept as a masked ID. */
+export const MASKED_PARTICIPANT_ID_PATTERN = /^(ON|OF) •{4} •{4} [0-9]{3}$/;
+
 /** For display only (the admit card, the dashboard, emails): "ON 4821 0937 552". Copy buttons copy the canonical form. */
 export function formatParticipantId(canonical: string): string {
   if (!PARTICIPANT_ID_PATTERN.test(canonical)) return canonical;

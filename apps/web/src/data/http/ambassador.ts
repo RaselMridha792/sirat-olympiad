@@ -1,5 +1,5 @@
 import {
-  isParticipantId,
+  MASKED_PARTICIPANT_ID_PATTERN,
   type AdminAmbassadorRow,
   type AmbassadorLeaderboard,
   type AmbassadorLeaderboardRow,
@@ -26,7 +26,9 @@ function isOverview(v: unknown): v is AmbassadorOverview {
   return (
     isRecord(v) &&
     textOrNull(v.promoCode) &&
-    (v.participantId === null || (text(v.participantId) && isParticipantId(v.participantId))) &&
+    // Only the masked form: a full ID (the login secret) in this field fails the check, so it never reaches the card.
+    (v.participantIdMasked === null ||
+      (text(v.participantIdMasked) && MASKED_PARTICIPANT_ID_PATTERN.test(v.participantIdMasked))) &&
     textOrNull(v.approvedAt) &&
     count(v.referralCount) &&
     count(v.points) &&
@@ -65,7 +67,7 @@ const pickRank = (r: AmbassadorOverview['rank']['current']) =>
 export function pickOverview(o: AmbassadorOverview): AmbassadorOverview {
   return {
     promoCode: o.promoCode,
-    participantId: o.participantId,
+    participantIdMasked: o.participantIdMasked,
     approvedAt: o.approvedAt,
     referralCount: o.referralCount,
     points: o.points,
