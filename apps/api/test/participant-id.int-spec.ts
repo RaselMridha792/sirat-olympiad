@@ -245,7 +245,8 @@ describe('the backfill', () => {
       // Registrations made before the column existed (createMany names no participant_id).
       const old: Prisma.RegistrationCreateManyInput[] = [];
       for (let i = 0; i < 5; i++) {
-        const user = await makeUser(db, { role: 'student' });
+        // A placeholder hash: before A2's participant-ID login, password_hash is still NOT NULL.
+        const user = await makeUser(db, { role: 'student', passwordHash: 'not-a-real-hash' });
         const payment = await makePaidPayment(db, user.id);
         old.push({ userId: user.id, paymentId: payment.id });
       }
