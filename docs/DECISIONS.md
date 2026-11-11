@@ -28,6 +28,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 - **Tests and tools:**
   - The dev fixture students have fixed IDs (`ON99999999012`, `…020`, `…036`; RUNBOOK §0).
   - The load students' IDs derive from the load secret, so k6 computes them (`loadtests/load-id.js`).
+
 ## 2026-11-11 — The admit card page (core A1; the client's mock-up; the lead's approval of 11 Nov)
 
 - **One read, one service:** `GET /admit-card` returns the caller's own registration, details and exam's next round exam. The PDF (A2) reuses it, so the page and the PDF never differ.
