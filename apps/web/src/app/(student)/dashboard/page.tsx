@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import {
   EXAM_MAX_DURATION_MINUTES,
-  formatParticipantId,
+  maskParticipantId,
   REGISTRATION_STATE_LABELS,
   type AnnouncementItem,
   type StudentHome,
@@ -173,8 +173,10 @@ function RegistrationCard({
           {
             label: r.participantId,
             value: (
+              // Masked on the server (the login secret): the full ID shows only on the admit card page, and on
+              // payments' result page at the moment it is issued (lead, 2026-11-11).
               <span className="font-mono" translate="no">
-                {formatParticipantId(registration.participantId)}
+                {maskParticipantId(registration.participantId)}
               </span>
             ),
           },
