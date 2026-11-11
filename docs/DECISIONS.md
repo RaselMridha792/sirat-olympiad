@@ -21,6 +21,24 @@ One short entry per non-obvious technical or product decision. Newest first. For
 - **The participant ID, masked** (lead, 2026-11-11): since 10 Nov the ID is the login secret, and an ambassador card is exactly what ambassadors post to promote their code. So `GET /ambassador/me` returns only `maskParticipantId(...)` ("ON •••• •••• •52": the prefix and the last 2, one random digit and the check digit: the shown check digit rules out about 9 in 10 of the 10^9 completions, so a card leaves about 10^8 candidates; exam's review), the card shows that next to the public SR- code, and the web refuses anything else in that field. The full ID appears only on the admit card page, behind its copy button, with a "keep it private" note.
 - **Print:** "Print card" opens the browser's print dialog, and a print rule in globals.css prints only the card (`body:has(.print-card)`), in its colours. The PDF comes with the shared PDF renderer, which also serves the admit card and the certificates.
 
+## 2026-11-11 — Discount codes (Rasel's decision of 10 Nov; payments D1, the lead's approval and defaults)
+
+1. **What:** an admin makes a code that takes an amount (whole taka) or a percentage (1-99) off the registration fee, with optional limits: total uses, start, end, active. The admin types a code or presses Generate (`DC-` + 8 characters, 40 bits). The lead's defaults, which Rasel may still override:
+   - one promo field takes an ambassador's referral code or a discount code, and one code per registration;
+   - a discount code can be linked to an approved ambassador, and a use then also counts as that ambassador's referral;
+   - the amount to pay never goes below 10 BDT (`MIN_PAYABLE_MINOR`), so there are no free registrations;
+   - a percentage is rounded DOWN to whole taka;
+   - admin only (it changes what registration costs).
+2. **The server prices, once:** `priceWithDiscount` in `@sirat/shared` is the one rule for the start, the retry and the public quote. The start prices the registration itself; the browser never sends a price. The attempt keeps the snapshot (list, discount, amount, code), and so does each payment (`amount_minor` is what PayStation charges).
+   - Retry and resume reuse the snapshot: a fee or code change mid-attempt never moves the price.
+   - At retry only the limit is checked again (the expired checkout lost its reserved use). A code used up meanwhile answers `PROMO_USED_UP` with a plain message: start again without it or with another code.
+   - An attempt made before discount codes has no snapshot and retries at the current fee, as before.
+3. **A use** is a paid payment with the code, or a checkout with it still in progress (initiated or pending, before its expiry): a reserved use. The start counts uses under the code's row lock, so two starts at once never both take the last use. A late payment on an expired checkout (failed or expired → paid) is honoured even past the limit, and shows on the tracking page.
+4. **Kind, value and the linked ambassador lock after the first paid use**; limits, dates, active and the note stay editable. A used code is never deleted, only switched off. The tracking page lists every paid use with the student's name and participant ID, what they paid and what the code took off, with totals.
+5. **Guessing:** the public quote is throttled to 60/min per IP and gives one answer for every miss. Each miss is counted per hashed IP per hour, and ops-check warns (`quote_misses`, a security alert) at 50 misses from one IP in an hour. Admin-typed codes like `SIRAT20` are guessable by design, so RUNBOOK §27 asks admins to prefer Generate for codes that matter.
+6. **Demo data:** `discount_codes` is a demo root (`demo_batch_id`, written only by the loader, immutable). `demo_clear` v4 removes demo codes after the demo forms and payments that used them, and refuses on any mix: `real_forms_on_demo_codes`, `real_payments_on_demo_codes`, `demo_payments_on_real_codes`, `real_codes_linked_to_demo`, `demo_codes_linked_to_real`. A real code never links a demo ambassador, and demo codes are read only in the admin API.
+7. **The refund policy** never names a fixed fee ("the fee is shown on the registration form"), so nothing in the legal texts changes now that the amount paid can be lower.
+
 ## 2026-11-10 — The round rule: a later round's exam is only for students promoted into it (exam; lead)
 
 - **Decision:** an exam whose round is not its side's first round is visible and startable only to students with a non-eliminated entry in that round. The first round of each side (the real Round 1, the demo's own Round 1 at 101) and exams without a round stay open to every registered student of the category. The rule applies to the list, the waiting room, the start and `nextExamFor` (the admit card), through one predicate (`visibleTo` / `roundOpenTo`).

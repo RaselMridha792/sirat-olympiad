@@ -18,7 +18,7 @@ import type { Request, Response } from 'express';
 import type { EnvVars } from '../../../config/env';
 import type { AuthUser } from '../../auth/access-token.service';
 import { CurrentUser, Public } from '../../auth/auth.decorators';
-import { StartRegistrationDto } from './dto/start-registration.dto';
+import { QuoteRegistrationDto, StartRegistrationDto } from './dto/start-registration.dto';
 import { RegistrationService, StartFailure } from './registration.service';
 import { clearResumeCookie, readResumeToken, setResumeCookie } from './resume-cookie';
 
@@ -31,6 +31,8 @@ import { clearResumeCookie, readResumeToken, setResumeCookie } from './resume-co
  */
 export const START_TIER = { default: { limit: 300, ttl: 60_000 } };
 export const STATUS_TIER = { default: { limit: 3_000, ttl: 60_000 } };
+/** The public quote: tight, since it could be used to guess admin-typed codes (misses are also counted per IP). */
+export const QUOTE_TIER = { default: { limit: 60, ttl: 60_000 } };
 
 export class PageQueryDto {
   @IsOptional()
@@ -88,6 +90,18 @@ export class RegistrationController {
       if (e instanceof StartFailure && e.token) setResumeCookie(res, e.token, this.secure);
       throw e;
     }
+  }
+
+  /**
+   * The price the start would charge for this promo code now (DECISIONS "Discount codes"): one rule with the start,
+   * which prices again itself (the browser never sends a price). Any miss is PROMO_INVALID.
+   */
+  @Public()
+  @Throttle(QUOTE_TIER)
+  @Post('quote')
+  @HttpCode(200)
+  quote(@Body() body: QuoteRegistrationDto, @Req() req: Request) {
+    return this.registrations.quote(body.promoCode, req.ip ?? null);
   }
 
   /** Where this browser's attempt stands. No personal data. */

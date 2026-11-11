@@ -6,6 +6,7 @@
  */
 
 import { isLoginSpray, type LoginGlobalFacts } from '../auth/login-spray';
+import { isQuoteGuessing, type QuoteMissFacts } from '../payments/discount/quote-misses';
 
 export type CheckLevel = 'ok' | 'warn' | 'critical';
 export const LEVEL_CODE: Record<CheckLevel, number> = { ok: 0, warn: 1, critical: 2 };
@@ -30,6 +31,7 @@ export const OPS_CHECKS = [
   'time_sync',
   'trusted_generators',
   'login_failures',
+  'quote_misses',
 ] as const;
 export type OpsCheck = (typeof OPS_CHECKS)[number];
 
@@ -96,6 +98,8 @@ export interface AppFacts {
   reconcileIntervalSeconds: number;
   /** Failed logins across all accounts (login-spray.ts), from the cache Redis; absent = not measured. */
   login?: LoginGlobalFacts;
+  /** Discount-code quote misses per IP (quote-misses.ts), from the cache Redis; absent = not measured. */
+  quote?: QuoteMissFacts;
 }
 
 export interface CheckResult {
@@ -257,6 +261,13 @@ export function evaluate(
     'login_failures',
     login !== undefined && isLoginSpray(login) ? 'warn' : 'ok',
     login === undefined ? null : login.failedAccounts10Min,
+  );
+  // Someone guessing discount codes through the public quote (payments D1): one IP with many misses in an hour.
+  const quote = app.quote;
+  add(
+    'quote_misses',
+    quote !== undefined && isQuoteGuessing(quote) ? 'warn' : 'ok',
+    quote === undefined ? null : quote.maxMissesPerIp,
   );
   return { results, streaks };
 }
