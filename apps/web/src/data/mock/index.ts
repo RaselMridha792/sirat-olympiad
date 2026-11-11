@@ -2,6 +2,7 @@ import {
   ADMIN_AUDIT_EXPORT,
   CATEGORIES,
   dammDigit,
+  maskParticipantId,
   DEFAULT_VIDEO_CRITERIA,
   type AdminDiscountCode,
   type AdminRound,
@@ -586,6 +587,7 @@ export function createMockSource(state: MockState | null): DataSource {
             const next = RANKS.find((r) => r.minPoints > points) ?? null;
             return {
               promoCode: mine?.promoCode ?? null,
+              participantIdMasked: maskParticipantId(MOCK_PARTICIPANT_ID),
               approvedAt: mine?.approvedAt ?? null,
               referralCount: mine?.referralCount ?? 0,
               points,
@@ -613,6 +615,7 @@ export function createMockSource(state: MockState | null): DataSource {
           },
           (): AmbassadorOverview => ({
             promoCode: null,
+            participantIdMasked: null,
             approvedAt: null,
             referralCount: 0,
             points: 0,
