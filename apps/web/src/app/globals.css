@@ -10,3 +10,23 @@ body {
   background: var(--color-page);
   color: var(--color-ink);
 }
+
+/* Printing a page that holds an ID card (@sirat/ui IdCard, class print-card): only the card is printed, in its
+   colours. Every other page prints as before. */
+@media print {
+  body:has(.print-card) * {
+    visibility: hidden;
+  }
+  body:has(.print-card) .print-card,
+  body:has(.print-card) .print-card * {
+    visibility: visible;
+  }
+  body:has(.print-card) .print-card {
+    position: absolute;
+    top: 0;
+    left: 0;
+    box-shadow: none;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}

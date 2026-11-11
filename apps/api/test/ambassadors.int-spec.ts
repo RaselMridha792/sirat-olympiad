@@ -12,6 +12,7 @@ import type {
   ApiError,
   Paginated,
 } from '@sirat/shared';
+import { formatParticipantId, maskParticipantId } from '@sirat/shared';
 import { RegistrationService } from '../src/modules/payments/registration/registration.service';
 import {
   bootCoreApp,
@@ -175,8 +176,8 @@ describe('lists and the panel', () => {
     ]);
   });
 
-  it('shows the ambassador their own panel: code, referrals without contact details, points and rank', async () => {
-    const { user } = await registeredStudent(prisma, { name: 'Panel Amb' });
+  it('shows the ambassador their own panel: code, participant ID, referrals without contact details, points and rank', async () => {
+    const { user, registration } = await registeredStudent(prisma, { name: 'Panel Amb' });
     const { promoCode } = (await approve(user.id)).json;
     const referred = await registeredStudent(prisma, {
       name: 'Referred One',
@@ -197,6 +198,8 @@ describe('lists and the panel', () => {
     expect(res.status).toBe(200);
     expect(res.json).toMatchObject({
       promoCode,
+      // The ambassador card's ID: their own registration's, MASKED (the full ID is the login secret).
+      participantIdMasked: maskParticipantId(registration.participantId),
       referralCount: 1,
       points: 0,
       rank: { current: { name: 'Bronze', minPoints: 0 }, next: { name: 'Silver', minPoints: 100 } },
@@ -206,6 +209,10 @@ describe('lists and the panel', () => {
     });
     expect(res.text).not.toContain(referred.user.email);
     expect(res.text).not.toContain(referred.user.phone!);
+    expect(res.text).not.toContain(referred.registration.participantId);
+    // The full ID never leaves the server for the card, in either form.
+    expect(res.text).not.toContain(registration.participantId);
+    expect(res.text).not.toContain(formatParticipantId(registration.participantId));
   });
 
   it('is for ambassadors only, and a revoked one is refused even with an ambassador token', async () => {
