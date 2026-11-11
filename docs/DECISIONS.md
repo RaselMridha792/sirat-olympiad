@@ -2,6 +2,36 @@
 
 One short entry per non-obvious technical or product decision. Newest first. Format: date · decision · why · who.
 
+## 2026-11-11 — The PDF renderer and the admit card PDF (core A2; the lead's approval with conditions, 11 Nov)
+
+- **Stack, pinned exactly:**
+  - pdf-lib 1.17.1 draws, @pdf-lib/fontkit 1.1.1 embeds the font subsets, harfbuzzjs 0.10.3 (HarfBuzz 14.0.0) shapes.
+  - Why HarfBuzz: pdf-lib's own text API lays text out by code point through fontkit, which cannot shape Bangla (conjuncts, reph, vowel signs).
+  - So HarfBuzz shapes each run, and its glyphs are drawn by id through pdf-lib's subset embedder.
+  - Those are pdf-lib 1.17.1 internals. Their shape is checked before each use (`PdfLibInternalsChanged`), and a test pins the three versions and fails on a bump.
+- **harfbuzzjs 0.10.3, not 1.x** (the lead, 11 Nov):
+  - 1.x is ESM-only with a top-level await, which this CommonJS API and jest cannot load. 0.10.3 is the last CommonJS release.
+  - The spike's 35 strings × 4 fonts gave identical glyph ids, clusters, advances and offsets on 0.10.3 and 1.6.4 (140 of 140). `pdf.spec.ts` pins that output as hashes.
+  - A move to 1.x waits until the API can load ESM, and re-runs that parity check.
+- **Fonts:**
+  - Noto Sans Bengali and Noto Sans, regular and bold, unmodified, with their OFL licence texts next to them in `apps/api/assets/fonts`. The README there gives the sources and SHA-256, checked by a test.
+  - `pnpm deploy` puts them in the api and worker images.
+  - CI checks the list and renders a made-up card inside both images (`dist/cli/pdf-selfcheck.js`).
+- **Text in the PDF is a known limit, accepted:**
+  - Every run carries `/ActualText`, because ToUnicode per glyph is lossy for Bangla (one glyph serves several characters).
+  - Acrobat and PDFium (Chrome) copy and search the real text. pdf.js (Firefox) ignores ActualText and gives the lossy text.
+  - **The web admit card page is the accessible, searchable version; the PDF is a print copy**, and it says so.
+- **The admit card PDF carries the FULL participant ID** with the keep-private line, **and never the email**:
+  - the card holds one half of the login only (the lead, 11 Nov, correcting that day's "masked only");
+  - the share image, the ambassador card, the dashboard home and everything public stay masked.
+- **Delivery through the queue** (DO 8):
+  - `POST /admit-card/pdf` queues a render. The worker (concurrency 1, ~0.1 s a card) writes the file to the cache Redis for 10 minutes: one hash per user and language, with the version it was made from.
+  - `GET` serves the file only while the card still matches that version, so no stale print is served after an edit or a re-issued ID.
+  - Owner only, `no-store`, `admit-card.pdf` (no ID or name in the file name).
+  - Idempotent: deterministic bytes (no dates; pdf-lib's names come from its seeded RNG), version and file written in one MULTI, 3 tries, listed in ops-check.
+  - The version hash is kept only beside the file (which holds the ID itself), never in a job id or a log.
+- **The programme's name** moves to `@sirat/shared` `SITE_NAME`, read by the web's site facts and by the PDFs, so a print never differs from the site.
+
 ## 2026-11-11 — The admit card page (core A1; the client's mock-up; the lead's approval of 11 Nov)
 
 - **One read, one service:** `GET /admit-card` returns the caller's own registration, details and exam's next round exam. The PDF (A2) reuses it, so the page and the PDF never differ.

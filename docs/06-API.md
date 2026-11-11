@@ -401,6 +401,22 @@ The web page `/dashboard/admit-card` follows the client's mock-up:
 - the details, and a countdown to the exam's start;
 - the official group links (`content/groups.ts`, each hidden while empty);
 - Share: a PNG drawn in the browser (a canvas, so the browser shapes the Bangla) holding the **masked** ID only. It goes to the device's share sheet where it takes a file, else it downloads. Nothing is uploaded.
+- Download PDF (A2, below).
+
+### The admit card PDF (core A2; the lead's conditions of 2026-11-11)
+
+The student's own print copy: the **full** participant ID with the keep-private line, and **never the email** (the card must not carry both halves of the login). Made by the worker on the `admit-card-pdf` queue (DO 8), in the page's language. Shapes `AdmitCardPdfStatus`, `ADMIT_CARD_PDF_LOCALES` (`core.ts`).
+
+| Method + path | Request | Answers |
+|---|---|---|
+| `POST /admit-card/pdf` (student, ambassador; CSRF) | `{ locale }`, `bn` or `en` | 200 `{ status: 'ready' }` when the file for the card as it is now is waiting; else queues one render (one job per user, language and minute) and answers `{ status: 'pending' }`. 404 `not_registered`; 503 `pdf_unavailable` (queue or cache Redis down); 400 any other field. `no-store` |
+| `GET /admit-card/pdf` (student, ambassador) | `?locale=` `bn` or `en` | 200 `application/pdf`, `attachment; filename="admit-card.pdf"` (no ID or name in it), `no-store`. 404 `pdf_not_ready`: not made yet, expired (10 minutes), or made from details that have changed since (a corrected name, a new exam date, a re-issued ID); ask with POST again. 404 `not_registered`; 503 `pdf_unavailable` |
+
+- Owner only: both read the user from the session and re-read the account (AdmitCardService), so nobody can name another student's file.
+- The worker reads the card itself (the job holds the user id and the language only) and renders it (`src/modules/pdf/`: HarfBuzz-shaped Bangla in Noto fonts).
+- It writes the file with its version (a hash of the card, the language and the layout) to the cache Redis key `admit-card-pdf:v1:{userId}:{locale}` in one MULTI, for 10 minutes.
+- Same card, same bytes: a retry or a re-run overwrites safely. A user with no admit card any more is skipped. 3 tries; failed jobs are kept 7 days for ops-check.
+- The web page polls GET every 1.5 s (30 tries) after the POST, then saves the file.
 
 ## Certificates (core C6c-1; plan: `docs/plans/CORE-PLAN.md` §7, owner Q4 defaults, lead's notes)
 

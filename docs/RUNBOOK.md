@@ -971,3 +971,14 @@ Admin panel → **Discount codes** (the pages come with payments D2; the API is 
 The admit card (`/dashboard/admit-card`) lists the official WhatsApp, Telegram, Facebook and YouTube groups. Each link stays hidden until it has a URL.
 - **To add one:** set its URL in `apps/web/src/content/groups.ts` (https only; anything else is dropped) and deploy the web. No API or database change.
 - **The participant ID on that page is the login secret.** If a student posts it, follow §26 (a leaked participant ID).
+
+**The admit card PDF (core A2).** "Download PDF" asks the API. The **worker** renders the file (queue `admit-card-pdf`, ~0.1 s a card) and keeps it 10 minutes in the cache Redis. The PDF carries the full ID and never the email.
+- **The page says "taking longer than usual" or "could not be made":**
+  - check the worker is up (`$DC ps worker`);
+  - run ops-check: a backlog or failed jobs on `admit-card-pdf` show there;
+  - a student can simply try again: a new request queues a new render.
+- **Prove an image can make PDFs** (after a deploy, or a font or library change): run `$DC run --rm --no-deps -T worker node dist/cli/pdf-selfcheck.js`.
+  - It renders a made-up card in both languages and prints `pdf selfcheck ok`.
+  - CI runs it inside the api and worker images on every pull request.
+- **A student says the PDF shows old details:** it cannot. A file is served only while the card matches the details it was made from. After a correction, the next download makes a new file.
+- **Fonts:** `apps/api/assets/fonts` (Noto, OFL; README there). Replacing a font changes the printed layout, and a test fails until its hash is updated in review.
