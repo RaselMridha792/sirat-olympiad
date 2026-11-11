@@ -8,6 +8,7 @@ export const studentShellMessages = defineMessages({
     topbarTitle: 'Dashboard',
     nav: {
       home: 'Dashboard',
+      admitCard: 'Admit card',
       profile: 'My Profile',
       exams: 'My Exams',
       leaderboard: 'Leaderboard',
@@ -26,6 +27,7 @@ export const studentShellMessages = defineMessages({
     topbarTitle: 'ড্যাশবোর্ড',
     nav: {
       home: 'ড্যাশবোর্ড',
+      admitCard: 'প্রবেশপত্র',
       profile: 'আমার প্রোফাইল',
       exams: 'আমার পরীক্ষা',
       leaderboard: 'লিডারবোর্ড',

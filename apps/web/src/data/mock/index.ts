@@ -27,6 +27,7 @@ import {
   type MyBookOrderView,
   type AdminUserDetail,
   type AdminUserRow,
+  type AdmitCard,
   type AmbassadorLeaderboard,
   type AmbassadorOverview,
   type AnnouncementItem,
@@ -628,6 +629,43 @@ export function createMockSource(state: MockState | null): DataSource {
             tasks: [],
             recentReferrals: [],
           }),
+        ),
+
+      // The demo student's own admit card, as GET /admit-card answers it; ?mock=empty is a student who has not paid.
+      getAdmitCard: () =>
+        run(
+          (): AdmitCard | null => {
+            const w = getWorld();
+            if (!w.me.payment) return null;
+            const now = new Date(w.now).toISOString();
+            const next =
+              w.exams
+                .filter((e) => e.status === 'published' && e.roundId !== null && e.windowEnd > now)
+                .sort((a, b) => a.windowStart.localeCompare(b.windowStart))[0] ?? null;
+            return {
+              participantId: MOCK_PARTICIPANT_ID,
+              participantIdMasked: maskParticipantId(MOCK_PARTICIPANT_ID),
+              mode: 'online',
+              name: w.me.name,
+              category: w.me.category,
+              gradeLevel: gradeOf(w.me.gradeLevelId)?.label ?? null,
+              fee: {
+                amountMinor: w.me.payment.amountMinor,
+                currency: w.me.payment.currency,
+                paidAt: w.me.payment.paidAt,
+              },
+              registeredAt: w.me.payment.paidAt ?? w.me.createdAt,
+              exam: next && {
+                examId: next.id,
+                title: next.title,
+                windowStart: next.windowStart,
+                windowEnd: next.windowEnd,
+                durationMinutes: next.durationMinutes,
+                roundName: w.rounds.find((r) => r.id === next.roundId)?.name ?? null,
+              },
+            };
+          },
+          (): AdmitCard | null => null,
         ),
 
       // The mock ambassadors by points (equal points share a place), as the API ranks them.

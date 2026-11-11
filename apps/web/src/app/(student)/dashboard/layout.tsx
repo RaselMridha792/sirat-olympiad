@@ -3,6 +3,7 @@ import {
   Flag,
   Gift,
   Home,
+  IdCard,
   Medal,
   Megaphone,
   Trophy,
@@ -36,6 +37,11 @@ export default async function StudentLayout({ children }: { children: React.Reac
   ]);
   const items: NavItem[] = [
     { href: '/dashboard', label: m.nav.home, icon: <Home size={20} aria-hidden /> },
+    {
+      href: '/dashboard/admit-card',
+      label: m.nav.admitCard,
+      icon: <IdCard size={20} aria-hidden />,
+    },
     { href: '/dashboard/profile', label: m.nav.profile, icon: <User size={20} aria-hidden /> },
     { href: '/dashboard/exam', label: m.nav.exams, icon: <BookOpen size={20} aria-hidden /> },
     { href: '/dashboard/book', label: m.nav.book, icon: <Gift size={20} aria-hidden /> },

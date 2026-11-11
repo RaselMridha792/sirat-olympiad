@@ -1,3 +1,4 @@
+import { AdmitCardModule } from './modules/admit-card/admit-card.module';
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
@@ -60,6 +61,7 @@ import { DemoModule } from './modules/demo/demo.module';
     RoundsModule,
     LeaderboardModule,
     CertificatesModule,
+    AdmitCardModule,
     AnnouncementsModule,
     DemoModule,
   ],
