@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { StudentExamListItem } from '@sirat/shared';
+import { dammDigit, type StudentExamListItem } from '@sirat/shared';
 import { pickNextExam } from './home.ts';
 import { createHttpSource } from './index.ts';
 import { DataRequestError, type ApiGet, type ApiResult } from './request.ts';
@@ -45,9 +45,11 @@ const profile = {
   gradeLevel: { id: 'g8', label: 'Class 8' },
   currentRound: null,
 };
+const PARTICIPANT_ID = `ON4821093755${dammDigit('4821093755')}`;
 const registration = {
   registered: true,
   registeredAt: '2026-11-01T04:00:00.000Z',
+  participantId: PARTICIPANT_ID,
   category: 'activist',
   gradeLevel: 'Class 8',
   payment: {
@@ -174,6 +176,24 @@ test('the admin announcement list keeps only its fields and refuses an unknown s
     createHttpSource(bad).admin.listAnnouncements({ page: 1, pageSize: 10 }),
     DataRequestError,
   );
+});
+
+test('a registration whose participant ID is malformed or fails its check digit is not shown', async () => {
+  const bad = PARTICIPANT_ID.slice(0, -1) + String((Number(PARTICIPANT_ID.slice(-1)) + 1) % 10);
+  for (const participantId of [bad, 'ON123', null]) {
+    const home = await createHttpSource(
+      fakeApi({
+        '/users/me': { status: 200, body: profile },
+        '/exams': { status: 200, body: [] },
+        '/announcements?page=1&pageSize=3': {
+          status: 200,
+          body: { items: [], page: 1, pageSize: 3, total: 0 },
+        },
+        '/registrations/me': { status: 200, body: { ...registration, participantId } },
+      }),
+    ).student.getHome();
+    assert.equal(home.registration, null, String(participantId));
+  }
 });
 
 test('each section falls back on its own; only the profile is required', async () => {

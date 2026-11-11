@@ -1,6 +1,7 @@
 import {
   ADMIN_AUDIT_EXPORT,
   CATEGORIES,
+  dammDigit,
   DEFAULT_VIDEO_CRITERIA,
   type AdminRound,
   type AdminCertificateRow,
@@ -67,6 +68,8 @@ import { emptyPage, matches, paginate } from './paging.ts';
  */
 export const MOCK_SOURCE_MARKER = 'SIRAT_MOCK_DATA_SOURCE';
 const SLOW_MS = 2000;
+/** A valid participant ID for the mock student (the real one is drawn by the database). */
+const MOCK_PARTICIPANT_ID = `ON4821093755${dammDigit('4821093755')}`;
 
 const gradeOf = (id: string | null) => GRADE_LEVELS.find((g) => g.id === id) ?? null;
 
@@ -328,6 +331,7 @@ export function createMockSource(state: MockState | null): DataSource {
                 ? {
                     registered: true as const,
                     registeredAt: w.me.payment.paidAt ?? w.me.createdAt,
+                    participantId: MOCK_PARTICIPANT_ID,
                     category: w.me.category,
                     gradeLevel: gradeOf(w.me.gradeLevelId)?.label ?? null,
                     payment: { ...w.me.payment },
