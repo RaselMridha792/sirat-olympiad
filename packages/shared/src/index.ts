@@ -71,6 +71,7 @@ export * from './dashboard';
 export * from './phone';
 export * from './registration';
 export * from './participant-id';
+export * from './discount';
 export * from './book';
 export * from './exam';
 export * from './core';
