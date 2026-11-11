@@ -38,6 +38,9 @@ test('student.getAmbassador reads GET /ambassador/me and refuses a wrong shape o
   for (const [status, body] of [
     [200, { ...overview, points: '120' }],
     [200, { ...overview, recentReferrals: [{ name: 1 }] }],
+    // A malformed participant ID (wrong check digit, wrong prefix) never reaches the card.
+    [200, { ...overview, participantId: 'ON48210937559' }],
+    [200, { ...overview, participantId: 'XX48210937558' }],
     [403, null],
   ] as const) {
     const source = createHttpSource(fakeApi({ '/ambassador/me': { status, body } }));
