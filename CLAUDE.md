@@ -100,7 +100,6 @@ Local setup, fixtures and ports: `docs/RUNBOOK.md` section 0. The repo is public
   - the certificate PDF (C6c-2) and other queue workers (PDF);
   - the legal texts (#80, for the client's review);
   - the public site (Phase D);
-  - the admin exam preview (D2, P1);
   - owner decisions pending: the two age groups instead of the three categories, and the brand name.
 - PayStation: official docs read; summary in `docs/paystation/PAYSTATION-NOTES.md` (the PDF and Postman export stay local, git-ignored).
 - The web reads the real session (`apps/web/src/lib/session.ts`). Production dashboards read the API through `apps/web/src/data/http/` (one file per area, all wired); a method without an area file would show the error state. Development uses the mock unless `DATA_SOURCE=http`.
