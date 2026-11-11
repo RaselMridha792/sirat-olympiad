@@ -29,6 +29,8 @@ export const adminDemoMessages = defineMessages({
       signIn: 'Sign in with',
       juryPassword: 'the jury password (shown at the load)',
       roles: { student: 'Student', ambassador: 'Ambassador', jury: 'Jury' },
+      unregistered: (n: string) =>
+        `${n} demo students have no registration: they show the unpaid states, have no participant ID and cannot sign in.`,
     },
     failedText: 'The load stopped before it finished. Remove what it left, then load again.',
     staleText:
@@ -172,6 +174,8 @@ export const adminDemoMessages = defineMessages({
       signIn: 'লগইন করুন',
       juryPassword: 'জুরির পাসওয়ার্ড (লোডের সময় দেখানো)',
       roles: { student: 'শিক্ষার্থী', ambassador: 'অ্যাম্বাসেডর', jury: 'জুরি' },
+      unregistered: (n: string) =>
+        `${n} জন ডেমো শিক্ষার্থীর নিবন্ধন নেই: তারা অপরিশোধিত অবস্থাগুলো দেখায়, তাদের পার্টিসিপ্যান্ট আইডি নেই এবং তারা লগইন করতে পারে না।`,
     },
     failedText: 'লোড শেষ হওয়ার আগেই থেমে গেছে। যা রয়ে গেছে তা মুছে আবার লোড করুন।',
     staleText:

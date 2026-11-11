@@ -3,13 +3,19 @@ import { CATEGORIES, DEMO_LOGINS, type DemoLogin } from '@sirat/shared';
 
 type Db = Pick<PrismaClient, 'user'>;
 
+export interface DemoLoginList {
+  logins: DemoLogin[];
+  /** Demo students without a registration: no participant ID, so no login (they show the unpaid states). */
+  unregisteredStudents: number;
+}
+
 /**
  * A few demo accounts to sign in with in front of a client (the admin card and the CLI; the lead, 2026-11-11): one
  * registered student per category, the first registered ambassadors, and the jury, by email. Only this batch's rows
  * (demo_batch_id), never a real account, never a blocked one. Students and ambassadors carry their participant ID
  * (A2's login); the jury has none and uses the load's password.
  */
-export async function demoLogins(db: Db, batchId: string): Promise<DemoLogin[]> {
+export async function demoLogins(db: Db, batchId: string): Promise<DemoLoginList> {
   const select = {
     email: true,
     name: true,
@@ -17,7 +23,7 @@ export async function demoLogins(db: Db, batchId: string): Promise<DemoLogin[]> 
     registration: { select: { participantId: true } },
   } as const;
   const registered = { demoBatchId: batchId, isBlocked: false, registration: { isNot: null } };
-  const [students, ambassadors, jury] = await Promise.all([
+  const [students, ambassadors, jury, unregisteredStudents] = await Promise.all([
     // A small window ordered by email is enough to find each category (the generator spreads the grades).
     db.user.findMany({
       where: { ...registered, role: 'student' },
@@ -37,11 +43,12 @@ export async function demoLogins(db: Db, batchId: string): Promise<DemoLogin[]> 
       take: DEMO_LOGINS.jury,
       select: { email: true, name: true },
     }),
+    db.user.count({ where: { demoBatchId: batchId, role: 'student', registration: { is: null } } }),
   ]);
   const perCategory = CATEGORIES.map((c) => students.find((s) => s.category === c)).filter(
     (s): s is (typeof students)[number] => !!s,
   );
-  return [
+  const logins: DemoLogin[] = [
     ...perCategory.slice(0, DEMO_LOGINS.students).map((s) => ({
       role: 'student' as const,
       email: s.email,
@@ -61,4 +68,5 @@ export async function demoLogins(db: Db, batchId: string): Promise<DemoLogin[]> 
       participantId: null,
     })),
   ];
+  return { logins, unregisteredStudents };
 }

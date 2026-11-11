@@ -56,6 +56,7 @@ test('running while a batch loads or clears, never otherwise', () => {
       counts: {},
       stale,
       logins: [],
+      unregisteredStudents: 0,
     },
   });
   assert.equal(demoRunning(base), false);

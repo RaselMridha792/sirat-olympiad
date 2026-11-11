@@ -27,6 +27,7 @@ const loaded: AdminDemoStatus = {
       },
       { role: 'jury', email: 'jury-001@demo.sirat.invalid', name: 'Demo J', participantId: null },
     ],
+    unregisteredStudents: 54,
   },
   progress: null,
   lastOutcome: {
@@ -67,7 +68,7 @@ test('admin.getDemoStatus: no batch, and a running job', async () => {
   );
   const running: AdminDemoStatus = {
     ...loaded,
-    batch: { ...loaded.batch!, status: 'loading', counts: {}, logins: [] },
+    batch: { ...loaded.batch!, status: 'loading', counts: {}, logins: [], unregisteredStudents: 0 },
     progress: { action: 'load', step: 'attempts' },
     lastOutcome: null,
   };
@@ -86,6 +87,7 @@ test('admin.getDemoStatus refuses a wrong shape or a refusal (the card shows its
     { ...loaded, batch: { ...loaded.batch, counts: { students: '300' } } },
     { ...loaded, batch: { ...loaded.batch, stale: 'no' } },
     { ...loaded, batch: { ...loaded.batch, logins: undefined } },
+    { ...loaded, batch: { ...loaded.batch, unregisteredStudents: -1 } },
     // A student without a valid participant ID, or a jury account with one, is not a demo login.
     {
       ...loaded,

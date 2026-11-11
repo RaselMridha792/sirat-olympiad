@@ -85,7 +85,9 @@ export class DemoService {
         counts: (batch.counts ?? {}) as Record<string, number>,
         stale,
         // Demo rows only, admin only (the controller): the logins to show a client, once the batch is loaded.
-        logins: batch.status === 'loaded' ? await demoLogins(this.prisma, batch.id) : [],
+        ...(batch.status === 'loaded'
+          ? await demoLogins(this.prisma, batch.id)
+          : { logins: [], unregisteredStudents: 0 }),
       },
       progress:
         running && job?.step

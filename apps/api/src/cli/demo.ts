@@ -140,9 +140,12 @@ export async function demoLoad(
   deps.out(`demo: loaded ${JSON.stringify(counts)}`);
   // Students and ambassadors sign in with email + participant ID (A2's login); only the jury uses the password.
   deps.out('demo: students and ambassadors sign in with their email and participant ID, e.g.:');
-  const logins = await demoLogins(deps.prisma, batchId);
+  const { logins, unregisteredStudents } = await demoLogins(deps.prisma, batchId);
   for (const l of logins.filter((x) => x.participantId))
     deps.out(`demo:   ${l.role.padEnd(10)} ${l.email}  ${l.participantId}`);
+  deps.out(
+    `demo: ${unregisteredStudents} demo students have no registration (they show the unpaid states): no participant ID, no login`,
+  );
   deps.out(
     `demo: the jury (jury-<nnn>@${DEMO_EMAIL_DOMAIN}) sign in with this password, shown once: ${password}`,
   );

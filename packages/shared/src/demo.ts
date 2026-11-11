@@ -42,6 +42,11 @@ export interface AdminDemoStatus {
     stale: boolean;
     /** A few demo accounts to sign in with in front of a client, once the batch is 'loaded' (else empty). */
     logins: DemoLogin[];
+    /**
+     * Demo students without a registration, once 'loaded' (else 0): they show the unpaid states, have no participant
+     * ID and so cannot sign in (A2's login).
+     */
+    unregisteredStudents: number;
   } | null;
   /** The running job's last step, while a load or a removal runs. */
   progress: { action: DemoAction; step: string } | null;

@@ -598,6 +598,13 @@ describe('load, use, remove', () => {
     const res = await call<AdminDemoStatus>(env, 'GET', '/admin/demo', admin.cookie);
     expect(res.headers.get('cache-control')).toBe('no-store');
     const logins = res.json.batch!.logins;
+    // Students without a registration have no ID and cannot sign in: counted, never listed (they show unpaid states).
+    expect(res.json.batch!.unregisteredStudents).toBe(
+      await prisma.user.count({
+        where: { demoBatchId: batchId, role: 'student', registration: { is: null } },
+      }),
+    );
+    expect(res.json.batch!.unregisteredStudents).toBeGreaterThan(0);
     expect(logins.map((l) => l.role)).toEqual([
       'student',
       'student',

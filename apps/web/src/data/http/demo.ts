@@ -53,7 +53,8 @@ function isDemoStatus(v: unknown): v is AdminDemoStatus {
       counts(b.counts) &&
       typeof b.stale === 'boolean' &&
       Array.isArray(b.logins) &&
-      b.logins.every(isLogin));
+      b.logins.every(isLogin) &&
+      count(b.unregisteredStudents));
   const p = v.progress;
   const progressOk = p === null || (isRecord(p) && action(p.action) && typeof p.step === 'string');
   return batchOk && progressOk && (v.lastOutcome === null || isOutcome(v.lastOutcome));
@@ -77,6 +78,7 @@ export function pickDemoStatus(s: AdminDemoStatus): AdminDemoStatus {
         name: l.name,
         participantId: l.participantId,
       })),
+      unregisteredStudents: s.batch.unregisteredStudents,
     },
     progress: s.progress && { action: s.progress.action, step: s.progress.step },
     lastOutcome: o && {

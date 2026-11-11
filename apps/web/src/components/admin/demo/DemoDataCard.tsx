@@ -182,7 +182,13 @@ export function DemoDataCard({
               }))}
             />
           ) : null}
-          {batch.logins.length > 0 ? <DemoLogins locale={locale} logins={batch.logins} /> : null}
+          {batch.logins.length > 0 ? (
+            <DemoLogins
+              locale={locale}
+              logins={batch.logins}
+              unregisteredStudents={batch.unregisteredStudents}
+            />
+          ) : null}
         </>
       ) : (
         <p className="text-sm text-ink-muted">{m.none}</p>
@@ -195,7 +201,15 @@ export function DemoDataCard({
  * A few demo accounts to sign in with in front of a client (the lead, 2026-11-11): students and ambassadors with their
  * participant ID (demo data, admin only), the jury with the load's password. Selectable text, for copying.
  */
-function DemoLogins({ locale, logins }: { locale: Locale; logins: DemoLogin[] }) {
+function DemoLogins({
+  locale,
+  logins,
+  unregisteredStudents,
+}: {
+  locale: Locale;
+  logins: DemoLogin[];
+  unregisteredStudents: number;
+}) {
   const m = pick(adminDemoMessages, locale).demoLogins;
   return (
     <div className="flex flex-col gap-2">
@@ -235,6 +249,11 @@ function DemoLogins({ locale, logins }: { locale: Locale; logins: DemoLogin[] })
           ))}
         </tbody>
       </table>
+      {unregisteredStudents > 0 ? (
+        <p className="text-xs text-ink-muted">
+          {m.unregistered(formatNumber(locale, unregisteredStudents))}
+        </p>
+      ) : null}
     </div>
   );
 }
