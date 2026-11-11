@@ -8,6 +8,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 - **What it shows:** place, name, institution, points and rank tier, as the exam board shows names (OPEN-QUESTIONS #10). The caller's own row is marked, and their place shows even off the page. No id, contact, code or referral list.
 - **How it ranks:** the point ledger's sum; equal points share a place (1, 2, 2, 4), then by name. Approved, unblocked ambassadors only.
 - **Freshness:** cached for 60 s per side with a single-flight lock, dropped at once by core's own point and membership writes; the referral sweep's new points show within the minute.
+
 ## 2026-11-10 — A global failed-login alert, the defence against spraying (lead; A2, part of the participant-ID login)
 
 - **Why:** students and ambassadors are to log in with email + participant ID (owner, 2026-11-10; docs/plans/PARTICIPANT-LOGIN-PLAN.md). The per-account limits stop guessing on one account, but not a spray: one guess on each of many accounts.
