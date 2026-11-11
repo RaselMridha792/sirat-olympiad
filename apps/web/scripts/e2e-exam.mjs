@@ -4,7 +4,7 @@
 // up to the 6th violation, which submits (owner Q4). Every response the student's browser receives, its HTML and its
 // localStorage are then searched: no correct answer, explanation, score or question id may ever reach it.
 //
-//   E2E_STUDENT_PASSWORD=... E2E_ADMIN_EMAIL=... E2E_ADMIN_PASSWORD=... [E2E_STUDENT_EMAIL=student1@fixtures.invalid]
+//   E2E_ADMIN_EMAIL=... E2E_ADMIN_PASSWORD=... [E2E_STUDENT_EMAIL=student1@fixtures.invalid E2E_STUDENT_ID=ON99999999012]
 //   pnpm --filter @sirat/web e2e:exam [baseUrl]
 //
 // The local stack is shared: say so before running this (RUNBOOK §0). It leaves one published exam behind
@@ -21,14 +21,15 @@ if (!isLoopbackUrl(BASE)) {
 }
 const STUDENT = {
   email: process.env.E2E_STUDENT_EMAIL ?? 'student1@fixtures.invalid',
-  password: process.env.E2E_STUDENT_PASSWORD ?? '',
+  // The fixture student's participant ID (apps/api/prisma/fixtures/dev-fixtures.ts): students have no password.
+  participantId: process.env.E2E_STUDENT_ID ?? 'ON99999999012',
 };
 const ADMIN = {
   email: process.env.E2E_ADMIN_EMAIL ?? '',
   password: process.env.E2E_ADMIN_PASSWORD ?? '',
 };
-if (!STUDENT.password || !ADMIN.email || !ADMIN.password) {
-  console.error('e2e-exam: set E2E_STUDENT_PASSWORD, E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD');
+if (!ADMIN.email || !ADMIN.password) {
+  console.error('e2e-exam: set E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD');
   process.exit(2);
 }
 
@@ -135,7 +136,9 @@ try {
   if (!exam?.id || exam.status !== 'published') throw new Error('no exam to take');
 
   const context = await browser.newContext();
-  for (const [name, value] of Object.entries(await apiLogin(BASE, STUDENT.email, STUDENT.password)))
+  for (const [name, value] of Object.entries(
+    await apiLogin(BASE, STUDENT.email, { participantId: STUDENT.participantId }),
+  ))
     await context.setCookie(BASE, name, value);
   const page = await context.newPage();
   // A headless page never loses focus by itself: only the events below count.

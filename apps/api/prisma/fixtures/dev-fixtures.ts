@@ -4,8 +4,10 @@
  *
  * Guarded by `assertFixturesAllowed` + a server-side marker check (see guard.ts) and excluded from every Docker image.
  * Users use the reserved `.invalid` TLD: they can never receive mail and are easy to find/delete.
- * The password comes from FIXTURE_PASSWORD (never printed). Idempotent: complete fixture students are skipped, and a
- * fixture student without a registration (e.g. after --clean) gets one again.
+ * They log in like every student, with email + participant ID (owner, 2026-11-10), and have no password. Their IDs are
+ * fixed (FIXTURE_PARTICIPANT_IDS, RUNBOOK section 0) so the page checks can type them; a real ID is random.
+ * Idempotent: complete fixture students are skipped (their fixed ID made sure), and a fixture student without a
+ * registration (e.g. after --clean) gets one again.
  *
  * Rows follow the real payment rules (docs/plans/PAYMENTS-PLAN.md section 4.4): a completed registration attempt,
  * a payment inserted as `initiated` and moved initiated -> pending -> paid, then the registration.
@@ -17,8 +19,8 @@
  * before the payments migration, on a dev database that holds the old fixtures (docs/RUNBOOK.md section 0).
  */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import argon2 from 'argon2';
 import { PaymentStatus, Prisma, PrismaClient, RegistrationAttemptStatus } from '@prisma/client';
+import { dammDigit } from '@sirat/shared';
 import { assertDevServerMarker, assertFixturesAllowed } from './guard';
 
 /** One student per category band (grade sort orders 1, 5, 11 map to activist / ambassador / achiever). */
@@ -37,13 +39,20 @@ const fixturePhone = (n: number) => `0170000000${n}`; // distinct per student: u
 const fixtureInvoice = (n: number) => `FX${String(n).padStart(14, '0')}`; // FX is refused as an account prefix
 const fixtureTrxId = (n: number) => `FIXTURETRX${String(n).padStart(4, '0')}`;
 
+/**
+ * The fixture students' participant IDs: valid (ON, 10 digits, a Damm check digit) and fixed, so the dashboard page
+ * checks (apps/web/scripts/e2e.mjs) and RUNBOOK section 0 can name them. Dev and test databases only.
+ */
+export function fixtureParticipantId(n: number): string {
+  const digits = `99999999${String(n).padStart(2, '0')}`;
+  return `ON${digits}${dammDigit(digits)}`;
+}
+export const FIXTURE_PARTICIPANT_IDS = FIXTURE_STUDENTS.map((s) => fixtureParticipantId(s.n));
+
 export type FixtureResult = { created: number; completed: number; skipped: number };
 
 /** Creates or completes the fixture students. The caller has already checked the guards. */
-export async function loadDevFixtures(
-  prisma: PrismaClient,
-  passwordHash: string,
-): Promise<FixtureResult> {
+export async function loadDevFixtures(prisma: PrismaClient): Promise<FixtureResult> {
   const result: FixtureResult = { created: 0, completed: 0, skipped: 0 };
   for (const s of FIXTURE_STUDENTS) {
     const email = fixtureEmail(s.n);
@@ -52,6 +61,12 @@ export async function loadDevFixtures(
       select: { id: true, phone: true, registration: { select: { id: true } } },
     });
     if (existing?.registration) {
+      // An older dev database: a backfilled (random) ID and a password from before the participant-ID login.
+      await prisma.registration.update({
+        where: { id: existing.registration.id },
+        data: { participantId: fixtureParticipantId(s.n) },
+      });
+      await prisma.user.update({ where: { id: existing.id }, data: { passwordHash: null } });
       result.skipped += 1;
       continue;
     }
@@ -68,7 +83,6 @@ export async function loadDevFixtures(
         : await tx.user.create({
             data: {
               email,
-              passwordHash,
               name: `Fixture Student ${s.n}`,
               phone: fixturePhone(s.n),
               gradeLevelId: grade.id,
@@ -116,7 +130,9 @@ export async function loadDevFixtures(
           paidAt: now,
         },
       });
-      await tx.registration.create({ data: { userId: user.id, paymentId: payment.id } });
+      await tx.registration.create({
+        data: { userId: user.id, paymentId: payment.id, participantId: fixtureParticipantId(s.n) },
+      });
     });
     if (existing) result.completed += 1;
     else result.created += 1;
@@ -154,9 +170,6 @@ export async function cleanFixturePayments(prisma: PrismaClient): Promise<CleanR
 async function main(): Promise<void> {
   assertFixturesAllowed(process.env);
   const clean = process.argv.slice(2).includes('--clean');
-  const password = process.env.FIXTURE_PASSWORD ?? '';
-  if (!clean && password.length < 12)
-    throw new Error('FIXTURE_PASSWORD must be set (at least 12 characters).');
 
   // Same (already guarded) URL for every query; the server marker is checked before anything else runs.
   const prisma = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL });
@@ -170,9 +183,7 @@ async function main(): Promise<void> {
       console.log(JSON.stringify({ msg: 'dev fixture payments removed (users kept)', ...removed }));
       return;
     }
-    // A2 (auth) owns the tuned argon2id parameters; library defaults are fine for dev data.
-    const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
-    const result = await loadDevFixtures(prisma, passwordHash);
+    const result = await loadDevFixtures(prisma);
     console.log(JSON.stringify({ msg: 'dev fixtures done', ...result }));
   } finally {
     await prisma.$disconnect();

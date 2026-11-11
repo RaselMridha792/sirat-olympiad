@@ -418,15 +418,17 @@ function cookiesOf(res) {
 const AUTH_HEADERS = { 'content-type': 'application/json', 'x-requested-with': 'sirat-web' };
 
 /**
- * Logs in through the API (POST /api/auth/login) and returns the session cookies by name. An admin or manager with
+ * Logs in through the API (POST /api/auth/login) and returns the session cookies by name. `secret` is a staff
+ * password, or `{ participantId }` for a student or ambassador (they have no password). An admin or manager with
  * two-factor login gets a challenge instead (200 { twoFactorRequired }): the code step follows with the account's
  * secret from apps/web/.e2e-totp.json (lib/totp.mjs; `pnpm --filter @sirat/web e2e:2fa-enrol` writes it).
  */
-export async function apiLogin(apiBase, email, password) {
+export async function apiLogin(apiBase, email, secret) {
+  const credential = typeof secret === 'object' ? secret : { password: secret };
   const res = await fetch(`${apiBase}/api/auth/login`, {
     method: 'POST',
     headers: AUTH_HEADERS,
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, ...credential }),
   });
   let cookies;
   if (res.status === 200 && (await res.json().catch(() => null))?.twoFactorRequired) {

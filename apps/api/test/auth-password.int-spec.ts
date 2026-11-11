@@ -1,6 +1,8 @@
 /**
  * Password endpoints over HTTP (RULEBOOK §5, owner rules of 2026-10-31). change-password: the current password is
  * checked under the login limits; success ends every session and gives this device a fresh one.
+ * Only staff have a password (here a jury account): a student or ambassador logs in with email + participant ID and has
+ * no password to change or reset (owner, 2026-11-10; docs/plans/PARTICIPANT-LOGIN-PLAN.md §4).
  */
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
@@ -11,7 +13,7 @@ import { ACCESS_COOKIE } from '../src/modules/auth/access-token.service';
 import { EmailTokenService } from '../src/modules/auth/email-tokens.service';
 import { PasswordService } from '../src/modules/auth/password.service';
 import { REFRESH_COOKIE } from '../src/modules/auth/session-cookies';
-import { makeUser, testPrisma } from './helpers';
+import { makePaidPayment, makeUser, testPrisma } from './helpers';
 
 let app: NestExpressApplication;
 let base: string;
@@ -49,11 +51,28 @@ const run = randomUUID().slice(0, 4);
 let nextIp = 0;
 const newIp = () => `2001:db8:${run}:${(nextIp += 1).toString(16)}::1`;
 
+/** A staff account (jury): the roles that keep a password. */
 async function student() {
   return makeUser(prisma, {
     email: `p-${randomUUID().slice(0, 8)}@test.invalid`,
+    role: 'jury',
     passwordHash: await passwords.hash(PASSWORD),
   });
+}
+
+/** A real student: a paid registration (so a participant ID) and no password. Logged in the way students are. */
+async function registeredStudent() {
+  const user = await makeUser(prisma, {
+    email: `p-${randomUUID().slice(0, 8)}@test.invalid`,
+    role: 'student',
+  });
+  const payment = await makePaidPayment(prisma, user.id);
+  const { participantId } = await prisma.registration.create({
+    data: { userId: user.id, paymentId: payment.id },
+  });
+  const res = await post('/api/auth/login', { email: user.email, participantId }, { ip: newIp() });
+  expect(res.status).toBe(204);
+  return { user, cookie: cookiesOf(res) };
 }
 
 function post(
@@ -86,6 +105,19 @@ async function loginAs(email: string, password = PASSWORD) {
 }
 
 describe('POST /api/auth/change-password', () => {
+  it('refuses a student or ambassador: there is no password to change (403 PASSWORD_NOT_USED)', async () => {
+    const { user, cookie } = await registeredStudent();
+    const res = await post(
+      '/api/auth/change-password',
+      { currentPassword: PASSWORD, newPassword: NEW_PASSWORD },
+      { cookie, ip: newIp() },
+    );
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe('PASSWORD_NOT_USED');
+    const stored = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(stored.passwordHash).toBeNull();
+  });
+
   it('cancels outstanding password-reset links in the same transaction', async () => {
     const user = await student();
     const cookie = await loginAs(user.email);
@@ -249,6 +281,9 @@ describe('POST /api/auth/reset-password', () => {
     const blocked = await student();
     await prisma.user.update({ where: { id: blocked.id }, data: { isBlocked: true } });
     const blockedLink = await tokens().issue(blocked.id, AuthTokenType.password_reset);
+    // A student's link from before the participant-ID login: a reset never gives a student a password.
+    const { user: pupil } = await registeredStudent();
+    const studentLink = await tokens().issue(pupil.id, AuthTokenType.password_reset);
 
     for (const token of [
       randomBytes(32).toString('base64url'),
@@ -257,11 +292,14 @@ describe('POST /api/auth/reset-password', () => {
       expired.token,
       verifyType.token,
       blockedLink.token,
+      studentLink.token,
     ]) {
       const res = await reset(token, 'Another-good-pass-5');
       expect(res.status).toBe(400);
       expect(await messageOf(res)).toBe('This link is invalid or has expired');
     }
+    const stillNone = await prisma.user.findUniqueOrThrow({ where: { id: pupil.id } });
+    expect(stillNone.passwordHash).toBeNull();
   });
 
   it('keeps the link usable when the new password is refused', async () => {

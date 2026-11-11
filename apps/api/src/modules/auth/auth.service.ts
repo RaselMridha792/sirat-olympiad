@@ -1,3 +1,4 @@
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import {
   BadRequestException,
   ForbiddenException,
@@ -9,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthTokenType } from '@prisma/client';
+import { formatParticipantId, logsInWithParticipantId, type Role } from '@sirat/shared';
 import { BackgroundTasks } from '../../common/background/background-tasks';
 import type { EnvVars } from '../../config/env';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -16,7 +18,12 @@ import { AuditService } from '../audit/audit.service';
 import { SecurityAlerts } from '../audit/security-alerts.service';
 import { EmailQueue } from '../notifications/email-queue.service';
 import type { AuthUser } from './access-token.service';
-import { emailLink, resetPasswordMessage, verifyEmailMessage } from './auth-emails';
+import {
+  emailLink,
+  participantIdMessage,
+  resetPasswordMessage,
+  verifyEmailMessage,
+} from './auth-emails';
 import { EmailSendLimiter } from './email-send-limiter';
 import { EmailTokenService } from './email-tokens.service';
 import { reportLoginFailure } from './login-failure-report';
@@ -29,6 +36,30 @@ import { twoFactorRequired } from './two-factor/two-factor.errors';
 
 /** One message for every failed login: it never tells whether the email has an account. */
 export const LOGIN_FAILED_MESSAGE = 'Email or password is incorrect';
+/**
+ * The participant-ID login's one message for every miss: an unknown email, a wrong ID, a staff account, an account
+ * without a registration. The message depends only on the kind the client sent, never on the account.
+ */
+export const PARTICIPANT_LOGIN_FAILED_MESSAGE = 'Email or participant ID is incorrect';
+
+/** Students and ambassadors have no password (owner, 2026-11-10): nothing to change. */
+export const passwordNotUsed = () =>
+  new ForbiddenException({
+    code: 'PASSWORD_NOT_USED',
+    message:
+      'Students and ambassadors log in with their participant ID; there is no password to change',
+  });
+
+/** What the login checks: a staff password, or a student's or ambassador's participant ID (canonical form). */
+export type LoginCredential =
+  { kind: 'password'; password: string } | { kind: 'participant_id'; participantId: string };
+
+/** Compared when there is no stored ID, so a miss costs the same as a wrong ID (a valid Damm form, never issued). */
+const NO_PARTICIPANT_ID = 'ON00000000000';
+const digest = (value: string) => createHash('sha256').update(value).digest();
+/** Constant-time over fixed-length digests: the time never depends on how much of the ID matched. */
+const sameParticipantId = (stored: string, given: string) =>
+  timingSafeEqual(digest(stored), digest(given));
 /** One message for every bad emailed link: unknown, malformed, used, expired, other type, or a blocked account. */
 export const INVALID_LINK_MESSAGE = 'This link is invalid or has expired';
 
@@ -37,10 +68,16 @@ export const INVALID_LINK_MESSAGE = 'This link is invalid or has expired';
  * a completed password reset lifts the lock (owner).
  */
 export class TooManyAttemptsException extends HttpException {
-  constructor(readonly retryAfterSeconds: number) {
+  /** `passwordHint`: off for the participant-ID login, which has no password to reset. */
+  constructor(
+    readonly retryAfterSeconds: number,
+    passwordHint = true,
+  ) {
     const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
     super(
-      `Too many attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}, or reset your password`,
+      `Too many attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}${
+        passwordHint ? ', or reset your password' : ''
+      }`,
       HttpStatus.TOO_MANY_REQUESTS,
     );
   }
@@ -98,12 +135,61 @@ export class AuthService {
     this.background.run('verify-email', () => this.sendVerification(email));
   }
 
-  private async sendPasswordReset(email: string): Promise<void> {
-    if (!(await this.sendLimiter.allow('reset', email))) return;
-    const user = await this.prisma.user.findUnique({
+  /**
+   * Forgot my participant ID (docs/plans/PARTICIPANT-LOGIN-PLAN.md §3): the same shape as forgot-password. Only an
+   * unblocked student or ambassador with a registration gets an email, at its own address only; one address gets at
+   * most AUTH_LINK_EMAILS_PER_MINUTE/HOUR of them, forgot-password's ID emails included.
+   */
+  requestParticipantId(email: string): void {
+    this.background.run('participant-id-email', () => this.sendParticipantId(email));
+  }
+
+  private findForEmail(email: string) {
+    return this.prisma.user.findUnique({
       where: { email },
-      select: { id: true, name: true, email: true, isBlocked: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isBlocked: true,
+        registration: { select: { participantId: true } },
+      },
     });
+  }
+
+  private async sendParticipantId(email: string): Promise<void> {
+    const user = await this.findForEmail(email);
+    if (!user || !logsInWithParticipantId(user.role)) return;
+    await this.sendParticipantIdTo(user);
+  }
+
+  /** The ID email itself. The ID goes to the account's own address and nowhere else: never a log or an audit row. */
+  private async sendParticipantIdTo(user: {
+    id: string;
+    name: string;
+    email: string;
+    isBlocked: boolean;
+    registration: { participantId: string } | null;
+  }): Promise<void> {
+    if (!(await this.sendLimiter.allow('participant_id', user.email))) return;
+    if (user.isBlocked || !user.registration) return;
+    const sent = await this.emails.enqueue('participant-id', `participant-id.${randomUUID()}`, {
+      to: user.email,
+      ...participantIdMessage(
+        user.name,
+        formatParticipantId(user.registration.participantId),
+        `${this.appUrl}/login`,
+      ),
+    });
+    if (sent) await this.audit.record({ action: 'auth.participant_id_sent', actorId: user.id });
+  }
+
+  private async sendPasswordReset(email: string): Promise<void> {
+    const user = await this.findForEmail(email);
+    // A student or ambassador has no password (owner, 2026-11-10): "forgot password" sends the participant ID.
+    if (user && logsInWithParticipantId(user.role)) return this.sendParticipantIdTo(user);
+    if (!(await this.sendLimiter.allow('reset', email))) return;
     if (!user || user.isBlocked) return;
     const issued = await this.tokens.issue(user.id, AuthTokenType.password_reset);
     const link = emailLink(this.appUrl, 'reset-password', issued.token);
@@ -136,32 +222,46 @@ export class AuthService {
    * code (POST /auth/2fa/verify). A successful login is not audited: the sessions row records it, keeping a student's
    * login at one read and one write (02-SYSTEM-DESIGN §3).
    */
-  async login(email: string, password: string, client: ClientInfo): Promise<LoginOutcome> {
+  async login(
+    email: string,
+    credential: LoginCredential,
+    client: ClientInfo,
+  ): Promise<LoginOutcome> {
+    const byPassword = credential.kind === 'password';
     const verdict = await this.limiter.check(email, client.ip);
     if (!verdict.allowed)
-      throw new TooManyAttemptsException(Math.ceil(verdict.retryAfterMs / 1000));
+      throw new TooManyAttemptsException(Math.ceil(verdict.retryAfterMs / 1000), byPassword);
 
     const user = await this.prisma.user.findUnique({
       where: { email },
-      select: { id: true, role: true, isBlocked: true, passwordHash: true },
+      select: {
+        id: true,
+        role: true,
+        isBlocked: true,
+        passwordHash: true,
+        registration: { select: { participantId: true } },
+      },
     });
-    const ok = user
-      ? await this.passwords.verify(user.passwordHash, password)
-      : await this.passwords.verifyDummy(password);
+    const check = byPassword
+      ? await this.checkPassword(user, credential.password)
+      : this.checkParticipantId(user, credential.participantId);
 
-    if (!user || !ok) {
-      // Audit rows carry no email and no email hash (personal data); unknown emails have no actor.
+    if (!user || check.miss !== null) {
+      // Audit rows carry no email, no email hash and never the ID (personal data); unknown emails have no actor.
+      // Both kinds count against the same limits, so switching kinds never buys more guesses.
       const failure = await this.limiter.recordFailure(email, client.ip);
       const actorId = user?.id ?? null;
       await this.audit.record({
         action: 'auth.login_failed',
         actorId,
         ip: client.ip,
-        meta: { reason: user ? 'bad_password' : 'unknown_email' },
+        meta: { reason: check.miss ?? 'unknown_email', credential: credential.kind },
       });
       // Owner conditions (2026-10-31): a lock is audited; the account limit's start and a distributed attempt alert.
       await reportLoginFailure(this.signals, failure, actorId, client.ip);
-      throw new UnauthorizedException(LOGIN_FAILED_MESSAGE);
+      throw new UnauthorizedException(
+        byPassword ? LOGIN_FAILED_MESSAGE : PARTICIPANT_LOGIN_FAILED_MESSAGE,
+      );
     }
 
     // Only the roles that may enrol can have a second factor, so a student's login reads nothing more. Enrolled is
@@ -186,13 +286,50 @@ export class AuthService {
       });
       throw new ForbiddenException('This account is blocked. Please contact support');
     }
-    if (this.passwords.needsRehash(user.passwordHash)) await this.rehash(user.id, password);
+    if (byPassword && check.hash && this.passwords.needsRehash(check.hash))
+      await this.rehash(user.id, credential.password);
 
     if (codeStep) return { kind: 'two_factor', challengeId: await this.challenges.create(user.id) };
     return {
       kind: 'session',
       session: await this.sessions.start({ id: user.id, role: user.role }, client),
     };
+  }
+
+  /**
+   * A staff password (admin, manager, jury). A student's or ambassador's account has none: the same miss as a wrong
+   * password, after the same argon2 work, so neither the answer nor its timing tells the roles apart.
+   */
+  private async checkPassword(
+    user: { role: Role; passwordHash: string | null } | null,
+    password: string,
+  ): Promise<{ miss: string | null; hash: string | null }> {
+    const hash = user && !logsInWithParticipantId(user.role) ? user.passwordHash : null;
+    const ok = hash
+      ? await this.passwords.verify(hash, password)
+      : await this.passwords.verifyDummy(password);
+    if (!user) return { miss: 'unknown_email', hash: null };
+    if (!hash) return { miss: 'no_password', hash: null };
+    return { miss: ok ? null : 'bad_password', hash };
+  }
+
+  /**
+   * A student's or ambassador's participant ID, already canonical (the DTO normalized it and checked its Damm digit).
+   * One constant-time compare whatever the account, against a fixed value when there is no stored ID.
+   */
+  private checkParticipantId(
+    user: { role: Role; registration: { participantId: string } | null } | null,
+    given: string,
+  ): { miss: string | null; hash: null } {
+    const stored =
+      user && logsInWithParticipantId(user.role)
+        ? (user.registration?.participantId ?? null)
+        : null;
+    const same = sameParticipantId(stored ?? NO_PARTICIPANT_ID, given);
+    if (!user) return { miss: 'unknown_email', hash: null };
+    if (!logsInWithParticipantId(user.role)) return { miss: 'staff_account', hash: null };
+    if (stored === null) return { miss: 'no_registration', hash: null };
+    return { miss: same ? null : 'bad_participant_id', hash: null };
   }
 
   /**
@@ -220,6 +357,8 @@ export class AuthService {
       },
     });
     if (!user || user.isBlocked) throw new UnauthorizedException('Authentication required');
+    const currentHash = user.passwordHash;
+    if (logsInWithParticipantId(user.role) || currentHash === null) throw passwordNotUsed();
     // A session ended by enable (or anything else) must not come back as a fresh one, let alone a verified one.
     const proof = await this.sessions.liveProof(actor.sessionId, user.id);
     if (proof === null) throw new UnauthorizedException('Session expired, log in again');
@@ -229,7 +368,7 @@ export class AuthService {
     const verdict = await this.limiter.check(user.email, client.ip);
     if (!verdict.allowed)
       throw new TooManyAttemptsException(Math.ceil(verdict.retryAfterMs / 1000));
-    if (!(await this.passwords.verify(user.passwordHash, currentPassword))) {
+    if (!(await this.passwords.verify(currentHash, currentPassword))) {
       const { lockedForMs } = await this.limiter.recordFailure(user.email, client.ip);
       await this.audit.record({
         action: 'auth.password_change_failed',
@@ -240,7 +379,7 @@ export class AuthService {
       throw new BadRequestException('Current password is incorrect');
     }
     await this.limiter.recordSuccess(user.email, client.ip);
-    if (await this.passwords.verify(user.passwordHash, newPassword))
+    if (await this.passwords.verify(currentHash, newPassword))
       throw new BadRequestException('Choose a new password that differs from the current one');
 
     const passwordHash = await this.passwords.hash(newPassword); // CPU work outside the transaction
@@ -284,9 +423,11 @@ export class AuthService {
       if (!used) return null;
       const user = await tx.user.findUnique({
         where: { id: used.userId },
-        select: { id: true, email: true, isBlocked: true, emailVerifiedAt: true },
+        select: { id: true, email: true, role: true, isBlocked: true, emailVerifiedAt: true },
       });
       if (!user || user.isBlocked) return null; // a reset never lifts a block
+      // Students and ambassadors have no password (owner, 2026-11-10): an old link of theirs is just invalid.
+      if (logsInWithParticipantId(user.role)) return null;
       await tx.user.update({
         where: { id: user.id },
         data: { passwordHash, ...(user.emailVerifiedAt ? {} : { emailVerifiedAt: new Date() }) },

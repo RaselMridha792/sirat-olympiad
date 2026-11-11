@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Prisma, PrismaClient } from '@prisma/client';
+import { logsInWithParticipantId } from '@sirat/shared';
 
 const TEST_DB = /^[a-z0-9_]+_test$/;
 const MIGRATIONS = join(__dirname, '..', 'prisma', 'migrations');
@@ -54,14 +55,19 @@ export async function truncateAll(prisma: PrismaClient): Promise<void> {
 
 const uniq = (): string => randomUUID().slice(0, 8);
 
+/**
+ * A user; a student unless `data.role` says otherwise. Staff (admin, manager, jury) get a placeholder password hash, as
+ * CHECK users_password_for_staff needs; students and ambassadors log in with their participant ID and have none.
+ */
 export function makeUser(
   prisma: PrismaClient,
   data: Partial<Prisma.UserUncheckedCreateInput> = {},
 ) {
+  const staff = data.role !== undefined && !logsInWithParticipantId(data.role);
   return prisma.user.create({
     data: {
       email: `u-${uniq()}@test.invalid`,
-      passwordHash: 'not-a-real-hash',
+      passwordHash: staff ? 'not-a-real-hash' : null,
       name: 'Test User',
       ...data,
     },

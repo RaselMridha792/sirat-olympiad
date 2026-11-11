@@ -17,10 +17,11 @@
 //   timeup  the time-up burst: every student starts less than the exam time before the window ends, so every timer
 //           ends at window_end, and all submits land within about 20 s of it.
 //
-// Needs: the load students and a published exam from apps/api/prisma/fixtures/loadtest-fixtures.ts (the same password),
+// Needs: the load students and a published exam from apps/api/prisma/fixtures/loadtest-fixtures.ts (the same secret:
+// the students' participant IDs derive from it, load-id.js),
 // the API and its worker. Never production. The local run: loadtests/exam-local.sh (README).
 //
-//   PASSWORD=<fixture password> k6 run -e BASE_URL=http://<api> -e EXAM_ID=<id> -e USERS=300 loadtests/exam-simulation.js
+//   PASSWORD=<fixture secret> k6 run -e BASE_URL=http://<api> -e EXAM_ID=<id> -e USERS=300 loadtests/exam-simulation.js
 //
 // Options (-e): USERS (default 300) and FIRST (default 1): students load<FIRST>..load<FIRST+USERS-1>. RAMP (steady,
 // default 30 s), RATE (surge, starts per second, default 10), CHECKPOINT_MIN/CHECKPOINT_MAX (default 60/120 s),
@@ -29,6 +30,7 @@
 // trusts one proxy hop); CF-Connecting-IP through nginx, which takes it only from a trusted generator
 // (scripts/loadtest-generators.sh, LAUNCH-PLAN L14); otherwise the generator's own address counts.
 import http from 'k6/http';
+import { loadParticipantId } from './load-id.js';
 import exec from 'k6/execution';
 import { check, sleep } from 'k6';
 import { Counter, Rate } from 'k6/metrics';
@@ -182,7 +184,10 @@ function login(b, n) {
   const res = b.call(
     'POST',
     '/api/auth/login',
-    JSON.stringify({ email: `load${n}@loadtest.invalid`, password: PASSWORD }),
+    JSON.stringify({
+      email: `load${n}@loadtest.invalid`,
+      participantId: loadParticipantId(PASSWORD, n),
+    }),
     'login',
   );
   return check(res, { 'login 204': (r) => r.status === 204 });

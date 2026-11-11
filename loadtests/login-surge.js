@@ -6,14 +6,16 @@
 // second for HOLD, so the summary shows what that rate costs. Run it at several rates to find the knee: the
 // runners do (loadtests/exam-local.sh login locally, scripts/load-staging.sh k6 login on the VPS).
 //
-// Needs the load students of apps/api/prisma/fixtures/loadtest-fixtures.ts (the same password), the API. Never
+// Needs the load students of apps/api/prisma/fixtures/loadtest-fixtures.ts (the same secret: their participant IDs
+// derive from it, load-id.js), the API. Never
 // production.
 //
-//   PASSWORD=<fixture password> k6 run -e BASE_URL=http://<api> -e USERS=300 -e RATE=20 loadtests/login-surge.js
+//   PASSWORD=<fixture secret> k6 run -e BASE_URL=http://<api> -e USERS=300 -e RATE=20 loadtests/login-surge.js
 //
 // Options (-e): USERS (default 300) and FIRST (default 1): the students load<FIRST>..load<FIRST+USERS-1>, in turn;
 // RATE (logins per second, default 10), HOLD (default 60s). SPREAD_IPS and IP_HEADER as in exam-simulation.js.
 // SMOKE=1 drops the latency thresholds (counted outcomes only).
+import { loadParticipantId } from './load-id.js';
 import http from 'k6/http';
 import exec from 'k6/execution';
 import { check } from 'k6';
@@ -75,7 +77,10 @@ function cookiesOf(res) {
 function login(n, headers) {
   return http.post(
     `${BASE}/api/auth/login`,
-    JSON.stringify({ email: `load${n}@loadtest.invalid`, password: PASSWORD }),
+    JSON.stringify({
+      email: `load${n}@loadtest.invalid`,
+      participantId: loadParticipantId(PASSWORD, n),
+    }),
     {
       jar: new http.CookieJar(),
       headers: { ...headers, 'content-type': 'application/json', 'x-requested-with': 'k6' },
@@ -85,7 +90,7 @@ function login(n, headers) {
 }
 
 export function setup() {
-  if (!PASSWORD) exec.test.abort('PASSWORD is required (the load fixtures password)');
+  if (!PASSWORD) exec.test.abort('PASSWORD is required (the load fixtures secret)');
   const res = login(FIRST, {});
   if (res.status !== 204)
     exec.test.abort(`load${FIRST}@loadtest.invalid cannot log in (${res.status})`);

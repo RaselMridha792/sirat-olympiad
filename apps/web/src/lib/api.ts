@@ -42,6 +42,7 @@ const NO_REFRESH = new Set([
   '/auth/2fa/verify', // the login's code step: its 401 is a wrong code or an ended challenge, not a lost session
   '/auth/refresh',
   '/auth/forgot-password',
+  '/auth/forgot-id',
   '/auth/reset-password',
   '/auth/verify-email',
   '/auth/resend-verification',

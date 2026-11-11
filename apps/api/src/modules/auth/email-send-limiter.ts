@@ -7,10 +7,11 @@ export interface EmailSendLimits {
   perMinute: number;
   perHour: number;
 }
-export type EmailLinkKind = 'reset' | 'verify';
+export type EmailLinkKind = 'reset' | 'verify' | 'participant_id';
 
 /**
- * Caps the link emails one address can receive (forgot-password, resend-verification): per minute and per hour,
+ * Caps the link emails one address can receive (forgot-password, resend-verification, the participant-ID email of
+ * forgot-ID and of a student's forgot-password): per minute and per hour,
  * keyed by the email hash, so nobody can mail-bomb an inbox or run up the SES bill. The caller answers the same way
  * whether or not an email was sent. Only allowed sends are counted. Fails open, like the login limiter.
  */

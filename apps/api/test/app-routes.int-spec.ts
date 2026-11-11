@@ -37,6 +37,8 @@ const PUBLIC_ROUTES = new Set([
   'POST /api/auth/login',
   'POST /api/auth/refresh',
   'POST /api/auth/forgot-password',
+  // Forgot my participant ID (docs/plans/PARTICIPANT-LOGIN-PLAN.md §3): forgot-password's shape and limits.
+  'POST /api/auth/forgot-id',
   'POST /api/auth/reset-password',
   'POST /api/auth/verify-email',
   'POST /api/auth/resend-verification',

@@ -1,15 +1,17 @@
 /**
  * The exam load test's fixtures (E6; prisma/fixtures/loadtest-fixtures.ts): the students are real accounts on the
  * payment rules, a rerun only adds the missing ones, the exam can be taken over HTTP exactly as k6 does it (a real
- * login with the API's own argon2 parameters, so no re-hash on login), and the report counts what happened.
+ * login with the participant ID derived from the load secret, as loadtests/load-id.js does), and the report counts
+ * what happened.
  */
 import type { PrismaClient } from '@prisma/client';
+import { isParticipantId } from '@sirat/shared';
 import { seedConfig } from '../prisma/seed';
 import {
   createLoadExam,
   ensureLoadUsers,
-  hashLoadPassword,
   loadEmail,
+  loadParticipantId,
   loadReport,
 } from '../prisma/fixtures/loadtest-fixtures';
 import { bootEngineApp, closeEngineApp, type EngineApp } from './exam-engine-app';
@@ -17,10 +19,9 @@ import { applyReferenceData, testPrisma, truncateAll } from './helpers';
 
 jest.setTimeout(180_000);
 
-const PASSWORD = 'Load-river-moon-42';
+const SECRET = 'Load-river-moon-42';
 let env: EngineApp;
 let prisma: PrismaClient;
-let passwordHash: string;
 
 beforeAll(async () => {
   env = await bootEngineApp(0);
@@ -28,7 +29,6 @@ beforeAll(async () => {
   await truncateAll(prisma);
   await applyReferenceData(prisma);
   await seedConfig(prisma);
-  passwordHash = await hashLoadPassword(PASSWORD);
 }, 60_000);
 
 afterAll(async () => {
@@ -53,7 +53,7 @@ async function login(n: number): Promise<{ status: number; cookie: string }> {
   const res = await fetch(`${env.base}/api/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-requested-with': 'k6' },
-    body: JSON.stringify({ email: loadEmail(n), password: PASSWORD }),
+    body: JSON.stringify({ email: loadEmail(n), participantId: loadParticipantId(SECRET, n) }),
   });
   const cookie = res.headers
     .getSetCookie()
@@ -76,9 +76,22 @@ async function call<T>(method: string, path: string, cookie: string, body?: unkn
   return { status: res.status, json: (text ? JSON.parse(text) : null) as T };
 }
 
+describe("the load students' participant IDs", () => {
+  it('are valid, unique by the student number, and the same as k6 computes (loadtests/load-id.js)', () => {
+    const ids = Array.from({ length: 2_000 }, (_, i) => loadParticipantId(SECRET, i + 1));
+    expect(ids.every(isParticipantId)).toBe(true);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids[6]?.slice(2, 7)).toBe('00007'); // the number, then 5 secret digits and the check digit
+    // What loadtests/load-id.js printed under grafana/k6:1.0.0 for this secret (load 7 and 19999): both sides agree.
+    expect(ids[6]).toBe('ON00007969917');
+    expect(loadParticipantId(SECRET, 19_999)).toBe('ON19999008226');
+    expect(loadParticipantId('another-secret', 7)).not.toBe(ids[6]);
+  });
+});
+
 describe('load test fixtures', () => {
   it('creates verified students with a paid 400 BDT registration each, across batches and all three categories', async () => {
-    expect(await ensureLoadUsers(prisma, 205, passwordHash)).toEqual({ created: 205, skipped: 0 });
+    expect(await ensureLoadUsers(prisma, 205, SECRET)).toEqual({ created: 205, skipped: 0 });
     const users = await loadUsers();
     expect(users).toHaveLength(205);
     expect(new Set(users.map((u) => u.phone)).size).toBe(205);
@@ -93,7 +106,7 @@ describe('load test fixtures', () => {
   });
 
   it('a rerun adds only the missing students', async () => {
-    expect(await ensureLoadUsers(prisma, 210, passwordHash)).toEqual({ created: 5, skipped: 205 });
+    expect(await ensureLoadUsers(prisma, 210, SECRET)).toEqual({ created: 5, skipped: 205 });
     expect(await loadUsers()).toHaveLength(210);
   });
 
@@ -110,11 +123,12 @@ describe('load test fixtures', () => {
 
     const { status, cookie } = await login(7);
     expect(status).toBe(204);
-    const hash = await prisma.user.findUniqueOrThrow({
+    const seven = await prisma.user.findUniqueOrThrow({
       where: { email: loadEmail(7) },
-      select: { passwordHash: true },
+      select: { passwordHash: true, registration: { select: { participantId: true } } },
     });
-    expect(hash.passwordHash).toBe(passwordHash);
+    expect(seven.passwordHash).toBeNull(); // students have none (participant-ID login)
+    expect(seven.registration?.participantId).toBe(loadParticipantId(SECRET, 7));
 
     const room = await call<{ attempt: unknown; durationMinutes: number }>(
       'GET',
