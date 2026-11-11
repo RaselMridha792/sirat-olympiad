@@ -8,6 +8,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 - **The full participant ID shows here only** (the login secret): `no-store`, a copy button with the canonical form, and a keep-private note. Everything shown to others uses the server-masked form.
 - **Share without a dependency:** the share image is drawn in the browser on a canvas (the browser's own Bangla shaping), from the masked ID only, then shared through the device's share sheet or downloaded. Nothing is uploaded.
 - **Group links are content:** `content/groups.ts`, each hidden while empty, https only (`safeExternalUrl`). The offline note (60 minutes at the centre) is the client's text from the mock-up and shows only for an OF ID.
+
 ## 2026-11-11 — Admin tables on a phone: secondary columns fold into the first cell (core; the ambassador panel UX pass)
 
 - Below `md` an admin table keeps its first column and its actions; the other columns are hidden (`hidden md:table-cell`) and their facts show as a short line under the first cell (`md:hidden`). Nothing scrolls sideways and the actions stay in reach.
