@@ -9,6 +9,8 @@
 *.ico binary
 *.woff binary
 *.woff2 binary
+*.ttf binary
+*.otf binary
 *.pdf binary
 # Every session adds DECISIONS entries at the top: git's built-in union driver keeps both sides' added lines (DECISIONS).
 docs/DECISIONS.md merge=union

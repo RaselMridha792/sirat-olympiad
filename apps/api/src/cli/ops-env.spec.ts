@@ -15,6 +15,7 @@ describe('opsEnv', () => {
       HOUSEKEEPING_QUEUE_NAME: undefined,
       AMBASSADOR_QUEUE_NAME: undefined,
       CERTIFICATES_QUEUE_NAME: undefined,
+      ADMIT_CARD_PDF_QUEUE_NAME: undefined,
     });
     expect(
       opsEnv({
@@ -42,6 +43,7 @@ describe('opsEnv', () => {
     [{ ...base, HOUSEKEEPING_QUEUE_NAME: 'house keeping' }, 'HOUSEKEEPING_QUEUE_NAME'],
     [{ ...base, AMBASSADOR_QUEUE_NAME: 'ambassador points' }, 'AMBASSADOR_QUEUE_NAME'],
     [{ ...base, CERTIFICATES_QUEUE_NAME: 'cert ificates' }, 'CERTIFICATES_QUEUE_NAME'],
+    [{ ...base, ADMIT_CARD_PDF_QUEUE_NAME: 'admit:card' }, 'ADMIT_CARD_PDF_QUEUE_NAME'],
   ])('refuses a bad setting by name, never by value (%#)', (env, name) => {
     let message = '';
     try {

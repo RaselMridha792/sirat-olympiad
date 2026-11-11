@@ -1,3 +1,5 @@
+import { SITE_NAME } from '@sirat/shared';
+
 /**
  * The public site's facts, in ONE place (RULEBOOK §18: content, dates and contact details come from one source).
  * PayStation's merchant review asks for a live site with an about page, terms, a privacy policy, contact details
@@ -7,7 +9,8 @@
 export interface SiteFacts {
   /**
    * The programme's public name, per language: the ONE source (lead, 2026-11-03). The homepage, the shell, the page
-   * titles and the legal texts read it. To confirm with the client (the old site says সিরাত অলিম্পিয়াড ২০২৬).
+   * titles and the legal texts read it. Its value is @sirat/shared SITE_NAME, so the API's PDFs print the same name.
+   * To confirm with the client (the old site says সিরাত অলিম্পিয়াড ২০২৬).
    */
   name: { bn: string; en: string };
   /** The season's line under the name, the same in both languages. */
@@ -35,7 +38,7 @@ export interface SiteFacts {
 }
 
 export const site: SiteFacts = {
-  name: { bn: 'ইন্টারন্যাশনাল সিরাত অলিম্পিয়াড ৩.০', en: 'International Sirat Olympiad 3.0' },
+  name: { ...SITE_NAME },
   season: 'Prophetic Leadership Season',
   organiser: 'GLTS Leadership × Sirat Olympiad',
   registeredName: null,

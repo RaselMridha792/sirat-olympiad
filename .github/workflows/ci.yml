@@ -366,6 +366,16 @@ jobs:
             if [ -n "$found" ]; then echo "::error::$img contains forbidden files:"; echo "$found"; exit 1; fi
             echo "$img clean"
           done
+      - name: The api and worker images carry the PDF fonts with their licences and can make the admit card PDF
+        # core A2: the fonts are in /app/assets/fonts (pnpm deploy copies them), and dist/cli/pdf-selfcheck.js renders a
+        # made-up card in both languages inside the image (HarfBuzz's WebAssembly, the pinned pdf-lib) and reads it back.
+        run: |
+          want="NotoSans-Bold.ttf NotoSans-Regular.ttf NotoSansBengali-Bold.ttf NotoSansBengali-Regular.ttf OFL-NotoSans.txt OFL-NotoSansBengali.txt README.md"
+          for img in sirat-api sirat-worker; do
+            have=$(docker run --rm --entrypoint sh "$img" -c 'ls /app/assets/fonts' | LC_ALL=C sort | paste -sd' ' -)
+            if [ "$have" != "$want" ]; then echo "::error::$img fonts: got '$have'"; exit 1; fi
+            docker run --rm --entrypoint node "$img" dist/cli/pdf-selfcheck.js || { echo "::error::$img cannot make the PDF"; exit 1; }
+          done
       - name: The web can store regenerated pages (no EACCES after an ISR revalidation)
         # The public pages revalidate every 60 s. The first request after that regenerates the page, and Next writes it
         # to .next/server/route-cache and its fetch results to .next/cache, as the runtime user (apps/web/Dockerfile).
