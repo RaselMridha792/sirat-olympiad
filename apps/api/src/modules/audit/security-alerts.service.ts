@@ -41,6 +41,7 @@ export type SecurityAlertKind =
   | 'ops.time_sync' // a server check (ops-check, L11): see RUNBOOK §7
   | 'ops.trusted_generators' // the load-test generators are trusted (A2's L14): see RUNBOOK §7;
   | 'ops.login_failures' // a server check (ops-check): failed logins across all accounts, see RUNBOOK §7
+  | 'ops.quote_misses' // a server check (ops-check): one IP guessing discount codes, see RUNBOOK §27
   | 'ops.demo_loaded' // demo data was loaded (an admin or the CLI): remove it before launch
   | 'ops.demo_cleared'; // demo data was removed
 
@@ -82,6 +83,7 @@ export const ALERT_CATEGORY: Record<SecurityAlertKind, AlertCategory> = {
   'ops.time_sync': 'ops',
   'ops.trusted_generators': 'ops',
   'ops.login_failures': 'security',
+  'ops.quote_misses': 'security',
   'ops.demo_loaded': 'ops',
   'ops.demo_cleared': 'ops',
 };
@@ -146,6 +148,7 @@ const TITLES: Record<SecurityAlertKind, string> = {
     'Demo data was loaded: remove it before launch (the prelaunch check fails while it exists)',
   'ops.demo_cleared': 'Demo data was removed',
   'ops.login_failures': 'Failed logins across all accounts are above the spray thresholds',
+  'ops.quote_misses': 'One address is trying many discount codes on the registration page',
 };
 
 /** The login alerts about one account; the spray alerts (all accounts) have no account line. */

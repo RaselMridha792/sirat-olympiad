@@ -153,6 +153,8 @@ model User {
   demoBatchId            String?                 @map("demo_batch_id") @db.Uuid
   demoBatch              DemoBatch?              @relation("DemoUsers", fields: [demoBatchId], references: [id], onDelete: Restrict)
   demoBatchesStarted     DemoBatch[]             @relation("DemoBatchCreator")
+  discountCodesLinked    DiscountCode[]          @relation("DiscountCodeAmbassador")
+  discountCodesCreated   DiscountCode[]          @relation("DiscountCodeCreator")
 
   @@index([referredById])
   @@index([gradeLevelId])
@@ -272,13 +274,20 @@ model Payment {
   reviewReason          String?       @map("review_reason") // e.g. duplicate_payment, refund_reported
   expiresAt             DateTime      @map("expires_at") @db.Timestamptz
   paidAt                DateTime?     @map("paid_at") @db.Timestamptz
+  /// The fee before a discount code; NULL on payments made before discount codes (amount_minor was the fee).
+  listAmountMinor       Int?          @map("list_amount_minor")
+  /// What the code took off (whole taka); amount_minor = list_amount_minor - discount_minor (CHECK).
+  discountMinor         Int           @default(0) @map("discount_minor")
+  discountCodeId        String?       @map("discount_code_id") @db.Uuid
   createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz
   updatedAt             DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   user                User?               @relation(fields: [userId], references: [id], onDelete: Restrict)
   pendingRegistration PendingRegistration @relation(fields: [pendingRegistrationId], references: [id], onDelete: Restrict)
+  discountCode        DiscountCode?       @relation(fields: [discountCodeId], references: [id], onDelete: Restrict)
   registration        Registration?
 
+  @@index([discountCodeId, status]) // a code's uses: paid, plus live checkouts under the code's row lock
   @@index([status, createdAt]) // reconciliation job scans pending by age
   @@index([userId])
   @@index([pendingRegistrationId])
@@ -306,11 +315,20 @@ model PendingRegistration {
   createdAt       DateTime                  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  referredBy User?     @relation("AttemptReferrer", fields: [referredById], references: [id], onDelete: Restrict)
-  user       User?     @relation("AttemptUser", fields: [userId], references: [id], onDelete: Restrict)
-  payments   Payment[]
+  /// The price snapshot taken at start (discount codes, DECISIONS "Discount codes"): retry and resume reuse it, so a
+  /// fee or code change mid-attempt never moves the price. All three or none (CHECK); none = an attempt made before.
+  listAmountMinor Int?    @map("list_amount_minor")
+  discountMinor   Int?    @map("discount_minor")
+  amountMinor     Int?    @map("amount_minor")
+  discountCodeId  String? @map("discount_code_id") @db.Uuid
+
+  referredBy   User?         @relation("AttemptReferrer", fields: [referredById], references: [id], onDelete: Restrict)
+  user         User?         @relation("AttemptUser", fields: [userId], references: [id], onDelete: Restrict)
+  discountCode DiscountCode? @relation(fields: [discountCodeId], references: [id], onDelete: Restrict)
+  payments     Payment[]
 
   @@index([email])
+  @@index([discountCodeId])
   @@index([phone])
   @@index([referredById])
   @@index([status, updatedAt])
@@ -812,6 +830,7 @@ model DemoBatch {
   announcements Announcement[]
   tasks         AdminTask[]
   rounds        Round[]
+  discountCodes DiscountCode[]
 
   @@index([createdById])
   @@map("demo_batches")
@@ -944,4 +963,43 @@ model AnswerKeyCorrection {
   @@index([examId, createdAt(sort: Desc)])
   @@index([createdById]) // the foreign key's index (db-constraints' catalog check)
   @@map("answer_key_corrections")
+}
+
+enum DiscountKind {
+  amount
+  percent
+}
+
+/// An admin-made discount code (DECISIONS "Discount codes"; payments D1). The server alone prices a registration:
+/// the code is applied at start and the price snapshotted on the attempt and its payments. CHECKs in raw SQL: the code
+/// format (canonical upper case, never SR- or TM-), the kind and value (amount: whole taka; percent: 1-99), the
+/// limits, the note. demo_batch_id: a demo root (written only by the demo loader; demo_marker_immutable).
+model DiscountCode {
+  id               String       @id @default(uuid(7)) @db.Uuid
+  code             String       @unique @db.Citext
+  kind             DiscountKind
+  /// amount: paisa, whole taka; percent: 1-99
+  value            Int
+  maxUses          Int?         @map("max_uses")
+  startsAt         DateTime?    @map("starts_at") @db.Timestamptz
+  endsAt           DateTime?    @map("ends_at") @db.Timestamptz
+  active           Boolean      @default(true)
+  /// An approved ambassador: a use also counts as that ambassador's referral.
+  ambassadorUserId String?      @map("ambassador_user_id") @db.Uuid
+  note             String?
+  createdById      String       @map("created_by_id") @db.Uuid
+  demoBatchId      String?      @map("demo_batch_id") @db.Uuid
+  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  ambassador User?                 @relation("DiscountCodeAmbassador", fields: [ambassadorUserId], references: [id], onDelete: Restrict)
+  createdBy  User                  @relation("DiscountCodeCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  demoBatch  DemoBatch?            @relation(fields: [demoBatchId], references: [id], onDelete: Restrict)
+  attempts   PendingRegistration[]
+  payments   Payment[]
+
+  @@index([ambassadorUserId])
+  @@index([createdById])
+  @@index([demoBatchId])
+  @@map("discount_codes")
 }

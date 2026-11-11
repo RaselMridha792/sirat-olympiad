@@ -15,7 +15,7 @@ import {
 import { normalizeEmail } from '../../../auth/dto/login.dto';
 import { IsAcceptablePassword } from '../../../auth/password-policy';
 
-const trim = ({ value }: { value: unknown }): unknown =>
+export const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : value;
 
 /**
@@ -80,6 +80,15 @@ export class StartRegistrationDto {
   @IsUUID()
   gradeLevelId!: string;
 
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{3,40}$/, { message: 'Promo codes use letters, digits, "-" or "_"' })
+  promoCode?: string;
+}
+
+/** POST /registrations/quote: the promo field alone, with the start's rule. */
+export class QuoteRegistrationDto {
   @IsOptional()
   @Transform(trim)
   @IsString()

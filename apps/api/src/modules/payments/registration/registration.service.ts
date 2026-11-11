@@ -20,9 +20,12 @@ import {
 import {
   BD_DISTRICTS,
   EDUCATION_TYPES,
+  listPrice,
   PARTICIPANT_ID_SHOWN_HOURS,
   REGISTRATION_MESSAGES,
   type CheckoutGateway,
+  type Price,
+  type RegistrationQuote,
   type Paginated,
   type RegistrationErrorCode,
   type RegistrationState,
@@ -43,6 +46,15 @@ import { newInvoiceNumber } from '../invoice';
 import { checkoutGateway, type PaymentConfig } from '../payment.config';
 import { PAYMENT_CONFIG } from '../payments-boot-check';
 import { isActive } from '../payment-state';
+import {
+  findDiscountCode,
+  hasRoom,
+  linkedReferrer,
+  lockCode,
+  priceFor,
+  usableNow,
+} from '../discount/discount-pricing';
+import { recordQuoteMiss } from '../discount/quote-misses';
 import { isWatched } from '../verify/payment-timing';
 import { VerifyRequests } from '../verify/verify-requests';
 import type { StartRegistrationDto } from './dto/start-registration.dto';
@@ -211,13 +223,14 @@ export class RegistrationService {
     });
     if (!grade)
       throw error(BadRequestException, 'GRADE_LEVEL_UNKNOWN', 'Choose your class from the list');
-    const referredById = dto.promoCode ? await this.referrer(dto.promoCode) : null;
+    const promo = dto.promoCode ? await this.promo(dto.promoCode, now) : NO_PROMO;
 
     const passwordHash = await this.passwords.hash(dto.password);
     const token = newResumeToken();
     const { attempt, payment } = await this.createAttempt(dto, {
       passwordHash,
-      referredById,
+      referredById: promo.referredById,
+      discountCodeId: promo.discountCodeId,
       token,
       settings,
       config,
@@ -343,8 +356,17 @@ export class RegistrationService {
         });
         if (active)
           throw error(ConflictException, 'RETRY_NOT_ALLOWED', 'A payment is still in progress');
+        const price = await this.retryPrice(tx, attempt, settings.feeMinor as number, now);
         return tx.payment.create({
-          data: this.paymentRow(attempt.id, invoiceNumber, settings, config, now),
+          data: this.paymentRow(
+            attempt.id,
+            invoiceNumber,
+            price,
+            attempt.discountCodeId,
+            settings,
+            config,
+            now,
+          ),
         });
       }),
     );
@@ -499,17 +521,102 @@ export class RegistrationService {
    * changes (exam's demo_marker_immutable trigger), so this check at start is enough.
    */
   private async referrer(promoCode: string): Promise<string> {
+    const userId = await this.findReferrer(promoCode);
+    if (!userId) throw promoInvalid();
+    return userId;
+  }
+
+  private async findReferrer(promoCode: string): Promise<string | null> {
     const profile = await this.prisma.ambassadorProfile.findFirst({
       where: { promoCode, approvedAt: { not: null }, user: { demoBatchId: null } },
       select: { userId: true },
     });
-    if (!profile)
-      throw error(
-        BadRequestException,
-        'PROMO_INVALID',
-        'This promo code is not valid. Check it or remove it.',
-      );
-    return profile.userId;
+    return profile?.userId ?? null;
+  }
+
+  /**
+   * The one promo field (DECISIONS "Discount codes"): an approved ambassador's code first (a referral, no price
+   * change), then a discount code usable now (a linked ambassador also gets the referral). Anything else is
+   * PROMO_INVALID, one answer for every miss. The start checks the code's limit again under its row lock.
+   */
+  private async promo(
+    raw: string,
+    now: Date,
+  ): Promise<{ referredById: string | null; discountCodeId: string | null }> {
+    const referrer = await this.findReferrer(raw);
+    if (referrer) return { referredById: referrer, discountCodeId: null };
+    const code = await findDiscountCode(this.prisma, raw);
+    if (!code || !usableNow(code, now)) throw promoInvalid();
+    return { referredById: await linkedReferrer(this.prisma, code), discountCodeId: code.id };
+  }
+
+  /** At start, under the code's row lock: still usable and a use left, or PROMO_INVALID; then the price. */
+  private async startPrice(
+    tx: Prisma.TransactionClient,
+    feeMinor: number,
+    discountCodeId: string | null,
+    now: Date,
+  ): Promise<Price> {
+    if (!discountCodeId) return listPrice(feeMinor);
+    const code = await lockCode(tx, discountCodeId);
+    if (!code || !usableNow(code, now) || !(await hasRoom(tx, code, now))) throw promoInvalid();
+    return priceFor(feeMinor, code);
+  }
+
+  /**
+   * At retry: the attempt's price snapshot stands (a fee or code change since never moves it). Only the code's limit
+   * is checked again, under its lock: the expired checkout lost its reserved use. An attempt made before discount
+   * codes has no snapshot and pays the current fee, as before.
+   */
+  private async retryPrice(
+    tx: Prisma.TransactionClient,
+    attempt: PendingRegistration,
+    feeMinor: number,
+    now: Date,
+  ): Promise<Price> {
+    if (
+      attempt.listAmountMinor === null ||
+      attempt.discountMinor === null ||
+      attempt.amountMinor === null
+    )
+      return listPrice(feeMinor);
+    if (attempt.discountCodeId) {
+      const code = await lockCode(tx, attempt.discountCodeId);
+      if (!code || !(await hasRoom(tx, code, now)))
+        throw error(
+          ConflictException,
+          'PROMO_USED_UP',
+          'This code has reached its limit. Start again without it or with another code.',
+        );
+    }
+    return {
+      listAmountMinor: attempt.listAmountMinor,
+      discountMinor: attempt.discountMinor,
+      amountMinor: attempt.amountMinor,
+    };
+  }
+
+  /**
+   * POST /registrations/quote: the price the start would charge for this code now (the same rule, no lock). A miss
+   * is PROMO_INVALID, one answer for every kind of miss, and is counted per IP for ops-check (quote-misses.ts).
+   */
+  async quote(
+    raw: string | undefined,
+    ip: string | null,
+    now = new Date(),
+  ): Promise<RegistrationQuote> {
+    const settings = await readRegistrationSettings(this.prisma);
+    if (!isRegistrationOpen(settings, now))
+      throw error(ForbiddenException, 'REGISTRATION_CLOSED', 'Registration is closed');
+    await this.payable(settings);
+    const fee = settings.feeMinor as number;
+    if (!raw) return { ...listPrice(fee), currency: 'BDT', kind: null };
+    if (await this.findReferrer(raw)) return { ...listPrice(fee), currency: 'BDT', kind: null };
+    const code = await findDiscountCode(this.prisma, raw);
+    if (code && usableNow(code, now) && (await hasRoom(this.prisma, code, now)))
+      return { ...priceFor(fee, code), currency: 'BDT', kind: code.kind };
+    await recordQuoteMiss(this.redis, ip, now);
+    throw promoInvalid();
   }
 
   private attemptByToken(token: string): Promise<AttemptWithLatest | null> {
@@ -584,6 +691,7 @@ export class RegistrationService {
     ctx: {
       passwordHash: string;
       referredById: string | null;
+      discountCodeId: string | null;
       token: string;
       settings: RegistrationSettings;
       config: EnabledConfig;
@@ -611,6 +719,12 @@ export class RegistrationService {
               data: { status: RegistrationAttemptStatus.abandoned },
             });
           }
+          const price = await this.startPrice(
+            tx,
+            ctx.settings.feeMinor as number,
+            ctx.discountCodeId,
+            ctx.now,
+          );
           const attempt = await tx.pendingRegistration.create({
             data: {
               email: dto.email,
@@ -627,10 +741,23 @@ export class RegistrationService {
               startRequestId: dto.startRequestId,
               resumeTokenHash: hashResumeToken(ctx.token),
               referredById: ctx.referredById,
+              // The price snapshot: retry and resume reuse it (DECISIONS "Discount codes").
+              listAmountMinor: price.listAmountMinor,
+              discountMinor: price.discountMinor,
+              amountMinor: price.amountMinor,
+              discountCodeId: ctx.discountCodeId,
             },
           });
           const payment = await tx.payment.create({
-            data: this.paymentRow(attempt.id, invoiceNumber, ctx.settings, ctx.config, ctx.now),
+            data: this.paymentRow(
+              attempt.id,
+              invoiceNumber,
+              price,
+              ctx.discountCodeId,
+              ctx.settings,
+              ctx.config,
+              ctx.now,
+            ),
           });
           return { attempt, payment };
         }),
@@ -693,6 +820,8 @@ export class RegistrationService {
   private paymentRow(
     attemptId: string,
     invoiceNumber: string,
+    price: Price,
+    discountCodeId: string | null,
     settings: RegistrationSettings,
     config: EnabledConfig,
     now: Date,
@@ -700,7 +829,11 @@ export class RegistrationService {
     return {
       pendingRegistrationId: attemptId,
       invoiceNumber,
-      amountMinor: settings.feeMinor as number, // the snapshot: later fee changes never touch this payment
+      // The snapshot: later fee or code changes never touch this payment.
+      amountMinor: price.amountMinor,
+      listAmountMinor: price.listAmountMinor,
+      discountMinor: price.discountMinor,
+      discountCodeId,
       currency: 'BDT',
       payWithCharge: false,
       gatewayAccount: config.accountLabel,
@@ -856,6 +989,15 @@ function canResume(latest: Payment | null | undefined, now: Date): boolean {
     now < latest.expiresAt
   );
 }
+
+const NO_PROMO = { referredById: null, discountCodeId: null } as const;
+
+const promoInvalid = () =>
+  error(
+    BadRequestException,
+    'PROMO_INVALID',
+    'This promo code is not valid. Check it or remove it.',
+  );
 
 function stateOf(
   attempt: PendingRegistration,

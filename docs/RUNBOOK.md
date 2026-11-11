@@ -373,6 +373,7 @@ scripts/prelaunch-check.sh
 | `backup_age` | no off-server backup in 26 h (critical) | `journalctl -u sirat-backup.service -n 50` (section 5) |
 | `time_sync` | the clock is not synchronised | `timedatectl`; `systemctl restart systemd-timesyncd` |
 | `trusted_generators` | load-test generators may set any client address: an `infra/nginx/loadtest-realip*.conf` exists (a warning); past the earliest `# expires` line, or without a readable one, it is critical (`scripts/loadtest-generators-left.sh` prints the minutes left) | no load test running: `scripts/loadtest-generators.sh off` (after a staging window: `sudo scripts/load-staging.sh close`); `scripts/loadtest-generators.sh status` shows it |
+| `quote_misses` | one IP asked the registration quote about 50 or more codes that do not work within an hour: someone guessing discount codes (the value is the misses) | §27 |
 | `login_failures` | failed logins across all accounts: 2,000 or more in one minute, or 1,000 or more different emails failing within 10 minutes (a guessing spray; the value is the emails) | the paragraph on `login.spray` below |
 | `monitor` (heartbeat only) | ops-check could not run | the api container: `$DC ps api`, `$DC logs --tail=50 api` |
 
@@ -953,3 +954,14 @@ With the participant-ID login (DECISIONS "The participant ID"), a student's ID t
 5. The audit log has `payments.participant_id_reissued` with your reason and the number of sessions ended. It never holds the ID.
 
 Do not read an ID out over the phone or a chat. If the student cannot reach their email, correct the email first, then issue the new ID.
+
+## 27. Discount codes (payments D1)
+
+Admin panel → **Discount codes** (the pages come with payments D2; the API is `/api/admin/discount-codes`, 06-API).
+
+- **Make a code:** prefer **Generate** (`DC-` + 8 random characters) for any code that matters. A typed code like `SIRAT20` can be guessed through the public price check on the registration page. Keep typed codes for public offers you announce anyway.
+- **Limits:** total uses, a start and an end date, active. A checkout in progress holds a use until it expires (10 minutes), so a code "fills up" a little before the last payments arrive. A payment that arrives late on an expired checkout is honoured even past the limit.
+- **After the first paid use** the kind, the value and the linked ambassador cannot change: make a new code instead. Switch a used code off; it can never be deleted. An unused code can be deleted.
+- **Tracking:** each code's page lists the paid uses (name, participant ID, paid, discount, invoice) with totals. Every change is in the audit log (`discount_codes.created`, `.updated`, `.deleted`).
+- **The `quote_misses` alert:** one address tried 50 or more codes that do not work within an hour. Nothing is blocked beyond the per-IP throttle. Check the codes that are active now. Switch off any typed code that should not be public, and replace it with a generated one. If the alert repeats from a school network, it may be students trying codes they heard of: no action beyond that.
+- **Demo data:** demo codes are removed with the demo (RUNBOOK §25). A real code linked to a demo ambassador, or a real registration with a demo code, blocks the removal until the real row is changed.
