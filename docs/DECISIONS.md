@@ -25,7 +25,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
    - a confirmation email at settlement (`registration-confirmed.<registrationId>`).
    The email carries a credential on the owner's choice, and says to keep it private. The ID is never logged or written to the audit.
 5. **Next:**
-   - P1b: the admin "issue a new ID" (reason, audit, email, ends the sessions);
+   - P1b (built): the admin "issue a new ID", `POST /admin/users/:id/participant-id` with a reason. One transaction draws the new ID (same prefix), ends every session (A2's `endSessionsOf`), and audits the reason and the session count. The new ID goes only to the student's email; the admin never sees it, and nothing logs it. Access tokens already issued live out their TTL, as with "log out everywhere";
    - P2: the registration form without a password, shipped with A2's login;
    - the RULEBOOK line comes in A2's login PR.
 

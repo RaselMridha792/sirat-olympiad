@@ -941,3 +941,15 @@ select status, created_at, counts from demo_batches;
 select count(*) as demo_rows from demo_records;
 SQL
 ```
+
+## 26. A leaked participant ID (payments P1b)
+
+With the participant-ID login (DECISIONS "The participant ID"), a student's ID together with their email opens the account. When an ID has leaked (a posted admit card, a screenshot in a group), replace it:
+
+1. Admin panel → **Users** → open the student → **Issue a new participant ID** → write the reason (10–200 characters, e.g. "admit card posted on Facebook") → **Issue the new ID**.
+2. The old ID stops working at once and every session of the student ends. Access tokens already issued run out with their TTL (`JWT_ACCESS_TTL_SECONDS`).
+3. The new ID goes only to the student's registered email. Nobody in the panel sees it. If the dialog says the email could not be queued, the student uses "forgot ID" on the login page.
+4. Tell the student to download the admit card again: the old one shows the old ID.
+5. The audit log has `payments.participant_id_reissued` with your reason and the number of sessions ended. It never holds the ID.
+
+Do not read an ID out over the phone or a chat. If the student cannot reach their email, correct the email first, then issue the new ID.

@@ -96,6 +96,7 @@ const PAYMENT_ENV_KEYS = [
     PaymentQueue,
     VerifyRequests,
     PaymentSettlement,
+    RegistrationEmails,
   ],
 })
 export class PaymentsCoreModule {}
