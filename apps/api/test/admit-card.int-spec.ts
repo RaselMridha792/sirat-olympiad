@@ -7,9 +7,16 @@
  */
 import type { PrismaClient } from '@prisma/client';
 import { formatParticipantId, maskParticipantId, type AdmitCard } from '@sirat/shared';
+import { randomUUID } from 'node:crypto';
 import { bootCoreApp, call, registeredStudent, sessionFor, type CoreApp } from './core-helpers';
 import { makePublishedExam } from './exam-helpers';
-import { applyReferenceData, testPrisma } from './helpers';
+import {
+  applyReferenceData,
+  makeRegistrationAttempt,
+  makeUser,
+  paymentData,
+  testPrisma,
+} from './helpers';
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -83,6 +90,51 @@ describe('the admit card', () => {
     expect(res.text).not.toContain(other.registration.participantId);
     expect(res.text).not.toContain(formatParticipantId(other.registration.participantId));
     expect(res.text).not.toContain(me.user.email);
+  });
+
+  it('shows the amount actually paid for a discounted registration, not the list price (a review by payments)', async () => {
+    const admin = await makeUser(prisma, { role: 'admin' });
+    const code = await prisma.discountCode.create({
+      data: {
+        code: `AC${randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`,
+        kind: 'amount',
+        value: 5000,
+        createdById: admin.id,
+      },
+    });
+    const user = await makeUser(prisma, { role: 'student', name: 'Discounted Student' });
+    const attempt = await makeRegistrationAttempt(prisma);
+    const created = await prisma.payment.create({
+      data: paymentData(attempt.id, {
+        userId: user.id,
+        listAmountMinor: 40000,
+        discountMinor: 5000,
+        amountMinor: 35000,
+        discountCodeId: code.id,
+      }),
+    });
+    await prisma.payment.update({ where: { id: created.id }, data: { status: 'pending' } });
+    const payment = await prisma.payment.update({
+      where: { id: created.id },
+      data: {
+        status: 'paid',
+        trxId: `TRX${randomUUID().slice(0, 8)}`,
+        paidAmountMinor: 35000,
+        paidAt: new Date(),
+      },
+    });
+    await prisma.registration.create({ data: { userId: user.id, paymentId: payment.id } });
+    const s = await env.sessions.start(
+      { id: user.id, role: user.role },
+      { ip: '203.0.113.61', userAgent: 'jest' },
+    );
+    const res = await card(`sirat_access=${s.accessToken}`);
+    expect(res.status).toBe(200);
+    expect(res.json.fee).toEqual({
+      amountMinor: 35000,
+      currency: 'BDT',
+      paidAt: payment.paidAt?.toISOString(),
+    });
   });
 
   it("names exam's next round exam, or null while none is published", async () => {
