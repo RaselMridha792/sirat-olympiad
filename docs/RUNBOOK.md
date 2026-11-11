@@ -973,3 +973,9 @@ Admin panel → **Discount codes** (`/admin/discount-codes`; the API is `/api/ad
 - **Tracking:** each code's page lists the paid uses (name, participant ID, paid, discount, invoice) with totals. Every change is in the audit log (`discount_codes.created`, `.updated`, `.deleted`).
 - **The `quote_misses` alert:** one address tried 50 or more codes that do not work within an hour. Nothing is blocked beyond the per-IP throttle. Check the codes that are active now. Switch off any typed code that should not be public, and replace it with a generated one. If the alert repeats from a school network, it may be students trying codes they heard of: no action beyond that.
 - **Demo data:** demo codes are removed with the demo (RUNBOOK §25). A real code linked to a demo ambassador, or a real registration with a demo code, blocks the removal until the real row is changed.
+
+## 28. The admit card's official group links
+
+The admit card (`/dashboard/admit-card`) lists the official WhatsApp, Telegram, Facebook and YouTube groups. Each link stays hidden until it has a URL.
+- **To add one:** set its URL in `apps/web/src/content/groups.ts` (https only; anything else is dropped) and deploy the web. No API or database change.
+- **The participant ID on that page is the login secret.** If a student posts it, follow §26 (a leaked participant ID).

@@ -386,6 +386,23 @@ The database keeps the limits (`*_core_rounds_checks`): round name 2–60, at mo
 
 The database keeps the limits (`*_core_jury_checks`): a score's total 0–100, the criteria a JSON object, the comment ≤ 1,000; one assignment per (round, judge, category). `jury_scores` is append-only (UPDATE, DELETE and TRUNCATE refused; TRUNCATE passes only in a database named `*_test`), and `sirat_app` has no UPDATE or DELETE on it.
 
+## Admit card (core A1; the client's mock-up; the lead's approval of 2026-11-11)
+
+`GET /admit-card` (student and ambassador, re-read: a blocked account or a staff token gets 403) → `AdmitCard` (`core.ts`), the caller's own:
+- `participantId`: the full, canonical ID. This is **the one page where it shows in full**: it is the login secret, with the email. The answer is `Cache-Control: no-store`.
+- `participantIdMasked` (`maskParticipantId`): the only form the share image uses.
+- `mode` (`online`/`offline`, from the ID's prefix ON/OF), `name`, `category`, `gradeLevel` (the class label), `fee` (`amountMinor`, `currency`, `paidAt`) and `registeredAt`.
+- `exam`: exam's `nextExamFor`, the next round exam the student may sit (practice exams never count; demo and real kept apart; the round rule). null while none is published: "to be announced".
+- 404 `not_registered` without a paid registration (the web shows "registration not complete").
+
+It reads payments' `registrations`/`payments` and exam's `exams` read only; no table of its own. The PDF (A2) uses the same service, so the page and the PDF never differ.
+
+The web page `/dashboard/admit-card` follows the client's mock-up:
+- the ID with copy (the canonical form) and a keep-private note;
+- the details, and a countdown to the exam's start;
+- the official group links (`content/groups.ts`, each hidden while empty);
+- Share: a PNG drawn in the browser (a canvas, so the browser shapes the Bangla) holding the **masked** ID only. It goes to the device's share sheet where it takes a file, else it downloads. Nothing is uploaded.
+
 ## Certificates (core C6c-1; plan: `docs/plans/CORE-PLAN.md` §7, owner Q4 defaults, lead's notes)
 
 Shapes `CertificateIssueRequest`, `CertificateIssueResult`, `MyCertificate`, `AdminCertificateRow`, `AdminCertificateQuery`, `CertificateRevokeRequest`, `CertificateCheck`, `CERTIFICATE_TYPES`, `CERTIFICATE_LIMITS`, `CERTIFICATE_CODE_PATTERN`, `CERTIFICATE_REFUSALS` (`core.ts`). Admin routes re-read the admin (managers, jury, students and ambassadors get 403). A certificate is revoked, never deleted.

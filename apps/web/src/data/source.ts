@@ -46,6 +46,7 @@ import type {
   AdminUserDetail,
   AdminUserQuery,
   AdminUserRow,
+  AdmitCard,
   AmbassadorLeaderboard,
   AmbassadorListSort,
   AmbassadorOverview,
@@ -93,6 +94,8 @@ export interface DataSource {
     listAnnouncements(query: PageQuery): Promise<Paginated<AnnouncementItem>>;
     /** GET /ambassador/me (role ambassador) */
     getAmbassador(): Promise<AmbassadorOverview>;
+    /** GET /admit-card: the caller's own admit card; null without a paid registration. */
+    getAdmitCard(): Promise<AdmitCard | null>;
     /** GET /ambassador/leaderboard: the caller's side by points, with their own place. */
     getAmbassadorLeaderboard(query: {
       page: number;
