@@ -11,6 +11,8 @@ import { AuditService } from './audit.service';
 export type SecurityAlertKind =
   | 'login.account_limit' // an account reached its hourly failure limit
   | 'login.distributed' // more distinct IPs than the threshold failed on one account within the hour
+  | 'login.failure_burst' // failed logins of all accounts reached the per-minute threshold (login-spray.ts)
+  | 'login.spray' // distinct emails failing within 10 minutes reached the spray threshold (login-spray.ts)
   | 'two_factor.recovery_used' // a 2FA recovery code was used (the login's code step, or turning 2FA off)
   | 'two_factor.reset' // an account's 2FA was reset by another admin or the break-glass CLI
   | 'two_factor.requirement_changed' // the roles that must prove 2FA changed (an admin, or the break-glass CLI)
@@ -38,6 +40,7 @@ export type SecurityAlertKind =
   | 'ops.backup_age' // a server check (ops-check, L11): see RUNBOOK §7
   | 'ops.time_sync' // a server check (ops-check, L11): see RUNBOOK §7
   | 'ops.trusted_generators' // the load-test generators are trusted (A2's L14): see RUNBOOK §7;
+  | 'ops.login_failures' // a server check (ops-check): failed logins across all accounts, see RUNBOOK §7
   | 'ops.demo_loaded' // demo data was loaded (an admin or the CLI): remove it before launch
   | 'ops.demo_cleared'; // demo data was removed
 
@@ -49,6 +52,8 @@ export type AlertCategory = (typeof ALERT_CATEGORIES)[number];
 export const ALERT_CATEGORY: Record<SecurityAlertKind, AlertCategory> = {
   'login.account_limit': 'security',
   'login.distributed': 'security',
+  'login.failure_burst': 'security',
+  'login.spray': 'security',
   'two_factor.recovery_used': 'security',
   'two_factor.reset': 'security',
   'two_factor.requirement_changed': 'security',
@@ -76,6 +81,7 @@ export const ALERT_CATEGORY: Record<SecurityAlertKind, AlertCategory> = {
   'ops.backup_age': 'ops',
   'ops.time_sync': 'ops',
   'ops.trusted_generators': 'ops',
+  'ops.login_failures': 'security',
   'ops.demo_loaded': 'ops',
   'ops.demo_cleared': 'ops',
 };
@@ -100,6 +106,9 @@ export const ALERTS_IN_PRODUCTION = Symbol('ALERTS_IN_PRODUCTION');
 const TITLES: Record<SecurityAlertKind, string> = {
   'login.account_limit': 'An account reached its hourly limit of failed logins',
   'login.distributed': 'Failed logins on one account from many IP addresses',
+  'login.failure_burst': 'Failed logins across all accounts: over 2,000 in one minute (RUNBOOK §7)',
+  'login.spray':
+    'Failed logins on many different accounts within 10 minutes: a guessing spray? (RUNBOOK §7)',
   'two_factor.recovery_used': 'A two-factor recovery code was used',
   'two_factor.reset': "An account's two-factor login was reset",
   'two_factor.requirement_changed':
@@ -136,7 +145,14 @@ const TITLES: Record<SecurityAlertKind, string> = {
   'ops.demo_loaded':
     'Demo data was loaded: remove it before launch (the prelaunch check fails while it exists)',
   'ops.demo_cleared': 'Demo data was removed',
+  'ops.login_failures': 'Failed logins across all accounts are above the spray thresholds',
 };
+
+/** The login alerts about one account; the spray alerts (all accounts) have no account line. */
+const PER_ACCOUNT_LOGIN_KINDS: ReadonlySet<SecurityAlertKind> = new Set([
+  'login.account_limit',
+  'login.distributed',
+]);
 
 /**
  * The operator email: kind, time, the account (for a login alert also "no account with that email"), and the event's
@@ -152,7 +168,7 @@ export function securityAlertMessage(
   // trying an email that has no account. Other alerts without one (the break-glass 2FA reset, payments, ops) carry
   // their own details instead.
   const account =
-    event.actorId ?? (kind.startsWith('login.') ? 'no account with that email' : null);
+    event.actorId ?? (PER_ACCOUNT_LOGIN_KINDS.has(kind) ? 'no account with that email' : null);
   const lines = [
     TITLES[kind],
     '',
