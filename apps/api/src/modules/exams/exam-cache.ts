@@ -25,6 +25,12 @@ export interface ExamConfig {
   /** A demo exam (DECISIONS 2026-11-08 "Demo data"): only demo accounts see and start it. Missing in a config cached
    * before this field existed, which counts as a real exam. */
   demo?: boolean;
+  /**
+   * The exam's round is not its side's first round (the round rule, student-access.ts): only students with a
+   * non-eliminated entry in that round see and start it. Missing in a config cached before this field existed (at most
+   * CONFIG_TTL_S after the deploy), which counts as open.
+   */
+  roundGated?: boolean;
 }
 
 const CONFIG_TTL_S = 60;
@@ -83,7 +89,7 @@ export class ExamCache {
     if (cached) return JSON.parse(cached) as ExamConfig;
     const row = await this.prisma.exam.findUnique({ where: { id: examId }, select: configSelect });
     if (!row) return null;
-    const config = toConfig(row);
+    const config = toConfig(row, await gatedRounds(this.prisma, [row.roundId]));
     await this.safe(() =>
       this.redis.set(keys.config(examId), JSON.stringify(config), 'EX', CONFIG_TTL_S),
     );
@@ -99,7 +105,11 @@ export class ExamCache {
       select: configSelect,
       orderBy: [{ windowStart: 'asc' }, { id: 'asc' }],
     });
-    const list = rows.map(toConfig);
+    const gated = await gatedRounds(
+      this.prisma,
+      rows.map((r) => r.roundId),
+    );
+    const list = rows.map((r) => toConfig(r, gated));
     await this.safe(() => this.redis.set(keys.published, JSON.stringify(list), 'EX', CONFIG_TTL_S));
     return list;
   }
@@ -216,22 +226,44 @@ export class ExamCache {
   }
 }
 
-function toConfig(row: {
-  id: string;
-  title: string;
-  status: ExamStatus;
-  category: Category | null;
-  roundId: string | null;
-  windowStart: Date;
-  windowEnd: Date;
-  durationMinutes: number;
-  questionsPerAttempt: number;
-  graceSeconds: number;
-  randomDraw: boolean;
-  contentVersion: number;
-  resultsPublishedAt: Date | null;
-  demoBatchId: string | null;
-}): ExamConfig {
+/**
+ * Of these rounds, the ones that are NOT the first round of their side (real rounds, or the demo's own rounds:
+ * DECISIONS "Demo data" 8). The first round of a side is open to every registered student; the later ones only to
+ * those a promotion put there.
+ */
+export async function gatedRounds(
+  prisma: Pick<PrismaService, '$queryRaw'>,
+  roundIds: readonly (string | null)[],
+): Promise<Set<string>> {
+  const ids = [...new Set(roundIds.filter((id): id is string => id !== null))];
+  if (ids.length === 0) return new Set();
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT o."id"::text AS "id" FROM "rounds" o
+    WHERE o."id" = ANY (${ids}::uuid[]) AND EXISTS (
+      SELECT 1 FROM "rounds" p
+      WHERE (p."demo_batch_id" IS NULL) = (o."demo_batch_id" IS NULL) AND p."sort_order" < o."sort_order")`;
+  return new Set(rows.map((r) => r.id));
+}
+
+function toConfig(
+  row: {
+    id: string;
+    title: string;
+    status: ExamStatus;
+    category: Category | null;
+    roundId: string | null;
+    windowStart: Date;
+    windowEnd: Date;
+    durationMinutes: number;
+    questionsPerAttempt: number;
+    graceSeconds: number;
+    randomDraw: boolean;
+    contentVersion: number;
+    resultsPublishedAt: Date | null;
+    demoBatchId: string | null;
+  },
+  gated: ReadonlySet<string>,
+): ExamConfig {
   const { demoBatchId, ...rest } = row;
   return {
     ...rest,
@@ -239,5 +271,6 @@ function toConfig(row: {
     windowEnd: row.windowEnd.toISOString(),
     resultsPublishedAt: row.resultsPublishedAt?.toISOString() ?? null,
     demo: demoBatchId !== null,
+    roundGated: row.roundId !== null && gated.has(row.roundId),
   };
 }

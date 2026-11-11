@@ -25,6 +25,7 @@ import {
 } from '@sirat/shared';
 import type {
   AdminAmbassadorRow,
+  AmbassadorLeaderboard,
   AmbassadorOverview,
   AmbassadorPointsConfig,
   AmbassadorState,
@@ -49,7 +50,12 @@ import {
   ReviewQueueQueryDto,
   SubmitProofDto,
 } from './dto/ambassador-tasks.dto';
-import { AdminAmbassadorQueryDto, AmbassadorReasonDto } from './dto/ambassador.dto';
+import {
+  AdminAmbassadorQueryDto,
+  AmbassadorLeaderboardQueryDto,
+  AmbassadorReasonDto,
+} from './dto/ambassador.dto';
+import { AmbassadorLeaderboardService } from './ambassador-leaderboard.service';
 
 const actorOf = (user: AuthUser, req: Request): Actor => ({ id: user.id, ip: req.ip ?? null });
 
@@ -66,6 +72,7 @@ export class AmbassadorController {
     private readonly ambassadors: AmbassadorsService,
     private readonly tasks: AmbassadorTasksService,
     private readonly teams: TeamsService,
+    private readonly leaderboard: AmbassadorLeaderboardService,
   ) {}
 
   /** One team per ambassador; the owner becomes its first member. */
@@ -81,6 +88,15 @@ export class AmbassadorController {
   @Get('me')
   me(@CurrentUser() user: AuthUser): Promise<AmbassadorOverview> {
     return this.ambassadors.me(user.id);
+  }
+
+  /** The ambassadors of the caller's side by points (A4), with the caller's own place; cached for up to a minute. */
+  @Get('leaderboard')
+  board(
+    @Query() query: AmbassadorLeaderboardQueryDto,
+    @CurrentUser() user: AuthUser,
+  ): Promise<AmbassadorLeaderboard> {
+    return this.leaderboard.page(user.id, query);
   }
 
   /** The ambassador's proof for their own task (plain text; never logged or audited). */

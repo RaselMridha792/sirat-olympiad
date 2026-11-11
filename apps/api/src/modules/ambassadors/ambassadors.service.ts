@@ -13,8 +13,10 @@ import type {
   Paginated,
 } from '@sirat/shared';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AmbassadorLeaderboardService } from './ambassador-leaderboard.service';
 import type { AdminAmbassadorQueryDto } from './dto/ambassador.dto';
 import { newPromoCode } from './promo-code';
+import { type Rank, rankOf } from './rank';
 
 export interface Actor {
   id: string;
@@ -34,26 +36,6 @@ const refuse = (...codes: AmbassadorRefusal[]) => new ConflictException(codes);
 const isUniqueViolation = (e: unknown) =>
   e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002';
 
-interface Rank {
-  name: string;
-  minPoints: number;
-}
-
-/** The highest threshold at or below the points, and the next one up (thresholds are data, RULEBOOK §19). */
-export function rankOf(
-  points: number,
-  thresholds: Rank[],
-): { current: Rank | null; next: Rank | null } {
-  const sorted = [...thresholds].sort((a, b) => a.minPoints - b.minPoints);
-  let current: Rank | null = null;
-  let next: Rank | null = null;
-  for (const t of sorted) {
-    if (t.minPoints <= points) current = t;
-    else if (!next) next = t;
-  }
-  return { current, next };
-}
-
 /**
  * Ambassadors (core C5a; owner Q2 default: an admin makes a paid student an ambassador, the server assigns the code).
  * Attribution only: a code changes no fee and no payment amount. Payments' registration accepts a code exactly while
@@ -62,12 +44,19 @@ export function rankOf(
  */
 @Injectable()
 export class AmbassadorsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly leaderboard: AmbassadorLeaderboardService,
+  ) {}
 
   async approve(userId: string, reason: string, actor: Actor): Promise<AmbassadorState> {
     for (let attempt = 1; ; attempt += 1) {
       try {
-        return await this.prisma.$transaction((tx) => this.approveOnce(tx, userId, reason, actor));
+        const approved = await this.prisma.$transaction((tx) =>
+          this.approveOnce(tx, userId, reason, actor),
+        );
+        await this.leaderboard.invalidate();
+        return approved;
       } catch (e) {
         if (isUniqueViolation(e) && attempt < CODE_TRIES) continue; // a code collision: draw again
         throw e;
@@ -107,7 +96,7 @@ export class AmbassadorsService {
   }
 
   async revoke(userId: string, reason: string, actor: Actor): Promise<AmbassadorState> {
-    return this.prisma.$transaction(async (tx) => {
+    const revoked = await this.prisma.$transaction(async (tx) => {
       await assertAdmin(tx, actor.id);
       const user = await lockUser(tx, userId);
       const profile = await tx.ambassadorProfile.findUnique({ where: { userId } });
@@ -121,6 +110,8 @@ export class AmbassadorsService {
       });
       return state(userId, profile.promoCode, null, role);
     });
+    await this.leaderboard.invalidate();
+    return revoked;
   }
 
   async list(query: AdminAmbassadorQueryDto, actor: Actor): Promise<Paginated<AdminAmbassadorRow>> {
@@ -140,16 +131,20 @@ export class AmbassadorsService {
           }
         : {}),
     };
-    const [total, profiles] = await this.prisma.$transaction([
-      this.prisma.ambassadorProfile.count({ where }),
-      this.prisma.ambassadorProfile.findMany({
-        where,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        include: { user: { select: { name: true, email: true, demoBatchId: true } } },
-      }),
-    ]);
+    const include = { user: { select: { name: true, email: true, demoBatchId: true } } } as const;
+    const [total, profiles] =
+      query.sort === 'points'
+        ? await this.byPoints(where, page, pageSize, include)
+        : await this.prisma.$transaction([
+            this.prisma.ambassadorProfile.count({ where }),
+            this.prisma.ambassadorProfile.findMany({
+              where,
+              orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+              skip: (page - 1) * pageSize,
+              take: pageSize,
+              include,
+            }),
+          ]);
     const ids = profiles.map((p) => p.userId);
     const [referrals, points, thresholds] = await Promise.all([
       this.prisma.user.groupBy({
@@ -186,6 +181,42 @@ export class AmbassadorsService {
       pageSize,
       total,
     };
+  }
+
+  /**
+   * The admin list by points (`sort=points`): the most points first, ties newest first. Points are the ledger's sum,
+   * not a column, so the matching profiles (an ambassador list: hundreds at most) are ranked here, then one page of
+   * them is read.
+   */
+  private async byPoints<I extends Prisma.AmbassadorProfileInclude>(
+    where: Prisma.AmbassadorProfileWhereInput,
+    page: number,
+    pageSize: number,
+    include: I,
+  ) {
+    const all = await this.prisma.ambassadorProfile.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { userId: true },
+    });
+    const sums = await this.prisma.pointLedger.groupBy({
+      by: ['userId'],
+      where: { userId: { in: all.map((p) => p.userId) } },
+      _sum: { amount: true },
+    });
+    const pointsOf = new Map(sums.map((s) => [s.userId, s._sum.amount ?? 0]));
+    // Array.prototype.sort is stable: equal points keep the newest-first order.
+    const ids = all
+      .map((p) => p.userId)
+      .sort((a, b) => (pointsOf.get(b) ?? 0) - (pointsOf.get(a) ?? 0))
+      .slice((page - 1) * pageSize, page * pageSize);
+    const rows = await this.prisma.ambassadorProfile.findMany({
+      where: { userId: { in: ids } },
+      include,
+    });
+    const position = new Map(ids.map((id, i) => [id, i]));
+    rows.sort((a, b) => position.get(a.userId)! - position.get(b.userId)!);
+    return [all.length, rows] as const;
   }
 
   /** The ambassador's own panel: their code, referrals (no contact details), points and rank. */

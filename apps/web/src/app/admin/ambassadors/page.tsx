@@ -11,6 +11,7 @@ import {
   LinkPagination,
   PageHeader,
   SearchBox,
+  Tabs,
 } from '@sirat/ui';
 import { AdjustPointsButton } from '@/components/admin/AdjustPointsButton';
 import { AmbassadorButton } from '@/components/admin/AmbassadorButton';
@@ -53,8 +54,10 @@ export default async function AdminAmbassadorsPage({
     getData(params),
   ]);
   const query = parsePageQuery(params, PAGE_SIZE);
+  // The admin view of the leaderboard (A4): the same list, the most points first.
+  const sort = params.sort === 'points' ? 'points' : undefined;
   const [list, points, tasks] = await Promise.all([
-    data.admin.listAmbassadors(query),
+    data.admin.listAmbassadors({ ...query, sort }),
     data.admin.getAmbassadorPoints(),
     data.admin.listTasks({ page: 1, pageSize: 50, status: 'active' }),
   ]);
@@ -75,6 +78,7 @@ export default async function AdminAmbassadorsPage({
             label={m.search.label}
             placeholder={m.search.placeholder}
             submitLabel={c.search.submit}
+            preserve={{ sort }}
             icon={<Search aria-hidden="true" size={16} />}
           />
         }
@@ -105,6 +109,22 @@ export default async function AdminAmbassadorsPage({
         </div>
         <AmbassadorPointsEditor locale={locale} config={points} />
       </Card>
+
+      <div className="mb-4">
+        <Tabs
+          items={[
+            { key: 'newest', label: m.sort.newest, href: hrefWith(PATH, { q: query.q }) },
+            {
+              key: 'points',
+              label: m.sort.points,
+              href: hrefWith(PATH, { q: query.q, sort: 'points' }),
+            },
+          ]}
+          activeKey={sort ?? 'newest'}
+          label={m.sort.label}
+          linkAs={Link}
+        />
+      </div>
 
       {list.items.length === 0 ? (
         <EmptyState
@@ -224,7 +244,7 @@ export default async function AdminAmbassadorsPage({
         page={list.page}
         totalPages={pages}
         linkAs={Link}
-        hrefFor={(page) => hrefWith(PATH, { q: query.q, page })}
+        hrefFor={(page) => hrefWith(PATH, { q: query.q, sort, page })}
         label={c.pagination.label}
         prevLabel={c.pagination.prev}
         nextLabel={c.pagination.next}

@@ -15,6 +15,7 @@ import type {
   RankThresholdInput,
 } from '@sirat/shared';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AmbassadorLeaderboardService } from './ambassador-leaderboard.service';
 import type { Actor } from './ambassadors.service';
 import { POINTS_PER_REFERRAL_KEY, pointsPerReferral } from './referral-points';
 
@@ -27,7 +28,10 @@ type Db = Prisma.TransactionClient | PrismaService;
  */
 @Injectable()
 export class AmbassadorPointsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly leaderboard: AmbassadorLeaderboardService,
+  ) {}
 
   async get(actorId: string): Promise<AmbassadorPointsConfig> {
     await assertAdmin(this.prisma, actorId);
@@ -41,7 +45,7 @@ export class AmbassadorPointsService {
       thresholds: body.thresholds.map((t) => ({ name: t.name, minPoints: t.minPoints })),
     };
     if (!validThresholds(next.thresholds)) throw new BadRequestException(['bad_thresholds']);
-    return this.prisma.$transaction(async (tx) => {
+    const saved = await this.prisma.$transaction(async (tx) => {
       // One writer at a time, even while the settings row does not exist yet; released at commit.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('core.ambassador_points'))`;
       const current = await readConfig(tx);
@@ -67,11 +71,13 @@ export class AmbassadorPointsService {
       });
       return next;
     });
+    await this.leaderboard.invalidate(); // the tiers on the leaderboard follow the thresholds
+    return saved;
   }
 
   async adjust(body: PointsAdjustRequest, actor: Actor): Promise<PointsAdjustResult> {
     await assertAdmin(this.prisma, actor.id);
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findUnique({
         where: { id: body.userId },
         select: { id: true, ambassador: { select: { userId: true } } },
@@ -103,6 +109,8 @@ export class AmbassadorPointsService {
       });
       return { userId: user.id, points: sum._sum.amount ?? 0 };
     });
+    await this.leaderboard.invalidate();
+    return result;
   }
 }
 
