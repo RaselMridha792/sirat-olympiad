@@ -11,6 +11,7 @@ import { studentExams } from './exams.ts';
 import { studentHome } from './home.ts';
 import { adminLeaderboard, leaderboard } from './leaderboard.ts';
 import { adminPayments } from './payments.ts';
+import { adminDiscountCodes } from './discount-codes.ts';
 import { studentProfile } from './profile.ts';
 import type { ApiGet } from './request.ts';
 import { adminStats } from './stats.ts';
@@ -55,6 +56,7 @@ export function createHttpSource(get: ApiGet): DataSource {
       ...adminAnnouncements(get),
       ...adminAmbassadors(get),
       ...adminPayments(get),
+      ...adminDiscountCodes(get),
       ...adminDemo(get),
       ...adminBook(get),
       ...adminStats(get),

@@ -75,6 +75,10 @@ export function registrationProblem(answer: Answer | null): RegistrationProblem 
   return { kind: 'form', text: 'busy' };
 }
 
+/** True when the start refused the promo code itself: its quote is dead, so the wizard prices it again. */
+export const refusesPromoCode = (problem: RegistrationProblem): boolean =>
+  problem.kind === 'field' && problem.field === 'promoCode';
+
 /** The bn/en text of a problem's key. */
 export function problemText(
   m: RegistrationMessages,

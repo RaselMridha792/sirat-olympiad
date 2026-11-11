@@ -10,7 +10,7 @@ import {
   validateStep,
   type FormValues,
 } from './registration-form.ts';
-import { problemText, registrationProblem } from './registration-problem.ts';
+import { problemText, refusesPromoCode, registrationProblem } from './registration-problem.ts';
 
 const choices = {
   districts: ['Dhaka', 'Khulna'],
@@ -118,6 +118,18 @@ describe('registration API answers', () => {
       field: 'promoCode',
       text: 'PROMO_INVALID',
     });
+  });
+
+  it('a start that refuses the promo code drops its quote (the review re-prices it); nothing else does', () => {
+    assert.equal(refusesPromoCode(registrationProblem(answer(400, 'PROMO_INVALID'))), true);
+    for (const code of [
+      'EMAIL_REGISTERED',
+      'PROMO_USED_UP',
+      'REGISTRATION_CLOSED',
+      'GRADE_LEVEL_UNKNOWN',
+    ])
+      assert.equal(refusesPromoCode(registrationProblem(answer(409, code))), false, code);
+    assert.equal(refusesPromoCode(registrationProblem(null)), false);
   });
 
   it('shows the other codes above the button, and never the API message', () => {
