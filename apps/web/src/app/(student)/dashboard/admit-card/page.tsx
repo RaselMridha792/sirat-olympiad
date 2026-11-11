@@ -3,6 +3,7 @@ import Image from 'next/image';
 import { ArrowUpRight, Hourglass, Info, UserCheck } from 'lucide-react';
 import { Badge, Card, EmptyState } from '@sirat/ui';
 import { AdmitIdBox } from '@/components/admit-card/AdmitIdBox';
+import { DownloadAdmitPdf } from '@/components/admit-card/DownloadAdmitPdf';
 import { ExamCountdown } from '@/components/admit-card/ExamCountdown';
 import { ShareAdmitCard } from '@/components/admit-card/ShareAdmitCard';
 import siratMark from '@/components/public/sirat-mark.png';
@@ -26,8 +27,8 @@ export async function generateMetadata(): Promise<Metadata> {
 /**
  * The admit card (প্রবেশপত্র; core A1, the client's mock-up, the lead's approval of 2026-11-11): the participant ID in
  * full (this page only: it is the login secret) with copy and a keep-private note, the candidate's details, the exam
- * date from exam's next round exam, a countdown, the official group links, and a share image with the ID masked.
- * The PDF comes with the shared PDF renderer (A2).
+ * date from exam's next round exam, a countdown, the official group links, a share image with the ID masked, and the
+ * PDF (A2: the worker's print copy with the full ID, never the email).
  */
 export default async function AdmitCardPage({
   searchParams,
@@ -117,23 +118,26 @@ export default async function AdmitCardPage({
           <Field label={m.fields.classFee} value={card.gradeLevel ?? c.notProvided} sub={fee} />
         </dl>
 
-        <ShareAdmitCard
-          label={m.share}
-          hint={m.shareHint}
-          failed={m.shareFailed}
-          text={{
-            siteName: site.name[locale],
-            heading: m.imageHeading,
-            name: card.name,
-            lines: [
-              category,
-              card.exam ? `${examDay}, ${time(card.exam.windowStart)}` : m.examSoon,
-            ],
-            idLabel: m.imageId,
-            // The server-masked form only: the full ID never goes into the image.
-            idMasked: card.participantIdMasked,
-          }}
-        />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <DownloadAdmitPdf locale={locale} labels={m.pdf} />
+          <ShareAdmitCard
+            label={m.share}
+            hint={m.shareHint}
+            failed={m.shareFailed}
+            text={{
+              siteName: site.name[locale],
+              heading: m.imageHeading,
+              name: card.name,
+              lines: [
+                category,
+                card.exam ? `${examDay}, ${time(card.exam.windowStart)}` : m.examSoon,
+              ],
+              idLabel: m.imageId,
+              // The server-masked form only: the full ID never goes into the image.
+              idMasked: card.participantIdMasked,
+            }}
+          />
+        </div>
       </Card>
 
       <div className="flex flex-col gap-6">

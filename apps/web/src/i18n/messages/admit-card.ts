@@ -2,7 +2,8 @@ import { defineMessages } from '../messages.ts';
 
 /**
  * The admit card (/dashboard/admit-card; core A1, the client's mock-up). The participant ID is the login secret: the
- * page shows it in full with a keep-private note, and the share image carries only its masked form.
+ * page shows it in full with a keep-private note, the PDF (A2, the student's own print) too, and the share image
+ * carries only its masked form.
  */
 export const admitCardMessages = defineMessages({
   en: {
@@ -26,6 +27,14 @@ export const admitCardMessages = defineMessages({
     share: 'Share',
     shareHint: 'The shared image shows your ID masked: only its last 2 characters.',
     shareFailed: 'Sharing did not work. Try again, or take a screenshot.',
+    pdf: {
+      button: 'Download PDF',
+      preparing: 'Preparing the PDF…',
+      done: 'The PDF is saved.',
+      hint: 'The PDF shows your full ID, for your own printout. Keep the printout private.',
+      slow: 'The PDF is taking longer than usual. Try again in a minute.',
+      failed: 'The PDF could not be made right now. Try again later.',
+    },
     imageHeading: 'I am taking part!',
     imageId: 'Participant ID',
     countdown: {
@@ -74,6 +83,14 @@ export const admitCardMessages = defineMessages({
     share: 'শেয়ার করুন',
     shareHint: 'শেয়ার করা ছবিতে আপনার আইডি ঢাকা থাকে: শুধু শেষ ২টি অক্ষর দেখা যায়।',
     shareFailed: 'শেয়ার করা যায়নি। আবার চেষ্টা করুন, অথবা স্ক্রিনশট নিন।',
+    pdf: {
+      button: 'PDF ডাউনলোড',
+      preparing: 'PDF তৈরি হচ্ছে…',
+      done: 'PDF সেভ হয়েছে।',
+      hint: 'PDF-এ আপনার পুরো আইডি থাকে, নিজের প্রিন্টের জন্য। প্রিন্ট কপিটি গোপন রাখুন।',
+      slow: 'PDF তৈরিতে স্বাভাবিকের চেয়ে বেশি সময় লাগছে। এক মিনিট পর আবার চেষ্টা করুন।',
+      failed: 'এই মুহূর্তে PDF তৈরি করা যায়নি। পরে আবার চেষ্টা করুন।',
+    },
     imageHeading: 'আমি অংশ নিচ্ছি!',
     imageId: 'পার্টিসিপেন্ট আইডি',
     countdown: {
