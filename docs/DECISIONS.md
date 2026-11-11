@@ -28,6 +28,7 @@ One short entry per non-obvious technical or product decision. Newest first. For
 - **Tests and tools:**
   - The dev fixture students have fixed IDs (`ON99999999012`, `…020`, `…036`; RUNBOOK §0).
   - The load students' IDs derive from the load secret, so k6 computes them (`loadtests/load-id.js`).
+
 ## 2026-11-11 — Admin tables on a phone: secondary columns fold into the first cell (core; the ambassador panel UX pass)
 
 - Below `md` an admin table keeps its first column and its actions; the other columns are hidden (`hidden md:table-cell`) and their facts show as a short line under the first cell (`md:hidden`). Nothing scrolls sideways and the actions stay in reach.
